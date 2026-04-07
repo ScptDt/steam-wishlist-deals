@@ -143,11 +143,36 @@ python3 steam_deals_generator.py --vanity TU_VANITY_URL \
 
 ## PAYDAY 2 DLC Tracker
 
-Incluye un script separado para trackear DLCs de PAYDAY 2:
+Script y dashboard web para trackear DLCs de PAYDAY 2: cuales te faltan, precios, ofertas, bundles, y plan de compra por tiers.
+
+### Dashboard Web (recomendado)
+
+```bash
+python3 payday2_web.py
+# Se abre http://127.0.0.1:8081 en tu navegador
+```
+
+Dashboard interactivo con:
+- **Vista instantanea** — Carga datos del cache al abrir, sin esperas
+- **Stats y donut** — Cuantos DLCs tienes, cuanto falta, ofertas activas
+- **Tabla de DLCs** — Sorteable, filtrable por tier/fase/tipo/oferta, con imagenes y notas
+- **Marcar como comprado** — Click en el checkbox y se guarda al instante
+- **Bundles** — Cards visuales con DLCs agrupados por bundle y costo
+- **Simulador de descuento** — Desliza para ver cuanto costaria con X% de descuento
+- **Budget Planner** — "Tengo $500, que compro?" ordenado por prioridad
+- **Proximas ofertas** — Estimacion de costo en Summer/Autumn/Winter Sale
+- **Actualizar datos** — Boton que ejecuta el tracker y muestra progreso en vivo
+- **Config** — Cambia vanity/API keys desde la web
+
+### CLI
 
 ```bash
 python3 payday2_dlc_tracker.py --vanity TU_VANITY_URL
+python3 payday2_dlc_tracker.py --budget 500
+python3 payday2_dlc_tracker.py --itad-key TU_KEY  # minimos historicos
 ```
+
+Genera `PAYDAY2_Plan_de_Compra.md` y `.html` con el reporte completo.
 
 ## Caché
 
