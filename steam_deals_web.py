@@ -188,7 +188,7 @@ PAGE_HTML = r"""<!DOCTYPE html>
 <head>
 <meta charset="UTF-8">
 <meta name="viewport" content="width=device-width, initial-scale=1">
-<title>Steam Deals Generator</title>
+<title>Steam Tools</title>
 <style>
 :root {
   --bg: #1b2838; --bg2: #2a475e; --card: #16202d; --card-border: #2a475e;
@@ -354,16 +354,162 @@ details .details-body { padding-top: 0.75rem; }
 }
 .file-link:hover { background: var(--accent); color: #fff; text-decoration: none; border-color: var(--accent); }
 .hidden { display: none !important; }
+
+/* Wizard */
+.wizard-overlay { position: fixed; inset: 0; background: var(--bg); z-index: 1000; overflow-y: auto; }
+.wizard { max-width: 560px; margin: 0 auto; padding: 2rem 1rem 3rem; }
+.wizard h1 { font-size: 1.6rem; text-align: center; margin-bottom: 0.3rem; }
+.wizard .subtitle { text-align: center; color: var(--text2); font-size: 0.9rem; margin-bottom: 2rem; }
+.wizard .step { display: none; }
+.wizard .step.active { display: block; }
+.wizard .step-card { background: var(--card); border: 1px solid var(--card-border); border-radius: 10px; padding: 1.5rem; margin-bottom: 1rem; }
+.wizard .step-num { display: inline-block; background: var(--accent); color: #000; font-weight: 700; font-size: 0.8rem; padding: 0.15rem 0.6rem; border-radius: 10px; margin-bottom: 0.6rem; }
+.wizard .step-card h2 { font-size: 1.1rem; margin-bottom: 0.6rem; }
+.wizard .step-card p { font-size: 0.88rem; color: var(--text2); line-height: 1.6; margin-bottom: 0.8rem; }
+.wizard .step-card .example { background: var(--bg); border: 1px solid var(--card-border); border-radius: 6px; padding: 0.6rem 0.8rem; font-family: monospace; font-size: 0.85rem; color: var(--accent); margin: 0.5rem 0; word-break: break-all; }
+.wizard .step-card .tip { background: #1a2a1a; border: 1px solid #2a4a2a; border-radius: 6px; padding: 0.5rem 0.8rem; font-size: 0.82rem; color: var(--green); margin-top: 0.5rem; }
+.wizard .step-card .optional-tag { display: inline-block; background: var(--bg2); color: var(--text2); font-size: 0.7rem; padding: 0.1rem 0.4rem; border-radius: 4px; margin-left: 0.3rem; font-weight: 400; }
+.wizard .nav { display: flex; gap: 0.75rem; margin-top: 1rem; }
+.wizard .nav .btn { flex: 1; }
+.wizard .btn-secondary { background: var(--bg2); color: var(--text); border: 1px solid var(--card-border); }
+.wizard .btn-secondary:hover { border-color: var(--accent); }
+.wizard .dots { display: flex; justify-content: center; gap: 0.5rem; margin-bottom: 1.5rem; }
+.wizard .dot { width: 10px; height: 10px; border-radius: 50%; background: var(--bg2); border: 1px solid var(--card-border); transition: all 0.3s; }
+.wizard .dot.active { background: var(--accent); border-color: var(--accent); }
+.wizard .dot.done { background: var(--green); border-color: var(--green); }
 </style>
 </head>
 <body>
 
+<!-- ══ Setup Wizard ══ -->
+<div class="wizard-overlay" id="wizard-overlay">
+<div class="wizard">
+  <h1>&#127918; Steam Deals Generator</h1>
+  <p class="subtitle">Configura tu perfil en unos pasos</p>
+  <div class="dots">
+    <div class="dot active" id="dot-0"></div>
+    <div class="dot" id="dot-1"></div>
+    <div class="dot" id="dot-2"></div>
+    <div class="dot" id="dot-3"></div>
+  </div>
+
+  <!-- Step 0: Vanity URL -->
+  <div class="step active" id="wiz-step-0">
+    <div class="step-card">
+      <span class="step-num">Paso 1 de 4</span>
+      <h2>&#128100; Tu perfil de Steam</h2>
+      <p>Necesitamos tu <strong>Vanity URL</strong> o <strong>Steam ID</strong> para encontrar tu wishlist.</p>
+      <p>Lo encuentras en tu perfil de Steam &rarr; la parte final de la URL:</p>
+      <div class="example">https://steamcommunity.com/id/<strong>TU_VANITY_URL</strong>/</div>
+      <p>Tambien puede ser tu Steam ID (17 digitos):</p>
+      <div class="example">https://steamcommunity.com/profiles/<strong>76561198012345678</strong>/</div>
+      <div class="field" style="margin-top:1rem">
+        <label>Tu perfil de Steam</label>
+        <input type="text" id="wiz-vanity" placeholder="BG00G, Steam ID, o URL completa">
+      </div>
+      <div class="tip">&#128161; Si pegas la URL completa del perfil, se extrae automaticamente.</div>
+    </div>
+    <div class="nav">
+      <button class="btn btn-primary" onclick="wizNext()">Siguiente &#8594;</button>
+    </div>
+  </div>
+
+  <!-- Step 1: Steam API Key -->
+  <div class="step" id="wiz-step-1">
+    <div class="step-card">
+      <span class="step-num">Paso 2 de 4</span>
+      <h2>&#128273; Steam API Key <span class="optional-tag">opcional</span></h2>
+      <p>Con una API Key obtienes datos extra:</p>
+      <ul style="font-size:.88rem;color:var(--text2);margin:0.3rem 0 0.8rem 1.2rem;line-height:1.8">
+        <li>Ver juegos que ya tienes (para limpiar la wishlist)</li>
+        <li>Mejor deteccion de biblioteca familiar</li>
+      </ul>
+      <p><strong>Sin key tambien funciona</strong> &mdash; solo necesitas que tu wishlist sea publica.</p>
+      <p>Para obtenerla:</p>
+      <ol style="font-size:.85rem;color:var(--text2);margin:0.3rem 0 0.8rem 1.2rem;line-height:1.8">
+        <li>Ve a <a href="https://steamcommunity.com/dev/apikey" target="_blank">steamcommunity.com/dev/apikey</a></li>
+        <li>Pon cualquier nombre de dominio (ej: <code>localhost</code>)</li>
+        <li>Copia la key que te da</li>
+      </ol>
+      <div class="field">
+        <label>Steam API Key</label>
+        <div class="pw-wrap">
+          <input type="password" id="wiz-key" placeholder="Dejalo vacio si no tienes">
+          <button type="button" class="pw-toggle" onclick="togglePw(this)">&#128065;</button>
+        </div>
+      </div>
+    </div>
+    <div class="nav">
+      <button class="btn btn-secondary" onclick="wizPrev()">&#8592; Atras</button>
+      <button class="btn btn-primary" onclick="wizNext()">Siguiente &#8594;</button>
+    </div>
+  </div>
+
+  <!-- Step 2: ITAD Key -->
+  <div class="step" id="wiz-step-2">
+    <div class="step-card">
+      <span class="step-num">Paso 3 de 4</span>
+      <h2>&#128176; IsThereAnyDeal API Key <span class="optional-tag">opcional</span></h2>
+      <p>ITAD agrega datos de otras tiendas:</p>
+      <ul style="font-size:.88rem;color:var(--text2);margin:0.3rem 0 0.8rem 1.2rem;line-height:1.8">
+        <li><strong>Minimo historico</strong> &mdash; el precio mas bajo que ha tenido en Steam</li>
+        <li><strong>Precios multi-tienda</strong> &mdash; si otra tienda lo tiene mas barato ahora</li>
+        <li><strong>Bundles activos</strong> &mdash; si el juego esta en algun bundle</li>
+      </ul>
+      <p>Para obtenerla:</p>
+      <ol style="font-size:.85rem;color:var(--text2);margin:0.3rem 0 0.8rem 1.2rem;line-height:1.8">
+        <li>Crea cuenta en <a href="https://isthereanydeal.com/" target="_blank">isthereanydeal.com</a></li>
+        <li>Ve a <a href="https://isthereanydeal.com/dev/app/" target="_blank">isthereanydeal.com/dev/app/</a></li>
+        <li>Crea una app y copia la API key</li>
+      </ol>
+      <div class="field">
+        <label>ITAD API Key</label>
+        <div class="pw-wrap">
+          <input type="password" id="wiz-itad" placeholder="Dejalo vacio si no tienes">
+          <button type="button" class="pw-toggle" onclick="togglePw(this)">&#128065;</button>
+        </div>
+      </div>
+    </div>
+    <div class="nav">
+      <button class="btn btn-secondary" onclick="wizPrev()">&#8592; Atras</button>
+      <button class="btn btn-primary" onclick="wizNext()">Siguiente &#8594;</button>
+    </div>
+  </div>
+
+  <!-- Step 3: Confirm -->
+  <div class="step" id="wiz-step-3">
+    <div class="step-card">
+      <span class="step-num">Paso 4 de 4</span>
+      <h2>&#9989; Listo!</h2>
+      <p>Tu configuracion:</p>
+      <div style="background:var(--bg);border-radius:6px;padding:0.8rem;margin:0.8rem 0;font-size:0.88rem">
+        <div style="margin-bottom:0.3rem"><strong>Perfil:</strong> <span id="wiz-summary-vanity" style="color:var(--accent)"></span></div>
+        <div style="margin-bottom:0.3rem"><strong>Steam API Key:</strong> <span id="wiz-summary-key" style="color:var(--text2)"></span></div>
+        <div><strong>ITAD Key:</strong> <span id="wiz-summary-itad" style="color:var(--text2)"></span></div>
+      </div>
+      <p>Puedes cambiar esto cuando quieras desde el formulario principal.</p>
+      <div class="tip">&#128161; La configuracion se guarda automaticamente. No tendras que hacer esto de nuevo.</div>
+    </div>
+    <div class="nav">
+      <button class="btn btn-secondary" onclick="wizPrev()">&#8592; Atras</button>
+      <button class="btn btn-primary" onclick="wizFinish()">&#128640; Empezar</button>
+    </div>
+  </div>
+</div>
+</div>
+
 <div class="header">
-  <h1><span>&#127918;</span> Steam Deals <span>Generator</span></h1>
+  <h1><span>&#127918;</span> Steam <span>Tools</span></h1>
 </div>
 
 <div class="container">
-  <!-- Config form -->
+  <!-- Tab navigation -->
+  <div class="tabs" style="display:flex;gap:0;margin-bottom:1rem">
+    <button class="tab-btn active" id="tab-deals" onclick="switchTab('deals')" style="flex:1;padding:.7rem;border:1px solid var(--card-border);border-radius:8px 0 0 8px;background:var(--accent);color:#fff;font-weight:600;font-size:.95rem;cursor:pointer;transition:all .2s">&#128640; Steam Deals</button>
+    <button class="tab-btn" id="tab-pd2" onclick="switchTab('pd2')" style="flex:1;padding:.7rem;border:1px solid var(--card-border);border-left:none;border-radius:0 8px 8px 0;background:var(--card);color:var(--text2);font-weight:600;font-size:.95rem;cursor:pointer;transition:all .2s">&#127918; PAYDAY 2</button>
+  </div>
+
+  <!-- Shared config -->
   <div class="card">
     <h2>Cuenta de Steam</h2>
     <div class="field">
@@ -371,16 +517,26 @@ details .details-body { padding-top: 0.75rem; }
       <input type="text" id="vanity" placeholder="BG00G, Steam ID, o URL del perfil">
       <div class="hint">Vanity URL, Steam ID (17 digitos), o link completo del perfil</div>
     </div>
-    <div class="field">
-      <label>Steam API Key <span class="optional">(opcional)</span></label>
-      <div class="pw-wrap">
-        <input type="password" id="key" placeholder="Tu Steam API Key">
-        <button type="button" class="pw-toggle" onclick="togglePw(this)">&#128065;</button>
+    <div class="row">
+      <div class="field">
+        <label>Steam API Key <span class="optional">(opcional)</span></label>
+        <div class="pw-wrap">
+          <input type="password" id="key" placeholder="Tu Steam API Key">
+          <button type="button" class="pw-toggle" onclick="togglePw(this)">&#128065;</button>
+        </div>
       </div>
-      <div class="hint">Habilita juegos propios en wishlist. <a href="https://steamcommunity.com/dev/apikey" target="_blank">Obtener key</a></div>
+      <div class="field">
+        <label>ITAD API Key <span class="optional">(opcional)</span></label>
+        <div class="pw-wrap">
+          <input type="password" id="itad_key" placeholder="IsThereAnyDeal Key">
+          <button type="button" class="pw-toggle" onclick="togglePw(this)">&#128065;</button>
+        </div>
+      </div>
     </div>
   </div>
 
+  <!-- ═══ TAB: Steam Deals ═══ -->
+  <div id="panel-deals">
   <div class="card">
     <h2>Configuracion</h2>
     <div class="field">
@@ -416,14 +572,6 @@ details .details-body { padding-top: 0.75rem; }
     <details>
       <summary>Fuentes de datos</summary>
       <div class="details-body">
-        <div class="field">
-          <label>ITAD API Key <span class="optional">(opcional)</span></label>
-          <div class="pw-wrap">
-            <input type="password" id="itad_key" placeholder="IsThereAnyDeal API Key">
-            <button type="button" class="pw-toggle" onclick="togglePw(this)">&#128065;</button>
-          </div>
-          <div class="hint">Minimo historico, precios multi-tienda y bundles</div>
-        </div>
         <div class="field">
           <label>HLTB CSV <span class="optional">(opcional)</span></label>
           <input type="text" id="hltb" placeholder="~/hltb-export.csv">
@@ -527,34 +675,38 @@ details .details-body { padding-top: 0.75rem; }
     <div id="wl-list" style="margin-top:.75rem"></div>
   </div>
 
-  <!-- PAYDAY 2 DLC Tracker -->
+  </div><!-- /panel-deals -->
+
+  <!-- ═══ TAB: PAYDAY 2 ═══ -->
+  <div id="panel-pd2" style="display:none">
   <div class="card">
-    <details>
-      <summary>PAYDAY 2 DLC Tracker</summary>
-      <div class="details-body">
-        <div class="row">
-          <div class="field">
-            <label>Presupuesto MXN <span class="optional">(opcional)</span></label>
-            <input type="number" id="pd2_budget" min="0" placeholder="Sin limite">
-          </div>
-          <div class="field">
-            <label>Alerta de precio <span class="optional">(MXN)</span></label>
-            <input type="number" id="pd2_alert" min="0" placeholder="Sin alerta">
-          </div>
-        </div>
-        <div class="checks" style="margin-top:0.5rem">
-          <label><input type="checkbox" id="pd2_csv"> Generar CSV</label>
-          <label><input type="checkbox" id="pd2_no_cache"> Ignorar cache</label>
-        </div>
-        <div class="actions" style="margin-top:0.75rem">
-          <button class="btn btn-primary" id="btn-run-pd2" style="background:linear-gradient(135deg,#d4a84b,#b8922e)">&#127918; PAYDAY 2 Tracker</button>
+    <h2>&#127918; PAYDAY 2 DLC Tracker</h2>
+    <div class="row">
+      <div class="field">
+        <label>Presupuesto MXN <span class="optional">(opcional)</span></label>
+        <div class="range-wrap">
+          <input type="range" id="pd2_budget" min="0" max="5000" step="50" value="0" oninput="document.getElementById('pd2-bval').textContent=this.value>0?('$'+this.value):'Sin limite'">
+          <span class="range-val" id="pd2-bval">Sin limite</span>
         </div>
       </div>
-    </details>
+      <div class="field">
+        <label>Alerta de precio <span class="optional">(MXN)</span></label>
+        <input type="number" id="pd2_alert" min="0" placeholder="Alertar si DLC baja de este precio">
+      </div>
+    </div>
+    <div class="field">
+      <label>Directorio de salida</label>
+      <input type="text" id="pd2_output" placeholder="(mismo directorio del script)">
+    </div>
+    <div class="checks" style="margin-top:0.5rem">
+      <label><input type="checkbox" id="pd2_csv"> Generar CSV</label>
+      <label><input type="checkbox" id="pd2_no_cache"> Ignorar cache</label>
+    </div>
   </div>
+  </div><!-- /panel-pd2 -->
 
   <div class="actions" style="margin-bottom:1rem">
-    <button class="btn btn-primary" id="btn-run">&#128640; Ejecutar Deals</button>
+    <button class="btn btn-primary" id="btn-run">&#128640; Ejecutar</button>
     <button class="btn btn-danger" id="btn-stop" disabled>&#9209; Detener</button>
   </div>
 
@@ -628,8 +780,71 @@ function fillForm(cfg) {
   });
 }
 
+// ── Wizard ──
+let wizStep = 0;
+const WIZ_TOTAL = 4;
+
+function wizUpdateDots() {
+  for (let i = 0; i < WIZ_TOTAL; i++) {
+    const d = document.getElementById('dot-' + i);
+    d.className = 'dot' + (i === wizStep ? ' active' : i < wizStep ? ' done' : '');
+  }
+}
+
+function wizShowStep(n) {
+  for (let i = 0; i < WIZ_TOTAL; i++) {
+    document.getElementById('wiz-step-' + i).classList.toggle('active', i === n);
+  }
+  wizStep = n;
+  wizUpdateDots();
+  if (n === 3) {
+    // Update summary
+    document.getElementById('wiz-summary-vanity').textContent = document.getElementById('wiz-vanity').value.trim() || '(no configurado)';
+    document.getElementById('wiz-summary-key').textContent = document.getElementById('wiz-key').value.trim() ? 'Configurada' : 'No (modo publico)';
+    document.getElementById('wiz-summary-itad').textContent = document.getElementById('wiz-itad').value.trim() ? 'Configurada' : 'No';
+  }
+}
+
+function wizNext() {
+  if (wizStep === 0 && !document.getElementById('wiz-vanity').value.trim()) {
+    const inp = document.getElementById('wiz-vanity');
+    inp.style.borderColor = 'var(--red)';
+    inp.focus();
+    setTimeout(() => inp.style.borderColor = '', 2000);
+    return;
+  }
+  if (wizStep < WIZ_TOTAL - 1) wizShowStep(wizStep + 1);
+}
+
+function wizPrev() {
+  if (wizStep > 0) wizShowStep(wizStep - 1);
+}
+
+function wizFinish() {
+  const vanity = document.getElementById('wiz-vanity').value.trim();
+  const key = document.getElementById('wiz-key').value.trim();
+  const itad = document.getElementById('wiz-itad').value.trim();
+  // Fill main form
+  document.getElementById('vanity').value = vanity;
+  if (key) document.getElementById('key').value = key;
+  if (itad) document.getElementById('itad_key').value = itad;
+  // Save config
+  const cfg = {vanity};
+  if (key) cfg.key = key;
+  if (itad) cfg.itad_key = itad;
+  fetch('/api/config', {method:'POST', headers:{'Content-Type':'application/json'}, body:JSON.stringify(cfg)}).catch(() => {});
+  // Hide wizard
+  document.getElementById('wizard-overlay').style.display = 'none';
+}
+
 // ── Load config on startup ──
-fetch('/api/config').then(r => r.json()).then(fillForm).catch(() => {});
+fetch('/api/config').then(r => r.json()).then(cfg => {
+  fillForm(cfg);
+  // Hide wizard if config already has vanity
+  if (cfg && cfg.vanity) {
+    document.getElementById('wizard-overlay').style.display = 'none';
+  }
+}).catch(() => {});
 
 // ── Run ──
 const btnRun = $('btn-run');
@@ -916,12 +1131,23 @@ class Handler(BaseHTTPRequestHandler):
             self._serve_run_sse(pd2=True)
         elif path == "/api/stop":
             self._serve_stop()
+        elif path == "/api/config":
+            self._serve_config_save()
         elif path == "/api/watchlist":
             self._serve_watchlist_add()
         elif path == "/api/watchlist/delete":
             self._serve_watchlist_delete()
         else:
             self.send_error(404)
+
+    # ── Config save ──
+
+    def _serve_config_save(self):
+        body = self._read_body()
+        cfg = load_config()
+        cfg.update(body)
+        save_config(cfg)
+        self._send_json({"status": "saved"})
 
     # ── Watchlist CRUD ──
 
