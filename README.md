@@ -38,6 +38,8 @@ Analiza tu wishlist de Steam y genera reportes detallados con deals, comparacion
 
 ## Uso rápido
 
+> Nota: el flujo principal es el wizard web. El CLI sigue disponible como opción (con flags/config), y puedes usar `--interactive` si quieres prompts en terminal.
+
 ```bash
 # Básico (wishlist debe ser pública)
 python3 steam_deals_generator.py --vanity TU_VANITY_URL
@@ -176,7 +178,7 @@ Genera `PAYDAY2_Plan_de_Compra.md` y `.html` con el reporte completo.
 
 ## Caché
 
-Los datos se cachean en `~/.cache/steam_deals/` para evitar requests innecesarios:
+Los datos se cachean en `.cache/steam_deals/` (dentro del proyecto) para evitar requests innecesarios:
 
 | Dato | TTL |
 |------|-----|

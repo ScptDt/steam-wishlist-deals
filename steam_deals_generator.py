@@ -47,9 +47,27 @@ class C:
     RED  = "\033[31m"
     CYN  = "\033[36m"
 
-def _ok(msg):   return f"{C.GRN}✓{C.RST}  {msg}"
-def _warn(msg): return f"{C.YLW}⚠{C.RST}  {msg}"
-def _err(msg):  return f"{C.RED}✗{C.RST}  {msg}"
+def _safe_symbol(unicode_symbol: str, fallback: str) -> str:
+    enc = (sys.stdout.encoding or "utf-8")
+    try:
+        unicode_symbol.encode(enc)
+        return unicode_symbol
+    except Exception:
+        return fallback
+
+SYM_OK = _safe_symbol("✓", "OK")
+SYM_WARN = _safe_symbol("⚠", "!")
+SYM_ERR = _safe_symbol("✗", "X")
+SYM_TAG = _safe_symbol("🏷️", "[SALE]")
+SYM_TARGET = _safe_symbol("🎯", "[ALERT]")
+SYM_BUDGET = _safe_symbol("💰", "[BUDGET]")
+SYM_GIFT = _safe_symbol("🎁", "[GIFT]")
+BAR_FILL = _safe_symbol("█", "#")
+BAR_EMPTY = _safe_symbol("░", "-")
+
+def _ok(msg):   return f"{C.GRN}{SYM_OK}{C.RST}  {msg}"
+def _warn(msg): return f"{C.YLW}{SYM_WARN}{C.RST}  {msg}"
+def _err(msg):  return f"{C.RED}{SYM_ERR}{C.RST}  {msg}"
 def _dim(msg):  return f"{C.DIM}{msg}{C.RST}"
 def _bold(msg): return f"{C.BOLD}{msg}{C.RST}"
 
@@ -181,6 +199,9 @@ def check_watchlist_alerts(deals: list[dict], watchlist: list[dict]) -> list[dic
 
 def get_config():
     parser = argparse.ArgumentParser(description="Steam Wishlist Deals Generator")
+    parser.add_argument("--web-run", action="store_true", help=argparse.SUPPRESS)
+    parser.add_argument("--interactive", action="store_true",
+                        help="Habilita prompts en terminal para configurar valores faltantes")
     parser.add_argument("--key",         help="Steam API Key (opcional, habilita sección de juegos propios)")
     parser.add_argument("--vanity",      help="Vanity URL, Steam ID, o link de perfil de Steam")
     parser.add_argument("--hltb",        help="Ruta al CSV de HLTB")
@@ -223,18 +244,32 @@ def get_config():
         sys.exit(0)
 
     cfg = load_user_config()
+    local_cache_dir = Path(__file__).resolve().parent / ".cache" / "steam_deals"
+    has_local_cache = local_cache_dir.exists() and any(local_cache_dir.iterdir())
+    can_prompt = bool(
+        not args.web_run
+        and sys.stdin
+        and sys.stdin.isatty()
+        and (args.interactive or not has_local_cache)
+    )
     interactive_keys: list[str] = []
 
     def ask(prompt, default=None):
+        if not can_prompt:
+            return default or ""
         suffix = f" [{default}]" if default else ""
-        return input(f"  {prompt}{suffix}: ").strip()
+        try:
+            return input(f"  {prompt}{suffix}: ").strip()
+        except EOFError:
+            return default or ""
 
     def from_arg_cfg_or_ask(arg_val, cfg_key, prompt, default=None):
         if arg_val is not None:
             return arg_val
         if cfg.get(cfg_key) is not None:
             return cfg[cfg_key]
-        interactive_keys.append(cfg_key)
+        if can_prompt:
+            interactive_keys.append(cfg_key)
         raw = ask(prompt, default)
         return raw or default or ""
 
@@ -248,7 +283,8 @@ def get_config():
     elif cfg.get("hltb"):
         hltb = Path(cfg["hltb"]).expanduser()
     else:
-        interactive_keys.append("hltb")
+        if can_prompt:
+            interactive_keys.append("hltb")
         raw = ask("Ruta al CSV de HLTB (Enter para omitir)")
         hltb = Path(raw).expanduser() if raw else None
 
@@ -259,7 +295,8 @@ def get_config():
     elif cfg.get("output_dir"):
         output_dir = Path(cfg["output_dir"]).expanduser()
     else:
-        interactive_keys.append("output_dir")
+        if can_prompt:
+            interactive_keys.append("output_dir")
         raw = ask("Directorio de salida para los MD", script_dir)
         output_dir = Path(raw or script_dir).expanduser()
 
@@ -269,7 +306,8 @@ def get_config():
     elif cfg.get("discount") is not None:
         discount = cfg["discount"]
     else:
-        interactive_keys.append("discount")
+        if can_prompt:
+            interactive_keys.append("discount")
         raw = ask("Descuento mínimo %", "50")
         discount = int(raw) if raw else 50
 
@@ -279,7 +317,8 @@ def get_config():
     elif cfg.get("genres") is not None:
         genres = cfg["genres"]
     else:
-        interactive_keys.append("genres")
+        if can_prompt:
+            interactive_keys.append("genres")
         raw = ask("Géneros de interés (coma-separados, Enter para omitir)")
         genres = [g.strip().lower() for g in raw.split(",") if g.strip()]
 
@@ -297,7 +336,7 @@ def get_config():
     no_cache = args.no_cache
 
     # Ofrecer guardar config si se usó algún prompt
-    if interactive_keys:
+    if can_prompt and interactive_keys:
         raw = input("\n  ¿Guardar como configuración por defecto? [s/N]: ").strip().lower()
         if raw == "s":
             save_user_config({
@@ -331,7 +370,7 @@ def get_config():
         "schedule": args.schedule,
     }
 
-    return key, vanity, hltb, output_dir, discount, genres, no_cache, family_json, itad_key, filters
+    return args.web_run, args.interactive, key, vanity, hltb, output_dir, discount, genres, no_cache, family_json, itad_key, filters
 
 
 # ─────────────────────────────────────────────
@@ -861,7 +900,8 @@ def format_trend(trend: dict) -> str:
 # CACHÉ DE PRECIOS (smart partial refresh)
 # ─────────────────────────────────────────────
 
-CACHE_DIR       = Path.home() / ".cache" / "steam_deals"
+PROJECT_DIR     = Path(__file__).resolve().parent
+CACHE_DIR       = PROJECT_DIR / ".cache" / "steam_deals"
 CACHE_FILE      = CACHE_DIR / "prices_cache.json"
 CACHE_MAX_HOURS = 24
 REVIEWS_CACHE_FILE = CACHE_DIR / "reviews_cache.json"
@@ -985,7 +1025,7 @@ def get_deals_from_wishlist(
         for bi, batch in enumerate(batches):
             pct    = fetched_count / total
             filled = int(pct * BAR_W)
-            bar    = f"{C.GRN}{'█' * filled}{C.DIM}{'░' * (BAR_W - filled)}{C.RST}"
+            bar    = f"{C.GRN}{BAR_FILL * filled}{C.DIM}{BAR_EMPTY * (BAR_W - filled)}{C.RST}"
             if fetched_count > 0:
                 eta_sec = (time.monotonic() - start) / fetched_count * (total - fetched_count)
                 eta_str = f"{eta_sec / 60:.1f}m"
@@ -1326,7 +1366,7 @@ def _fetch_parallel(items: list[str], fetch_fn, label: str,
             completed[0] += 1
             pct = completed[0] / total
             filled = int(pct * BAR_W)
-            bar = f"{C.GRN}{'█' * filled}{C.DIM}{'░' * (BAR_W - filled)}{C.RST}"
+            bar = f"{C.GRN}{BAR_FILL * filled}{C.DIM}{BAR_EMPTY * (BAR_W - filled)}{C.RST}"
             elapsed = time.monotonic() - start
             if completed[0] > 1:
                 eta_sec = elapsed / completed[0] * (total - completed[0])
@@ -1634,7 +1674,7 @@ def fetch_tags(appids: list[str], cached: dict, rate_limit: float = 1.1) -> dict
     for i, appid in enumerate(to_fetch):
         pct = i / total
         filled = int(pct * BAR_W)
-        bar = f"{C.GRN}{'█' * filled}{C.DIM}{'░' * (BAR_W - filled)}{C.RST}"
+        bar = f"{C.GRN}{BAR_FILL * filled}{C.DIM}{BAR_EMPTY * (BAR_W - filled)}{C.RST}"
         if i > 0:
             eta_sec = (time.monotonic() - start) / i * (total - i)
             eta_str = f"{eta_sec / 60:.1f}m"
@@ -3408,7 +3448,10 @@ def main():
 
     print(f"{C.BOLD}=== Steam Wishlist Deals Generator ==={C.RST}\n")
 
-    KEY, VANITY, HLTB_CSV, OUTPUT_DIR, MIN_DISCOUNT, genres, no_cache, FAMILY_JSON, ITAD_KEY, FILTERS = get_config()
+    WEB_RUN, INTERACTIVE, KEY, VANITY, HLTB_CSV, OUTPUT_DIR, MIN_DISCOUNT, genres, no_cache, FAMILY_JSON, ITAD_KEY, FILTERS = get_config()
+    if not WEB_RUN and not INTERACTIVE:
+        print(f"  {_dim('Flujo recomendado: wizard web (python3 steam_deals_web.py).')}" )
+        print(f"  {_dim('CLI disponible con flags/config, o modo interactivo con --interactive.')}\n")
     RATE_LIMIT = 1.5
     t0 = time.monotonic()
 
@@ -3470,7 +3513,7 @@ def main():
     step("Detectando oferta activa de Steam...")
     sale_name = get_active_sale()
     if sale_name:
-        print(f"  {_ok(f'🏷️  {sale_name}')}")
+        print(f"  {_ok(f'{SYM_TAG}  {sale_name}')}")
     else:
         print(f"  {_dim('Sin oferta especial detectada')}")
 
@@ -3737,7 +3780,7 @@ def main():
     if watchlist:
         watchlist_alerts = check_watchlist_alerts(deals, watchlist)
         if watchlist_alerts:
-            print(f"  {_ok(f'🎯 {len(watchlist_alerts)} watchlist alerts!')}")
+            print(f"  {_ok(f'{SYM_TARGET} {len(watchlist_alerts)} watchlist alerts!')}")
             for wa in watchlist_alerts:
                 print(f"    {wa['name']} — {wa['price_final']} (objetivo: ${wa['target_price']:.0f})")
 
@@ -3745,13 +3788,13 @@ def main():
     budget_result = None
     if FILTERS.get("budget"):
         budget_result = compute_budget_picks(deals, FILTERS["budget"], top_picks, watchlist_alerts)
-        print(f"  {_ok(f'💰 Budget ${FILTERS['budget']:.0f}: {budget_result['games_count']} juegos, ${budget_result['total_spent']:.0f} gastados')}")
+        print(f"  {_ok(f'{SYM_BUDGET} Budget ${FILTERS['budget']:.0f}: {budget_result['games_count']} juegos, ${budget_result['total_spent']:.0f} gastados')}")
 
     # Gift ideas (compare wishlists)
     if compare_data:
         gift_ideas = build_gift_ideas(compare_data["friend_set"], deals, owned)
         if gift_ideas:
-            print(f"  {_ok(f'🎁 {len(gift_ideas)} gift ideas en oferta')}")
+            print(f"  {_ok(f'{SYM_GIFT} {len(gift_ideas)} gift ideas en oferta')}")
 
     # Generar MD
     step("Generando Markdown...")

@@ -392,7 +392,8 @@ UPCOMING_SALES = [
 # CACHE
 # ─────────────────────────────────────────────
 
-PD2_CACHE_DIR = Path.home() / ".cache" / "steam_deals" / "payday2"
+PROJECT_DIR = Path(__file__).resolve().parent
+PD2_CACHE_DIR = PROJECT_DIR / ".cache" / "steam_deals" / "payday2"
 DLC_LIST_CACHE = PD2_CACHE_DIR / "dlc_list.json"
 DLC_MAPPING_CACHE = PD2_CACHE_DIR / "dlc_mapping.json"
 PRICES_CACHE = PD2_CACHE_DIR / "prices.json"

@@ -26,6 +26,7 @@ _running_proc = None
 _proc_lock = threading.Lock()
 
 WATCHLIST_FILE = Path.home() / ".config" / "steam_deals_watchlist.json"
+LOCAL_CACHE_DIR = SCRIPT_PATH.parent / ".cache" / "steam_deals"
 
 # ─── Config I/O ──────────────────────────────────
 
@@ -55,6 +56,13 @@ def load_watchlist() -> list:
 def save_watchlist(items: list) -> None:
     WATCHLIST_FILE.parent.mkdir(parents=True, exist_ok=True)
     WATCHLIST_FILE.write_text(json.dumps(items, ensure_ascii=False, indent=2), encoding="utf-8")
+
+
+def has_local_cache() -> bool:
+  try:
+    return LOCAL_CACHE_DIR.exists() and any(LOCAL_CACHE_DIR.iterdir())
+  except OSError:
+    return False
 
 
 # ─── ANSI helpers ────────────────────────────────
@@ -103,7 +111,7 @@ def detect_file_path(text: str) -> str | None:
 # ─── Build CLI command ───────────────────────────
 
 def build_command(config: dict, filters: dict) -> list[str]:
-    cmd = [sys.executable, str(SCRIPT_PATH)]
+    cmd = [sys.executable, str(SCRIPT_PATH), "--web-run"]
     if config.get("vanity"):
         cmd += ["--vanity", config["vanity"]]
     if config.get("key"):
@@ -356,7 +364,7 @@ details .details-body { padding-top: 0.75rem; }
 .hidden { display: none !important; }
 
 /* Wizard */
-.wizard-overlay { position: fixed; inset: 0; background: var(--bg); z-index: 1000; overflow-y: auto; }
+.wizard-overlay { display: none; position: fixed; inset: 0; background: var(--bg); z-index: 1000; overflow-y: auto; }
 .wizard { max-width: 560px; margin: 0 auto; padding: 2rem 1rem 3rem; }
 .wizard h1 { font-size: 1.6rem; text-align: center; margin-bottom: 0.3rem; }
 .wizard .subtitle { text-align: center; color: var(--text2); font-size: 0.9rem; margin-bottom: 2rem; }
@@ -511,7 +519,12 @@ details .details-body { padding-top: 0.75rem; }
 
   <!-- Shared config -->
   <div class="card">
-    <h2>Cuenta de Steam</h2>
+      <h2 style="display:flex;align-items:center;justify-content:space-between;gap:.6rem">
+        <span>Cuenta de Steam</span>
+        <button type="button" class="btn" onclick="openWizard()" style="padding:.35rem .75rem;font-size:.8rem;background:var(--bg2);color:var(--text);border:1px solid var(--card-border)">
+          Abrir wizard
+        </button>
+      </h2>
     <div class="field">
       <label>Perfil de Steam</label>
       <input type="text" id="vanity" placeholder="BG00G, Steam ID, o URL del perfil">
@@ -833,18 +846,46 @@ function wizFinish() {
   if (key) cfg.key = key;
   if (itad) cfg.itad_key = itad;
   fetch('/api/config', {method:'POST', headers:{'Content-Type':'application/json'}, body:JSON.stringify(cfg)}).catch(() => {});
-  // Hide wizard
+  closeWizard();
+}
+
+function prefillWizard(cfg) {
+  if (!cfg) return;
+  if (cfg.vanity) document.getElementById('wiz-vanity').value = cfg.vanity;
+  if (cfg.key) document.getElementById('wiz-key').value = cfg.key;
+  if (cfg.itad_key) document.getElementById('wiz-itad').value = cfg.itad_key;
+}
+
+function openWizard() {
+  prefillWizard(getConfig());
+  wizShowStep(0);
+  document.getElementById('wizard-overlay').style.display = 'block';
+}
+
+function closeWizard() {
   document.getElementById('wizard-overlay').style.display = 'none';
 }
 
 // ── Load config on startup ──
-fetch('/api/config').then(r => r.json()).then(cfg => {
+Promise.all([
+  fetch('/api/config').then(r => r.json()),
+  fetch('/api/ui-state').then(r => r.json()),
+]).then(([cfg, state]) => {
   fillForm(cfg);
-  // Hide wizard if config already has vanity
-  if (cfg && cfg.vanity) {
-    document.getElementById('wizard-overlay').style.display = 'none';
+  prefillWizard(cfg);
+  if (state && state.has_cache) {
+    closeWizard();
+  } else {
+    openWizard();
   }
-}).catch(() => {});
+}).catch(() => {
+  fetch('/api/config').then(r => r.json()).then(cfg => {
+    fillForm(cfg);
+    prefillWizard(cfg);
+    if (cfg && cfg.vanity) closeWizard();
+    else openWizard();
+  }).catch(() => {});
+});
 
 // ── Run ──
 const btnRun = $('btn-run');
@@ -1107,19 +1148,24 @@ class Handler(BaseHTTPRequestHandler):
     # ── GET routes ──
 
     def do_GET(self):
-        path = urllib.parse.urlparse(self.path).path
-        if path == "/":
-            self._send_html(PAGE_HTML)
-        elif path == "/api/config":
-            self._send_json(load_config())
-        elif path == "/api/watchlist":
-            self._send_json(load_watchlist())
-        elif path == "/api/files":
-            self._serve_files_list()
-        elif path.startswith("/files/"):
-            self._serve_file(path[7:])
-        else:
-            self.send_error(404)
+      path = urllib.parse.urlparse(self.path).path
+      if path == "/":
+        self._send_html(PAGE_HTML)
+      elif path == "/api/config":
+        self._send_json(load_config())
+      elif path == "/api/ui-state":
+        self._send_json({
+          "has_cache": has_local_cache(),
+          "has_config": bool(load_config().get("vanity")),
+        })
+      elif path == "/api/watchlist":
+        self._send_json(load_watchlist())
+      elif path == "/api/files":
+        self._serve_files_list()
+      elif path.startswith("/files/"):
+        self._serve_file(path[7:])
+      else:
+        self.send_error(404)
 
     # ── POST routes ──
 
@@ -1252,10 +1298,15 @@ class Handler(BaseHTTPRequestHandler):
         cmd = build_pd2_command(config, filters) if pd2 else build_command(config, filters)
 
         # Start subprocess
-        env = {**os.environ, "PYTHONUNBUFFERED": "1"}
+        env = {
+          **os.environ,
+          "PYTHONUNBUFFERED": "1",
+          "PYTHONIOENCODING": "utf-8",
+          "PYTHONUTF8": "1",
+        }
         proc = subprocess.Popen(
             cmd, stdout=subprocess.PIPE, stderr=subprocess.STDOUT,
-            stdin=subprocess.DEVNULL, env=env, text=True, bufsize=1,
+          stdin=subprocess.DEVNULL, env=env, text=True, encoding="utf-8", errors="replace", bufsize=1,
         )
         with _proc_lock:
             _running_proc = proc

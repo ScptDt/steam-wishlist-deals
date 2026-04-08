@@ -90,7 +90,7 @@ El CSV tiene columnas relevantes:
 
 ## 2. Sistema de caché
 
-Los precios se guardan en `~/.cache/steam_deals/prices_cache.json`.
+Los precios se guardan en `.cache/steam_deals/prices_cache.json` (dentro del proyecto).
 
 - **Expiración**: 24 horas
 - **Smart refresh**: solo fetchea appids nuevos que no estén en caché
