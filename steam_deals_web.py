@@ -186,6 +186,8 @@ def build_pd2_command(config: dict, filters: dict) -> list[str]:
         cmd += ["--alert-price", str(filters["alert_price"])]
     if filters.get("csv"):
         cmd.append("--csv")
+    if filters.get("min_deal"):
+        cmd += ["--min-deal", str(filters["min_deal"])]
     return cmd
 
 
@@ -431,8 +433,9 @@ details .details-body { padding-top: 0.75rem; }
       <ul style="font-size:.88rem;color:var(--text2);margin:0.3rem 0 0.8rem 1.2rem;line-height:1.8">
         <li>Ver juegos que ya tienes (para limpiar la wishlist)</li>
         <li>Mejor deteccion de biblioteca familiar</li>
+        <li>Nota: la API de Steam no detecta DLCs poseidos, solo juegos</li>
       </ul>
-      <p><strong>Sin key tambien funciona</strong> &mdash; solo necesitas que tu wishlist sea publica.</p>
+      <p><strong>Sin key tambien funciona</strong> para wishlist &mdash; solo necesitas que sea publica.</p>
       <p>Para obtenerla:</p>
       <ol style="font-size:.85rem;color:var(--text2);margin:0.3rem 0 0.8rem 1.2rem;line-height:1.8">
         <li>Ve a <a href="https://steamcommunity.com/dev/apikey" target="_blank">steamcommunity.com/dev/apikey</a></li>
@@ -537,6 +540,7 @@ details .details-body { padding-top: 0.75rem; }
           <input type="password" id="key" placeholder="Tu Steam API Key">
           <button type="button" class="pw-toggle" onclick="togglePw(this)">&#128065;</button>
         </div>
+        <div style="font-size:.72rem;color:var(--text2);margin-top:.3rem">Obtenla en <a href="https://steamcommunity.com/dev/apikey" target="_blank">steamcommunity.com/dev/apikey</a> — habilita juegos propios y biblioteca familiar</div>
       </div>
       <div class="field">
         <label>ITAD API Key <span class="optional">(opcional)</span></label>
@@ -707,9 +711,15 @@ details .details-body { padding-top: 0.75rem; }
         <input type="number" id="pd2_alert" min="0" placeholder="Alertar si DLC baja de este precio">
       </div>
     </div>
-    <div class="field">
-      <label>Directorio de salida</label>
-      <input type="text" id="pd2_output" placeholder="(mismo directorio del script)">
+    <div class="row">
+      <div class="field">
+        <label>Min. descuento para recomendar <span class="optional">(%)</span></label>
+        <input type="number" id="pd2_min_deal" min="0" max="100" value="50" placeholder="50">
+      </div>
+      <div class="field">
+        <label>Directorio de salida</label>
+        <input type="text" id="pd2_output" placeholder="(mismo directorio del script)">
+      </div>
     </div>
     <div class="checks" style="margin-top:0.5rem">
       <label><input type="checkbox" id="pd2_csv"> Generar CSV</label>
@@ -1003,6 +1013,7 @@ $('btn-run-pd2').addEventListener('click', async () => {
           csv: $('pd2_csv').checked,
           budget: $('pd2_budget').value ? parseFloat($('pd2_budget').value) : null,
           alert_price: $('pd2_alert').value ? parseFloat($('pd2_alert').value) : null,
+          min_deal: $('pd2_min_deal').value ? parseInt($('pd2_min_deal').value) : null,
         }
       }),
       signal: abortCtrl.signal,

@@ -44,8 +44,7 @@ _store = {
     "prices": {},
     "sale_name": "",
     "recommendations": {},
-    "phase_costs": {},
-    "bundles_data": {},
+    "bundles": [],
     "history_data": {},
     "comparison": {},
     "itad_lows": {},
@@ -77,9 +76,6 @@ def load_from_cache():
     mapping_cache, _ = pd2._load_cache(pd2.DLC_MAPPING_CACHE)
     dlc_names = mapping_cache.get("names", {})
 
-    # Match to DB
-    db_mapping = pd2.match_dlc_names_to_db(dlc_names)
-
     # Owned from cache
     owned = set(str(a) for a in owned_cache.get("appids", [])) if steam_id else set()
 
@@ -87,44 +83,29 @@ def load_from_cache():
     prices_cache, _ = pd2._load_cache(pd2.PRICES_CACHE)
     prices = prices_cache.get("prices", {})
 
-    # Build merged DLC data
+    # Build merged DLC data (no curated DB — just prices + names)
     all_dlcs = {}
     for appid in pd2_dlc_appids:
         d = {}
-        if appid in db_mapping:
-            d = dict(db_mapping[appid])
         if appid in prices:
             d.update(prices[appid])
         if appid in dlc_names:
-            d.setdefault("steam_name", dlc_names[appid])
+            d["steam_name"] = pd2._strip_prefix(dlc_names[appid])
         d.setdefault("appid", appid)
         all_dlcs[appid] = d
 
     # Compute derived data
     missing_appids = [a for a in pd2_dlc_appids if a not in owned]
     missing_list = [all_dlcs[a] for a in missing_appids if a in all_dlcs]
-    recommendations = pd2.compute_recommendations(missing_list, None, None)
-    phase_costs = pd2.compute_phase_costs(missing_list)
+    cfg = pd2.load_user_config()
+    min_deal = cfg.get("payday2_min_deal", 50)
+    recommendations = pd2.compute_recommendations(missing_list, None, None, min_deal)
 
-    # ITAD lows from last run (stored in price history context)
-    # We don't cache ITAD separately, so leave empty unless refresh
     itad_lows = {}
 
-    # Bundle data
-    bundles_data = {}
-    for bname, binfo in pd2.BUNDLES.items():
-        bdlcs = []
-        for db_key in binfo["dlcs"]:
-            for a, d in all_dlcs.items():
-                if d.get("db_name") == db_key and a not in owned:
-                    bdlcs.append({"id": a, "name": d.get("steam_name", db_key), "price": d.get("price_raw", 0)})
-                    break
-        if bdlcs:
-            bundles_data[bname] = {
-                "phase": binfo["phase"],
-                "dlcs": bdlcs,
-                "cost": sum(x["price"] for x in bdlcs),
-            }
+    # Bundles from cache
+    bundles_cache, _ = pd2._load_cache(pd2.BUNDLES_CACHE)
+    bundles = bundles_cache.get("bundles", [])
 
     # Price history sparklines
     history = pd2.load_price_history()
@@ -156,11 +137,10 @@ def load_from_cache():
             "prices": prices,
             "sale_name": "",
             "recommendations": recommendations,
-            "phase_costs": phase_costs,
-            "bundles_data": bundles_data,
             "history_data": history_data,
             "comparison": comparison,
             "itad_lows": itad_lows,
+            "bundles": bundles,
         })
 
 
@@ -173,7 +153,6 @@ def get_data_json() -> dict:
         owned = s["owned"]
         prices = s["prices"]
         itad_lows = s["itad_lows"]
-        bundles_data = s["bundles_data"]
         history_data = s["history_data"]
         recommendations = s["recommendations"]
         comparison = s["comparison"]
@@ -185,28 +164,22 @@ def get_data_json() -> dict:
         cost_curr = sum(d.get("price_raw", 0) for a, d in all_dlcs.items() if a not in owned) / 100
         on_sale = sum(1 for a, d in all_dlcs.items() if a not in owned and d.get("discount", 0) > 0)
 
-        # Build DLC list for table
+        # Build DLC list sorted by discount desc
         dlc_list = []
         for d in sorted(
-            [d for a, d in all_dlcs.items() if a not in owned and d.get("tier")],
-            key=lambda d: (pd2.TIER_ORDER.get(d.get("tier", "C"), 9), d.get("priority", 99)),
+            [d for a, d in all_dlcs.items() if a not in owned and d.get("steam_name")],
+            key=lambda d: (-d.get("discount", 0), d.get("price_raw", 0)),
         ):
             appid = d.get("appid", "")
             low = itad_lows.get(appid)
             dlc_list.append({
                 "id": appid,
-                "name": d.get("steam_name", d.get("db_name", "?")),
-                "tier": d.get("tier", "C"),
-                "type": d.get("type", "?"),
+                "name": d.get("steam_name", "?"),
                 "price": d.get("price_raw", 0),
                 "orig": d.get("orig_raw", 0),
                 "priceFmt": d.get("price_fmt", "?"),
                 "origFmt": d.get("orig_fmt", "?"),
                 "discount": d.get("discount", 0),
-                "bundle": d.get("bundle") or "",
-                "phase": d.get("phase", 0),
-                "priority": d.get("priority", 99),
-                "notes": d.get("notes", ""),
                 "low": low["price"] if low else None,
                 "lowDate": low["date"] if low else None,
             })
@@ -218,9 +191,7 @@ def get_data_json() -> dict:
                 d = all_dlcs[a]
                 owned_list.append({
                     "id": a,
-                    "name": d.get("steam_name", d.get("db_name", a)),
-                    "tier": d.get("tier", ""),
-                    "type": d.get("type", ""),
+                    "name": d.get("steam_name", a),
                 })
 
         # Recommendation data
@@ -232,7 +203,6 @@ def get_data_json() -> dict:
                 "name": d.get("steam_name", "?"),
                 "discount": d.get("discount", 0),
                 "priceFmt": d.get("price_fmt", "?"),
-                "tier": d.get("tier", ""),
             })
 
         # Comparison
@@ -260,7 +230,6 @@ def get_data_json() -> dict:
             "saleName": s["sale_name"],
             "dlcs": dlc_list,
             "owned": owned_list,
-            "bundles": bundles_data,
             "history": history_data,
             "buyNow": buy_now,
             "onSaleSavings": round(rec.get("on_sale_savings", 0)),
@@ -269,6 +238,11 @@ def get_data_json() -> dict:
                 {"event": sl["event"], "date": sl["date"], "discount": sl["discount"],
                  "est": round(cost_orig * (1 - sl["discount"] / 100))}
                 for sl in pd2.UPCOMING_SALES
+            ],
+            "bundles": [
+                {"name": b["name"], "id": b["bundle_id"],
+                 "dlcAppids": b["dlc_appids"], "count": len(b["dlc_appids"])}
+                for b in s.get("bundles", [])
             ],
         }
 
@@ -288,22 +262,9 @@ def toggle_owned(appid: str) -> dict:
         # Recompute derived data
         missing_appids = [a for a in _store["pd2_dlc_appids"] if a not in owned]
         missing_list = [_store["all_dlcs"][a] for a in missing_appids if a in _store["all_dlcs"]]
-        _store["recommendations"] = pd2.compute_recommendations(missing_list, None, None)
-        _store["phase_costs"] = pd2.compute_phase_costs(missing_list)
-
-        # Update bundle data
-        all_dlcs = _store["all_dlcs"]
-        bundles_data = {}
-        for bname, binfo in pd2.BUNDLES.items():
-            bdlcs = []
-            for db_key in binfo["dlcs"]:
-                for a, d in all_dlcs.items():
-                    if d.get("db_name") == db_key and a not in owned:
-                        bdlcs.append({"id": a, "name": d.get("steam_name", db_key), "price": d.get("price_raw", 0)})
-                        break
-            if bdlcs:
-                bundles_data[bname] = {"phase": binfo["phase"], "dlcs": bdlcs, "cost": sum(x["price"] for x in bdlcs)}
-        _store["bundles_data"] = bundles_data
+        cfg = pd2.load_user_config()
+        min_deal = cfg.get("payday2_min_deal", 50)
+        _store["recommendations"] = pd2.compute_recommendations(missing_list, None, None, min_deal)
 
         # Persist
         steam_id = _store["steam_id"]
@@ -312,6 +273,68 @@ def toggle_owned(appid: str) -> dict:
         pd2.save_owned(steam_id, owned)
 
     return {"appid": appid, "owned": now_owned}
+
+
+def mark_bundle_owned(bundle_id: str) -> dict:
+    """Mark all DLCs in a bundle as owned. Returns list of marked appids."""
+    with _store_lock:
+        bundles = _store.get("bundles", [])
+        bundle = next((b for b in bundles if b["bundle_id"] == bundle_id), None)
+        if not bundle:
+            return {"error": "Bundle not found", "marked": []}
+
+        owned = _store["owned"]
+        marked = []
+        for appid in bundle["dlc_appids"]:
+            if appid not in owned:
+                owned.add(appid)
+                marked.append(appid)
+        _store["owned"] = owned
+
+        # Recompute
+        missing_appids = [a for a in _store["pd2_dlc_appids"] if a not in owned]
+        missing_list = [_store["all_dlcs"][a] for a in missing_appids if a in _store["all_dlcs"]]
+        cfg = pd2.load_user_config()
+        min_deal = cfg.get("payday2_min_deal", 50)
+        _store["recommendations"] = pd2.compute_recommendations(missing_list, None, None, min_deal)
+
+        steam_id = _store["steam_id"]
+
+    if steam_id:
+        pd2.save_owned(steam_id, owned)
+
+    return {"bundle_id": bundle_id, "marked": marked, "total_marked": len(marked)}
+
+
+def unmark_bundle_owned(bundle_id: str) -> dict:
+    """Unmark all DLCs in a bundle. Returns list of unmarked appids."""
+    with _store_lock:
+        bundles = _store.get("bundles", [])
+        bundle = next((b for b in bundles if b["bundle_id"] == bundle_id), None)
+        if not bundle:
+            return {"error": "Bundle not found", "unmarked": []}
+
+        owned = _store["owned"]
+        unmarked = []
+        for appid in bundle["dlc_appids"]:
+            if appid in owned:
+                owned.discard(appid)
+                unmarked.append(appid)
+        _store["owned"] = owned
+
+        # Recompute
+        missing_appids = [a for a in _store["pd2_dlc_appids"] if a not in owned]
+        missing_list = [_store["all_dlcs"][a] for a in missing_appids if a in _store["all_dlcs"]]
+        cfg = pd2.load_user_config()
+        min_deal = cfg.get("payday2_min_deal", 50)
+        _store["recommendations"] = pd2.compute_recommendations(missing_list, None, None, min_deal)
+
+        steam_id = _store["steam_id"]
+
+    if steam_id:
+        pd2.save_owned(steam_id, owned)
+
+    return {"bundle_id": bundle_id, "unmarked": unmarked, "total_unmarked": len(unmarked)}
 
 
 # ─── HTTP Handler ─────────────────────────────────
@@ -360,6 +383,18 @@ class Handler(BaseHTTPRequestHandler):
                 self._json({"error": "appid required"}, 400)
                 return
             result = toggle_owned(appid)
+            self._json(result)
+        elif path == "/api/toggle-bundle":
+            body = self._body()
+            bundle_id = body.get("bundle_id", "").strip()
+            action = body.get("action", "mark")
+            if not bundle_id:
+                self._json({"error": "bundle_id required"}, 400)
+                return
+            if action == "unmark":
+                result = unmark_bundle_owned(bundle_id)
+            else:
+                result = mark_bundle_owned(bundle_id)
             self._json(result)
         elif path == "/api/refresh":
             self._serve_refresh()
@@ -677,6 +712,14 @@ tr.owned-row td { text-decoration: line-through; }
 
 /* Footer */
 .footer { text-align: center; color: var(--text2); font-size: .7rem; padding: 2rem 0 1rem; }
+.bcard { background: var(--card); border: 1px solid var(--border); border-radius: 8px; padding: .8rem; display: flex; align-items: center; gap: .8rem; transition: border-color .2s; }
+.bcard:hover { border-color: var(--accent); }
+.bcard .bcard-info { flex: 1; }
+.bcard .bcard-name { font-weight: 600; font-size: .9rem; }
+.bcard .bcard-meta { font-size: .72rem; color: var(--text2); margin-top: .15rem; }
+.bcard .bcard-btn { background: var(--accent); color: #1b2838; border: none; padding: .4rem .8rem; border-radius: 4px; font-weight: 600; font-size: .8rem; cursor: pointer; white-space: nowrap; }
+.bcard .bcard-btn:hover { opacity: .85; }
+.bcard .bcard-btn.done { background: var(--green); cursor: default; }
 
 /* Responsive */
 @media (max-width: 700px) {
@@ -720,8 +763,9 @@ tr.owned-row td { text-decoration: line-through; }
         <input type="text" id="setup-vanity" placeholder="BG00G">
       </div>
       <div class="settings-field" style="margin-bottom:.75rem">
-        <label>Steam API Key (opcional)</label>
-        <input type="text" id="setup-key" placeholder="Para detectar DLCs que ya tienes">
+        <label>Steam API Key <span style="color:var(--text2);font-size:.75rem">(opcional — no detecta DLCs, solo juegos)</span></label>
+        <input type="text" id="setup-key" placeholder="Tu Steam API Key (opcional)">
+        <div style="font-size:.72rem;color:var(--text2);margin-top:.3rem">Nota: la API de Steam no permite detectar DLCs poseidos. Usa los checkboxes en la tabla para marcarlos manualmente.</div>
       </div>
       <button class="btn-refresh" onclick="quickSetup()" style="width:100%;justify-content:center">
         <span class="refresh-icon">&#128640;</span> Configurar y cargar datos
@@ -768,7 +812,6 @@ tr.owned-row td { text-decoration: line-through; }
     <!-- Main tabs -->
     <div class="tabs">
       <div class="tab active" onclick="switchTab('dlcs')">&#128203; DLCs Faltantes</div>
-      <div class="tab" onclick="switchTab('bundles')">&#128230; Bundles</div>
       <div class="tab" onclick="switchTab('tools')">&#128295; Herramientas</div>
       <div class="tab" onclick="switchTab('owned')">&#9989; Comprados</div>
       <div class="tab" onclick="switchTab('settings')">&#9881; Config</div>
@@ -778,9 +821,6 @@ tr.owned-row td { text-decoration: line-through; }
     <div class="tab-panel active" id="panel-dlcs">
       <div class="card">
         <div class="filters">
-          <select id="f-tier" onchange="renderTable()"><option value="">Tier</option><option value="S">S</option><option value="A">A</option><option value="B">B</option><option value="C">C</option></select>
-          <select id="f-phase" onchange="renderTable()"><option value="">Fase</option><option value="1">1</option><option value="2">2</option><option value="3">3</option><option value="4">4</option></select>
-          <select id="f-type" onchange="renderTable()"><option value="">Tipo</option><option value="heist">Heist</option><option value="armas">Armas</option><option value="cosm&#233;tico">Cosm.</option><option value="m&#250;sica">Musica</option></select>
           <select id="f-sale" onchange="renderTable()"><option value="">Oferta</option><option value="y">En oferta</option><option value="n">Precio normal</option></select>
           <input type="text" id="f-q" placeholder="&#128269; Buscar DLC..." oninput="renderTable()" style="min-width:140px">
           <span class="fcount" id="f-count"></span>
@@ -789,14 +829,10 @@ tr.owned-row td { text-decoration: line-through; }
           <table>
             <thead><tr>
               <th style="width:28px" title="Marcar como comprado">&#9745;</th>
-              <th onclick="doSort('tier')">Tier <span class="sort-arrow" id="sa-tier"></span></th>
               <th onclick="doSort('name')">DLC <span class="sort-arrow" id="sa-name"></span></th>
-              <th onclick="doSort('type')">Tipo <span class="sort-arrow" id="sa-type"></span></th>
               <th onclick="doSort('price')">Precio <span class="sort-arrow" id="sa-price"></span></th>
               <th onclick="doSort('discount')">Oferta <span class="sort-arrow" id="sa-discount"></span></th>
               <th>Hist.</th>
-              <th onclick="doSort('bundle')">Bundle <span class="sort-arrow" id="sa-bundle"></span></th>
-              <th onclick="doSort('phase')">Fase <span class="sort-arrow" id="sa-phase"></span></th>
             </tr></thead>
             <tbody id="tbody"></tbody>
           </table>
@@ -804,12 +840,10 @@ tr.owned-row td { text-decoration: line-through; }
       </div>
     </div>
 
-    <!-- Tab: Bundles -->
-    <div class="tab-panel" id="panel-bundles">
-      <div class="card">
-        <h2>&#128230; Bundles por Fase</h2>
-        <div class="bundles-grid" id="bundles-grid"></div>
-      </div>
+    <!-- Bundles section (mark entire bundle as owned) -->
+    <div class="card" id="bundles-card" style="display:none">
+      <h2>&#128230; Tienes un bundle? Marca todos sus DLCs de una vez</h2>
+      <div id="bundles-grid" style="display:grid;grid-template-columns:repeat(auto-fill,minmax(280px,1fr));gap:.6rem"></div>
     </div>
 
     <!-- Tab: Tools -->
@@ -834,7 +868,7 @@ tr.owned-row td { text-decoration: line-through; }
       <!-- Budget Planner -->
       <div class="card">
         <h2>&#128176; Budget Planner</h2>
-        <p style="font-size:.82rem;color:var(--text2);margin-bottom:.8rem">Cuantos DLCs puedes comprar con tu presupuesto (priorizando por tier/prioridad)</p>
+        <p style="font-size:.82rem;color:var(--text2);margin-bottom:.8rem">Cuantos DLCs puedes comprar con tu presupuesto (priorizando por mejor oferta)</p>
         <div class="budget-row">
           <span style="font-size:.85rem">Mex$</span>
           <input type="number" id="budget-input" min="0" step="50" placeholder="500" value="500">
@@ -869,11 +903,12 @@ tr.owned-row td { text-decoration: line-through; }
             <input type="text" id="cfg-vanity" placeholder="BG00G">
           </div>
           <div class="settings-field">
-            <label>Steam API Key (opcional)</label>
+            <label>Steam API Key <span style="color:var(--text2);font-size:.75rem">(opcional — no detecta DLCs, solo juegos)</span></label>
             <div class="pw-wrap">
               <input type="password" id="cfg-key" placeholder="Tu Steam API Key">
               <button class="pw-toggle" onclick="togglePw(this)">&#128065;</button>
             </div>
+            <div style="font-size:.72rem;color:var(--text2);margin-top:.3rem">Obtenla en <a href="https://steamcommunity.com/dev/apikey" target="_blank">steamcommunity.com/dev/apikey</a></div>
           </div>
         </div>
         <div class="settings-row">
@@ -901,11 +936,10 @@ tr.owned-row td { text-decoration: line-through; }
 <script>
 /* ──── Globals ─���── */
 let DATA = null;
-let sortKey = 'priority', sortAsc = true;
+let sortKey = 'discount', sortAsc = false;
 const STORE = 'https://store.steampowered.com/app/';
 const CAP = 'https://cdn.akamai.steamstatic.com/steam/apps/';
-const ICONS = {heist:'&#127974;', armas:'&#128299;', 'cosmético':'&#128084;', 'música':'&#127925;'};
-const TIER_CLS = {S:'tier-S', A:'tier-A', B:'tier-B', C:'tier-C'};
+/* No curated DB — no tier/bundle/phase constants */
 
 function $(id) { return document.getElementById(id); }
 function esc(s) { const d=document.createElement('div'); d.textContent=s; return d.innerHTML; }
@@ -917,7 +951,12 @@ async function loadData() {
   try {
     const r = await fetch('/api/data');
     DATA = await r.json();
-    if (DATA.loaded && DATA.dlcs.length > 0) {
+    if (DATA.loaded && DATA.totalDlcs > 0) {
+      $('empty-state').style.display = 'none';
+      $('dashboard').style.display = 'block';
+      renderAll();
+    } else if (DATA.loaded) {
+      // Data loaded but no DLCs found — show dashboard anyway
       $('empty-state').style.display = 'none';
       $('dashboard').style.display = 'block';
       renderAll();
@@ -983,7 +1022,7 @@ function renderBanners() {
     const items = DATA.buyNow.slice(0,5).map(d =>
       '<a href="' + STORE + d.id + '/" target="_blank">' + esc(d.name) + ' <small>-' + d.discount + '%</small></a>'
     ).join(' ');
-    html += '<div class="rec-buy">&#128722; <strong>Comprar ahora (Tier S/A en oferta):</strong> ' + items + '</div>';
+    html += '<div class="rec-buy">&#128722; <strong>Comprar ahora:</strong> ' + items + '</div>';
   } else if (DATA.onSaleCount === 0 && DATA.missingCount > 0) {
     html += '<div class="rec-wait">&#9203; Sin ofertas activas &mdash; espera al <strong>Summer Sale</strong> (25 jun, ~75% off). Costo estimado: <strong>Mex$ ' + fmt(DATA.estSummer75) + '</strong></div>';
   }
@@ -1016,41 +1055,31 @@ function renderDonut() {
 }
 
 function renderLegend() {
-  const tiers = {S:0, A:0, B:0, C:0};
-  DATA.dlcs.forEach(d => { if (tiers[d.tier] !== undefined) tiers[d.tier]++; });
-  const colors = {S:'var(--gold)', A:'var(--green)', B:'var(--accent)', C:'var(--text2)'};
-  const labels = {S:'Tier S (imprescindibles)', A:'Tier A (buenos)', B:'Tier B (opcionales)', C:'Tier C (cosmeticos)'};
+  const onSale = DATA.dlcs.filter(d => d.discount > 0).length;
+  const fullPrice = DATA.dlcs.length - onSale;
   let html = '';
-  for (const [t, n] of Object.entries(tiers)) {
-    html += '<div class="legend-item"><span class="legend-dot" style="background:' + colors[t] + '"></span>' + labels[t] + ': ' + n + '</div>';
-  }
   html += '<div class="legend-item"><span class="legend-dot" style="background:var(--accent)"></span>Poseidos: ' + DATA.ownedCount + '</div>';
+  html += '<div class="legend-item"><span class="legend-dot" style="background:var(--green)"></span>En oferta: ' + onSale + '</div>';
+  html += '<div class="legend-item"><span class="legend-dot" style="background:var(--text2)"></span>Precio normal: ' + fullPrice + '</div>';
   html += '<div class="legend-item"><span class="legend-dot" style="background:var(--red)"></span>Faltan: ' + DATA.missingCount + '</div>';
   $('legend').innerHTML = html;
 }
 
 /* ──── DLC Table ──── */
 function renderTable() {
-  const tier = $('f-tier').value;
-  const phase = $('f-phase').value;
-  const type = $('f-type').value;
   const sale = $('f-sale').value;
   const q = $('f-q').value.toLowerCase();
 
   let dlcs = DATA.dlcs.filter(d => {
-    if (tier && d.tier !== tier) return false;
-    if (phase && d.phase != phase) return false;
-    if (type && d.type !== type) return false;
     if (sale === 'y' && d.discount === 0) return false;
     if (sale === 'n' && d.discount > 0) return false;
-    if (q && !d.name.toLowerCase().includes(q) && !(d.notes||'').toLowerCase().includes(q) && !d.bundle.toLowerCase().includes(q)) return false;
+    if (q && !d.name.toLowerCase().includes(q)) return false;
     return true;
   });
 
   // Sort
   dlcs.sort((a, b) => {
     let va = a[sortKey], vb = b[sortKey];
-    if (sortKey === 'tier') { va = 'SABC'.indexOf(a.tier); vb = 'SABC'.indexOf(b.tier); }
     if (typeof va === 'string') return sortAsc ? va.localeCompare(vb) : vb.localeCompare(va);
     return sortAsc ? (va - vb) : (vb - va);
   });
@@ -1058,7 +1087,6 @@ function renderTable() {
   // Sort arrows
   document.querySelectorAll('.sort-arrow').forEach(el => el.textContent = '');
   const arrow = $('sa-' + sortKey);
-  if (arrow) arrow.textContent = sortAsc ? '&#9650;' : '&#9660;';
   if (arrow) arrow.innerHTML = sortAsc ? '&#9650;' : '&#9660;';
 
   const tbody = $('tbody');
@@ -1069,14 +1097,10 @@ function renderTable() {
     const spark = sparkSvg(d.id);
     return '<tr data-id="' + d.id + '">' +
       '<td><input type="checkbox" class="chk" onchange="toggleOwned(\'' + d.id + '\')"></td>' +
-      '<td><span class="tier-badge ' + TIER_CLS[d.tier] + '">' + d.tier + '</span></td>' +
-      '<td><div class="dlc-cell"><img src="' + CAP + d.id + '/capsule_231x87.jpg" loading="lazy" onerror="this.style.display=\'none\'"><div class="dlc-info"><div class="dlc-name"><a href="' + STORE + d.id + '/" target="_blank">' + esc(d.name) + '</a></div><div class="dlc-notes">' + esc(d.notes||'') + '</div></div></div></td>' +
-      '<td>' + (ICONS[d.type]||'') + ' ' + esc(d.type) + '</td>' +
+      '<td><div class="dlc-cell"><img src="' + CAP + d.id + '/capsule_231x87.jpg" loading="lazy" onerror="this.style.display=\'none\'"><div class="dlc-info"><div class="dlc-name"><a href="' + STORE + d.id + '/" target="_blank">' + esc(d.name) + '</a></div></div></div></td>' +
       '<td>' + esc(d.priceFmt) + '</td>' +
       '<td>' + disc + '</td>' +
-      '<td>' + spark + '</td>' +
-      '<td style="font-size:.72rem">' + esc(d.bundle) + '</td>' +
-      '<td>' + d.phase + '</td></tr>';
+      '<td>' + spark + '</td></tr>';
   }).join('');
 
   $('f-count').textContent = dlcs.length + '/' + DATA.dlcs.length + ' DLCs';
@@ -1084,7 +1108,7 @@ function renderTable() {
 
 function doSort(key) {
   if (sortKey === key) sortAsc = !sortAsc;
-  else { sortKey = key; sortAsc = true; }
+  else { sortKey = key; sortAsc = (key === 'name'); }
   renderTable();
 }
 
@@ -1118,16 +1142,54 @@ async function unmarkOwned(appid) {
 }
 
 /* ──── Bundles ──── */
+/* ──── Bundles ──── */
 function renderBundles() {
-  const el = $('bundles-grid');
-  const entries = Object.entries(DATA.bundles);
-  if (!entries.length) { el.innerHTML = '<p style="color:var(--text2);font-size:.85rem">Todos los bundles completados!</p>'; return; }
-  el.innerHTML = entries.map(([name, b]) => {
-    const dlcs = b.dlcs.map(d =>
-      '<div class="bcard-dlc"><img src="' + CAP + d.id + '/capsule_231x87.jpg" loading="lazy" onerror="this.style.display=\'none\'"><span>' + esc(d.name.replace(/PAYDAY 2:\s*/,'')) + '</span><span class="bd-price">$' + (d.price/100).toFixed(0) + '</span></div>'
-    ).join('');
-    return '<div class="bcard"><div class="bcard-head"><div><div class="bcard-name">' + esc(name) + '</div><div class="bcard-phase">Fase ' + b.phase + ' &middot; ' + b.dlcs.length + ' DLCs</div></div><div class="bcard-cost">Mex$ ' + fmt(b.cost/100) + '</div></div><div class="bcard-dlcs">' + dlcs + '</div></div>';
+  const card = $('bundles-card');
+  const grid = $('bundles-grid');
+  if (!DATA.bundles || !DATA.bundles.length) { card.style.display = 'none'; return; }
+  card.style.display = 'block';
+  grid.innerHTML = DATA.bundles.map(b => {
+    const ownedInBundle = b.dlcAppids.filter(id => DATA.owned.some(o => o.id === id)).length;
+    const allOwned = ownedInBundle === b.count;
+    let btns = '';
+    if (allOwned) {
+      btns = '<button class="bcard-btn done" disabled>&#9989; Marcado</button>' +
+             '<button class="bcard-btn" style="background:var(--red);margin-left:.3rem" onclick="unmarkBundle(\'' + b.id + '\')">Deshacer</button>';
+    } else if (ownedInBundle > 0) {
+      btns = '<button class="bcard-btn" onclick="markBundle(\'' + b.id + '\')">Marcar restantes</button>' +
+             '<button class="bcard-btn" style="background:var(--red);margin-left:.3rem" onclick="unmarkBundle(\'' + b.id + '\')">Deshacer</button>';
+    } else {
+      btns = '<button class="bcard-btn" onclick="markBundle(\'' + b.id + '\')">Tengo este bundle</button>';
+    }
+    return '<div class="bcard">' +
+      '<div class="bcard-info"><div class="bcard-name">' + esc(b.name) + '</div>' +
+      '<div class="bcard-meta">' + b.count + ' DLCs &middot; ' + ownedInBundle + ' marcados</div></div>' +
+      '<div style="display:flex;flex-wrap:wrap">' + btns + '</div></div>';
   }).join('');
+}
+
+async function markBundle(bundleId) {
+  try {
+    const r = await fetch('/api/toggle-bundle', {
+      method: 'POST',
+      headers: {'Content-Type': 'application/json'},
+      body: JSON.stringify({bundle_id: bundleId, action: 'mark'}),
+    });
+    await r.json();
+    await loadData();
+  } catch(e) { console.error('markBundle failed:', e); }
+}
+
+async function unmarkBundle(bundleId) {
+  try {
+    const r = await fetch('/api/toggle-bundle', {
+      method: 'POST',
+      headers: {'Content-Type': 'application/json'},
+      body: JSON.stringify({bundle_id: bundleId, action: 'unmark'}),
+    });
+    await r.json();
+    await loadData();
+  } catch(e) { console.error('unmarkBundle failed:', e); }
 }
 
 /* ──── Owned panel ──── */
@@ -1166,7 +1228,7 @@ function calcBudget() {
   const budget = parseFloat($('budget-input').value) || 0;
   if (budget <= 0) { $('budget-result').innerHTML = '<div class="budget-result">Ingresa un presupuesto mayor a 0</div>'; return; }
 
-  const sorted = [...DATA.dlcs].sort((a, b) => a.priority - b.priority);
+  const sorted = [...DATA.dlcs].sort((a, b) => b.discount - a.discount || a.price - b.price);
   let remaining = budget;
   const picks = [];
   sorted.forEach(d => {
@@ -1185,7 +1247,8 @@ function calcBudget() {
   if (picks.length) {
     html += '<div class="budget-list">';
     picks.forEach((d, i) => {
-      html += '<div class="budget-item"><span class="bi-tier ' + TIER_CLS[d.tier] + '">' + d.tier + '</span><a href="' + STORE + d.id + '/" target="_blank">' + esc(d.name.replace(/PAYDAY 2:\s*/,'')) + '</a><span class="bi-price">' + esc(d.priceFmt) + '</span></div>';
+      const disc = d.discount > 0 ? ' <small style="color:var(--green)">-' + d.discount + '%</small>' : '';
+      html += '<div class="budget-item"><a href="' + STORE + d.id + '/" target="_blank">' + esc(d.name.replace(/PAYDAY 2:\s*/,'')) + disc + '</a><span class="bi-price">' + esc(d.priceFmt) + '</span></div>';
     });
     html += '</div>';
   }
@@ -1204,7 +1267,7 @@ function renderSales() {
 /* ──── Tabs ──── */
 function switchTab(name) {
   document.querySelectorAll('.tab').forEach((t, i) => {
-    const panels = ['dlcs','bundles','tools','owned','settings'];
+    const panels = ['dlcs','tools','owned','settings'];
     t.classList.toggle('active', panels[i] === name);
   });
   document.querySelectorAll('.tab-panel').forEach(p => p.classList.remove('active'));
@@ -1217,6 +1280,7 @@ async function doRefresh() {
   const btn = $('btn-refresh');
   btn.classList.add('loading');
   btn.disabled = true;
+  window._refreshStart = Date.now();
 
   const panel = $('refresh-panel');
   const consoleEl = $('console');
@@ -1224,7 +1288,7 @@ async function doRefresh() {
   consoleEl.innerHTML = '';
   $('prog-bar').style.width = '0%';
   $('prog-bar').style.background = 'linear-gradient(90deg, var(--gold), #b8922e)';
-  $('prog-text').textContent = 'Iniciando...';
+  $('prog-text').textContent = 'Iniciando... (puede tardar 1-3 min con cache vacio)';
 
   try {
     const resp = await fetch('/api/refresh', {method: 'POST'});
@@ -1258,8 +1322,11 @@ async function doRefresh() {
   btn.classList.remove('loading');
   btn.disabled = false;
 
-  // Reload data
+  // Reload data — if loadData doesn't populate, force full page reload
   await loadData();
+  if (!DATA || !DATA.totalDlcs) {
+    location.reload();
+  }
 }
 
 function handleSSE(ev) {
@@ -1268,7 +1335,14 @@ function handleSSE(ev) {
   } else if (ev.type === 'progress') {
     const pct = Math.round(ev.current / ev.total * 100);
     $('prog-bar').style.width = pct + '%';
-    $('prog-text').textContent = '[' + ev.current + '/' + ev.total + '] ' + ev.label;
+    let eta = '';
+    if (ev.current > 1 && window._refreshStart) {
+      const elapsed = (Date.now() - window._refreshStart) / 1000;
+      const remaining = (elapsed / ev.current) * (ev.total - ev.current);
+      if (remaining > 60) eta = ' ~' + Math.round(remaining / 60) + 'min';
+      else if (remaining > 5) eta = ' ~' + Math.round(remaining) + 's';
+    }
+    $('prog-text').textContent = '[' + ev.current + '/' + ev.total + '] ' + ev.label + eta;
   } else if (ev.type === 'done') {
     $('prog-bar').style.width = '100%';
     if (ev.exit_code === 0) {

@@ -145,7 +145,9 @@ python3 steam_deals_generator.py --vanity TU_VANITY_URL \
 
 ## PAYDAY 2 DLC Tracker
 
-Script y dashboard web para trackear DLCs de PAYDAY 2: cuales te faltan, precios, ofertas, bundles, y plan de compra por tiers.
+Script y dashboard web para trackear DLCs de PAYDAY 2: cuales te faltan, precios, ofertas, historial, y recomendaciones de compra. Los DLCs se descubren dinamicamente desde la API de Steam.
+
+> **Nota:** La API de Steam no detecta DLCs poseidos (solo juegos base). Marca tus DLCs como comprados via checkboxes en el dashboard o con `--mark-owned` en CLI.
 
 ### Dashboard Web (recomendado)
 
@@ -157,11 +159,10 @@ python3 payday2_web.py
 Dashboard interactivo con:
 - **Vista instantanea** — Carga datos del cache al abrir, sin esperas
 - **Stats y donut** — Cuantos DLCs tienes, cuanto falta, ofertas activas
-- **Tabla de DLCs** — Sorteable, filtrable por tier/fase/tipo/oferta, con imagenes y notas
+- **Tabla de DLCs** — Sorteable, filtrable por oferta, con imagenes
 - **Marcar como comprado** — Click en el checkbox y se guarda al instante
-- **Bundles** — Cards visuales con DLCs agrupados por bundle y costo
 - **Simulador de descuento** — Desliza para ver cuanto costaria con X% de descuento
-- **Budget Planner** — "Tengo $500, que compro?" ordenado por prioridad
+- **Budget Planner** — "Tengo $500, que compro?" ordenado por mejor oferta
 - **Proximas ofertas** — Estimacion de costo en Summer/Autumn/Winter Sale
 - **Actualizar datos** — Boton que ejecuta el tracker y muestra progreso en vivo
 - **Config** — Cambia vanity/API keys desde la web
@@ -171,7 +172,9 @@ Dashboard interactivo con:
 ```bash
 python3 payday2_dlc_tracker.py --vanity TU_VANITY_URL
 python3 payday2_dlc_tracker.py --budget 500
-python3 payday2_dlc_tracker.py --itad-key TU_KEY  # minimos historicos
+python3 payday2_dlc_tracker.py --min-deal 75          # umbral de descuento para recomendar
+python3 payday2_dlc_tracker.py --itad-key TU_KEY      # minimos historicos
+python3 payday2_dlc_tracker.py --mark-owned 259381    # marcar DLC como comprado
 ```
 
 Genera `PAYDAY2_Plan_de_Compra.md` y `.html` con el reporte completo.

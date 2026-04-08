@@ -1,12 +1,13 @@
 #!/usr/bin/env python3
 """
-PAYDAY 2 DLC Tracker — Plan de compra con precios en tiempo real.
+PAYDAY 2 DLC Tracker — Precios y ofertas de DLCs en tiempo real.
 
 Uso:
     python3 payday2_dlc_tracker.py --vanity BG00G
     python3 payday2_dlc_tracker.py --key TU_KEY --vanity BG00G
     python3 payday2_dlc_tracker.py --itad-key TU_KEY --budget 500
     python3 payday2_dlc_tracker.py --mark-owned 12345
+    python3 payday2_dlc_tracker.py --min-deal 50
     python3 payday2_dlc_tracker.py --no-cache
 
 Reutiliza la config de Steam Deals (~/.config/steam_deals.json).
@@ -20,7 +21,6 @@ import time
 import urllib.error
 import urllib.request
 from datetime import date, datetime
-from difflib import SequenceMatcher
 from pathlib import Path
 
 
@@ -95,6 +95,7 @@ def get_config():
     parser.add_argument("--mark-unowned", nargs="*", metavar="APPID", help="Marcar DLCs como no poseídos")
     parser.add_argument("--budget", type=float, help="Presupuesto en MXN")
     parser.add_argument("--alert-price", type=float, help="Alertar si DLC baja de N MXN")
+    parser.add_argument("--min-deal", type=int, default=None, help="Descuento mínimo %% para recomendar compra (default: 50)")
     parser.add_argument("--csv", action="store_true", help="Generar CSV")
     args = parser.parse_args()
 
@@ -107,6 +108,7 @@ def get_config():
     )
     budget = args.budget or cfg.get("payday2_budget")
     alert_price = args.alert_price or cfg.get("payday2_alert_price")
+    min_deal = args.min_deal if args.min_deal is not None else cfg.get("payday2_min_deal", 50)
 
     return {
         "key": key, "vanity": vanity, "itad_key": itad_key,
@@ -114,6 +116,7 @@ def get_config():
         "mark_owned": args.mark_owned or [],
         "mark_unowned": args.mark_unowned or [],
         "budget": budget, "alert_price": alert_price,
+        "min_deal": min_deal,
     }
 
 
@@ -123,263 +126,6 @@ def get_config():
 
 PD2_APPID = "218620"
 
-
-# ─────────────────────────────────────────────
-# DLC DATABASE (curada del plan de compra)
-# ─────────────────────────────────────────────
-# tier: S > A > B > C
-# type: heist, armas, cosmético, música
-# bundle: nombre del bundle que lo contiene
-# phase: 1-4
-# priority: 1-38 (orden de compra recomendado)
-
-DLC_DB = {
-    # ── TIER S ──
-    "McShay Weapon Pack 2": {
-        "tier": "S", "type": "armas", "priority": 1, "phase": 3,
-        "bundle": "Lost in Transit Bundle",
-        "notes": "Hailstorm Mk 5 (2000 RPM, penetra Shields). VD-12 shotgun, Kahn .357.",
-    },
-    "McShay Weapon Pack 4": {
-        "tier": "S", "type": "armas", "priority": 2, "phase": 3,
-        "bundle": "Crude Awakening Bundle",
-        "notes": "Campbell 74 LMG (100 acc/stab + lanzallamas), Deimos shotgun, Amaroq sniper.",
-    },
-    "Black Cat Heist": {
-        "tier": "S", "type": "heist", "priority": 3, "phase": 1,
-        "bundle": "City of Gold Collection",
-        "notes": "Casino en yate, stealth/loud, 2 rutas loud. Mecánica airlift.",
-    },
-    "McShay Weapon Pack 3": {
-        "tier": "S", "type": "armas", "priority": 4, "phase": 3,
-        "bundle": "Hostile Takeover Bundle",
-        "notes": "Akron HC LMG→DMR convertible, Aran G2 sniper secundaria, Rodion 3B triple cañón.",
-    },
-    # ── TIER A ──
-    "Dragon Heist": {
-        "tier": "A", "type": "heist", "priority": 5, "phase": 1,
-        "bundle": "City of Gold Collection",
-        "notes": "Stealth/loud + preplanning. Atmosférico, abre City of Gold.",
-    },
-    "Buluc's Mansion Heist": {
-        "tier": "A", "type": "heist", "priority": 6, "phase": 2,
-        "bundle": "Buluc's Mansion Bundle",
-        "notes": "Stealth retador en mansión mexicana. Scavenger hunt.",
-    },
-    "Hostile Takeover Heist": {
-        "tier": "A", "type": "heist", "priority": 7, "phase": 3,
-        "bundle": "Hostile Takeover Bundle",
-        "notes": "Oficina/lab, crew se divide en pares. ECM rushable <2 min.",
-    },
-    "Fugitive Weapon Pack": {
-        "tier": "A", "type": "armas", "priority": 8, "phase": 2,
-        "bundle": "Breakfast in Tijuana Bundle",
-        "notes": "M60 LMG (mejor precisión de LMGs), R700 sniper, Holt 9mm.",
-    },
-    "Jiu Feng Smuggler Pack": {
-        "tier": "A", "type": "armas", "priority": 9, "phase": 1,
-        "bundle": "City of Gold Collection",
-        "notes": "Mosconi 12G Tactical (borderline OP), AK Gen 21, Crosskill Chunky.",
-    },
-    "Lost in Transit Heist": {
-        "tier": "A", "type": "heist", "priority": 10, "phase": 3,
-        "bundle": "Lost in Transit Bundle",
-        "notes": "Robar un tren. Experiencia única y memorable.",
-    },
-    "McShay Weapon Pack": {
-        "tier": "A", "type": "armas", "priority": 11, "phase": 3,
-        "bundle": "Midland Bundle",
-        "notes": "SG Versteckt 51D (LMG oculta), Pronghorn sniper, Basilisk lanzagranadas.",
-    },
-    # ── TIER B ──
-    "Ukrainian Prisoner Heist": {
-        "tier": "B", "type": "heist", "priority": 12, "phase": 1,
-        "bundle": "City of Gold Collection",
-        "notes": "Rescate en muelles de SF. Tipo Heat Street.",
-    },
-    "Breakfast in Tijuana Heist": {
-        "tier": "B", "type": "heist", "priority": 13, "phase": 2,
-        "bundle": "Breakfast in Tijuana Bundle",
-        "notes": "Asalto a estación de policía. Stealth→loud si suena alarma.",
-    },
-    "Border Crossing Heist": {
-        "tier": "B", "type": "heist", "priority": 14, "phase": 2,
-        "bundle": "Border Crossing Bundle",
-        "notes": "2 heists en 1 (principal + cooking). Divisivo.",
-    },
-    "Mountain Master Heist": {
-        "tier": "B", "type": "heist", "priority": 15, "phase": 1,
-        "bundle": "City of Gold Collection",
-        "notes": "Final de City of Gold. Sólido pero menos memorable.",
-    },
-    "Crude Awakening Heist": {
-        "tier": "B", "type": "heist", "priority": 16, "phase": 3,
-        "bundle": "Crude Awakening Bundle",
-        "notes": "Misión de asesinato. Divertido pero tuvo bugs.",
-    },
-    "McShay Mod Pack": {
-        "tier": "B", "type": "armas", "priority": 17, "phase": 3,
-        "bundle": "Hostile Takeover Bundle",
-        "notes": "15 mods + miras + Ordnance Bag + granada adhesiva.",
-    },
-    "Gunslinger Weapon Pack": {
-        "tier": "B", "type": "armas", "priority": 18, "phase": 2,
-        "bundle": "Buluc's Mansion Bundle",
-        "notes": "Bernetti Rangehitter sniper, Reinfeld 88 shotgun.",
-    },
-    "Jiu Feng Smuggler Pack 2": {
-        "tier": "B", "type": "armas", "priority": 19, "phase": 1,
-        "bundle": "City of Gold Collection",
-        "notes": "Sniper, AR con granada integrada, SMG akimbo.",
-    },
-    "Jiu Feng Smuggler Pack 4": {
-        "tier": "B", "type": "armas", "priority": 20, "phase": 1,
-        "bundle": "City of Gold Collection",
-        "notes": "Argos III shotgun futurista, pistola, SMG.",
-    },
-    "Jiu Feng Smuggler Pack 3": {
-        "tier": "B", "type": "armas", "priority": 21, "phase": 1,
-        "bundle": "City of Gold Collection",
-        "notes": "Armas adecuadas que se solapan con existentes.",
-    },
-    "Cartel Optics Mod Pack": {
-        "tier": "B", "type": "armas", "priority": 22, "phase": 2,
-        "bundle": "Border Crossing Bundle",
-        "notes": "Miras reflex 0 penalización ocultación. Reskins.",
-    },
-    "Midland Ranch Heist": {
-        "tier": "B", "type": "heist", "priority": 23, "phase": 3,
-        "bundle": "Midland Bundle",
-        "notes": "Divisivo. Stealth fun, loud miserable. Torreta + carrito golf.",
-    },
-    # ── TIER C ──
-    "h3h3 Character Pack": {
-        "tier": "C", "type": "armas", "priority": 24, "phase": 4,
-        "bundle": None,
-        "notes": "Airbow nerfeada. Tag Team mediocre. Solo para fans h3h3.",
-    },
-    "Guardians Tailor Pack": {
-        "tier": "C", "type": "cosmético", "priority": 25, "phase": 1,
-        "bundle": "City of Gold Collection",
-        "notes": "Solo outfits cosméticos.",
-    },
-    "Mega City Tailor Pack": {
-        "tier": "C", "type": "cosmético", "priority": 26, "phase": 1,
-        "bundle": "City of Gold Collection",
-        "notes": "Solo outfits cosméticos.",
-    },
-    "Winter Ghosts Tailor Pack": {
-        "tier": "C", "type": "cosmético", "priority": 27, "phase": 1,
-        "bundle": "City of Gold Collection",
-        "notes": "Solo outfits cosméticos.",
-    },
-    "Golden Dagger Tailor Pack": {
-        "tier": "C", "type": "cosmético", "priority": 28, "phase": 1,
-        "bundle": "City of Gold Collection",
-        "notes": "Solo outfits cosméticos.",
-    },
-    "Tailor Pack 1": {
-        "tier": "C", "type": "cosmético", "priority": 29, "phase": 2,
-        "bundle": "Border Crossing Bundle",
-        "notes": "Solo outfits cosméticos.",
-    },
-    "Tailor Pack 3": {
-        "tier": "C", "type": "cosmético", "priority": 30, "phase": 2,
-        "bundle": "Buluc's Mansion Bundle",
-        "notes": "Solo outfits cosméticos.",
-    },
-    "Southbound Tailor Pack": {
-        "tier": "C", "type": "cosmético", "priority": 31, "phase": 3,
-        "bundle": "Midland Bundle",
-        "notes": "Solo outfits cosméticos.",
-    },
-    "Street Smart Tailor Pack": {
-        "tier": "C", "type": "cosmético", "priority": 32, "phase": 3,
-        "bundle": "Hostile Takeover Bundle",
-        "notes": "Solo outfits cosméticos.",
-    },
-    "Lawless Tailor Pack": {
-        "tier": "C", "type": "cosmético", "priority": 33, "phase": 3,
-        "bundle": "Crude Awakening Bundle",
-        "notes": "Solo outfits cosméticos.",
-    },
-    "High Octane Tailor Pack": {
-        "tier": "C", "type": "cosmético", "priority": 34, "phase": 3,
-        "bundle": "Lost in Transit Bundle",
-        "notes": "Solo outfits cosméticos.",
-    },
-    "Weapon Color Pack 2": {
-        "tier": "C", "type": "cosmético", "priority": 35, "phase": 2,
-        "bundle": "Breakfast in Tijuana Bundle",
-        "notes": "Solo 20 camos de armas.",
-    },
-    "Weapon Color Pack 3": {
-        "tier": "C", "type": "cosmético", "priority": 36, "phase": 2,
-        "bundle": "Buluc's Mansion Bundle",
-        "notes": "Solo 20 colores perlados.",
-    },
-    "Chinatown Music Pack": {
-        "tier": "C", "type": "música", "priority": 37, "phase": 3,
-        "bundle": "Crude Awakening Bundle",
-        "notes": "Solo música + cosmético.",
-    },
-    "Tijuana Music Pack": {
-        "tier": "C", "type": "música", "priority": 38, "phase": 3,
-        "bundle": "Lost in Transit Bundle",
-        "notes": "Solo música + cosmético.",
-    },
-}
-
-BUNDLES = {
-    "City of Gold Collection": {
-        "phase": 1,
-        "dlcs": [
-            "Dragon Heist", "Ukrainian Prisoner Heist", "Black Cat Heist",
-            "Mountain Master Heist", "Jiu Feng Smuggler Pack",
-            "Jiu Feng Smuggler Pack 2", "Jiu Feng Smuggler Pack 3",
-            "Jiu Feng Smuggler Pack 4", "Guardians Tailor Pack",
-            "Mega City Tailor Pack", "Winter Ghosts Tailor Pack",
-            "Golden Dagger Tailor Pack",
-        ],
-    },
-    "Breakfast in Tijuana Bundle": {
-        "phase": 2,
-        "dlcs": ["Breakfast in Tijuana Heist", "Fugitive Weapon Pack", "Weapon Color Pack 2"],
-    },
-    "Border Crossing Bundle": {
-        "phase": 2,
-        "dlcs": ["Border Crossing Heist", "Cartel Optics Mod Pack", "Tailor Pack 1"],
-    },
-    "Buluc's Mansion Bundle": {
-        "phase": 2,
-        "dlcs": ["Buluc's Mansion Heist", "Gunslinger Weapon Pack", "Tailor Pack 3", "Weapon Color Pack 3"],
-    },
-    "Hostile Takeover Bundle": {
-        "phase": 3,
-        "dlcs": ["Hostile Takeover Heist", "McShay Weapon Pack 3", "McShay Mod Pack", "Street Smart Tailor Pack"],
-    },
-    "Midland Bundle": {
-        "phase": 3,
-        "dlcs": ["Midland Ranch Heist", "McShay Weapon Pack", "Southbound Tailor Pack"],
-    },
-    "Crude Awakening Bundle": {
-        "phase": 3,
-        "dlcs": ["Crude Awakening Heist", "McShay Weapon Pack 4", "Lawless Tailor Pack", "Chinatown Music Pack"],
-    },
-    "Lost in Transit Bundle": {
-        "phase": 3,
-        "dlcs": ["Lost in Transit Heist", "McShay Weapon Pack 2", "High Octane Tailor Pack", "Tijuana Music Pack"],
-    },
-}
-
-TIER_ORDER = {"S": 0, "A": 1, "B": 2, "C": 3}
-TIER_LABELS = {
-    "S": "COMPRAR PRIMERO (Impacto alto en gameplay)",
-    "A": "COMPRAR SEGUNDO (Buen contenido)",
-    "B": "COMPRAR SI ESTÁ BARATO (Decente, no esencial)",
-    "C": "DESCARTABLE (Cosméticos / completionismo)",
-}
-TYPE_ICONS = {"heist": "🏦", "armas": "🔫", "cosmético": "👔", "música": "🎵"}
 
 UPCOMING_SALES = [
     {"event": "Steam Summer Sale", "date": "25 jun - 9 jul 2026", "discount": 75},
@@ -399,9 +145,11 @@ DLC_MAPPING_CACHE = PD2_CACHE_DIR / "dlc_mapping.json"
 PRICES_CACHE = PD2_CACHE_DIR / "prices.json"
 OWNED_CACHE = PD2_CACHE_DIR / "owned.json"
 HISTORY_FILE = PD2_CACHE_DIR / "price_history.json"
+BUNDLES_CACHE = PD2_CACHE_DIR / "bundles.json"
 
 DLC_LIST_TTL = 168  # 7 days
 PRICES_TTL = 24     # 1 day
+BUNDLES_TTL = 168   # 7 days
 
 
 def _load_cache(path: Path, ttl_hours: float = 0) -> tuple[dict, float]:
@@ -511,45 +259,64 @@ def fetch_dlc_names(appids: list[str], cached_mapping: dict, rate_limit: float =
     return result
 
 
-def match_dlc_names_to_db(names: dict[str, str]) -> dict[str, dict]:
-    """Match Steam DLC names to curated database. Returns {appid: db_entry_with_appid}."""
-    mapping = {}
-    used_db_keys = set()
+def _strip_prefix(name: str) -> str:
+    """Strip 'PAYDAY 2: ' prefix for cleaner display."""
+    return re.sub(r'^PAYDAY\s*2\s*[:：\-–]\s*', '', name, flags=re.IGNORECASE).strip()
 
-    # Normalize: strip "PAYDAY 2: " prefix
-    def norm(s):
-        s = re.sub(r'^PAYDAY\s*2\s*[:：\-–]\s*', '', s, flags=re.IGNORECASE)
-        return s.strip().lower()
 
-    # Pass 1: exact match
-    for appid, steam_name in names.items():
-        n = norm(steam_name)
-        for db_key, db_entry in DLC_DB.items():
-            if db_key in used_db_keys:
-                continue
-            if norm(db_key) == n:
-                mapping[appid] = {**db_entry, "appid": appid, "db_name": db_key, "steam_name": steam_name}
-                used_db_keys.add(db_key)
-                break
+def fetch_bundles(pd2_dlc_appids: list[str], no_cache: bool = False) -> list[dict]:
+    """Fetch PD2 bundles from Steam store. Returns [{name, bundle_id, dlc_appids: [str]}]."""
+    cache, age = _load_cache(BUNDLES_CACHE)
+    if not no_cache and age <= BUNDLES_TTL and cache.get("bundles"):
+        return cache["bundles"]
 
-    # Pass 2: fuzzy match remaining
-    for appid, steam_name in names.items():
-        if appid in mapping:
+    # Step 1: get bundle IDs from PD2 store page
+    headers = {
+        "User-Agent": "Mozilla/5.0",
+        "Cookie": "birthtime=568022401; mature_content=1; wants_mature_content=1",
+    }
+    try:
+        url = f"https://store.steampowered.com/app/{PD2_APPID}/PAYDAY_2/"
+        req = urllib.request.Request(url, headers=headers)
+        html = urllib.request.urlopen(req, timeout=15).read().decode("utf-8")
+        bundle_ids = sorted(set(re.findall(r'/bundle/(\d+)', html)))
+    except Exception:
+        return cache.get("bundles", [])
+
+    if not bundle_ids:
+        return cache.get("bundles", [])
+
+    # Step 2: fetch contents of each bundle
+    dlc_set = set(pd2_dlc_appids)
+    bundles = []
+    for bid in bundle_ids:
+        try:
+            burl = f"https://store.steampowered.com/bundle/{bid}/"
+            req = urllib.request.Request(burl, headers=headers)
+            bhtml = urllib.request.urlopen(req, timeout=15).read().decode("utf-8")
+
+            # Extract name
+            m = re.search(r'<h2 class="pageheader">(.*?)</h2>', bhtml)
+            if not m:
+                m = re.search(r'<title>(.*?)(?:\s+on\s+Steam)?</title>', bhtml)
+            name = _strip_prefix(m.group(1).strip()) if m else f"Bundle {bid}"
+
+            # Extract appids
+            appids = sorted(set(re.findall(r'data-ds-appid="(\d+)"', bhtml)))
+            # Filter to only PD2 DLCs (not base game, not other games)
+            dlc_appids = [a for a in appids if a in dlc_set]
+
+            if dlc_appids:
+                bundles.append({"name": name, "bundle_id": bid, "dlc_appids": dlc_appids})
+
+            time.sleep(0.3)
+        except Exception:
             continue
-        n = norm(steam_name)
-        best_score, best_key = 0, None
-        for db_key in DLC_DB:
-            if db_key in used_db_keys:
-                continue
-            score = SequenceMatcher(None, n, norm(db_key)).ratio()
-            if score > best_score:
-                best_score, best_key = score, db_key
-        if best_key and best_score >= 0.6:
-            db_entry = DLC_DB[best_key]
-            mapping[appid] = {**db_entry, "appid": appid, "db_name": best_key, "steam_name": steam_name}
-            used_db_keys.add(best_key)
 
-    return mapping
+    if bundles:
+        _save_cache(BUNDLES_CACHE, {"bundles": bundles})
+
+    return bundles
 
 
 def get_owned_games(api_key: str, steam_id: str) -> set[str]:
@@ -770,16 +537,13 @@ def analyze_trends(history: dict, prices: dict) -> dict[str, dict]:
 # RECOMMENDATIONS
 # ─────────────────────────────────────────────
 
-def compute_recommendations(missing: list[dict], budget: float | None, alert_price: float | None) -> dict:
+def compute_recommendations(missing: list[dict], budget: float | None, alert_price: float | None, min_deal: int = 50) -> dict:
     on_sale = sorted(
         [d for d in missing if d.get("discount", 0) > 0],
-        key=lambda d: (-TIER_ORDER.get(d.get("tier", "C"), 9), d.get("priority", 99)),
+        key=lambda d: (-d.get("discount", 0), d.get("price_raw", 0)),
     )
 
-    buy_now = []
-    for d in on_sale:
-        if d.get("tier") in ("S", "A"):
-            buy_now.append(d)
+    buy_now = [d for d in on_sale if d.get("discount", 0) >= min_deal]
 
     alerts = []
     if alert_price:
@@ -788,7 +552,7 @@ def compute_recommendations(missing: list[dict], budget: float | None, alert_pri
     budget_fit = []
     if budget:
         remaining = budget
-        for d in sorted(missing, key=lambda d: d.get("priority", 99)):
+        for d in sorted(on_sale + [x for x in missing if x not in on_sale], key=lambda d: (-d.get("discount", 0), d.get("price_raw", 0))):
             price = d.get("price_raw", 0) / 100
             if price > 0 and price <= remaining:
                 budget_fit.append(d)
@@ -803,20 +567,8 @@ def compute_recommendations(missing: list[dict], budget: float | None, alert_pri
         "optimal_next": optimal,
         "on_sale_count": len(on_sale),
         "on_sale_savings": sum(((d.get("orig_raw", 0) - d.get("price_raw", 0)) / 100) for d in on_sale),
+        "min_deal": min_deal,
     }
-
-
-def compute_phase_costs(missing: list[dict]) -> dict[int, dict]:
-    phases = {}
-    for d in missing:
-        ph = d.get("phase", 0)
-        if ph not in phases:
-            phases[ph] = {"total": 0, "discounted": 0, "count": 0, "dlcs": []}
-        phases[ph]["total"] += d.get("orig_raw", 0) / 100
-        phases[ph]["discounted"] += d.get("price_raw", 0) / 100
-        phases[ph]["count"] += 1
-        phases[ph]["dlcs"].append(d)
-    return phases
 
 
 # ─────────────────────────────────────────────
@@ -824,13 +576,12 @@ def compute_phase_costs(missing: list[dict]) -> dict[int, dict]:
 # ─────────────────────────────────────────────
 
 def generate_md(
-    all_dlcs: dict[str, dict],  # appid → merged info
+    all_dlcs: dict[str, dict],
     owned_appids: set[str],
     pd2_dlc_appids: list[str],
     prices: dict[str, dict],
     sale_name: str,
     recommendations: dict,
-    phase_costs: dict[int, dict],
     trends: dict[str, dict],
     itad_lows: dict[str, dict],
     itad_current: dict[str, dict],
@@ -843,16 +594,12 @@ def generate_md(
     owned_count = sum(1 for a in pd2_dlc_appids if a in owned_appids)
     missing_count = total_dlcs - owned_count
 
-    # Compute totals
     missing_total_orig = sum(d.get("orig_raw", 0) for a, d in all_dlcs.items() if a not in owned_appids) / 100
     missing_total_curr = sum(d.get("price_raw", 0) for a, d in all_dlcs.items() if a not in owned_appids) / 100
     on_sale = sum(1 for a, d in all_dlcs.items() if a not in owned_appids and d.get("discount", 0) > 0)
-    avg_discount = 0
-    if on_sale:
-        avg_discount = sum(d.get("discount", 0) for a, d in all_dlcs.items() if a not in owned_appids and d.get("discount", 0) > 0) / on_sale
 
     lines = [
-        f"# PAYDAY 2 — Plan de Compra (Actualizado)",
+        f"# PAYDAY 2 — DLC Tracker",
         f"> Generado: {today} | Precios en MXN | Perfil: {vanity}",
         f"> Posees: {owned_count}/{total_dlcs} items | Faltan: {missing_count} DLCs",
         "",
@@ -862,35 +609,34 @@ def generate_md(
         "",
         "| Métrica | Valor |",
         "|---------|-------|",
-        f"| DLCs poseídos | {owned_count}/{total_dlcs} ({owned_count*100//total_dlcs}%) |",
+        f"| DLCs poseídos | {owned_count}/{total_dlcs} ({owned_count*100//total_dlcs if total_dlcs else 0}%) |",
         f"| Costo restante (precio normal) | Mex$ {missing_total_orig:,.0f} |",
     ]
     if missing_total_curr != missing_total_orig:
         savings = missing_total_orig - missing_total_curr
         lines.append(f"| **Con descuento actual** | **Mex$ {missing_total_curr:,.0f}** (ahorras Mex$ {savings:,.0f}) |")
-    lines += [
-        f"| DLCs en oferta ahora | {on_sale} |",
-    ]
+    lines.append(f"| DLCs en oferta ahora | {on_sale} |")
     if budget:
         lines.append(f"| Tu presupuesto | Mex$ {budget:,.0f} |")
     lines += ["", "---", ""]
 
     # Sale / Recommendation
     if sale_name:
-        lines += [f"## 🏷️ {sale_name}", ""]
+        lines += [f"## {sale_name}", ""]
     else:
         lines += ["## Estado de ofertas", ""]
 
     rec = recommendations
+    min_deal = rec.get("min_deal", 50)
     if rec["on_sale_count"] > 0:
         lines.append(f"> **{rec['on_sale_count']} DLCs en oferta** | Ahorro potencial: Mex$ {rec['on_sale_savings']:,.0f}")
         lines.append("")
         if rec["buy_now"]:
-            lines += ["### Recomendación: COMPRAR AHORA", ""]
-            lines.append("| DLC | Tier | Precio | Descuento | Bundle |")
-            lines.append("|-----|------|--------|-----------|--------|")
+            lines += [f"### Recomendación: COMPRAR AHORA (>= {min_deal}% off)", ""]
+            lines.append("| DLC | Precio | Descuento |")
+            lines.append("|-----|--------|-----------|")
             for d in rec["buy_now"]:
-                lines.append(f"| {_link(d['steam_name'], d['appid'])} | {d['tier']} | {d.get('price_fmt', '?')} | -{d.get('discount', 0)}% | {d.get('bundle') or '—'} |")
+                lines.append(f"| {_link(d['steam_name'], d['appid'])} | {d.get('price_fmt', '?')} | -{d.get('discount', 0)}% |")
             lines.append("")
         if rec["optimal_next"]:
             opt = rec["optimal_next"]
@@ -918,56 +664,47 @@ def generate_md(
     if budget and rec["budget_fit"]:
         total_budget_cost = sum(d.get("price_raw", 0) / 100 for d in rec["budget_fit"])
         lines += [
-            f"## 💰 Con tu presupuesto (Mex$ {budget:,.0f})",
+            f"## Con tu presupuesto (Mex$ {budget:,.0f})",
             "",
-            f"> Puedes comprar {len(rec['budget_fit'])} DLCs por ~Mex$ {total_budget_cost:,.0f} (ordenados por prioridad)",
+            f"> Puedes comprar {len(rec['budget_fit'])} DLCs por ~Mex$ {total_budget_cost:,.0f} (ordenados por mejor oferta)",
             "",
-            "| # | DLC | Tier | Precio |",
-            "|---|-----|------|--------|",
+            "| # | DLC | Precio | Descuento |",
+            "|---|-----|--------|-----------|",
         ]
         for i, d in enumerate(rec["budget_fit"], 1):
-            lines.append(f"| {i} | {_link(d['steam_name'], d['appid'])} | {d['tier']} | {d.get('price_fmt', '?')} |")
+            disc = f"-{d['discount']}%" if d.get("discount", 0) > 0 else "—"
+            lines.append(f"| {i} | {_link(d['steam_name'], d['appid'])} | {d.get('price_fmt', '?')} | {disc} |")
         lines += ["", "---", ""]
 
-    # DLCs by tier
+    # All missing DLCs — sorted by discount desc
     missing_dlcs = sorted(
         [d for a, d in all_dlcs.items() if a not in owned_appids],
-        key=lambda d: (TIER_ORDER.get(d.get("tier", "C"), 9), d.get("priority", 99)),
+        key=lambda d: (-d.get("discount", 0), d.get("price_raw", 0)),
     )
 
-    lines += ["## DLCs Faltantes por Tier", ""]
-    current_tier = None
-    for d in missing_dlcs:
-        tier = d.get("tier", "?")
-        if tier != current_tier:
-            current_tier = tier
-            tier_dlcs = [x for x in missing_dlcs if x.get("tier") == tier]
-            tier_cost = sum(x.get("price_raw", 0) / 100 for x in tier_dlcs)
-            lines += [
-                f"### TIER {tier} — {TIER_LABELS.get(tier, '')} ({len(tier_dlcs)} DLCs, ~Mex$ {tier_cost:,.0f})",
-                "",
-            ]
-            header = "| # | DLC | Tipo | Precio | Oferta"
-            sep = "|---|-----|------|--------|-------"
-            if itad_lows:
-                header += " | Mín. histórico"
-                sep += "|----------------"
-            if itad_current:
-                header += " | Mejor precio"
-                sep += "|--------------"
-            header += " | Bundle |"
-            sep += "|--------|"
-            lines += [header, sep]
+    lines += ["## DLCs Faltantes", ""]
+    header = "| DLC | Precio | Original | Descuento"
+    sep = "|-----|--------|----------|----------"
+    if itad_lows:
+        header += " | Mín. histórico"
+        sep += "|----------------"
+    if itad_current:
+        header += " | Mejor precio"
+        sep += "|--------------"
+    header += " |"
+    sep += "|"
+    lines += [header, sep]
 
+    for d in missing_dlcs:
         appid = d.get("appid", "")
-        icon = TYPE_ICONS.get(d.get("type", ""), "")
+        name = d.get("steam_name", "?")
         price = d.get("price_fmt", "?")
+        orig = d.get("orig_fmt", "?")
         disc = f"-{d['discount']}%" if d.get("discount", 0) > 0 else "—"
         if d.get("discount", 0) >= 50:
             disc = f"**{disc}**"
-        bundle = d.get("bundle") or "—"
 
-        row = f"| {d.get('priority', '?')} | {_link(d.get('steam_name', d.get('db_name', '?')), appid)} | {icon} {d.get('type', '')} | {price} | {disc}"
+        row = f"| {_link(name, appid)} | {price} | {orig} | {disc}"
 
         if itad_lows:
             low = itad_lows.get(appid)
@@ -975,42 +712,9 @@ def generate_md(
         if itad_current:
             cp = itad_current.get(appid)
             row += f" | ${cp['price']:.0f} en [{cp['store']}]({cp['url']})" if cp else " | —"
-        row += f" | {bundle} |"
+        row += " |"
         lines.append(row)
 
-    lines += ["", "---", ""]
-
-    # Phase costs
-    lines += ["## Plan por Fases (Costos Reales)", ""]
-    phase_names = {1: "City of Gold Collection", 2: "Silk Road (Mini Bundles)", 3: "Texas Heat (Mini Bundles)", 4: "DLCs Sueltos"}
-    for ph in sorted(phase_costs):
-        pc = phase_costs[ph]
-        name = phase_names.get(ph, f"Fase {ph}")
-        lines += [
-            f"### FASE {ph}: {name} — Mex$ {pc['discounted']:,.0f}" + (f" ~~Mex$ {pc['total']:,.0f}~~" if pc['total'] != pc['discounted'] else ""),
-            "",
-            "| DLC | Precio | Desc. | Tipo |",
-            "|-----|--------|-------|------|",
-        ]
-        for d in sorted(pc["dlcs"], key=lambda x: x.get("priority", 99)):
-            disc = f"-{d['discount']}%" if d.get("discount", 0) > 0 else "—"
-            icon = TYPE_ICONS.get(d.get("type", ""), "")
-            lines.append(f"| {_link(d.get('steam_name', d.get('db_name', '?')), d.get('appid', ''))} | {d.get('price_fmt', '?')} | {disc} | {icon} {d.get('type', '')} |")
-        lines += [f"| **Total Fase {ph}** | **Mex$ {pc['discounted']:,.0f}** | | {pc['count']} DLCs |", "", "---", ""]
-
-    # Bundles summary
-    lines += ["## Resumen por Bundle", ""]
-    lines += ["| Bundle | Fase | DLCs faltantes | Costo actual |", "|--------|------|----------------|--------------|"]
-    for bname, binfo in BUNDLES.items():
-        bdlcs = []
-        for db_key in binfo["dlcs"]:
-            for a, d in all_dlcs.items():
-                if d.get("db_name") == db_key and a not in owned_appids:
-                    bdlcs.append(d)
-                    break
-        if bdlcs:
-            cost = sum(d.get("price_raw", 0) / 100 for d in bdlcs)
-            lines.append(f"| {bname} | {binfo['phase']} | {len(bdlcs)} | Mex$ {cost:,.0f} |")
     lines += ["", "---", ""]
 
     # Price history / trends
@@ -1023,9 +727,9 @@ def generate_md(
             if t.get("times_seen", 0) <= 1:
                 continue
             curr = d.get("price_raw", 0) / 100
-            arrows = {"down": "⬇️", "up": "⬆️", "stable": "➡️", "new": "🆕"}
+            arrows = {"down": "v", "up": "^", "stable": "=", "new": "*"}
             arrow = arrows.get(t.get("direction", ""), "")
-            low_marker = " 🔥" if t.get("is_at_lowest") else ""
+            low_marker = " BEST" if t.get("is_at_lowest") else ""
             lines.append(f"| {_md_esc(d.get('steam_name', '?'))} | Mex$ {curr:.0f} | Mex$ {t['avg']/100:.0f} | Mex$ {t['lowest']/100:.0f}{low_marker} | {arrow} |")
         lines += ["", "---", ""]
 
@@ -1041,7 +745,6 @@ def generate_md(
         lines.append(f"| {sale['event']} | {sale['date']} | -{sale['discount']}% | ~Mex$ {est:,.0f} |")
     lines += [""]
 
-    # Scarface note (preserved)
     lines += [
         "---",
         "",
@@ -1131,7 +834,6 @@ def generate_html(
     prices: dict[str, dict],
     sale_name: str,
     recommendations: dict,
-    phase_costs: dict[int, dict],
     itad_lows: dict[str, dict],
     vanity: str,
     comparison: dict,
@@ -1147,37 +849,22 @@ def generate_html(
     on_sale = sum(1 for a, d in all_dlcs.items() if a not in owned_appids and d.get("discount", 0) > 0)
     pct_owned = owned * 100 // total if total else 0
 
-    # Build JSON data for JS
+    # Build JSON data for JS — sorted by discount desc
     dlc_json_list = []
     for d in sorted(
-        [d for a, d in all_dlcs.items() if a not in owned_appids and d.get("tier")],
-        key=lambda d: (TIER_ORDER.get(d.get("tier", "C"), 9), d.get("priority", 99)),
+        [d for a, d in all_dlcs.items() if a not in owned_appids and d.get("steam_name")],
+        key=lambda d: (-d.get("discount", 0), d.get("price_raw", 0)),
     ):
         appid = d.get("appid", "")
         low = itad_lows.get(appid)
         dlc_json_list.append({
-            "id": appid, "name": d.get("steam_name", d.get("db_name", "?")),
-            "tier": d.get("tier", "C"), "type": d.get("type", "?"),
+            "id": appid, "name": d.get("steam_name", "?"),
             "price": d.get("price_raw", 0), "orig": d.get("orig_raw", 0),
             "priceFmt": d.get("price_fmt", "?"), "origFmt": d.get("orig_fmt", "?"),
-            "discount": d.get("discount", 0), "bundle": d.get("bundle") or "",
-            "phase": d.get("phase", 0), "priority": d.get("priority", 99),
-            "notes": d.get("notes", ""),
+            "discount": d.get("discount", 0),
             "low": low["price"] if low else None,
             "lowDate": low["date"] if low else None,
         })
-
-    # Bundle data for cards
-    bundle_json = {}
-    for bname, binfo in BUNDLES.items():
-        bdlcs = []
-        for db_key in binfo["dlcs"]:
-            for a, d in all_dlcs.items():
-                if d.get("db_name") == db_key and a not in owned_appids:
-                    bdlcs.append({"id": a, "name": d.get("steam_name", db_key), "price": d.get("price_raw", 0)})
-                    break
-        if bdlcs:
-            bundle_json[bname] = {"phase": binfo["phase"], "dlcs": bdlcs, "cost": sum(x["price"] for x in bdlcs)}
 
     # History sparkline data
     history_data = {}
@@ -1190,7 +877,6 @@ def generate_html(
 
     data_json = json.dumps({
         "dlcs": dlc_json_list,
-        "bundles": bundle_json,
         "history": history_data,
         "totalAll": total,
         "ownedCount": owned,
@@ -1211,18 +897,18 @@ def generate_html(
         if parts:
             comp_html = f'<div class="comp-row">vs {comparison.get("prev_date", "?")}: {" ".join(parts)}</div>'
 
-    sale_badge = f'<div class="sale-banner">🏷️ {_html_esc(sale_name)}</div>' if sale_name else ""
+    sale_badge = f'<div class="sale-banner">{_html_esc(sale_name)}</div>' if sale_name else ""
 
     rec = recommendations
     rec_html = ""
     if rec["buy_now"]:
         items = " ".join(
             f'<a href="{STORE_URL.format(appid=d["appid"])}" class="rec-item" target="_blank">{_html_esc(d["steam_name"])} <small>-{d.get("discount",0)}%</small></a>'
-            for d in rec["buy_now"][:4]
+            for d in rec["buy_now"][:6]
         )
-        rec_html = f'<div class="rec-buy">🛒 <strong>Comprar ahora:</strong> {items}</div>'
+        rec_html = f'<div class="rec-buy"><strong>Comprar ahora (>= {rec.get("min_deal", 50)}% off):</strong> {items}</div>'
     elif not rec["on_sale_count"]:
-        rec_html = '<div class="rec-wait">⏳ Sin ofertas — espera al <strong>Summer Sale</strong> (25 jun, ~75% off)</div>'
+        rec_html = '<div class="rec-wait">Sin ofertas — espera al <strong>Summer Sale</strong> (25 jun, ~75% off)</div>'
 
     return f'''<!DOCTYPE html>
 <html lang="es">
@@ -1236,20 +922,16 @@ def generate_html(
 body{{font-family:-apple-system,BlinkMacSystemFont,'Segoe UI',sans-serif;background:var(--bg);color:var(--text);line-height:1.5}}
 a{{color:var(--accent);text-decoration:none}}a:hover{{text-decoration:underline}}
 .container{{max-width:1200px;margin:0 auto;padding:1rem}}
-/* Header */
 .hdr{{background:linear-gradient(135deg,#0e1a26,#1b2838);border-bottom:2px solid var(--border);padding:1.5rem 1rem;text-align:center}}
 .hdr h1{{font-size:1.6rem;color:var(--accent);letter-spacing:.02em}}
 .hdr .sub{{color:var(--text2);font-size:.85rem;margin-top:.3rem}}
-/* Cards */
 .card{{background:var(--card);border:1px solid var(--border);border-radius:10px;padding:1.2rem;margin-bottom:1rem}}
 .card h2{{font-size:1rem;color:var(--accent);margin-bottom:.8rem;font-weight:600}}
-/* Stat grid */
 .stats{{display:grid;grid-template-columns:repeat(auto-fit,minmax(150px,1fr));gap:.6rem;margin-bottom:1rem}}
 .st{{background:var(--card);border:1px solid var(--border);border-radius:8px;padding:.8rem;text-align:center}}
 .st .v{{font-size:1.5rem;font-weight:700;color:var(--accent)}}
 .st .l{{font-size:.72rem;color:var(--text2);margin-top:.15rem}}
 .st.g .v{{color:var(--green)}} .st.y .v{{color:var(--yellow)}} .st.r .v{{color:var(--red)}}
-/* Donut */
 .donut-wrap{{display:flex;align-items:center;justify-content:center;gap:2rem;margin-bottom:1rem;flex-wrap:wrap}}
 .donut-svg{{width:160px;height:160px}}
 .donut-center{{font-size:1.4rem;font-weight:700;fill:var(--text)}}
@@ -1259,7 +941,6 @@ a{{color:var(--accent);text-decoration:none}}a:hover{{text-decoration:underline}
 .donut-legend{{font-size:.85rem;color:var(--text2)}}
 .donut-legend div{{margin-bottom:.4rem}}
 .donut-legend .dot{{display:inline-block;width:10px;height:10px;border-radius:50%;margin-right:.4rem;vertical-align:middle}}
-/* Banners */
 .sale-banner{{background:var(--gold);color:#1b2838;padding:.5rem 1rem;border-radius:6px;font-weight:600;text-align:center;margin-bottom:.75rem}}
 .rec-buy{{background:rgba(108,198,68,.12);border:1px solid var(--green);padding:.7rem 1rem;border-radius:6px;margin-bottom:.75rem}}
 .rec-buy .rec-item{{background:rgba(108,198,68,.15);padding:.2rem .6rem;border-radius:4px;margin:0 .3rem;white-space:nowrap}}
@@ -1269,31 +950,15 @@ a{{color:var(--accent);text-decoration:none}}a:hover{{text-decoration:underline}
 .bg-green{{background:rgba(108,198,68,.2);color:var(--green)}}
 .bg-red{{background:rgba(199,50,46,.2);color:var(--red)}}
 .bg-blue{{background:rgba(102,192,244,.2);color:var(--accent)}}
-/* Simulator */
 .sim{{display:flex;align-items:center;gap:1rem;flex-wrap:wrap}}
 .sim input[type=range]{{flex:1;min-width:200px;accent-color:var(--accent)}}
 .sim .sim-val{{font-size:1.2rem;font-weight:700;color:var(--accent);min-width:3.5rem;text-align:center}}
 .sim-result{{display:flex;gap:1.5rem;margin-top:.5rem;font-size:.9rem;flex-wrap:wrap}}
 .sim-result .sr{{color:var(--green);font-weight:600}}
-/* Bundle cards */
-.bundles-grid{{display:grid;grid-template-columns:repeat(auto-fill,minmax(320px,1fr));gap:.75rem}}
-.bcard{{background:var(--card);border:1px solid var(--border);border-radius:8px;overflow:hidden;transition:border-color .2s}}
-.bcard:hover{{border-color:var(--accent)}}
-.bcard-head{{padding:.7rem .9rem;display:flex;justify-content:space-between;align-items:center;background:rgba(102,192,244,.05)}}
-.bcard-name{{font-weight:600;font-size:.9rem}}
-.bcard-cost{{color:var(--accent);font-weight:700;font-size:.95rem}}
-.bcard-phase{{font-size:.7rem;color:var(--text2)}}
-.bcard-dlcs{{padding:.5rem .9rem .7rem}}
-.bcard-dlc{{display:flex;align-items:center;gap:.5rem;padding:.25rem 0;font-size:.8rem;border-bottom:1px solid rgba(42,71,94,.3)}}
-.bcard-dlc:last-child{{border:none}}
-.bcard-dlc img{{width:80px;height:30px;border-radius:3px;object-fit:cover;flex-shrink:0}}
-.bcard-dlc .bdprice{{margin-left:auto;color:var(--text2);font-size:.75rem;white-space:nowrap}}
-/* Filters */
 .filters{{display:flex;flex-wrap:wrap;gap:.5rem;margin-bottom:.75rem;align-items:center}}
 .filters select,.filters input[type=text]{{background:var(--card);border:1px solid var(--border);color:var(--text);padding:.4rem .6rem;border-radius:4px;font-size:.8rem}}
 .filters select:focus,.filters input:focus{{border-color:var(--accent);outline:none}}
 .filters .count{{font-size:.75rem;color:var(--text2);margin-left:auto}}
-/* Table */
 .tbl-wrap{{overflow-x:auto}}
 table{{width:100%;border-collapse:collapse;font-size:.82rem}}
 th{{background:var(--bg2);color:var(--text2);text-align:left;padding:.55rem .5rem;font-weight:600;position:sticky;top:0;cursor:pointer;white-space:nowrap;user-select:none}}
@@ -1302,23 +967,18 @@ td{{padding:.45rem .5rem;border-bottom:1px solid rgba(42,71,94,.4);vertical-alig
 tr:hover{{background:rgba(102,192,244,.04)}}
 tr.checked-row{{opacity:.4}}
 tr.checked-row td{{text-decoration:line-through}}
-.tier{{font-weight:700;text-align:center;width:28px}}
-.tier-S{{color:var(--gold)}} .tier-A{{color:var(--green)}} .tier-B{{color:var(--accent)}} .tier-C{{color:var(--text2)}}
 .dlc-cell{{display:flex;align-items:center;gap:.5rem}}
 .dlc-cell img{{width:92px;height:34px;border-radius:3px;object-fit:cover;flex-shrink:0;transition:transform .2s}}
 .dlc-cell img:hover{{transform:scale(2.5);position:relative;z-index:10;box-shadow:0 4px 20px rgba(0,0,0,.6)}}
 .dlc-info .dlc-name{{font-weight:500}}
-.dlc-info .dlc-notes{{font-size:.68rem;color:var(--text2);max-width:250px}}
 .sale-tag{{color:var(--green);font-weight:700}}
 .low-tag{{color:var(--yellow)}}
 .chk{{width:16px;height:16px;accent-color:var(--green);cursor:pointer}}
 .sparkline{{width:80px;height:24px}}
 .sparkline polyline{{fill:none;stroke:var(--accent);stroke-width:1.5}}
-/* Footer */
 .footer{{text-align:center;color:var(--text2);font-size:.72rem;padding:2rem 0 1rem}}
 @media(max-width:600px){{
   .stats{{grid-template-columns:repeat(3,1fr)}}
-  .bundles-grid{{grid-template-columns:1fr}}
   .donut-wrap{{flex-direction:column}}
   .dlc-cell img{{width:60px;height:22px}}
 }}
@@ -1326,7 +986,7 @@ tr.checked-row td{{text-decoration:line-through}}
 </head>
 <body>
 <div class="hdr">
-  <h1>&#127918; PAYDAY 2 DLC Tracker</h1>
+  <h1>PAYDAY 2 DLC Tracker</h1>
   <div class="sub">{today} &middot; {_html_esc(vanity)} &middot; MXN</div>
 </div>
 <div class="container">
@@ -1334,7 +994,6 @@ tr.checked-row td{{text-decoration:line-through}}
   {comp_html}
   {rec_html}
 
-  <!-- Donut + Stats -->
   <div class="donut-wrap">
     <svg class="donut-svg" viewBox="0 0 180 180">
       <circle class="donut-ring" cx="90" cy="90" r="70"/>
@@ -1344,10 +1003,8 @@ tr.checked-row td{{text-decoration:line-through}}
     </svg>
     <div class="donut-legend">
       <div><span class="dot" style="background:var(--accent)"></span>Poseidos: {owned}</div>
-      <div><span class="dot" style="background:var(--gold)"></span>Tier S faltantes: {sum(1 for d in dlc_json_list if d['tier']=='S')}</div>
-      <div><span class="dot" style="background:var(--green)"></span>Tier A faltantes: {sum(1 for d in dlc_json_list if d['tier']=='A')}</div>
-      <div><span class="dot" style="background:var(--yellow)"></span>Tier B faltantes: {sum(1 for d in dlc_json_list if d['tier']=='B')}</div>
-      <div><span class="dot" style="background:var(--text2)"></span>Tier C faltantes: {sum(1 for d in dlc_json_list if d['tier']=='C')}</div>
+      <div><span class="dot" style="background:var(--green)"></span>En oferta: {on_sale}</div>
+      <div><span class="dot" style="background:var(--text2)"></span>Precio normal: {missing - on_sale}</div>
     </div>
   </div>
 
@@ -1360,9 +1017,8 @@ tr.checked-row td{{text-decoration:line-through}}
     <div class="st"><div class="v" id="s-checked">0</div><div class="l">Marcados</div></div>
   </div>
 
-  <!-- Discount Simulator -->
   <div class="card">
-    <h2>&#128270; Simulador de Descuento</h2>
+    <h2>Simulador de Descuento</h2>
     <div class="sim">
       <span style="color:var(--text2)">0%</span>
       <input type="range" id="sim-slider" min="0" max="90" step="5" value="0" oninput="simulate()">
@@ -1375,19 +1031,9 @@ tr.checked-row td{{text-decoration:line-through}}
     </div>
   </div>
 
-  <!-- Bundle Cards -->
   <div class="card">
-    <h2>&#128230; Bundles</h2>
-    <div class="bundles-grid" id="bundles"></div>
-  </div>
-
-  <!-- DLC Table -->
-  <div class="card">
-    <h2>&#128203; DLCs Faltantes</h2>
+    <h2>DLCs Faltantes</h2>
     <div class="filters">
-      <select id="f-tier" onchange="render()"><option value="">Tier</option><option value="S">S</option><option value="A">A</option><option value="B">B</option><option value="C">C</option></select>
-      <select id="f-phase" onchange="render()"><option value="">Fase</option><option value="1">1</option><option value="2">2</option><option value="3">3</option><option value="4">4</option></select>
-      <select id="f-type" onchange="render()"><option value="">Tipo</option><option value="heist">Heist</option><option value="armas">Armas</option><option value="cosmético">Cosm.</option><option value="música">Música</option></select>
       <select id="f-sale" onchange="render()"><option value="">Oferta</option><option value="y">En oferta</option><option value="n">Normal</option></select>
       <input type="text" id="f-q" placeholder="Buscar..." oninput="render()">
       <span class="count" id="f-count"></span>
@@ -1395,14 +1041,10 @@ tr.checked-row td{{text-decoration:line-through}}
     <div class="tbl-wrap">
       <table><thead><tr>
         <th style="width:30px">&#9745;</th>
-        <th onclick="doSort('tier')">Tier</th>
         <th onclick="doSort('name')">DLC</th>
-        <th onclick="doSort('type')">Tipo</th>
         <th onclick="doSort('price')">Precio</th>
         <th onclick="doSort('discount')">Oferta</th>
         <th>Hist.</th>
-        <th onclick="doSort('bundle')">Bundle</th>
-        <th onclick="doSort('phase')">Fase</th>
       </tr></thead><tbody id="tbody"></tbody></table>
     </div>
   </div>
@@ -1413,10 +1055,8 @@ tr.checked-row td{{text-decoration:line-through}}
 const DATA = {data_json};
 const STORE = "https://store.steampowered.com/app/";
 const CAP = "https://cdn.akamai.steamstatic.com/steam/apps/";
-const ICONS = {{heist:"🏦",armas:"🔫","cosmético":"👔","música":"🎵"}};
-const TIER_CLS = {{S:"tier-S",A:"tier-A",B:"tier-B",C:"tier-C"}};
 let checked = JSON.parse(localStorage.getItem('pd2_checked')||'[]');
-let sortKey = 'priority', sortAsc = true;
+let sortKey = 'discount', sortAsc = false;
 
 function saveChecked(){{ localStorage.setItem('pd2_checked',JSON.stringify(checked)); }}
 function isChecked(id){{ return checked.includes(id); }}
@@ -1435,21 +1075,14 @@ function sparkSvg(id){{
 }}
 
 function render(){{
-  const tier=document.getElementById('f-tier').value;
-  const phase=document.getElementById('f-phase').value;
-  const type=document.getElementById('f-type').value;
   const sale=document.getElementById('f-sale').value;
   const q=document.getElementById('f-q').value.toLowerCase();
   let dlcs=DATA.dlcs.filter(d=>{{
-    if(tier&&d.tier!==tier) return false;
-    if(phase&&d.phase!=phase) return false;
-    if(type&&d.type!==type) return false;
     if(sale==='y'&&d.discount===0) return false;
     if(sale==='n'&&d.discount>0) return false;
-    if(q&&!d.name.toLowerCase().includes(q)&&!(d.notes||'').toLowerCase().includes(q)) return false;
+    if(q&&!d.name.toLowerCase().includes(q)) return false;
     return true;
   }});
-  // Sort
   dlcs.sort((a,b)=>{{
     let va=a[sortKey], vb=b[sortKey];
     if(typeof va==='string') return sortAsc?va.localeCompare(vb):vb.localeCompare(va);
@@ -1460,22 +1093,17 @@ function render(){{
     const ck=isChecked(d.id);
     const cls=ck?'checked-row':'';
     const disc=d.discount>0?('<span class="'+(d.discount>=50?'sale-tag':'low-tag')+'">-'+d.discount+'%</span>'):'—';
-    const low=d.low?('$'+d.low.toFixed(0)):'—';
     return '<tr class="'+cls+'" data-id="'+d.id+'">'+
       '<td><input type="checkbox" class="chk" '+(ck?'checked':'')+' onchange="toggleCheck(\\\''+d.id+'\\\')"></td>'+
-      '<td class="tier '+TIER_CLS[d.tier]+'">'+d.tier+'</td>'+
-      '<td><div class="dlc-cell"><img src="'+CAP+d.id+'/capsule_231x87.jpg" loading="lazy" onerror="this.style.display=\\\'none\\\'"><div class="dlc-info"><div class="dlc-name"><a href="'+STORE+d.id+'/" target="_blank">'+d.name+'</a></div><div class="dlc-notes">'+(d.notes||'')+'</div></div></div></td>'+
-      '<td>'+(ICONS[d.type]||'')+' '+d.type+'</td>'+
+      '<td><div class="dlc-cell"><img src="'+CAP+d.id+'/capsule_231x87.jpg" loading="lazy" onerror="this.style.display=\\\'none\\\'"><div class="dlc-info"><div class="dlc-name"><a href="'+STORE+d.id+'/" target="_blank">'+d.name+'</a></div></div></div></td>'+
       '<td>'+d.priceFmt+'</td>'+
       '<td>'+disc+'</td>'+
-      '<td>'+sparkSvg(d.id)+'</td>'+
-      '<td>'+d.bundle+'</td>'+
-      '<td>'+d.phase+'</td></tr>';
+      '<td>'+sparkSvg(d.id)+'</td></tr>';
   }}).join('');
   document.getElementById('f-count').textContent=dlcs.length+'/'+DATA.dlcs.length;
 }}
 
-function doSort(key){{ if(sortKey===key) sortAsc=!sortAsc; else{{ sortKey=key; sortAsc=true; }} render(); }}
+function doSort(key){{ if(sortKey===key) sortAsc=!sortAsc; else{{ sortKey=key; sortAsc=key==='name'; }} render(); }}
 
 function updateStats(){{
   const unchecked=DATA.dlcs.filter(d=>!isChecked(d.id));
@@ -1491,7 +1119,7 @@ function simulate(){{
   const unchecked=DATA.dlcs.filter(d=>!isChecked(d.id));
   let total=0;
   unchecked.forEach(d=>{{
-    if(d.discount>0) total+=d.price; // already discounted
+    if(d.discount>0) total+=d.price;
     else total+=d.orig*(1-pct/100);
   }});
   total/=100;
@@ -1500,18 +1128,7 @@ function simulate(){{
   document.getElementById('sim-save').textContent='Mex$ '+Math.round(orig-total).toLocaleString('en');
 }}
 
-function renderBundles(){{
-  const el=document.getElementById('bundles');
-  el.innerHTML=Object.entries(DATA.bundles).map(([name,b])=>{{
-    const dlcs=b.dlcs.map(d=>
-      '<div class="bcard-dlc"><img src="'+CAP+d.id+'/capsule_231x87.jpg" loading="lazy" onerror="this.style.display=\\\'none\\\'"><span>'+d.name.replace('PAYDAY 2: ','')+'</span><span class="bdprice">$'+(d.price/100).toFixed(0)+'</span></div>'
-    ).join('');
-    return '<div class="bcard"><div class="bcard-head"><div><div class="bcard-name">'+name+'</div><div class="bcard-phase">Fase '+b.phase+' &middot; '+b.dlcs.length+' DLCs</div></div><div class="bcard-cost">Mex$ '+(b.cost/100).toLocaleString('en',{{maximumFractionDigits:0}})+'</div></div><div class="bcard-dlcs">'+dlcs+'</div></div>';
-  }}).join('');
-}}
-
-// Init
-render(); updateStats(); renderBundles(); simulate();
+render(); updateStats(); simulate();
 </script>
 </body>
 </html>'''
@@ -1533,29 +1150,22 @@ def generate_csv(
     buf = io.StringIO()
     buf.write("\ufeff")  # BOM for Excel
     writer = csv.writer(buf)
-    writer.writerow(["AppID", "Name", "Tier", "Type", "Priority", "Phase", "Bundle",
-                     "Price (MXN)", "Original Price", "Discount%", "ITAD Low", "Status", "Notes", "URL"])
+    writer.writerow(["AppID", "Name", "Price (MXN)", "Original Price", "Discount%", "ITAD Low", "Status", "URL"])
 
     missing = sorted(
-        [(a, all_dlcs[a]) for a in pd2_dlc_appids if a not in owned_appids and a in all_dlcs and all_dlcs[a].get("tier")],
-        key=lambda x: (TIER_ORDER.get(x[1].get("tier", "C"), 9), x[1].get("priority", 99)),
+        [(a, all_dlcs[a]) for a in pd2_dlc_appids if a not in owned_appids and a in all_dlcs],
+        key=lambda x: (-x[1].get("discount", 0), x[1].get("price_raw", 0)),
     )
     for appid, d in missing:
         low = itad_lows.get(appid)
         writer.writerow([
             appid,
-            d.get("steam_name", d.get("db_name", "")),
-            d.get("tier", ""),
-            d.get("type", ""),
-            d.get("priority", ""),
-            d.get("phase", ""),
-            d.get("bundle", ""),
+            d.get("steam_name", ""),
             d.get("price_fmt", ""),
             d.get("orig_fmt", ""),
             f"-{d['discount']}%" if d.get("discount", 0) > 0 else "",
             f"${low['price']:.0f}" if low else "",
             "Missing",
-            d.get("notes", ""),
             STORE_URL.format(appid=appid),
         ])
     return buf.getvalue()
@@ -1575,6 +1185,7 @@ def main():
     ITAD_KEY = cfg["itad_key"]
     OUTPUT_DIR = cfg["output_dir"]
     NO_CACHE = cfg["no_cache"]
+    MIN_DEAL = cfg["min_deal"]
     t0 = time.monotonic()
 
     TOTAL = 9 + (1 if KEY else 0) + (1 if ITAD_KEY else 0) + (1 if cfg["csv"] else 0)
@@ -1584,45 +1195,37 @@ def main():
         print(f"\n{C.CYN}[{_n[0]}/{TOTAL}]{C.RST} {_bold(msg)}", flush=True)
 
     if not KEY:
-        print(f"  {_dim('Sin API Key — ownership desde caché/base curada')}")
+        print(f"  {_dim('Sin API Key — ownership desde cache')}")
+    print(f"  {_dim(f'Min deal: {MIN_DEAL}%')}")
 
     # [1] Steam ID
     step("Resolviendo Steam ID...")
     steam_id = resolve_steam_id(KEY, VANITY)
     print(f"  {_ok(steam_id)}")
 
-    # [2] DLC list
+    # [2] DLC list + names
     step("Obteniendo lista de DLCs de PAYDAY 2...")
     pd2_dlc_appids = fetch_pd2_dlc_list(NO_CACHE)
     print(f"  {_ok(f'{len(pd2_dlc_appids)} DLCs encontrados')}")
 
-    # Fetch/load DLC names + match to database
     mapping_cache, _ = _load_cache(DLC_MAPPING_CACHE)
     cached_names = mapping_cache.get("names", {})
     if NO_CACHE:
         cached_names = {}
     dlc_names = fetch_dlc_names(pd2_dlc_appids, cached_names)
     _save_cache(DLC_MAPPING_CACHE, {"names": dlc_names})
-    db_mapping = match_dlc_names_to_db(dlc_names)
-    matched = len(db_mapping)
-    print(f"  {_ok(f'{matched}/{len(DLC_DB)} DLCs de la base curada identificados')}")
-    if matched < len(DLC_DB):
-        unmatched = set(DLC_DB.keys()) - {d["db_name"] for d in db_mapping.values()}
-        for name in sorted(unmatched):
-            print(f"  {_warn(f'No encontrado: {name}')}")
+    print(f"  {_ok(f'{len(dlc_names)} nombres obtenidos')}")
 
     # [3] Ownership
     if KEY:
         step("Verificando DLCs poseídos...")
         all_owned = get_owned_games(KEY, steam_id)
         pd2_owned = {a for a in pd2_dlc_appids if a in all_owned}
-        # Merge with manual overrides
         prev_owned = load_owned(steam_id)
         pd2_owned |= prev_owned
     else:
         pd2_owned = load_owned(steam_id)
 
-    # Apply CLI overrides
     for appid in cfg["mark_owned"]:
         pd2_owned.add(appid)
         print(f"  {_ok(f'Marcado como poseído: {appid}')}")
@@ -1643,11 +1246,21 @@ def main():
     total_cost = sum(prices.get(a, {}).get("price_raw", 0) for a in missing_appids) / 100
     print(f"  {_ok(f'{len(prices)} precios · {on_sale} en oferta · Total: Mex$ {total_cost:,.0f}')}")
 
-    # [5] Active sale
+    # [5] Bundles
+    step("Obteniendo bundles de Steam...")
+    bundles = fetch_bundles(pd2_dlc_appids, NO_CACHE)
+    if bundles:
+        for b in bundles:
+            bname = b["name"]
+            bcount = len(b["dlc_appids"])
+            print(f"  {_ok(f'{bname} ({bcount} DLCs)')}")
+    else:
+        print(f"  {_dim('No se encontraron bundles')}")
+
     step("Detectando oferta activa de Steam...")
     sale_name = get_active_sale()
     if sale_name:
-        print(f"  {_ok(f'🏷️  {sale_name}')}")
+        print(f"  {_ok(sale_name)}")
     else:
         print(f"  {_dim('Sin oferta especial detectada')}")
 
@@ -1676,24 +1289,20 @@ def main():
     else:
         print(f"  {_dim('Primera ejecución — snapshot guardado')}")
 
-    # [8] Recommendations + phase costs
+    # [8] Recommendations
     step("Calculando recomendaciones...")
-    # Merge all DLC data
     all_dlcs = {}
     for appid in pd2_dlc_appids:
         d = {}
-        if appid in db_mapping:
-            d = dict(db_mapping[appid])
         if appid in prices:
             d.update(prices[appid])
         if appid in dlc_names:
-            d.setdefault("steam_name", dlc_names[appid])
+            d["steam_name"] = _strip_prefix(dlc_names[appid])
         d.setdefault("appid", appid)
         all_dlcs[appid] = d
 
     missing_list = [all_dlcs[a] for a in missing_appids if a in all_dlcs]
-    recommendations = compute_recommendations(missing_list, cfg["budget"], cfg["alert_price"])
-    phase_costs = compute_phase_costs(missing_list)
+    recommendations = compute_recommendations(missing_list, cfg["budget"], cfg["alert_price"], MIN_DEAL)
 
     if recommendations["on_sale_count"] > 0:
         n_sale = recommendations["on_sale_count"]
@@ -1729,7 +1338,7 @@ def main():
 
     save_run(owned_count, missing_count, prices, on_sale)
 
-    # [9] Generate MD
+    # Generate MD
     step("Generando Markdown...")
     md = generate_md(
         all_dlcs=all_dlcs,
@@ -1738,7 +1347,6 @@ def main():
         prices=prices,
         sale_name=sale_name,
         recommendations=recommendations,
-        phase_costs=phase_costs,
         trends=trends,
         itad_lows=itad_lows,
         itad_current=itad_current,
@@ -1750,7 +1358,7 @@ def main():
     output_file.write_text(md, encoding="utf-8")
     print(f"  {_ok(str(output_file))}")
 
-    # [10] Generate HTML
+    # Generate HTML
     step("Generando HTML interactivo...")
     html = generate_html(
         all_dlcs=all_dlcs,
@@ -1759,7 +1367,6 @@ def main():
         prices=prices,
         sale_name=sale_name,
         recommendations=recommendations,
-        phase_costs=phase_costs,
         itad_lows=itad_lows,
         vanity=VANITY,
         comparison=comparison,
