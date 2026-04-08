@@ -415,7 +415,7 @@ details .details-body { padding-top: 0.75rem; }
       <div class="example">https://steamcommunity.com/profiles/<strong>76561198012345678</strong>/</div>
       <div class="field" style="margin-top:1rem">
         <label>Tu perfil de Steam</label>
-        <input type="text" id="wiz-vanity" placeholder="BG00G, Steam ID, o URL completa">
+        <input type="text" id="wiz-vanity" placeholder="tu_vanity_url, Steam ID, o URL completa">
       </div>
       <div class="tip">&#128161; Si pegas la URL completa del perfil, se extrae automaticamente.</div>
     </div>
@@ -530,7 +530,7 @@ details .details-body { padding-top: 0.75rem; }
       </h2>
     <div class="field">
       <label>Perfil de Steam</label>
-      <input type="text" id="vanity" placeholder="BG00G, Steam ID, o URL del perfil">
+      <input type="text" id="vanity" placeholder="tu_vanity_url, Steam ID, o URL del perfil">
       <div class="hint">Vanity URL, Steam ID (17 digitos), o link completo del perfil</div>
     </div>
     <div class="row">

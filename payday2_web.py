@@ -760,7 +760,7 @@ tr.owned-row td { text-decoration: line-through; }
       <h2>&#9881; Configuracion rapida</h2>
       <div class="settings-field" style="margin-bottom:.75rem">
         <label>Perfil de Steam (Vanity URL o Steam ID)</label>
-        <input type="text" id="setup-vanity" placeholder="BG00G">
+        <input type="text" id="setup-vanity" placeholder="tu_vanity_url">
       </div>
       <div class="settings-field" style="margin-bottom:.75rem">
         <label>Steam API Key <span style="color:var(--text2);font-size:.75rem">(opcional — no detecta DLCs, solo juegos)</span></label>
@@ -900,7 +900,7 @@ tr.owned-row td { text-decoration: line-through; }
         <div class="settings-row">
           <div class="settings-field">
             <label>Perfil de Steam</label>
-            <input type="text" id="cfg-vanity" placeholder="BG00G">
+            <input type="text" id="cfg-vanity" placeholder="tu_vanity_url">
           </div>
           <div class="settings-field">
             <label>Steam API Key <span style="color:var(--text2);font-size:.75rem">(opcional — no detecta DLCs, solo juegos)</span></label>
