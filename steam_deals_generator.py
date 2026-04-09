@@ -2745,6 +2745,28 @@ a.pick-card:hover { border-color: var(--accent-blue); transform: translateY(-2px
 .fin-label { font-size: .7rem; color: var(--text-secondary); margin-top: .2rem; }
 @media (max-width: 1023px) { .dash-grid { grid-template-columns: 1fr; } .fin-grid { grid-template-columns: repeat(3, 1fr); } }
 @media (max-width: 767px) { .fin-grid { grid-template-columns: repeat(2, 1fr); } }
+.pick-card { position: relative; }
+.share-btn-mini { position: absolute; top: .4rem; right: .4rem; background: var(--bg-card); border: 1px solid var(--border); border-radius: 4px; padding: .3rem .5rem; cursor: pointer; font-size: .9rem; opacity: 0.6; transition: opacity .2s; }
+.share-btn-mini:hover { opacity: 1; background: var(--accent-blue); }
+.share-modal { display: none; position: fixed; inset: 0; background: rgba(0,0,0,0.7); z-index: 1000; align-items: center; justify-content: center; }
+.share-modal.active { display: flex; }
+.share-modal-content { background: var(--bg-card); border: 1px solid var(--border); border-radius: 12px; padding: 1.5rem; max-width: 420px; width: 90%; }
+.share-modal h3 { color: var(--accent-blue); margin-bottom: 1rem; font-size: 1.1rem; }
+.share-game-info { background: var(--bg-primary); border-radius: 8px; padding: 1rem; margin-bottom: 1rem; }
+.share-game-name { font-weight: 600; font-size: 1rem; margin-bottom: 0.5rem; }
+.share-game-price { color: var(--accent-green); font-size: 1.2rem; font-weight: 700; }
+.share-game-price span { text-decoration: line-through; color: var(--text-secondary); font-weight: 400; font-size: 0.9rem; }
+.share-game-minhist { font-size: 0.8rem; color: var(--text-secondary); margin-top: 0.3rem; }
+.share-game-minhist span { color: var(--accent-yellow); }
+.share-actions { display: flex; flex-direction: column; gap: 0.6rem; }
+.share-btn { padding: 0.6rem 1rem; border-radius: 6px; font-size: 0.85rem; font-weight: 600; cursor: pointer; text-align: center; }
+.share-btn-copy-app { background: var(--accent-blue); color: #000; border: none; }
+.share-btn-copy-app:hover { background: #4db8e8; }
+.share-btn-copy-steam { background: var(--bg-secondary); color: var(--text-primary); border: 1px solid var(--border); }
+.share-btn-copy-steam:hover { border-color: var(--accent-blue); }
+.share-btn-open { background: var(--bg-primary); color: var(--text-secondary); border: 1px solid var(--border); }
+.share-close { margin-top: 0.8rem; text-align: center; color: var(--text-secondary); font-size: 0.85rem; cursor: pointer; }
+.share-close:hover { color: var(--text-primary); }
 """
 
 _HTML_JS = """
@@ -2829,6 +2851,42 @@ function copyForSheets() {
     btn.innerHTML = '&#9989; Copiado!';
     setTimeout(() => btn.innerHTML = orig, 2000);
   }).catch(() => alert('No se pudo copiar al clipboard'));
+}
+// Share Modal
+let currentShareData = null;
+let currentSteamUrl = '';
+function openShareModal(game) {
+  currentShareData = game;
+  currentSteamUrl = 'https://store.steampowered.com/app/' + game.appid + '/';
+  document.getElementById('share-name').textContent = game.name || '';
+  document.getElementById('share-price').innerHTML = (game.price_original && game.price ? '<span>$' + game.price_original + ' </span>' : '') + (game.price || '') + (game.discount ? ' (' + game.discount + '% OFF)' : '');
+  document.getElementById('share-minhist').innerHTML = game.min_hist ? 'Minimo historico: <span>$' + game.min_hist + '</span>' : '';
+  document.getElementById('share-modal').classList.add('active');
+}
+function closeShareModal() {
+  document.getElementById('share-modal').classList.remove('active');
+  currentShareData = null;
+}
+function copyShareLink() {
+  if (!currentShareData) return;
+  const encoded = btoa(JSON.stringify(currentShareData));
+  const shareUrl = 'steamtools://share?data=' + encoded;
+  navigator.clipboard.writeText(shareUrl).then(() => {
+    const btn = document.getElementById('btn-copy-app');
+    btn.textContent = 'Copiado!';
+    setTimeout(() => btn.textContent = 'Copiar link steamtools://', 2000);
+  });
+}
+function copySteamLink() {
+  if (!currentSteamUrl) return;
+  navigator.clipboard.writeText(currentSteamUrl).then(() => {
+    const btn = document.querySelector('.share-btn-copy-steam');
+    btn.textContent = 'Copiado!';
+    setTimeout(() => btn.textContent = 'Copiar link de Steam', 2000);
+  });
+}
+function openInSteam() {
+  if (currentSteamUrl) window.open(currentSteamUrl, '_blank');
 }
 """
 
@@ -3015,16 +3073,22 @@ def generate_html(
             prio_html = _html_prio_badge(tp.get("priority", 0))
             header_img = HEADER_URL.format(appid=tp['appid'])
             store_url = STORE_URL.format(appid=tp['appid'])
-            cards.append(f'''<a class="pick-card {rank_cls}" href="{store_url}" target="_blank">
-  <img class="pick-img" src="{header_img}" alt="" loading="lazy" onerror="this.style.display='none'">
-  <div class="pick-body">
-    <div class="pick-rank">#{idx}</div>
-    <div class="pick-score">{tp['score']}</div>
-    <div class="pick-name">{_html_esc(tp['name'])}{prio_html}</div>
-    <div class="pick-details"><span class="pick-discount">-{tp['discount']}%</span><span class="pick-price">{_html_esc(tp['price_final'])}</span></div>
-    <div class="pick-meta">{rev_html} &middot; {mc_html} &middot; {dk_html} &middot; {mp_html}</div>
-  </div>
-</a>''')
+            min_hist = historical_lows.get(tp['appid'])
+            min_hist_str = f"${min_hist['price']:.0f}" if min_hist else ""
+            tp_data = f'{{"name":"{_html_esc(tp["name"])}","appid":"{tp["appid"]}","price":"{_html_esc(tp["price_final"])}","price_original":"{_html_esc(tp.get("price_original",""))}","discount":{tp["discount"]},"min_hist":"{min_hist_str}"}}'
+            cards.append(f'''<div class="pick-card {rank_cls}">
+  <a href="{store_url}" target="_blank" style="display:block">
+    <img class="pick-img" src="{header_img}" alt="" loading="lazy" onerror="this.style.display='none'">
+    <div class="pick-body">
+      <div class="pick-rank">#{idx}</div>
+      <div class="pick-score">{tp['score']}</div>
+      <div class="pick-name">{_html_esc(tp['name'])}{prio_html}</div>
+      <div class="pick-details"><span class="pick-discount">-{tp['discount']}%</span><span class="pick-price">{_html_esc(tp['price_final'])}</span></div>
+      <div class="pick-meta">{rev_html} &middot; {mc_html} &middot; {dk_html} &middot; {mp_html}</div>
+    </div>
+  </a>
+  <button class="share-btn-mini" onclick="openShareModal({tp_data})" title="Compartir">&#128279;</button>
+</div>''')
         parts.append(f'''<section class="top-picks">
   <h2>&#127942; Top {len(top_picks)} Picks</h2>
   <p class="section-desc">Ranking: reviews (26%) + descuento (22%) + prioridad (18%) + $/hora HLTB (14%) + Deck (10%) + Metacritic (5%) + edad (5%).</p>
@@ -3184,10 +3248,14 @@ def generate_html(
                     cells.append("<td>\u2014</td>")
             capsule_img = CAPSULE_URL.format(appid=appid)
             desc_attr = f' title="{_html_esc(d.get("description", ""))}"' if d.get("description") else ""
+            min_hist = historical_lows.get(appid)
+            min_hist_str = f"${min_hist['price']:.0f}" if min_hist else ""
+            game_data = f'{{"name":"{_html_esc(d["name"])}","appid":"{appid}","price":"{_html_esc(d["price_final"])}","price_original":"{_html_esc(d["price_original"])}","discount":{d["discount"]},"min_hist":"{min_hist_str}"}}'
             name_html = (
                 f'<div class="game-cell">'
                 f'<img class="game-thumb" src="{capsule_img}" alt="" loading="lazy" onerror="this.style.display=\'none\'">'
                 f'<span{desc_attr}>{_html_link(d["name"], appid)}{_html_prio_badge(prio)}</span>'
+                f'<button class="share-btn-mini" onclick="openShareModal({game_data})" title="Compartir" style="margin-left:.4rem;position:relative;top:-1px">&#128279;</button>'
                 f'</div>'
             )
             cells.append(f"<td>{name_html}</td>")
@@ -3256,7 +3324,7 @@ def generate_share_html(deals, vanity, min_discount, sale_name="", top_picks=Non
     return f'''<!DOCTYPE html>
 <html lang="es"><head><meta charset="UTF-8"><meta name="viewport" content="width=device-width,initial-scale=1.0">
 <title>{_html_esc(title)}</title>
-<style>*{{box-sizing:border-box;margin:0;padding:0}}body{{font-family:system-ui,sans-serif;background:#1b2838;color:#c7d5e0;padding:1rem;max-width:1000px;margin:0 auto}}a{{color:#66c0f4;text-decoration:none}}a:hover{{text-decoration:underline}}h1{{font-size:1.3rem;margin-bottom:.3rem}}table{{width:100%;border-collapse:collapse;font-size:.85rem;margin-top:.5rem}}th{{background:#2a475e;padding:.4rem .5rem;text-align:left;border-bottom:2px solid #2a475e}}td{{padding:.35rem .5rem;border-bottom:1px solid #2a475e}}tr:hover{{background:#1a3a5c}}.meta{{color:#8f98a0;font-size:.85rem;margin-bottom:1rem}}</style>
+<style>{{*{{box-sizing:border-box;margin:0;padding:0}}body{{font-family:system-ui,sans-serif;background:#1b2838;color:#c7d5e0;padding:1rem;max-width:1000px;margin:0 auto}}a{{color:#66c0f4;text-decoration:none}}a:hover{{text-decoration:underline}}h1{{font-size:1.3rem;margin-bottom:.3rem}}table{{width:100%;border-collapse:collapse;font-size:.85rem;margin-top:.5rem}}th{{background:#2a475e;padding:.4rem .5rem;text-align:left;border-bottom:2px solid #2a475e}}td{{padding:.35rem .5rem;border-bottom:1px solid #2a475e}}tr:hover{{background:#1a3a5c}}.meta{{color:#8f98a0;font-size:.85rem;margin-bottom:1rem}}.share-modal{{display:none;position:fixed;inset:0;background:rgba(0,0,0,0.7);z-index:1000;align-items:center;justify-content:center}}.share-modal.active{{display:flex}}.share-modal-content{{background:#16202d;border:1px solid #2a475e;border-radius:12px;padding:1.5rem;max-width:420px;width:90%}}.share-modal h3{{color:#66c0f4;margin-bottom:1rem;font-size:1.1rem}}.share-game-info{{background:#1b2838;border-radius:8px;padding:1rem;margin-bottom:1rem}}.share-game-name{{font-weight:600;font-size:1rem;margin-bottom:.5rem}}.share-game-price{{color:#6cc644;font-size:1.2rem;font-weight:700}}.share-game-price span{{text-decoration:line-through;color:#8f98a0;font-weight:400;font-size:.9rem}}.share-game-minhist{{font-size:.8rem;color:#8f98a0;margin-top:.3rem}}.share-game-minhist span{{color:#f0b232}}.share-actions{{display:flex;flex-direction:column;gap:.6rem}}.share-btn{{padding:.6rem 1rem;border-radius:6px;font-size:.85rem;font-weight:600;cursor:pointer;text-align:center}}.share-btn-copy-app{{background:#66c0f4;color:#000;border:none}}.share-btn-copy-app:hover{{background:#4db8e8}}.share-btn-copy-steam{{background:#2a475e;color:#c7d5e0;border:1px solid #2a475e}}.share-btn-copy-steam:hover{{border-color:#66c0f4}}.share-btn-open{{background:#1b2838;color:#8f98a0;border:1px solid #2a475e}}.share-close{{margin-top:.8rem;text-align:center;color:#8f98a0;font-size:.85rem;cursor:pointer}}.share-close:hover{{color:#c7d5e0}}</style>
 </head><body>
 <h1>&#127918; {_html_esc(title)}{sale_line}</h1>
 <div class="meta">{today} | {len(deals)} deals (&ge;{min_discount}%) | Precios en MXN</div>
@@ -3264,6 +3332,25 @@ def generate_share_html(deals, vanity, min_discount, sale_name="", top_picks=Non
 <h2 style="margin:1rem 0 .5rem">Todos los Deals</h2>
 <table><thead><tr><th>%</th><th>Precio</th><th>Reviews</th><th>Deck</th><th>Juego</th></tr></thead><tbody>{rows}</tbody></table>
 <div style="margin-top:1.5rem;text-align:center;color:#8f98a0;font-size:.75rem">Generado con Steam Deals Generator</div>
+
+<!-- Share Modal -->
+<div class="share-modal" id="share-modal">
+  <div class="share-modal-content">
+    <h3>Compartir Deal</h3>
+    <div class="share-game-info">
+      <div class="share-game-name" id="share-name"></div>
+      <div class="share-game-price" id="share-price"></div>
+      <div class="share-game-minhist" id="share-minhist"></div>
+    </div>
+    <div class="share-actions">
+      <button class="share-btn share-btn-copy-app" id="btn-copy-app" onclick="copyShareLink()">Copiar link steamtools://</button>
+      <button class="share-btn share-btn-copy-steam" onclick="copySteamLink()">Copiar link de Steam</button>
+      <button class="share-btn share-btn-open" onclick="openInSteam()">Abrir en Steam</button>
+    </div>
+    <div class="share-close" onclick="closeShareModal()">Cerrar</div>
+  </div>
+</div>
+<script>let currentShareData=null,currentSteamUrl='';function openShareModal(game){{currentShareData=game;currentSteamUrl='https://store.steampowered.com/app/'+game.appid+'/';document.getElementById('share-name').textContent=game.name||'';document.getElementById('share-price').innerHTML=(game.price_original&&game.price?'<span>$'+game.price_original+' </span>':'')+(game.price||'')+(game.discount?' ('+game.discount+'% OFF)':'');document.getElementById('share-minhist').innerHTML=game.min_hist?'Minimo historico: <span>$'+game.min_hist+'</span>':'';document.getElementById('share-modal').classList.add('active')}}function closeShareModal(){{document.getElementById('share-modal').classList.remove('active');currentShareData=null}}function copyShareLink(){{if(!currentShareData)return;const encoded=btoa(JSON.stringify(currentShareData));const shareUrl='steamtools://share?data='+encoded;navigator.clipboard.writeText(shareUrl).then(()=>{{const btn=document.getElementById('btn-copy-app');btn.textContent='Copiado!';setTimeout(()=>btn.textContent='Copiar link steamtools://',2000)}})}}function copySteamLink(){{if(!currentSteamUrl)return;navigator.clipboard.writeText(currentSteamUrl).then(()=>{{const btn=document.querySelector('.share-btn-copy-steam');btn.textContent='Copiado!';setTimeout(()=>btn.textContent='Copiar link de Steam',2000)}})}}function openInSteam(){{if(currentSteamUrl)window.open(currentSteamUrl,'_blank')}}</script>
 </body></html>'''
 
 

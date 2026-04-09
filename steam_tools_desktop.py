@@ -66,6 +66,25 @@ def _run_embedded_script(script_name: str, script_args: list[str]) -> None:
 
 
 def main() -> None:
+    # Handle share URL scheme
+    for arg in sys.argv[1:]:
+        if arg.startswith("--share="):
+            data_encoded = arg.split("=", 1)[1]
+            try:
+                import base64
+                import json
+                game_data = json.loads(base64.b64decode(data_encoded).decode("utf-8"))
+                print(f"\n[C] Shared Deal: {game_data.get('name', 'Unknown')}")
+                print(f"    Price: {game_data.get('price', 'N/A')} (was {game_data.get('price_original', 'N/A')})")
+                print(f"    Discount: {game_data.get('discount', 'N/A')}%")
+                if game_data.get('min_hist'):
+                    print(f"    Historical Low: {game_data['min_hist']}")
+                print(f"    URL: https://store.steampowered.com/app/{game_data.get('appid', '')}/")
+                return
+            except Exception as e:
+                print(f"Error parsing shared deal: {e}")
+                return
+
     if len(sys.argv) >= 3 and sys.argv[1] == "--run-script":
         _run_embedded_script(sys.argv[2], sys.argv[3:])
         return

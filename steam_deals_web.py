@@ -454,9 +454,48 @@ details .details-body { padding-top: 0.75rem; }
 .wizard .dot { width: 10px; height: 10px; border-radius: 50%; background: var(--bg2); border: 1px solid var(--card-border); transition: all 0.3s; }
 .wizard .dot.active { background: var(--accent); border-color: var(--accent); }
 .wizard .dot.done { background: var(--green); border-color: var(--green); }
+
+/* Share Modal */
+.share-modal { display: none; position: fixed; inset: 0; background: rgba(0,0,0,0.7); z-index: 1000; align-items: center; justify-content: center; }
+.share-modal.active { display: flex; }
+.share-modal-content { background: var(--card); border: 1px solid var(--card-border); border-radius: 12px; padding: 1.5rem; max-width: 420px; width: 90%; }
+.share-modal h3 { color: var(--accent); margin-bottom: 1rem; font-size: 1.1rem; }
+.share-game-info { background: var(--bg); border-radius: 8px; padding: 1rem; margin-bottom: 1rem; }
+.share-game-name { font-weight: 600; font-size: 1rem; margin-bottom: 0.5rem; }
+.share-game-price { color: var(--green); font-size: 1.2rem; font-weight: 700; }
+.share-game-price span { text-decoration: line-through; color: var(--text2); font-weight: 400; font-size: 0.9rem; }
+.share-game-minhist { font-size: 0.8rem; color: var(--text2); margin-top: 0.3rem; }
+.share-game-minhist span { color: var(--yellow); }
+.share-actions { display: flex; flex-direction: column; gap: 0.6rem; }
+.share-btn { padding: 0.6rem 1rem; border-radius: 6px; font-size: 0.85rem; font-weight: 600; cursor: pointer; text-align: center; }
+.share-btn-copy-app { background: var(--accent); color: #fff; border: none; }
+.share-btn-copy-app:hover { background: var(--accent-hover); }
+.share-btn-copy-steam { background: var(--bg2); color: var(--text); border: 1px solid var(--card-border); }
+.share-btn-copy-steam:hover { border-color: var(--accent); }
+.share-btn-open { background: var(--bg); color: var(--text2); border: 1px solid var(--card-border); }
+.share-close { margin-top: 0.8rem; text-align: center; color: var(--text2); font-size: 0.85rem; cursor: pointer; }
+.share-close:hover { color: var(--text); }
 </style>
 </head>
 <body>
+
+<!-- ══ Share Modal ══ -->
+<div class="share-modal" id="share-modal">
+  <div class="share-modal-content">
+    <h3>Compartir Deal</h3>
+    <div class="share-game-info">
+      <div class="share-game-name" id="share-name"></div>
+      <div class="share-game-price" id="share-price"></div>
+      <div class="share-game-minhist" id="share-minhist"></div>
+    </div>
+    <div class="share-actions">
+      <button class="share-btn share-btn-copy-app" id="btn-copy-app" onclick="copyShareLink()">Copiar link steamtools://</button>
+      <button class="share-btn share-btn-copy-steam" onclick="copySteamLink()">Copiar link de Steam</button>
+      <button class="share-btn share-btn-open" onclick="openInSteam()">Abrir en Steam</button>
+    </div>
+    <div class="share-close" onclick="closeShareModal()">Cerrar</div>
+  </div>
+</div>
 
 <!-- ══ Setup Wizard ══ -->
 <div class="wizard-overlay" id="wizard-overlay">
@@ -1445,6 +1484,20 @@ function handleEvent(ev) {
     if (ev.files && ev.files.length) {
       showFiles(ev.files);
     }
+    // Show prominent button to open interactive HTML (which has share buttons)
+    const htmlFile = ev.files ? ev.files.find(f => f.endsWith('.html')) : null;
+    if (htmlFile) {
+      const btnContainer = document.createElement('div');
+      btnContainer.style.cssText = 'margin-top:0.75rem;display:flex;gap:0.5rem;flex-wrap:wrap';
+      const openHtmlBtn = document.createElement('a');
+      openHtmlBtn.href = '/files/' + encodeURIComponent(htmlFile.split('/').pop());
+      openHtmlBtn.target = '_blank';
+      openHtmlBtn.className = 'file-link';
+      openHtmlBtn.innerHTML = '&#128202; Abrir reporte interactivo (con botones compartir)';
+      btnContainer.appendChild(openHtmlBtn);
+      fileLinks.appendChild(btnContainer);
+      fileLinks.classList.remove('hidden');
+    }
   }
 }
 
@@ -1498,6 +1551,68 @@ async function removeWatchlist(appid) {
     const d = await r.json(); renderWatchlist(d.items);
   } catch(e) {}
 }
+
+let currentShareData = null;
+let currentSteamUrl = '';
+
+function openShareModal(game) {
+  const name = game.name || game.steam_name || 'Unknown';
+  const price = game.price || 0;
+  const original = game.price_original || price;
+  const discount = game.discount || 0;
+  const minHist = game.min_hist || game.min_historical || null;
+  const appid = game.appid;
+  
+  currentShareData = {
+    name: name,
+    appid: appid,
+    price: price,
+    original_price: original,
+    discount: discount,
+    min_hist: minHist,
+    url: 'https://store.steampowered.com/app/' + appid + '/'
+  };
+  
+  currentSteamUrl = 'https://store.steampowered.com/app/' + appid + '/';
+  
+  document.getElementById('share-name').textContent = name;
+  document.getElementById('share-price').innerHTML = (original > price ? `<span>$${original} MXN </span>` : '') + `$${price} MXN (${discount}% OFF)`;
+  document.getElementById('share-minhist').innerHTML = minHist ? `Minimo historico: <span>$${minHist} MXN</span>` : '';
+  
+  document.getElementById('share-modal').classList.add('active');
+}
+
+function closeShareModal() {
+  document.getElementById('share-modal').classList.remove('active');
+  currentShareData = null;
+}
+
+function copyShareLink() {
+  if (!currentShareData) return;
+  const encoded = btoa(JSON.stringify(currentShareData));
+  const shareUrl = 'steamtools://share?data=' + encoded;
+  navigator.clipboard.writeText(shareUrl).then(() => {
+    const btn = document.getElementById('btn-copy-app');
+    btn.textContent = 'Copiado!';
+    setTimeout(() => btn.textContent = 'Copiar link steamtools://', 2000);
+  });
+}
+
+function copySteamLink() {
+  if (!currentSteamUrl) return;
+  navigator.clipboard.writeText(currentSteamUrl).then(() => {
+    const btn = document.querySelector('.share-btn-copy-steam');
+    btn.textContent = 'Copiado!';
+    setTimeout(() => btn.textContent = 'Copiar link de Steam', 2000);
+  });
+}
+
+function openInSteam() {
+  if (currentSteamUrl) {
+    window.open(currentSteamUrl, '_blank');
+  }
+}
+
 loadWatchlist();
 </script>
 </body>

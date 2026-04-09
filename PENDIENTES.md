@@ -1,6 +1,6 @@
 # Pendientes (Fuente Unica)
 
-Ultima actualizacion: 2026-04-08
+Ultima actualizacion: 2026-04-09
 
 ## Regla de Oro
 
@@ -122,3 +122,35 @@ Ejecutar de forma consistente en Windows, macOS y Linux.
 - 2026-04-08: Se agrega banner de modo (primer setup vs actualizacion) en la web UI.
 - 2026-04-08: Se agregan presets de ejecucion (rapido/completo/ahorro) con aplicacion en formulario.
 - 2026-04-08: Se agrega clasificacion de errores por categoria (network/config/rate-limit/encoding) con sugerencias accionables en consola UI.
+- 2026-04-09: Se implementa feature Compartir Deals (URL scheme steamtools://) con modal en Web UI y HTML generado. Falta probar con datos reales (requiere VPN o config de red para Steam API).
+
+## Backlog de Features (Propuestos - Planning)
+
+### Output/Export
+
+- [ ] Exportar a Obsidian/Notion (markdown con frontmatter YAML para importacion directa)
+- [ ] Dashboard HTML historico con graficos de precios (Chart.js)
+- [ ] Exportar a JSON para integracion con otras herramientas
+
+### Social/Community
+
+- [x] Generar link publica para compartir deals individuales (URL con data encodeada) - implementado, falta probar
+- [ ] Detectar bundles activos de juegos en wishlist (mejorar integracion ITAD)
+
+### Recomendaciones
+
+- [ ] Sugerir juegos similares basados en generos de la biblioteca del usuario
+- [ ] Analisis de biblioteca: tiempo total (HLTB), distribucion por genero, precio promedio
+
+### Expansion de Datos
+
+- [ ] Importar wishlists de otras plataformas (GOG, Epic - investigar APIs)
+- [ ] Detectar juegos eliminados del catalogo Steam (alertas)
+- [ ] Comparar wishlist con historial (detectar nuevos juegos desde ultima ejecucion)
+
+### Optimizacion (Velocidad - P0)
+
+- [ ] Cache mas agresivo para wishlists grandes (24h stale time)
+- [ ] Aumentar parallel fetching (de 5-10 a 50 concurrentes)
+- [ ] Usar batch API de Steam para multiples juegos (reducir requests)
+- [ ] Fetch inteligente: solo actualizar precios que cambiaron (comparar timestamps)
