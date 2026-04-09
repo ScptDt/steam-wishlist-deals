@@ -1,6 +1,7 @@
 __pycache__/
 .claude/
 .vscode/
+.opencode/
 *.pyc
 Steam Deals*.md
 Steam Deals*.html
