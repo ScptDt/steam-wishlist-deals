@@ -27,6 +27,7 @@ _proc_lock = threading.Lock()
 
 WATCHLIST_FILE = Path.home() / ".config" / "steam_deals_watchlist.json"
 LOCAL_CACHE_DIR = SCRIPT_PATH.parent / ".cache" / "steam_deals"
+EVENT_PREFIX = "__STEAM_EVENT__"
 
 # ─── Config I/O ──────────────────────────────────
 
@@ -59,10 +60,10 @@ def save_watchlist(items: list) -> None:
 
 
 def has_local_cache() -> bool:
-  try:
-    return LOCAL_CACHE_DIR.exists() and any(LOCAL_CACHE_DIR.iterdir())
-  except OSError:
-    return False
+    try:
+        return LOCAL_CACHE_DIR.exists() and any(LOCAL_CACHE_DIR.iterdir())
+    except OSError:
+        return False
 
 
 # ─── ANSI helpers ────────────────────────────────
@@ -76,23 +77,26 @@ def strip_ansi(text: str) -> str:
 
 
 def classify_line(raw: str) -> tuple[str, str]:
-    """Return (cleaned_text, css_class)."""
-    text = strip_ansi(raw).rstrip()
-    if not text:
-        return text, "dim"
-    if '✓' in raw or '✓' in text:
-        return text, "ok"
-    if '⚠' in raw or '⚠' in text:
-        return text, "warn"
-    if '✗' in raw or '✗' in text:
-        return text, "err"
-    if '\033[36m' in raw:  # cyan = step header
-        return text, "step"
-    if '\033[2m' in raw:  # dim
-        return text, "dim"
-    if '───' in text or '===' in text:
-        return text, "bold"
-    return text, "normal"
+  """Return (cleaned_text, css_class)."""
+  text = strip_ansi(raw).rstrip()
+  lower = text.lower()
+  if not text:
+    return text, "dim"
+  if "✓" in raw or "✓" in text or lower.startswith("ok ") or lower.startswith("ok\t"):
+    return text, "ok"
+  if "⚠" in raw or "⚠" in text or lower.startswith("warn:") or lower.startswith("warning"):
+    return text, "warn"
+  if "✗" in raw or "✗" in text or lower.startswith("error") or "traceback" in lower:
+    return text, "err"
+  if "\033[36m" in raw:  # cyan = step header
+    return text, "step"
+  if _STEP_RE.search(text):
+    return text, "step"
+  if "\033[2m" in raw:  # dim
+    return text, "dim"
+  if "───" in text or "===" in text:
+    return text, "bold"
+  return text, "normal"
 
 
 def extract_progress(text: str) -> tuple[int, int, str] | None:
@@ -104,91 +108,122 @@ def extract_progress(text: str) -> tuple[int, int, str] | None:
 
 def detect_file_path(text: str) -> str | None:
     """Detect generated file paths from ✓ output lines."""
-    m = re.search(r'✓\s+(.+\.(?:md|html|csv))$', text.strip())
-    return m.group(1).strip() if m else None
+    stripped = text.strip()
+    m = re.search(r'(?:✓|OK)\s+(.+\.(?:md|html|csv))$', stripped, flags=re.IGNORECASE)
+    if m:
+        return m.group(1).strip()
+    if re.search(r'\.(?:md|html|csv)$', stripped, flags=re.IGNORECASE) and ('\\' in stripped or '/' in stripped):
+        return stripped
+    return None
+
+
+def normalize_steam_profile_value(raw: str | None) -> str:
+    value = (raw or "").strip()
+    if not value:
+      return ""
+    if value.startswith("http://") or value.startswith("https://"):
+      return value
+    if value.isdigit() and len(value) >= 16:
+      return f"https://steamcommunity.com/profiles/{value}/"
+    if value.startswith("id/"):
+      value = value[3:]
+    if value.startswith("profiles/"):
+      value = value[9:]
+      if value.isdigit():
+        return f"https://steamcommunity.com/profiles/{value}/"
+    return f"https://steamcommunity.com/id/{value}/"
 
 
 # ─── Build CLI command ───────────────────────────
 
 def build_command(config: dict, filters: dict) -> list[str]:
+  if getattr(sys, "frozen", False):
+    cmd = [sys.executable, "--run-script", "steam_deals_generator.py", "--web-run"]
+  else:
     cmd = [sys.executable, str(SCRIPT_PATH), "--web-run"]
-    if config.get("vanity"):
-        cmd += ["--vanity", config["vanity"]]
-    if config.get("key"):
-        cmd += ["--key", config["key"]]
-    if config.get("hltb"):
-        cmd += ["--hltb", config["hltb"]]
-    if config.get("output"):
-        cmd += ["--output", config["output"]]
-    if config.get("discount") is not None:
-        cmd += ["--discount", str(config["discount"])]
-    if config.get("genres"):
-        genres = config["genres"]
-        if isinstance(genres, str):
-            genres = [g.strip() for g in genres.split(",") if g.strip()]
-        if genres:
-            cmd += ["--genre"] + genres
-    if config.get("family_json"):
-        cmd += ["--family-json", config["family_json"]]
-    if config.get("itad_key"):
-        cmd += ["--itad-key", config["itad_key"]]
-    # Filters
-    if filters.get("no_cache"):
-        cmd.append("--no-cache")
-    if filters.get("max_price"):
-        cmd += ["--max-price", str(filters["max_price"])]
-    if filters.get("deck_only"):
-        cmd.append("--deck-only")
-    if filters.get("deck_verified"):
-        cmd.append("--deck-verified")
-    if filters.get("min_reviews"):
-        cmd += ["--min-reviews", str(filters["min_reviews"])]
-    if filters.get("min_review_count"):
-        cmd += ["--min-review-count", str(filters["min_review_count"])]
-    if filters.get("max_hours"):
-        cmd += ["--max-hours", str(filters["max_hours"])]
-    if filters.get("top"):
-        cmd += ["--top", str(filters["top"])]
-    if filters.get("sort") and filters["sort"] != "discount":
-        cmd += ["--sort", filters["sort"]]
-    if filters.get("new_only"):
-        cmd.append("--new-only")
-    if filters.get("csv"):
-        cmd.append("--csv")
-    if filters.get("budget"):
-        cmd += ["--budget", str(filters["budget"])]
-    if config.get("compare"):
-        cmd += ["--compare", config["compare"]]
-    if config.get("telegram_token"):
-        cmd += ["--telegram-token", config["telegram_token"]]
-    if config.get("telegram_chat"):
-        cmd += ["--telegram-chat", config["telegram_chat"]]
-    if config.get("discord_webhook"):
-        cmd += ["--discord-webhook", config["discord_webhook"]]
-    return cmd
+
+  vanity = normalize_steam_profile_value(config.get("vanity"))
+  if vanity:
+    cmd += ["--vanity", vanity]
+  if config.get("key"):
+    cmd += ["--key", config["key"]]
+  if config.get("hltb"):
+    cmd += ["--hltb", config["hltb"]]
+  if config.get("output"):
+    cmd += ["--output", config["output"]]
+  if config.get("discount") is not None:
+    cmd += ["--discount", str(config["discount"])]
+  if config.get("genres"):
+    genres = config["genres"]
+    if isinstance(genres, str):
+      genres = [g.strip() for g in genres.split(",") if g.strip()]
+    if genres:
+      cmd += ["--genre"] + genres
+  if config.get("family_json"):
+    cmd += ["--family-json", config["family_json"]]
+  if config.get("itad_key"):
+    cmd += ["--itad-key", config["itad_key"]]
+  if filters.get("no_cache"):
+    cmd.append("--no-cache")
+  if filters.get("max_price"):
+    cmd += ["--max-price", str(filters["max_price"])]
+  if filters.get("deck_only"):
+    cmd.append("--deck-only")
+  if filters.get("deck_verified"):
+    cmd.append("--deck-verified")
+  if filters.get("min_reviews"):
+    cmd += ["--min-reviews", str(filters["min_reviews"])]
+  if filters.get("min_review_count"):
+    cmd += ["--min-review-count", str(filters["min_review_count"])]
+  if filters.get("max_hours"):
+    cmd += ["--max-hours", str(filters["max_hours"])]
+  if filters.get("top"):
+    cmd += ["--top", str(filters["top"])]
+  if filters.get("sort") and filters["sort"] != "discount":
+    cmd += ["--sort", filters["sort"]]
+  if filters.get("new_only"):
+    cmd.append("--new-only")
+  if filters.get("csv"):
+    cmd.append("--csv")
+  if filters.get("budget"):
+    cmd += ["--budget", str(filters["budget"])]
+  if config.get("compare"):
+    cmd += ["--compare", config["compare"]]
+  if config.get("telegram_token"):
+    cmd += ["--telegram-token", config["telegram_token"]]
+  if config.get("telegram_chat"):
+    cmd += ["--telegram-chat", config["telegram_chat"]]
+  if config.get("discord_webhook"):
+    cmd += ["--discord-webhook", config["discord_webhook"]]
+  return cmd
 
 
 def build_pd2_command(config: dict, filters: dict) -> list[str]:
+  if getattr(sys, "frozen", False):
+    cmd = [sys.executable, "--run-script", "payday2_dlc_tracker.py"]
+  else:
     cmd = [sys.executable, str(PD2_SCRIPT_PATH)]
-    if config.get("vanity"):
-        cmd += ["--vanity", config["vanity"]]
-    if config.get("key"):
-        cmd += ["--key", config["key"]]
-    if config.get("itad_key"):
-        cmd += ["--itad-key", config["itad_key"]]
-    if config.get("output"):
-        cmd += ["--output", config["output"]]
-    if filters.get("no_cache"):
-        cmd.append("--no-cache")
-    if filters.get("budget"):
-        cmd += ["--budget", str(filters["budget"])]
-    if filters.get("alert_price"):
-        cmd += ["--alert-price", str(filters["alert_price"])]
-    if filters.get("csv"):
-        cmd.append("--csv")
-    if filters.get("min_deal"):
-        cmd += ["--min-deal", str(filters["min_deal"])]
-    return cmd
+
+  vanity = normalize_steam_profile_value(config.get("vanity"))
+  if vanity:
+    cmd += ["--vanity", vanity]
+  if config.get("key"):
+    cmd += ["--key", config["key"]]
+  if config.get("itad_key"):
+    cmd += ["--itad-key", config["itad_key"]]
+  if config.get("output"):
+    cmd += ["--output", config["output"]]
+  if filters.get("no_cache"):
+    cmd.append("--no-cache")
+  if filters.get("budget"):
+    cmd += ["--budget", str(filters["budget"])]
+  if filters.get("alert_price"):
+    cmd += ["--alert-price", str(filters["alert_price"])]
+  if filters.get("csv"):
+    cmd.append("--csv")
+  if filters.get("min_deal"):
+    cmd += ["--min-deal", str(filters["min_deal"])]
+  return cmd
 
 
 # ─── HTML page ───────────────────────────────────
@@ -300,6 +335,38 @@ details .details-body { padding-top: 0.75rem; }
 .checks input[type="checkbox"] {
   accent-color: var(--accent); width: 16px; height: 16px;
 }
+
+/* Genres autocomplete */
+.genre-autocomplete { position: relative; }
+.genre-suggestions {
+  position: absolute; top: calc(100% + 6px); left: 0; right: 0;
+  background: var(--card); border: 1px solid var(--card-border); border-radius: 8px;
+  box-shadow: 0 10px 24px rgba(0,0,0,.35); z-index: 60; max-height: 220px; overflow-y: auto;
+}
+.genre-suggestion {
+  display: block; width: 100%; text-align: left; padding: .55rem .75rem;
+  background: transparent; border: 0; color: var(--text); font-size: .86rem; cursor: pointer;
+}
+.genre-suggestion + .genre-suggestion { border-top: 1px solid rgba(255,255,255,.04); }
+.genre-suggestion:hover, .genre-suggestion.active { background: var(--bg2); color: var(--accent); }
+
+/* Mode banner + presets */
+.mode-banner {
+  margin-bottom: .9rem; padding: .65rem .8rem; border-radius: 8px;
+  border: 1px solid var(--card-border); background: var(--card);
+  display: flex; align-items: center; justify-content: space-between; gap: .8rem;
+}
+.mode-banner strong { color: var(--accent); font-size: .9rem; }
+.mode-banner .hint-inline { color: var(--text2); font-size: .82rem; }
+.preset-row {
+  display: flex; flex-wrap: wrap; gap: .45rem; margin-top: .55rem;
+}
+.preset-btn {
+  border: 1px solid var(--card-border); background: var(--bg2); color: var(--text);
+  padding: .35rem .65rem; border-radius: 999px; font-size: .78rem; font-weight: 600; cursor: pointer;
+}
+.preset-btn:hover { border-color: var(--accent); color: var(--accent); }
+.preset-btn.active { border-color: var(--accent); background: rgba(102,192,244,.12); color: var(--accent); }
 
 /* Buttons */
 .actions { display: flex; gap: 0.75rem; margin-top: 0.5rem; }
@@ -514,6 +581,14 @@ details .details-body { padding-top: 0.75rem; }
 </div>
 
 <div class="container">
+  <div class="mode-banner" id="mode-banner">
+    <div>
+      <strong id="mode-title">Modo: Cargando...</strong>
+      <div class="hint-inline" id="mode-hint">Revisando cache y configuracion local.</div>
+    </div>
+    <button class="preset-btn" type="button" onclick="openWizard()">Configurar</button>
+  </div>
+
   <!-- Tab navigation -->
   <div class="tabs" style="display:flex;gap:0;margin-bottom:1rem">
     <button class="tab-btn active" id="tab-deals" onclick="switchTab('deals')" style="flex:1;padding:.7rem;border:1px solid var(--card-border);border-radius:8px 0 0 8px;background:var(--accent);color:#fff;font-weight:600;font-size:.95rem;cursor:pointer;transition:all .2s">&#128640; Steam Deals</button>
@@ -556,6 +631,15 @@ details .details-body { padding-top: 0.75rem; }
   <div id="panel-deals">
   <div class="card">
     <h2>Configuracion</h2>
+    <div class="field" style="margin-bottom:.4rem">
+      <label>Presets de ejecucion</label>
+      <div class="preset-row" id="preset-row">
+        <button type="button" class="preset-btn" data-preset="rapido" onclick="applyPreset('rapido')">Rapido</button>
+        <button type="button" class="preset-btn" data-preset="completo" onclick="applyPreset('completo')">Completo</button>
+        <button type="button" class="preset-btn" data-preset="ahorro" onclick="applyPreset('ahorro')">Ahorro</button>
+      </div>
+      <div class="hint">Ajusta automaticamente filtros comunes; puedes modificar cualquier campo despues.</div>
+    </div>
     <div class="field">
       <label>Descuento minimo</label>
       <div class="range-wrap">
@@ -581,7 +665,10 @@ details .details-body { padding-top: 0.75rem; }
     </div>
     <div class="field">
       <label>Generos <span class="optional">(opcional, separados por coma)</span></label>
-      <input type="text" id="genres" placeholder="roguelike, indie, rpg">
+      <div class="genre-autocomplete">
+        <input type="text" id="genres" autocomplete="off" placeholder="roguelike, indie, rpg">
+        <div id="genres-suggestions" class="genre-suggestions hidden"></div>
+      </div>
     </div>
   </div>
 
@@ -728,6 +815,12 @@ details .details-body { padding-top: 0.75rem; }
   </div>
   </div><!-- /panel-pd2 -->
 
+  <div class="actions" style="margin-bottom:.6rem">
+    <button class="btn" id="btn-preflight" style="background:var(--bg2);color:var(--text);border:1px solid var(--card-border)">&#129514; Probar config</button>
+    <button class="btn" id="btn-clear-cache" style="background:var(--bg2);color:var(--text);border:1px solid var(--card-border)">&#128465; Limpiar cache</button>
+    <button class="btn" id="btn-open-last" style="background:var(--bg2);color:var(--text);border:1px solid var(--card-border)">&#128194; Abrir ultimo reporte</button>
+  </div>
+
   <div class="actions" style="margin-bottom:1rem">
     <button class="btn btn-primary" id="btn-run">&#128640; Ejecutar</button>
     <button class="btn btn-danger" id="btn-stop" disabled>&#9209; Detener</button>
@@ -757,6 +850,13 @@ function togglePw(btn) {
 const CONFIG_FIELDS = ['vanity','key','hltb','output','discount','genres','family_json','itad_key','compare','telegram_token','telegram_chat','discord_webhook'];
 const FILTER_FIELDS = ['max_price','min_reviews','min_review_count','max_hours','top','sort','budget'];
 const CHECK_FIELDS  = ['deck_only','deck_verified','new_only','csv','no_cache'];
+const GENRE_SUGGESTIONS = [
+  'action', 'adventure', 'indie', 'rpg', 'strategy', 'simulation', 'casual', 'sports',
+  'racing', 'puzzle', 'platformer', 'metroidvania', 'roguelike', 'roguelite', 'soulslike',
+  'survival', 'horror', 'open world', 'sandbox', 'crafting', 'city builder', '4x', 'turn-based',
+  'real-time strategy', 'deckbuilder', 'card game', 'tactical', 'shooter', 'fps', 'third-person',
+  'co-op', 'multiplayer', 'singleplayer', 'visual novel', 'rhythm', 'bullet hell', 'tower defense'
+];
 
 function getConfig() {
   const c = {};
@@ -766,7 +866,18 @@ function getConfig() {
     if (f === 'discount') c[f] = parseInt(el.value);
     else c[f] = el.value.trim() || null;
   });
+  c.vanity = normalizeVanity(c.vanity);
   return c;
+}
+
+function normalizeVanity(value) {
+  const v = (value || '').trim();
+  if (!v) return '';
+  if (v.startsWith('http://') || v.startsWith('https://')) return v;
+  if (/^\d{16,}$/.test(v)) return `https://steamcommunity.com/profiles/${v}/`;
+  if (v.startsWith('id/')) return `https://steamcommunity.com/${v.endsWith('/') ? v : v + '/'}`;
+  if (v.startsWith('profiles/')) return `https://steamcommunity.com/${v.endsWith('/') ? v : v + '/'}`;
+  return `https://steamcommunity.com/id/${v}/`;
 }
 
 function getFilters() {
@@ -802,6 +913,98 @@ function fillForm(cfg) {
     }
   });
 }
+
+const genresInput = $('genres');
+const genresSuggestions = $('genres-suggestions');
+let genresActiveIndex = -1;
+
+function _genresSelectedSet() {
+  const set = new Set();
+  const parts = (genresInput.value || '').split(',').map(s => s.trim().toLowerCase()).filter(Boolean);
+  parts.forEach(p => set.add(p));
+  return set;
+}
+
+function _genresCurrentToken() {
+  const raw = genresInput.value || '';
+  const lastComma = raw.lastIndexOf(',');
+  const tokenStartBase = lastComma === -1 ? 0 : lastComma + 1;
+  const leadingSpaces = (raw.slice(tokenStartBase).match(/^\s*/) || [''])[0].length;
+  const start = tokenStartBase + leadingSpaces;
+  return {
+    raw,
+    start,
+    token: raw.slice(start).trim().toLowerCase(),
+  };
+}
+
+function hideGenreSuggestions() {
+  genresActiveIndex = -1;
+  genresSuggestions.classList.add('hidden');
+  genresSuggestions.innerHTML = '';
+}
+
+function applyGenreSuggestion(genre) {
+  const ctx = _genresCurrentToken();
+  const before = ctx.raw.slice(0, ctx.start);
+  genresInput.value = `${before}${genre}, `;
+  hideGenreSuggestions();
+  genresInput.focus();
+}
+
+function renderGenreSuggestions() {
+  const ctx = _genresCurrentToken();
+  if (!ctx.token) {
+    hideGenreSuggestions();
+    return;
+  }
+  const selected = _genresSelectedSet();
+  const items = GENRE_SUGGESTIONS
+    .filter(g => g.includes(ctx.token) && !selected.has(g.toLowerCase()))
+    .slice(0, 8);
+
+  if (!items.length) {
+    hideGenreSuggestions();
+    return;
+  }
+
+  genresSuggestions.innerHTML = items.map((g, i) =>
+    `<button type="button" class="genre-suggestion${i === genresActiveIndex ? ' active' : ''}" data-genre="${g}">${g}</button>`
+  ).join('');
+  genresSuggestions.classList.remove('hidden');
+
+  genresSuggestions.querySelectorAll('.genre-suggestion').forEach(btn => {
+    btn.addEventListener('mousedown', (e) => {
+      e.preventDefault();
+      applyGenreSuggestion(btn.dataset.genre || '');
+    });
+  });
+}
+
+genresInput.addEventListener('input', renderGenreSuggestions);
+genresInput.addEventListener('focus', renderGenreSuggestions);
+genresInput.addEventListener('blur', () => setTimeout(hideGenreSuggestions, 120));
+genresInput.addEventListener('keydown', (e) => {
+  const buttons = Array.from(genresSuggestions.querySelectorAll('.genre-suggestion'));
+  if (!buttons.length || genresSuggestions.classList.contains('hidden')) return;
+
+  if (e.key === 'ArrowDown') {
+    e.preventDefault();
+    genresActiveIndex = (genresActiveIndex + 1) % buttons.length;
+    renderGenreSuggestions();
+  } else if (e.key === 'ArrowUp') {
+    e.preventDefault();
+    genresActiveIndex = genresActiveIndex <= 0 ? buttons.length - 1 : genresActiveIndex - 1;
+    renderGenreSuggestions();
+  } else if (e.key === 'Enter' || e.key === 'Tab') {
+    if (genresActiveIndex >= 0 && genresActiveIndex < buttons.length) {
+      e.preventDefault();
+      applyGenreSuggestion(buttons[genresActiveIndex].dataset.genre || '');
+    }
+  } else if (e.key === 'Escape') {
+    hideGenreSuggestions();
+  }
+});
 
 // ── Wizard ──
 let wizStep = 0;
@@ -859,15 +1062,18 @@ function wizFinish() {
   closeWizard();
 }
 
-function prefillWizard(cfg) {
+function prefillWizard(cfg, keepVanity=false) {
+  const vanityInp = document.getElementById('wiz-vanity');
+  vanityInp.value = '';
+  vanityInp.placeholder = 'Ejemplo: https://steamcommunity.com/id/tu_usuario/';
   if (!cfg) return;
-  if (cfg.vanity) document.getElementById('wiz-vanity').value = cfg.vanity;
+  if (keepVanity && cfg.vanity) vanityInp.value = cfg.vanity;
   if (cfg.key) document.getElementById('wiz-key').value = cfg.key;
   if (cfg.itad_key) document.getElementById('wiz-itad').value = cfg.itad_key;
 }
 
 function openWizard() {
-  prefillWizard(getConfig());
+  prefillWizard(getConfig(), false);
   wizShowStep(0);
   document.getElementById('wizard-overlay').style.display = 'block';
 }
@@ -882,7 +1088,11 @@ Promise.all([
   fetch('/api/ui-state').then(r => r.json()),
 ]).then(([cfg, state]) => {
   fillForm(cfg);
-  prefillWizard(cfg);
+  prefillWizard(cfg, false);
+  if (state) {
+    setModeBanner(!!state.has_cache, !!state.has_config);
+  }
+  setActivePreset('rapido');
   if (state && state.has_cache) {
     closeWizard();
   } else {
@@ -891,7 +1101,9 @@ Promise.all([
 }).catch(() => {
   fetch('/api/config').then(r => r.json()).then(cfg => {
     fillForm(cfg);
-    prefillWizard(cfg);
+    prefillWizard(cfg, false);
+    setModeBanner(false, !!(cfg && cfg.vanity));
+    setActivePreset('rapido');
     if (cfg && cfg.vanity) closeWizard();
     else openWizard();
   }).catch(() => {});
@@ -900,11 +1112,149 @@ Promise.all([
 // ── Run ──
 const btnRun = $('btn-run');
 const btnStop = $('btn-stop');
+const btnPreflight = $('btn-preflight');
+const btnClearCache = $('btn-clear-cache');
+const btnOpenLast = $('btn-open-last');
 const consoleEl = $('console');
 const progressBar = $('progress-bar');
 const progressText = $('progress-text');
 const fileLinks = $('file-links');
 let abortCtrl = null;
+let shownErrorHints = new Set();
+
+function setModeBanner(hasCache, hasConfig) {
+  const title = $('mode-title');
+  const hint = $('mode-hint');
+  if (hasCache) {
+    title.textContent = 'Modo: Actualizacion rapida';
+    hint.textContent = hasConfig
+      ? 'Se detecto cache local. Puedes ejecutar directo o ajustar presets.'
+      : 'Hay cache local disponible. Revisa tu perfil y ejecuta cuando quieras.';
+  } else {
+    title.textContent = 'Modo: Primer setup';
+    hint.textContent = 'No se detecto cache local. Usa el wizard y ejecuta tu primer analisis.';
+  }
+}
+
+function setActivePreset(name) {
+  document.querySelectorAll('#preset-row .preset-btn').forEach(btn => {
+    btn.classList.toggle('active', btn.dataset.preset === name);
+  });
+}
+
+function applyPreset(name) {
+  if (name === 'rapido') {
+    $('top').value = 10;
+    $('discount').value = 60;
+    $('disc-val').textContent = '60%';
+    $('deck_only').checked = false;
+    $('deck_verified').checked = false;
+    $('new_only').checked = true;
+    $('no_cache').checked = false;
+  } else if (name === 'completo') {
+    $('top').value = 20;
+    $('discount').value = 45;
+    $('disc-val').textContent = '45%';
+    $('deck_only').checked = false;
+    $('deck_verified').checked = false;
+    $('new_only').checked = false;
+    $('no_cache').checked = true;
+  } else if (name === 'ahorro') {
+    $('top').value = 12;
+    $('discount').value = 70;
+    $('disc-val').textContent = '70%';
+    $('deck_only').checked = false;
+    $('deck_verified').checked = false;
+    $('new_only').checked = true;
+    $('no_cache').checked = false;
+    if (!$('budget').value) $('budget').value = '500';
+    if (!$('max_price').value) $('max_price').value = '250';
+  }
+  setActivePreset(name);
+  appendLine('Preset aplicado: ' + name + '.', 'step');
+}
+
+function detectErrorCategory(text) {
+  const t = (text || '').toLowerCase();
+  if (!t) return null;
+  if (t.includes('429') || t.includes('rate limit') || t.includes('too many requests')) return 'rate-limit';
+  if (t.includes('unicodeencodeerror') || t.includes('cp1252') || t.includes('codec can\'t encode') || t.includes('encoding')) return 'encoding';
+  if (t.includes('failed to fetch') || t.includes('timeout') || t.includes('timed out') || t.includes('connection') || t.includes('dns') || t.includes('name or service not known')) return 'network';
+  if (t.includes('vanity') || t.includes('steam id') || t.includes('config invalida') || t.includes('falta el perfil') || t.includes('no se encontr') || t.includes('api key') || t.includes('invalid')) return 'config';
+  return null;
+}
+
+function errorHintForCategory(category) {
+  if (category === 'network') {
+    return 'SUGERENCIA [network]: revisa internet/VPN/firewall y vuelve a intentar en unos segundos.';
+  }
+  if (category === 'config') {
+    return 'SUGERENCIA [config]: valida perfil Steam, rutas opcionales y API keys; usa "Probar config" antes de ejecutar.';
+  }
+  if (category === 'rate-limit') {
+    return 'SUGERENCIA [rate-limit]: Steam/servicios limitaron solicitudes; espera 1-3 minutos y reintenta.';
+  }
+  if (category === 'encoding') {
+    return 'SUGERENCIA [encoding]: se detecto problema de codificacion de salida; reinicia app y usa la version mas reciente del ejecutable.';
+  }
+  return null;
+}
+
+function maybeShowActionableHint(text, cls) {
+  if (cls !== 'err' && cls !== 'warn') return;
+  const category = detectErrorCategory(text);
+  if (!category || shownErrorHints.has(category)) return;
+  shownErrorHints.add(category);
+  const hint = errorHintForCategory(category);
+  if (hint) appendLine(hint, 'warn');
+}
+
+async function runPreflightUI() {
+  const pre = await fetch('/api/preflight', {
+    method: 'POST',
+    headers: {'Content-Type': 'application/json'},
+    body: JSON.stringify({config: getConfig(), filters: getFilters()}),
+  });
+  const preData = await pre.json();
+  appendLine('Preflight ejecutado.', preData.ok ? 'ok' : 'warn');
+  (preData.warnings || []).forEach(w => appendLine('WARN: ' + w, 'warn'));
+  (preData.issues || []).forEach(i => appendLine('ISSUE: ' + i, 'err'));
+  return preData;
+}
+
+btnPreflight.addEventListener('click', async () => {
+  try {
+    await runPreflightUI();
+  } catch(e) {
+    appendLine('No se pudo ejecutar preflight: ' + e.message, 'err');
+  }
+});
+
+btnClearCache.addEventListener('click', async () => {
+  try {
+    const r = await fetch('/api/cache/clear', {method: 'POST'});
+    const d = await r.json();
+    appendLine('Cache limpiada: ' + (d.removed || 0) + ' archivo(s).', 'ok');
+  } catch(e) {
+    appendLine('No se pudo limpiar cache: ' + e.message, 'err');
+  }
+});
+
+btnOpenLast.addEventListener('click', async () => {
+  try {
+    const r = await fetch('/api/files');
+    const files = await r.json();
+    if (!files || !files.length) {
+      appendLine('No hay reportes generados todavia.', 'warn');
+      return;
+    }
+    const name = files[0].name;
+    window.open('/files/' + encodeURIComponent(name), '_blank');
+    appendLine('Abriendo reporte: ' + name, 'ok');
+  } catch(e) {
+    appendLine('No se pudo abrir ultimo reporte: ' + e.message, 'err');
+  }
+});
 
 function appendLine(text, cls) {
   const div = document.createElement('div');
@@ -912,6 +1262,7 @@ function appendLine(text, cls) {
   div.textContent = text;
   consoleEl.appendChild(div);
   consoleEl.scrollTop = consoleEl.scrollHeight;
+  maybeShowActionableHint(text, cls);
 }
 
 btnRun.addEventListener('click', async () => {
@@ -923,6 +1274,7 @@ btnRun.addEventListener('click', async () => {
   }
 
   // Reset UI
+  shownErrorHints = new Set();
   consoleEl.innerHTML = '';
   progressBar.style.width = '0%';
   progressText.textContent = 'Iniciando...';
@@ -930,6 +1282,21 @@ btnRun.addEventListener('click', async () => {
   fileLinks.classList.add('hidden');
   btnRun.disabled = true;
   btnStop.disabled = false;
+
+  // Preflight
+  try {
+    const preData = await runPreflightUI();
+    if (!preData.ok) {
+      appendLine('Validacion previa fallida. Corrige lo siguiente:', 'err');
+      btnRun.disabled = false;
+      btnStop.disabled = true;
+      progressText.textContent = 'Config invalida';
+      progressBar.style.width = '0%';
+      return;
+    }
+  } catch(e) {
+    appendLine('No se pudo ejecutar preflight: ' + e.message, 'warn');
+  }
 
   abortCtrl = new AbortController();
 
@@ -940,6 +1307,16 @@ btnRun.addEventListener('click', async () => {
       body: JSON.stringify({config: getConfig(), filters: getFilters()}),
       signal: abortCtrl.signal,
     });
+
+    if (!resp.ok && resp.status !== 409) {
+      let msg = 'HTTP ' + resp.status;
+      try {
+        const body = await resp.json();
+        if (body && body.error) msg = body.error;
+      } catch(e) {}
+      appendLine('Error del servidor: ' + msg, 'err');
+      return;
+    }
 
     if (resp.status === 409) {
       appendLine('Ya hay una ejecucion en curso.', 'warn');
@@ -992,6 +1369,7 @@ btnStop.addEventListener('click', async () => {
 // PD2 Tracker button
 $('btn-run-pd2').addEventListener('click', async () => {
   if (!$('vanity').value.trim()) { $('vanity').focus(); return; }
+  shownErrorHints = new Set();
   consoleEl.innerHTML = '';
   progressBar.style.width = '0%';
   progressBar.style.background = 'linear-gradient(90deg, #d4a84b, #b8922e)';
@@ -1159,43 +1537,47 @@ class Handler(BaseHTTPRequestHandler):
     # ── GET routes ──
 
     def do_GET(self):
-      path = urllib.parse.urlparse(self.path).path
-      if path == "/":
-        self._send_html(PAGE_HTML)
-      elif path == "/api/config":
-        self._send_json(load_config())
-      elif path == "/api/ui-state":
-        self._send_json({
-          "has_cache": has_local_cache(),
-          "has_config": bool(load_config().get("vanity")),
-        })
-      elif path == "/api/watchlist":
-        self._send_json(load_watchlist())
-      elif path == "/api/files":
-        self._serve_files_list()
-      elif path.startswith("/files/"):
-        self._serve_file(path[7:])
-      else:
-        self.send_error(404)
+        path = urllib.parse.urlparse(self.path).path
+        if path == "/":
+            self._send_html(PAGE_HTML)
+        elif path == "/api/config":
+            self._send_json(load_config())
+        elif path == "/api/ui-state":
+            self._send_json({
+                "has_cache": has_local_cache(),
+                "has_config": bool(load_config().get("vanity")),
+            })
+        elif path == "/api/watchlist":
+            self._send_json(load_watchlist())
+        elif path == "/api/files":
+            self._serve_files_list()
+        elif path.startswith("/files/"):
+            self._serve_file(path[7:])
+        else:
+            self.send_error(404)
 
     # ── POST routes ──
 
     def do_POST(self):
-        path = urllib.parse.urlparse(self.path).path
-        if path == "/api/run":
-            self._serve_run_sse()
-        elif path == "/api/run-pd2":
-            self._serve_run_sse(pd2=True)
-        elif path == "/api/stop":
-            self._serve_stop()
-        elif path == "/api/config":
-            self._serve_config_save()
-        elif path == "/api/watchlist":
-            self._serve_watchlist_add()
-        elif path == "/api/watchlist/delete":
-            self._serve_watchlist_delete()
-        else:
-            self.send_error(404)
+      path = urllib.parse.urlparse(self.path).path
+      if path == "/api/run":
+        self._serve_run_sse()
+      elif path == "/api/run-pd2":
+        self._serve_run_sse(pd2=True)
+      elif path == "/api/preflight":
+        self._serve_preflight()
+      elif path == "/api/cache/clear":
+        self._serve_clear_cache()
+      elif path == "/api/stop":
+        self._serve_stop()
+      elif path == "/api/config":
+        self._serve_config_save()
+      elif path == "/api/watchlist":
+        self._serve_watchlist_add()
+      elif path == "/api/watchlist/delete":
+        self._serve_watchlist_delete()
+      else:
+        self.send_error(404)
 
     # ── Config save ──
 
@@ -1205,6 +1587,52 @@ class Handler(BaseHTTPRequestHandler):
         cfg.update(body)
         save_config(cfg)
         self._send_json({"status": "saved"})
+
+    def _serve_preflight(self):
+        body = self._read_body()
+        config = body.get("config", {}) or {}
+        issues = []
+        warnings = []
+
+        vanity = (config.get("vanity") or "").strip()
+        if not vanity:
+            issues.append("Falta el perfil de Steam (vanity, Steam ID o URL de perfil).")
+
+        hltb = (config.get("hltb") or "").strip()
+        if hltb and not Path(hltb).expanduser().exists():
+            issues.append(f"No se encontró HLTB CSV: {hltb}")
+
+        family_json = (config.get("family_json") or "").strip()
+        if family_json and not Path(family_json).expanduser().exists():
+            issues.append(f"No se encontró Family JSON: {family_json}")
+
+        output = (config.get("output") or "").strip()
+        if output:
+            try:
+                Path(output).expanduser().mkdir(parents=True, exist_ok=True)
+            except Exception as e:
+                issues.append(f"No se pudo usar el directorio de salida: {output} ({e})")
+
+        if not (config.get("key") or "").strip():
+            warnings.append("Sin Steam API Key: se usará modo público (wishlist debe ser pública).")
+
+        self._send_json({
+            "ok": len(issues) == 0,
+            "issues": issues,
+            "warnings": warnings,
+        })
+
+    def _serve_clear_cache(self):
+        removed = 0
+        if LOCAL_CACHE_DIR.exists():
+            for p in LOCAL_CACHE_DIR.rglob("*"):
+                try:
+                    if p.is_file():
+                        p.unlink()
+                        removed += 1
+                except OSError:
+                    pass
+        self._send_json({"status": "ok", "removed": removed})
 
     # ── Watchlist CRUD ──
 
@@ -1310,15 +1738,19 @@ class Handler(BaseHTTPRequestHandler):
 
         # Start subprocess
         env = {
-          **os.environ,
-          "PYTHONUNBUFFERED": "1",
-          "PYTHONIOENCODING": "utf-8",
-          "PYTHONUTF8": "1",
+            **os.environ,
+            "PYTHONUNBUFFERED": "1",
+            "PYTHONIOENCODING": "utf-8",
+            "PYTHONUTF8": "1",
         }
-        proc = subprocess.Popen(
+        try:
+          proc = subprocess.Popen(
             cmd, stdout=subprocess.PIPE, stderr=subprocess.STDOUT,
-          stdin=subprocess.DEVNULL, env=env, text=True, encoding="utf-8", errors="replace", bufsize=1,
-        )
+            stdin=subprocess.DEVNULL, env=env, text=True, encoding="utf-8", errors="replace", bufsize=1,
+          )
+        except Exception as e:
+          self._send_json({"error": f"No se pudo iniciar proceso: {e}"}, status=500)
+          return
         with _proc_lock:
             _running_proc = proc
 
@@ -1341,6 +1773,23 @@ class Handler(BaseHTTPRequestHandler):
 
         try:
             for raw_line in proc.stdout:
+                raw_text = raw_line.strip()
+                if raw_text.startswith(EVENT_PREFIX):
+                    try:
+                        event = json.loads(raw_text[len(EVENT_PREFIX):])
+                        if event.get("type") == "file" and event.get("path"):
+                            generated_files.append(event["path"])
+                        elif event.get("type") == "progress":
+                            send_sse({
+                                "type": "progress",
+                                "current": event.get("current", 0),
+                                "total": event.get("total", 0),
+                                "label": event.get("label", ""),
+                            })
+                        continue
+                    except Exception:
+                        pass
+
                 text, cls = classify_line(raw_line)
                 if not text and not raw_line.strip():
                     continue
@@ -1385,7 +1834,14 @@ class Handler(BaseHTTPRequestHandler):
 # ─── Main ────────────────────────────────────────
 
 def main():
-    port = DEFAULT_PORT
+    import argparse
+
+    parser = argparse.ArgumentParser(description="Steam Deals Web UI")
+    parser.add_argument("--port", type=int, default=DEFAULT_PORT, help="Puerto inicial a intentar")
+    parser.add_argument("--no-open", action="store_true", help="No abrir navegador automáticamente")
+    args = parser.parse_args()
+
+    port = args.port
     server = None
     for p in range(port, port + 10):
         try:
@@ -1400,11 +1856,12 @@ def main():
         sys.exit(1)
 
     url = f"http://127.0.0.1:{port}"
-    print(f"\n  \033[36m🎮 Steam Deals Web UI\033[0m")
+    print(f"\n  \033[36mSteam Deals Web UI\033[0m")
     print(f"  \033[1m{url}\033[0m")
     print(f"  Ctrl+C para cerrar\n")
 
-    threading.Timer(0.5, webbrowser.open, args=[url]).start()
+    if not args.no_open:
+        threading.Timer(0.5, webbrowser.open, args=[url]).start()
 
     try:
         server.serve_forever()

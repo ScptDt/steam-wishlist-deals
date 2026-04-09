@@ -63,6 +63,38 @@ python3 steam_deals_web.py
 
 Interfaz visual para configurar y ejecutar el script sin usar la terminal.
 
+## Desktop (Opcion B: pywebview)
+
+Baseline inicial para ejecutable de escritorio:
+
+```bash
+pip install -r requirements-desktop.txt
+python steam_tools_desktop.py
+```
+
+Build unificado (todas las plataformas):
+
+```bash
+python build_desktop.py
+```
+
+Para generar un `.exe` en Windows (wrapper):
+
+```powershell
+powershell -ExecutionPolicy Bypass -File .\build_desktop.ps1
+```
+
+Para Linux/macOS (wrapper):
+
+```bash
+chmod +x ./build_desktop.sh
+./build_desktop.sh
+```
+
+Esto abre la misma app web dentro de una ventana nativa.
+
+Planes y pendientes unificados: `PENDIENTES.md`.
+
 ## Watchlist
 
 ```bash

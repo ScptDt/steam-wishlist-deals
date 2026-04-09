@@ -64,12 +64,25 @@ SYM_BUDGET = _safe_symbol("💰", "[BUDGET]")
 SYM_GIFT = _safe_symbol("🎁", "[GIFT]")
 BAR_FILL = _safe_symbol("█", "#")
 BAR_EMPTY = _safe_symbol("░", "-")
+EVENT_PREFIX = "__STEAM_EVENT__"
+WEB_EVENT_MODE = False
 
 def _ok(msg):   return f"{C.GRN}{SYM_OK}{C.RST}  {msg}"
 def _warn(msg): return f"{C.YLW}{SYM_WARN}{C.RST}  {msg}"
 def _err(msg):  return f"{C.RED}{SYM_ERR}{C.RST}  {msg}"
 def _dim(msg):  return f"{C.DIM}{msg}{C.RST}"
 def _bold(msg): return f"{C.BOLD}{msg}{C.RST}"
+
+
+def emit_event(event_type: str, **payload) -> None:
+    if not WEB_EVENT_MODE:
+        return
+    try:
+        msg = {"type": event_type, **payload}
+        print(f"{EVENT_PREFIX}{json.dumps(msg, ensure_ascii=False)}", flush=True)
+    except Exception:
+        # Los eventos son opcionales; nunca deben romper el flujo principal.
+        return
 
 
 # ─────────────────────────────────────────────
@@ -3444,11 +3457,13 @@ def send_notifications(filters: dict, summary: dict) -> None:
 # ─────────────────────────────────────────────
 
 def main():
+    global WEB_EVENT_MODE
     sys.stdout.reconfigure(line_buffering=True)
 
     print(f"{C.BOLD}=== Steam Wishlist Deals Generator ==={C.RST}\n")
 
     WEB_RUN, INTERACTIVE, KEY, VANITY, HLTB_CSV, OUTPUT_DIR, MIN_DISCOUNT, genres, no_cache, FAMILY_JSON, ITAD_KEY, FILTERS = get_config()
+    WEB_EVENT_MODE = bool(WEB_RUN)
     if not WEB_RUN and not INTERACTIVE:
         print(f"  {_dim('Flujo recomendado: wizard web (python3 steam_deals_web.py).')}" )
         print(f"  {_dim('CLI disponible con flags/config, o modo interactivo con --interactive.')}\n")
@@ -3465,6 +3480,7 @@ def main():
     def step(msg: str):
         _n[0] += 1
         print(f"\n{C.CYN}[{_n[0]}/{TOTAL}]{C.RST} {_bold(msg)}", flush=True)
+        emit_event("progress", current=_n[0], total=TOTAL, label=msg)
 
     # Validar rutas opcionales antes de arrancar
     if HLTB_CSV and not HLTB_CSV.exists():
@@ -3828,6 +3844,7 @@ def main():
     OUTPUT_MD.parent.mkdir(parents=True, exist_ok=True)
     OUTPUT_MD.write_text(md, encoding="utf-8")
     print(f"  {_ok(str(OUTPUT_MD))}")
+    emit_event("file", path=str(OUTPUT_MD))
 
     # Generar HTML interactivo
     step("Generando HTML interactivo...")
@@ -3858,6 +3875,7 @@ def main():
     OUTPUT_HTML = OUTPUT_MD.with_suffix(".html")
     OUTPUT_HTML.write_text(html, encoding="utf-8")
     print(f"  {_ok(str(OUTPUT_HTML))}")
+    emit_event("file", path=str(OUTPUT_HTML))
 
     # Generar HTML compartible (lightweight)
     share_html = generate_share_html(deals, VANITY, MIN_DISCOUNT, sale_name=sale_name,
@@ -3865,6 +3883,7 @@ def main():
     OUTPUT_SHARE = OUTPUT_MD.parent / f"Steam Deals Share {date.today().strftime('%Y-%m-%d')}.html"
     OUTPUT_SHARE.write_text(share_html, encoding="utf-8")
     print(f"  {_ok(str(OUTPUT_SHARE))}")
+    emit_event("file", path=str(OUTPUT_SHARE))
 
     # Generar CSV (opcional)
     if FILTERS.get("csv"):
@@ -3878,6 +3897,7 @@ def main():
         OUTPUT_CSV = OUTPUT_MD.with_suffix(".csv")
         OUTPUT_CSV.write_text(csv_content, encoding="utf-8")
         print(f"  {_ok(str(OUTPUT_CSV))}")
+        emit_event("file", path=str(OUTPUT_CSV))
 
     # Notifications (optional)
     if FILTERS.get("telegram_token") or FILTERS.get("discord_webhook"):
