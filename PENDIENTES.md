@@ -37,6 +37,31 @@ No se mantienen documentos paralelos de planificacion; este archivo es la unica 
 - [ ] Validar build desktop en macOS (app bundle + apertura local).
 - [ ] Documentar dependencias nativas por plataforma para pywebview.
 
+### P3 - Base tecnica y mantenibilidad
+
+- [ ] Blindar handlers web: JSON invalido -> 400, validacion de boundaries y errores mas accionables.
+- [ ] Aclarar `README.md` por superficies: core stdlib, desktop con deps extra y posicionamiento de modulos.
+- [ ] Separar HTML/CSS/JS embebido de `steam_deals_web.py` y `payday2_web.py`.
+- [ ] Extraer infraestructura compartida para web local (JSON, SSE, subprocess, server utils).
+- [ ] Reutilizar la base compartida entre Steam Deals Web y PAYDAY 2 Web.
+- [ ] Modularizar `steam_deals_generator.py` por dominios (config, adapters, cache, scoring, renderers, orchestration).
+- [ ] Crear capa shared entre Steam Deals y PAYDAY 2 para config/cache/helpers reutilizables.
+- [ ] Agregar smoke tests minimos para web, desktop y PAYDAY 2.
+- [ ] Agregar tests para logica pura critica (score, filtros, compare, budget, recomendaciones).
+
+### Nota de trabajo futuro - orden sugerido de ejecucion
+
+- 1. Cerrar base actual: cross-platform + README + handlers robustos.
+- 2. Separar HTML/CSS/JS embebido.
+- 3. Extraer infraestructura compartida para web local.
+- 4. Reutilizar la base compartida entre Steam Deals y PAYDAY 2.
+- 5. Modularizar `steam_deals_generator.py`.
+- 6. Crear capa shared reutilizable.
+- 7. Agregar smoke tests y tests de logica pura.
+- 8. Implementar features nuevas sobre una base mas sana.
+
+Objetivo de esta secuencia: bajar costo de mantenimiento sin frenar el avance del producto.
+
 ## Backlog de Features (Estado)
 
 ### Core app
@@ -129,8 +154,8 @@ Ejecutar de forma consistente en Windows, macOS y Linux.
 ### Output/Export
 
 - [ ] Exportar a Obsidian/Notion (markdown con frontmatter YAML para importacion directa)
-- [ ] Dashboard HTML historico con graficos de precios (Chart.js)
-- [ ] Exportar a JSON para integracion con otras herramientas
+- [ ] Dashboard HTML historico con graficos de precios, comparativa entre runs y navegacion de historial
+- [ ] Exportar a JSON / API local para integracion con otras herramientas y automatizaciones
 
 ### Social/Community
 
@@ -141,12 +166,22 @@ Ejecutar de forma consistente en Windows, macOS y Linux.
 
 - [ ] Sugerir juegos similares basados en generos de la biblioteca del usuario
 - [ ] Analisis de biblioteca: tiempo total (HLTB), distribucion por genero, precio promedio
+- [ ] Explicar score y recomendacion de compra (por que esta arriba, comprar ahora vs esperar)
+
+### Producto / Plataforma
+
+- [ ] Unificar Steam Deals, Watchlist, Compare y PAYDAY 2 bajo una UX de suite con modulos claros
+- [ ] Doctor / instalador desktop por plataforma para validar dependencias nativas, setup y readiness
+
+### Alertas inteligentes
+
+- [ ] Alertar por minimo historico, bundles activos y cambios relevantes entre runs
 
 ### Expansion de Datos
 
 - [ ] Importar wishlists de otras plataformas (GOG, Epic - investigar APIs)
 - [ ] Detectar juegos eliminados del catalogo Steam (alertas)
-- [ ] Comparar wishlist con historial (detectar nuevos juegos desde ultima ejecucion)
+- [ ] Comparar wishlist con historial y mostrar delta (nuevos juegos, bajadas y ofertas terminadas)
 
 ### Optimizacion (Velocidad - P0)
 
