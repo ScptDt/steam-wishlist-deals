@@ -24,56 +24,89 @@ from datetime import date, datetime
 from pathlib import Path
 
 
-# ─────────────────────────────────────────────
+# ============================================
 # ANSI + HELPERS
-# ─────────────────────────────────────────────
+# ============================================
+
 
 class C:
-    RST  = "\033[0m"
+    RST = "\033[0m"
     BOLD = "\033[1m"
-    DIM  = "\033[2m"
-    GRN  = "\033[32m"
-    YLW  = "\033[33m"
-    RED  = "\033[31m"
-    CYN  = "\033[36m"
+    DIM = "\033[2m"
+    GRN = "\033[32m"
+    YLW = "\033[33m"
+    RED = "\033[31m"
+    CYN = "\033[36m"
 
-def _ok(msg):   return f"{C.GRN}✓{C.RST}  {msg}"
-def _warn(msg): return f"{C.YLW}⚠{C.RST}  {msg}"
-def _err(msg):  return f"{C.RED}✗{C.RST}  {msg}"
-def _dim(msg):  return f"{C.DIM}{msg}{C.RST}"
-def _bold(msg): return f"{C.BOLD}{msg}{C.RST}"
+
+def _ok(msg):
+    return f"{C.GRN}[+]{C.RST}  {msg}"
+
+
+def _warn(msg):
+    return f"{C.YLW}[!]{C.RST}  {msg}"
+
+
+def _err(msg):
+    return f"{C.RED}[x]{C.RST}  {msg}"
+
+
+def _dim(msg):
+    return f"{C.DIM}{msg}{C.RST}"
+
+
+def _bold(msg):
+    return f"{C.BOLD}{msg}{C.RST}"
+
 
 def _get_json(url: str, headers: dict = None) -> dict:
     req = urllib.request.Request(url, headers=headers or {})
     with urllib.request.urlopen(req, timeout=15) as r:
         return json.loads(r.read())
 
+
 def _post_json(url: str, body) -> dict:
     data = json.dumps(body).encode("utf-8")
-    req = urllib.request.Request(url, data=data, headers={"Content-Type": "application/json"})
+    req = urllib.request.Request(
+        url, data=data, headers={"Content-Type": "application/json"}
+    )
     with urllib.request.urlopen(req, timeout=30) as r:
         return json.loads(r.read())
 
+
 STORE_URL = "https://store.steampowered.com/app/{appid}/"
+
 
 def _md_esc(text: str) -> str:
     return text.replace("|", "\\|").replace("[", "\\[").replace("]", "\\]")
 
+
 def _link(name: str, appid: str) -> str:
     return f"[{_md_esc(name)}]({STORE_URL.format(appid=appid)})"
 
+
 MESES = {
-    1: "enero", 2: "febrero", 3: "marzo", 4: "abril",
-    5: "mayo", 6: "junio", 7: "julio", 8: "agosto",
-    9: "septiembre", 10: "octubre", 11: "noviembre", 12: "diciembre",
+    1: "enero",
+    2: "febrero",
+    3: "marzo",
+    4: "abril",
+    5: "mayo",
+    6: "junio",
+    7: "julio",
+    8: "agosto",
+    9: "septiembre",
+    10: "octubre",
+    11: "noviembre",
+    12: "diciembre",
 }
 
 
-# ─────────────────────────────────────────────
+# ============================================─
 # CONFIG
-# ─────────────────────────────────────────────
+# ============================================─
 
 CONFIG_FILE = Path.home() / ".config" / "steam_deals.json"
+
 
 def load_user_config() -> dict:
     if not CONFIG_FILE.exists():
@@ -91,11 +124,25 @@ def get_config():
     parser.add_argument("--itad-key", help="IsThereAnyDeal API Key")
     parser.add_argument("--output", help="Directorio de salida")
     parser.add_argument("--no-cache", action="store_true", help="Ignorar caché")
-    parser.add_argument("--mark-owned", nargs="*", metavar="APPID", help="Marcar DLCs como poseídos")
-    parser.add_argument("--mark-unowned", nargs="*", metavar="APPID", help="Marcar DLCs como no poseídos")
+    parser.add_argument(
+        "--mark-owned", nargs="*", metavar="APPID", help="Marcar DLCs como poseídos"
+    )
+    parser.add_argument(
+        "--mark-unowned",
+        nargs="*",
+        metavar="APPID",
+        help="Marcar DLCs como no poseídos",
+    )
     parser.add_argument("--budget", type=float, help="Presupuesto en MXN")
-    parser.add_argument("--alert-price", type=float, help="Alertar si DLC baja de N MXN")
-    parser.add_argument("--min-deal", type=int, default=None, help="Descuento mínimo %% para recomendar compra (default: 50)")
+    parser.add_argument(
+        "--alert-price", type=float, help="Alertar si DLC baja de N MXN"
+    )
+    parser.add_argument(
+        "--min-deal",
+        type=int,
+        default=None,
+        help="Descuento mínimo %% para recomendar compra (default: 50)",
+    )
     parser.add_argument("--csv", action="store_true", help="Generar CSV")
     args = parser.parse_args()
 
@@ -103,26 +150,39 @@ def get_config():
     key = args.key or cfg.get("key")
     vanity = args.vanity or cfg.get("vanity") or "BG00G"
     itad_key = args.itad_key or cfg.get("itad_key")
-    output_dir = Path(args.output).expanduser() if args.output else (
-        Path(cfg["output_dir"]).expanduser() if cfg.get("output_dir") else Path(__file__).resolve().parent
+    output_dir = (
+        Path(args.output).expanduser()
+        if args.output
+        else (
+            Path(cfg["output_dir"]).expanduser()
+            if cfg.get("output_dir")
+            else Path(__file__).resolve().parent
+        )
     )
     budget = args.budget or cfg.get("payday2_budget")
     alert_price = args.alert_price or cfg.get("payday2_alert_price")
-    min_deal = args.min_deal if args.min_deal is not None else cfg.get("payday2_min_deal", 50)
+    min_deal = (
+        args.min_deal if args.min_deal is not None else cfg.get("payday2_min_deal", 50)
+    )
 
     return {
-        "key": key, "vanity": vanity, "itad_key": itad_key,
-        "output_dir": output_dir, "no_cache": args.no_cache, "csv": args.csv,
+        "key": key,
+        "vanity": vanity,
+        "itad_key": itad_key,
+        "output_dir": output_dir,
+        "no_cache": args.no_cache,
+        "csv": args.csv,
         "mark_owned": args.mark_owned or [],
         "mark_unowned": args.mark_unowned or [],
-        "budget": budget, "alert_price": alert_price,
+        "budget": budget,
+        "alert_price": alert_price,
         "min_deal": min_deal,
     }
 
 
-# ─────────────────────────────────────────────
+# ============================================─
 # PAYDAY 2 APPID
-# ─────────────────────────────────────────────
+# ============================================─
 
 PD2_APPID = "218620"
 
@@ -134,9 +194,9 @@ UPCOMING_SALES = [
 ]
 
 
-# ─────────────────────────────────────────────
+# ============================================─
 # CACHE
-# ─────────────────────────────────────────────
+# ============================================─
 
 PROJECT_DIR = Path(__file__).resolve().parent
 PD2_CACHE_DIR = PROJECT_DIR / ".cache" / "steam_deals" / "payday2"
@@ -148,8 +208,8 @@ HISTORY_FILE = PD2_CACHE_DIR / "price_history.json"
 BUNDLES_CACHE = PD2_CACHE_DIR / "bundles.json"
 
 DLC_LIST_TTL = 168  # 7 days
-PRICES_TTL = 24     # 1 day
-BUNDLES_TTL = 168   # 7 days
+PRICES_TTL = 24  # 1 day
+BUNDLES_TTL = 168  # 7 days
 
 
 def _load_cache(path: Path, ttl_hours: float = 0) -> tuple[dict, float]:
@@ -161,7 +221,9 @@ def _load_cache(path: Path, ttl_hours: float = 0) -> tuple[dict, float]:
         return {}, float("inf")
     age = float("inf")
     if data.get("saved_at"):
-        age = (datetime.now() - datetime.fromisoformat(data["saved_at"])).total_seconds() / 3600
+        age = (
+            datetime.now() - datetime.fromisoformat(data["saved_at"])
+        ).total_seconds() / 3600
     return data, age
 
 
@@ -171,15 +233,16 @@ def _save_cache(path: Path, data: dict):
     path.write_text(json.dumps(data, ensure_ascii=False, indent=2), encoding="utf-8")
 
 
-# ─────────────────────────────────────────────
+# ============================================─
 # STEAM API
-# ─────────────────────────────────────────────
+# ============================================─
+
 
 def resolve_steam_id(api_key: str | None, vanity: str) -> str:
-    m = re.match(r'https?://steamcommunity\.com/profiles/(\d+)', vanity)
+    m = re.match(r"https?://steamcommunity\.com/profiles/(\d+)", vanity)
     if m:
         return m.group(1)
-    m = re.match(r'https?://steamcommunity\.com/id/([^/]+)', vanity)
+    m = re.match(r"https?://steamcommunity\.com/id/([^/]+)", vanity)
     if m:
         vanity = m.group(1)
     if vanity.isdigit() and len(vanity) == 17:
@@ -194,7 +257,7 @@ def resolve_steam_id(api_key: str | None, vanity: str) -> str:
     req = urllib.request.Request(url, headers={"User-Agent": "Mozilla/5.0"})
     with urllib.request.urlopen(req, timeout=15) as r:
         text = r.read().decode("utf-8")
-    m = re.search(r'<steamID64>(\d+)</steamID64>', text)
+    m = re.search(r"<steamID64>(\d+)</steamID64>", text)
     if not m:
         raise ValueError(f"No se pudo resolver: {vanity}")
     return m.group(1)
@@ -231,7 +294,9 @@ def fetch_pd2_dlc_list(no_cache: bool = False) -> list[str]:
     return [str(a) for a in dlc_ids]
 
 
-def fetch_dlc_names(appids: list[str], cached_mapping: dict, rate_limit: float = 0.3) -> dict[str, str]:
+def fetch_dlc_names(
+    appids: list[str], cached_mapping: dict, rate_limit: float = 0.3
+) -> dict[str, str]:
     """Fetch names for DLC appids individually. Returns {appid: name}."""
     result = dict(cached_mapping)
     to_fetch = [a for a in appids if a not in result]
@@ -254,14 +319,14 @@ def fetch_dlc_names(appids: list[str], cached_mapping: dict, rate_limit: float =
             time.sleep(rate_limit)
         # Progress indicator every 20
         if (idx + 1) % 20 == 0:
-            print(f"  {_dim(f'  {idx+1}/{total} nombres...')}", flush=True)
+            print(f"  {_dim(f'  {idx + 1}/{total} nombres...')}", flush=True)
 
     return result
 
 
 def _strip_prefix(name: str) -> str:
     """Strip 'PAYDAY 2: ' prefix for cleaner display."""
-    return re.sub(r'^PAYDAY\s*2\s*[:：\-–]\s*', '', name, flags=re.IGNORECASE).strip()
+    return re.sub(r"^PAYDAY\s*2\s*[:：\-–]\s*", "", name, flags=re.IGNORECASE).strip()
 
 
 def fetch_bundles(pd2_dlc_appids: list[str], no_cache: bool = False) -> list[dict]:
@@ -279,7 +344,7 @@ def fetch_bundles(pd2_dlc_appids: list[str], no_cache: bool = False) -> list[dic
         url = f"https://store.steampowered.com/app/{PD2_APPID}/PAYDAY_2/"
         req = urllib.request.Request(url, headers=headers)
         html = urllib.request.urlopen(req, timeout=15).read().decode("utf-8")
-        bundle_ids = sorted(set(re.findall(r'/bundle/(\d+)', html)))
+        bundle_ids = sorted(set(re.findall(r"/bundle/(\d+)", html)))
     except Exception:
         return cache.get("bundles", [])
 
@@ -298,7 +363,7 @@ def fetch_bundles(pd2_dlc_appids: list[str], no_cache: bool = False) -> list[dic
             # Extract name
             m = re.search(r'<h2 class="pageheader">(.*?)</h2>', bhtml)
             if not m:
-                m = re.search(r'<title>(.*?)(?:\s+on\s+Steam)?</title>', bhtml)
+                m = re.search(r"<title>(.*?)(?:\s+on\s+Steam)?</title>", bhtml)
             name = _strip_prefix(m.group(1).strip()) if m else f"Bundle {bid}"
 
             # Extract appids
@@ -307,7 +372,9 @@ def fetch_bundles(pd2_dlc_appids: list[str], no_cache: bool = False) -> list[dic
             dlc_appids = [a for a in appids if a in dlc_set]
 
             if dlc_appids:
-                bundles.append({"name": name, "bundle_id": bid, "dlc_appids": dlc_appids})
+                bundles.append(
+                    {"name": name, "bundle_id": bid, "dlc_appids": dlc_appids}
+                )
 
             time.sleep(0.3)
         except Exception:
@@ -340,7 +407,9 @@ def save_owned(steam_id: str, owned: set[str]):
     _save_cache(OWNED_CACHE, {"steam_id": steam_id, "appids": sorted(owned)})
 
 
-def fetch_dlc_prices(appids: list[str], no_cache: bool = False, rate_limit: float = 0.3) -> dict[str, dict]:
+def fetch_dlc_prices(
+    appids: list[str], no_cache: bool = False, rate_limit: float = 0.3
+) -> dict[str, dict]:
     """Fetch prices for DLC appids individually. Returns {appid: {name, price_raw, price_fmt, orig_raw, orig_fmt, discount}}."""
     cache, age = _load_cache(PRICES_CACHE)
     cached_prices = cache.get("prices", {})
@@ -369,9 +438,12 @@ def fetch_dlc_prices(appids: list[str], no_cache: bool = False, rate_limit: floa
             if not po:
                 result[appid] = {
                     "name": info.get("name", ""),
-                    "price_raw": 0, "price_fmt": "Gratis",
-                    "orig_raw": 0, "orig_fmt": "Gratis",
-                    "discount": 0, "delisted": not info.get("name"),
+                    "price_raw": 0,
+                    "price_fmt": "Gratis",
+                    "orig_raw": 0,
+                    "orig_fmt": "Gratis",
+                    "discount": 0,
+                    "delisted": not info.get("name"),
                 }
                 continue
             result[appid] = {
@@ -387,25 +459,28 @@ def fetch_dlc_prices(appids: list[str], no_cache: bool = False, rate_limit: floa
         if idx < total - 1:
             time.sleep(rate_limit)
         if (idx + 1) % 20 == 0:
-            print(f"  {_dim(f'  {idx+1}/{total} precios...')}", flush=True)
+            print(f"  {_dim(f'  {idx + 1}/{total} precios...')}", flush=True)
 
     _save_cache(PRICES_CACHE, {"prices": result})
     return result
 
 
-# ─────────────────────────────────────────────
+# ============================================─
 # ITAD (mínimo histórico + multi-tienda)
-# ─────────────────────────────────────────────
+# ============================================─
 
 ITAD_BATCH = 50
+
 
 def itad_lookup(appids: list[str], itad_key: str) -> dict[str, str]:
     result = {}
     for i in range(0, len(appids), ITAD_BATCH):
-        batch = appids[i:i + ITAD_BATCH]
+        batch = appids[i : i + ITAD_BATCH]
         body = [{"type": "steam", "id": f"app/{a}"} for a in batch]
         try:
-            data = _post_json(f"https://api.isthereanydeal.com/games/lookup/v1?key={itad_key}", body)
+            data = _post_json(
+                f"https://api.isthereanydeal.com/games/lookup/v1?key={itad_key}", body
+            )
             if isinstance(data, list):
                 for item, appid in zip(data, batch):
                     if item and isinstance(item, dict) and item.get("found"):
@@ -421,7 +496,7 @@ def itad_store_lows(itad_ids: dict[str, str], itad_key: str) -> dict[str, dict]:
     all_ids = list(itad_ids.values())
     result = {}
     for i in range(0, len(all_ids), ITAD_BATCH):
-        batch = all_ids[i:i + ITAD_BATCH]
+        batch = all_ids[i : i + ITAD_BATCH]
         try:
             data = _post_json(
                 f"https://api.isthereanydeal.com/games/storelow/v2?key={itad_key}&country=MX&shops=61",
@@ -449,7 +524,7 @@ def itad_current_prices(itad_ids: dict[str, str], itad_key: str) -> dict[str, di
     all_ids = list(itad_ids.values())
     result = {}
     for i in range(0, len(all_ids), ITAD_BATCH):
-        batch = all_ids[i:i + ITAD_BATCH]
+        batch = all_ids[i : i + ITAD_BATCH]
         try:
             data = _post_json(
                 f"https://api.isthereanydeal.com/games/prices/v3?key={itad_key}&country=MX",
@@ -467,8 +542,16 @@ def itad_current_prices(itad_ids: dict[str, str], itad_key: str) -> dict[str, di
                         if shop_id == 61:
                             steam_price = amt
                         elif best_other is None or amt < best_other["price"]:
-                            best_other = {"store": pd.get("shop", {}).get("name", "?"), "price": amt, "url": pd.get("url", "")}
-                    if best_other and steam_price is not None and best_other["price"] < steam_price:
+                            best_other = {
+                                "store": pd.get("shop", {}).get("name", "?"),
+                                "price": amt,
+                                "url": pd.get("url", ""),
+                            }
+                    if (
+                        best_other
+                        and steam_price is not None
+                        and best_other["price"] < steam_price
+                    ):
                         result[appid] = best_other
         except Exception as exc:
             print(f"  {_warn(f'ITAD prices: {exc}')}", flush=True)
@@ -476,9 +559,10 @@ def itad_current_prices(itad_ids: dict[str, str], itad_key: str) -> dict[str, di
     return result
 
 
-# ─────────────────────────────────────────────
+# ============================================─
 # PRICE HISTORY
-# ─────────────────────────────────────────────
+# ============================================─
+
 
 def load_price_history() -> dict:
     if not HISTORY_FILE.exists():
@@ -504,7 +588,9 @@ def save_price_snapshot(history: dict, prices: dict):
     # Keep last 365 days
     history["snapshots"] = snaps[-365:]
     PD2_CACHE_DIR.mkdir(parents=True, exist_ok=True)
-    HISTORY_FILE.write_text(json.dumps(history, ensure_ascii=False, indent=2), encoding="utf-8")
+    HISTORY_FILE.write_text(
+        json.dumps(history, ensure_ascii=False, indent=2), encoding="utf-8"
+    )
 
 
 def analyze_trends(history: dict, prices: dict) -> dict[str, dict]:
@@ -519,7 +605,13 @@ def analyze_trends(history: dict, prices: dict) -> dict[str, dict]:
                 past_prices.append(sp["price"])
         curr = prices[appid].get("price_raw", 0)
         if not past_prices:
-            result[appid] = {"times_seen": 1, "lowest": curr, "avg": curr, "is_at_lowest": False, "direction": "new"}
+            result[appid] = {
+                "times_seen": 1,
+                "lowest": curr,
+                "avg": curr,
+                "is_at_lowest": False,
+                "direction": "new",
+            }
             continue
         lowest = min(past_prices)
         avg = sum(past_prices) / len(past_prices)
@@ -533,11 +625,17 @@ def analyze_trends(history: dict, prices: dict) -> dict[str, dict]:
     return result
 
 
-# ─────────────────────────────────────────────
+# ============================================─
 # RECOMMENDATIONS
-# ─────────────────────────────────────────────
+# ============================================─
 
-def compute_recommendations(missing: list[dict], budget: float | None, alert_price: float | None, min_deal: int = 50) -> dict:
+
+def compute_recommendations(
+    missing: list[dict],
+    budget: float | None,
+    alert_price: float | None,
+    min_deal: int = 50,
+) -> dict:
     on_sale = sorted(
         [d for d in missing if d.get("discount", 0) > 0],
         key=lambda d: (-d.get("discount", 0), d.get("price_raw", 0)),
@@ -547,12 +645,19 @@ def compute_recommendations(missing: list[dict], budget: float | None, alert_pri
 
     alerts = []
     if alert_price:
-        alerts = [d for d in missing if d.get("price_raw", 0) > 0 and d["price_raw"] / 100 <= alert_price]
+        alerts = [
+            d
+            for d in missing
+            if d.get("price_raw", 0) > 0 and d["price_raw"] / 100 <= alert_price
+        ]
 
     budget_fit = []
     if budget:
         remaining = budget
-        for d in sorted(on_sale + [x for x in missing if x not in on_sale], key=lambda d: (-d.get("discount", 0), d.get("price_raw", 0))):
+        for d in sorted(
+            on_sale + [x for x in missing if x not in on_sale],
+            key=lambda d: (-d.get("discount", 0), d.get("price_raw", 0)),
+        ):
             price = d.get("price_raw", 0) / 100
             if price > 0 and price <= remaining:
                 budget_fit.append(d)
@@ -566,14 +671,17 @@ def compute_recommendations(missing: list[dict], budget: float | None, alert_pri
         "budget_fit": budget_fit,
         "optimal_next": optimal,
         "on_sale_count": len(on_sale),
-        "on_sale_savings": sum(((d.get("orig_raw", 0) - d.get("price_raw", 0)) / 100) for d in on_sale),
+        "on_sale_savings": sum(
+            ((d.get("orig_raw", 0) - d.get("price_raw", 0)) / 100) for d in on_sale
+        ),
         "min_deal": min_deal,
     }
 
 
-# ─────────────────────────────────────────────
+# ============================================─
 # GENERATE MARKDOWN
-# ─────────────────────────────────────────────
+# ============================================─
+
 
 def generate_md(
     all_dlcs: dict[str, dict],
@@ -594,9 +702,19 @@ def generate_md(
     owned_count = sum(1 for a in pd2_dlc_appids if a in owned_appids)
     missing_count = total_dlcs - owned_count
 
-    missing_total_orig = sum(d.get("orig_raw", 0) for a, d in all_dlcs.items() if a not in owned_appids) / 100
-    missing_total_curr = sum(d.get("price_raw", 0) for a, d in all_dlcs.items() if a not in owned_appids) / 100
-    on_sale = sum(1 for a, d in all_dlcs.items() if a not in owned_appids and d.get("discount", 0) > 0)
+    missing_total_orig = (
+        sum(d.get("orig_raw", 0) for a, d in all_dlcs.items() if a not in owned_appids)
+        / 100
+    )
+    missing_total_curr = (
+        sum(d.get("price_raw", 0) for a, d in all_dlcs.items() if a not in owned_appids)
+        / 100
+    )
+    on_sale = sum(
+        1
+        for a, d in all_dlcs.items()
+        if a not in owned_appids and d.get("discount", 0) > 0
+    )
 
     lines = [
         f"# PAYDAY 2 — DLC Tracker",
@@ -609,12 +727,14 @@ def generate_md(
         "",
         "| Métrica | Valor |",
         "|---------|-------|",
-        f"| DLCs poseídos | {owned_count}/{total_dlcs} ({owned_count*100//total_dlcs if total_dlcs else 0}%) |",
+        f"| DLCs poseídos | {owned_count}/{total_dlcs} ({owned_count * 100 // total_dlcs if total_dlcs else 0}%) |",
         f"| Costo restante (precio normal) | Mex$ {missing_total_orig:,.0f} |",
     ]
     if missing_total_curr != missing_total_orig:
         savings = missing_total_orig - missing_total_curr
-        lines.append(f"| **Con descuento actual** | **Mex$ {missing_total_curr:,.0f}** (ahorras Mex$ {savings:,.0f}) |")
+        lines.append(
+            f"| **Con descuento actual** | **Mex$ {missing_total_curr:,.0f}** (ahorras Mex$ {savings:,.0f}) |"
+        )
     lines.append(f"| DLCs en oferta ahora | {on_sale} |")
     if budget:
         lines.append(f"| Tu presupuesto | Mex$ {budget:,.0f} |")
@@ -629,18 +749,24 @@ def generate_md(
     rec = recommendations
     min_deal = rec.get("min_deal", 50)
     if rec["on_sale_count"] > 0:
-        lines.append(f"> **{rec['on_sale_count']} DLCs en oferta** | Ahorro potencial: Mex$ {rec['on_sale_savings']:,.0f}")
+        lines.append(
+            f"> **{rec['on_sale_count']} DLCs en oferta** | Ahorro potencial: Mex$ {rec['on_sale_savings']:,.0f}"
+        )
         lines.append("")
         if rec["buy_now"]:
             lines += [f"### Recomendación: COMPRAR AHORA (>= {min_deal}% off)", ""]
             lines.append("| DLC | Precio | Descuento |")
             lines.append("|-----|--------|-----------|")
             for d in rec["buy_now"]:
-                lines.append(f"| {_link(d['steam_name'], d['appid'])} | {d.get('price_fmt', '?')} | -{d.get('discount', 0)}% |")
+                lines.append(
+                    f"| {_link(d['steam_name'], d['appid'])} | {d.get('price_fmt', '?')} | -{d.get('discount', 0)}% |"
+                )
             lines.append("")
         if rec["optimal_next"]:
             opt = rec["optimal_next"]
-            lines.append(f"> **Mejor compra ahora:** {opt['steam_name']} (-{opt.get('discount', 0)}%, {opt.get('price_fmt', '?')})")
+            lines.append(
+                f"> **Mejor compra ahora:** {opt['steam_name']} (-{opt.get('discount', 0)}%, {opt.get('price_fmt', '?')})"
+            )
             lines.append("")
     else:
         lines += [
@@ -653,7 +779,9 @@ def generate_md(
         ]
         for sale in UPCOMING_SALES:
             est_savings = missing_total_orig * sale["discount"] / 100
-            lines.append(f"| {sale['event']} | {sale['date']} | -{sale['discount']}% | ~Mex$ {est_savings:,.0f} |")
+            lines.append(
+                f"| {sale['event']} | {sale['date']} | -{sale['discount']}% | ~Mex$ {est_savings:,.0f} |"
+            )
         lines += [
             "",
             f"> **Recomendación:** Espera al Summer Sale (75% off). Costo estimado: ~Mex$ {missing_total_orig * 0.25:,.0f}",
@@ -673,7 +801,9 @@ def generate_md(
         ]
         for i, d in enumerate(rec["budget_fit"], 1):
             disc = f"-{d['discount']}%" if d.get("discount", 0) > 0 else "—"
-            lines.append(f"| {i} | {_link(d['steam_name'], d['appid'])} | {d.get('price_fmt', '?')} | {disc} |")
+            lines.append(
+                f"| {i} | {_link(d['steam_name'], d['appid'])} | {d.get('price_fmt', '?')} | {disc} |"
+            )
         lines += ["", "---", ""]
 
     # All missing DLCs — sorted by discount desc
@@ -711,7 +841,11 @@ def generate_md(
             row += f" | Mex$ {low['price']:.0f} ({low['date']})" if low else " | —"
         if itad_current:
             cp = itad_current.get(appid)
-            row += f" | ${cp['price']:.0f} en [{cp['store']}]({cp['url']})" if cp else " | —"
+            row += (
+                f" | ${cp['price']:.0f} en [{cp['store']}]({cp['url']})"
+                if cp
+                else " | —"
+            )
         row += " |"
         lines.append(row)
 
@@ -720,7 +854,10 @@ def generate_md(
     # Price history / trends
     if any(t.get("times_seen", 0) > 1 for t in trends.values()):
         lines += ["## Historial de Precios", ""]
-        lines += ["| DLC | Hoy | Promedio | Mín. registrado | Tendencia |", "|-----|-----|---------|-----------------|-----------|"]
+        lines += [
+            "| DLC | Hoy | Promedio | Mín. registrado | Tendencia |",
+            "|-----|-----|---------|-----------------|-----------|",
+        ]
         for d in missing_dlcs:
             appid = d.get("appid", "")
             t = trends.get(appid, {})
@@ -730,7 +867,9 @@ def generate_md(
             arrows = {"down": "v", "up": "^", "stable": "=", "new": "*"}
             arrow = arrows.get(t.get("direction", ""), "")
             low_marker = " BEST" if t.get("is_at_lowest") else ""
-            lines.append(f"| {_md_esc(d.get('steam_name', '?'))} | Mex$ {curr:.0f} | Mex$ {t['avg']/100:.0f} | Mex$ {t['lowest']/100:.0f}{low_marker} | {arrow} |")
+            lines.append(
+                f"| {_md_esc(d.get('steam_name', '?'))} | Mex$ {curr:.0f} | Mex$ {t['avg'] / 100:.0f} | Mex$ {t['lowest'] / 100:.0f}{low_marker} | {arrow} |"
+            )
         lines += ["", "---", ""]
 
     # Upcoming sales
@@ -742,7 +881,9 @@ def generate_md(
     ]
     for sale in UPCOMING_SALES:
         est = missing_total_orig * (1 - sale["discount"] / 100)
-        lines.append(f"| {sale['event']} | {sale['date']} | -{sale['discount']}% | ~Mex$ {est:,.0f} |")
+        lines.append(
+            f"| {sale['event']} | {sale['date']} | -{sale['discount']}% | ~Mex$ {est:,.0f} |"
+        )
     lines += [""]
 
     lines += [
@@ -761,11 +902,12 @@ def generate_md(
     return "\n".join(lines)
 
 
-# ─────────────────────────────────────────────
+# ============================================─
 # RUN COMPARISON
-# ─────────────────────────────────────────────
+# ============================================─
 
 RUN_HISTORY_FILE = PD2_CACHE_DIR / "run_history.json"
+
 
 def load_previous_run() -> dict | None:
     if not RUN_HISTORY_FILE.exists():
@@ -784,9 +926,14 @@ def save_run(owned_count: int, missing_count: int, prices: dict, on_sale: int):
         "owned": owned_count,
         "missing": missing_count,
         "on_sale": on_sale,
-        "prices": {a: {"price": p.get("price_raw", 0), "discount": p.get("discount", 0)} for a, p in prices.items()},
+        "prices": {
+            a: {"price": p.get("price_raw", 0), "discount": p.get("discount", 0)}
+            for a, p in prices.items()
+        },
     }
-    RUN_HISTORY_FILE.write_text(json.dumps({"last_run": run}, ensure_ascii=False, indent=2), encoding="utf-8")
+    RUN_HISTORY_FILE.write_text(
+        json.dumps({"last_run": run}, ensure_ascii=False, indent=2), encoding="utf-8"
+    )
 
 
 def compute_run_comparison(prices: dict, prev_run: dict | None) -> dict:
@@ -815,12 +962,18 @@ def compute_run_comparison(prices: dict, prev_run: dict | None) -> dict:
     }
 
 
-# ─────────────────────────────────────────────
+# ============================================─
 # GENERATE HTML
-# ─────────────────────────────────────────────
+# ============================================─
+
 
 def _html_esc(text: str) -> str:
-    return text.replace("&", "&amp;").replace("<", "&lt;").replace(">", "&gt;").replace('"', "&quot;")
+    return (
+        text.replace("&", "&amp;")
+        .replace("<", "&lt;")
+        .replace(">", "&gt;")
+        .replace('"', "&quot;")
+    )
 
 
 CAPSULE_URL = "https://cdn.akamai.steamstatic.com/steam/apps/{appid}/capsule_231x87.jpg"
@@ -844,27 +997,46 @@ def generate_html(
     total = len(pd2_dlc_appids)
     owned = sum(1 for a in pd2_dlc_appids if a in owned_appids)
     missing = total - owned
-    cost_orig = sum(d.get("orig_raw", 0) for a, d in all_dlcs.items() if a not in owned_appids) / 100
-    cost_curr = sum(d.get("price_raw", 0) for a, d in all_dlcs.items() if a not in owned_appids) / 100
-    on_sale = sum(1 for a, d in all_dlcs.items() if a not in owned_appids and d.get("discount", 0) > 0)
+    cost_orig = (
+        sum(d.get("orig_raw", 0) for a, d in all_dlcs.items() if a not in owned_appids)
+        / 100
+    )
+    cost_curr = (
+        sum(d.get("price_raw", 0) for a, d in all_dlcs.items() if a not in owned_appids)
+        / 100
+    )
+    on_sale = sum(
+        1
+        for a, d in all_dlcs.items()
+        if a not in owned_appids and d.get("discount", 0) > 0
+    )
     pct_owned = owned * 100 // total if total else 0
 
     # Build JSON data for JS — sorted by discount desc
     dlc_json_list = []
     for d in sorted(
-        [d for a, d in all_dlcs.items() if a not in owned_appids and d.get("steam_name")],
+        [
+            d
+            for a, d in all_dlcs.items()
+            if a not in owned_appids and d.get("steam_name")
+        ],
         key=lambda d: (-d.get("discount", 0), d.get("price_raw", 0)),
     ):
         appid = d.get("appid", "")
         low = itad_lows.get(appid)
-        dlc_json_list.append({
-            "id": appid, "name": d.get("steam_name", "?"),
-            "price": d.get("price_raw", 0), "orig": d.get("orig_raw", 0),
-            "priceFmt": d.get("price_fmt", "?"), "origFmt": d.get("orig_fmt", "?"),
-            "discount": d.get("discount", 0),
-            "low": low["price"] if low else None,
-            "lowDate": low["date"] if low else None,
-        })
+        dlc_json_list.append(
+            {
+                "id": appid,
+                "name": d.get("steam_name", "?"),
+                "price": d.get("price_raw", 0),
+                "orig": d.get("orig_raw", 0),
+                "priceFmt": d.get("price_fmt", "?"),
+                "origFmt": d.get("orig_fmt", "?"),
+                "discount": d.get("discount", 0),
+                "low": low["price"] if low else None,
+                "lowDate": low["date"] if low else None,
+            }
+        )
 
     # History sparkline data
     history_data = {}
@@ -875,35 +1047,46 @@ def generate_html(
                     history_data[appid] = []
                 history_data[appid].append(sp.get("price", 0))
 
-    data_json = json.dumps({
-        "dlcs": dlc_json_list,
-        "history": history_data,
-        "totalAll": total,
-        "ownedCount": owned,
-        "costOrig": round(cost_orig),
-        "costCurr": round(cost_curr),
-    }, ensure_ascii=False)
+    data_json = json.dumps(
+        {
+            "dlcs": dlc_json_list,
+            "history": history_data,
+            "totalAll": total,
+            "ownedCount": owned,
+            "costOrig": round(cost_orig),
+            "costCurr": round(cost_curr),
+        },
+        ensure_ascii=False,
+    )
 
     # Comparison badges
     comp_html = ""
     if comparison:
         parts = []
         if comparison.get("new_sales"):
-            parts.append(f'<span class="badge bg-green">{len(comparison["new_sales"])} nuevas ofertas</span>')
+            parts.append(
+                f'<span class="badge bg-green">{len(comparison["new_sales"])} nuevas ofertas</span>'
+            )
         if comparison.get("ended_sales"):
-            parts.append(f'<span class="badge bg-red">{len(comparison["ended_sales"])} terminaron</span>')
+            parts.append(
+                f'<span class="badge bg-red">{len(comparison["ended_sales"])} terminaron</span>'
+            )
         if comparison.get("price_drops"):
-            parts.append(f'<span class="badge bg-blue">{len(comparison["price_drops"])} bajaron</span>')
+            parts.append(
+                f'<span class="badge bg-blue">{len(comparison["price_drops"])} bajaron</span>'
+            )
         if parts:
             comp_html = f'<div class="comp-row">vs {comparison.get("prev_date", "?")}: {" ".join(parts)}</div>'
 
-    sale_badge = f'<div class="sale-banner">{_html_esc(sale_name)}</div>' if sale_name else ""
+    sale_badge = (
+        f'<div class="sale-banner">{_html_esc(sale_name)}</div>' if sale_name else ""
+    )
 
     rec = recommendations
     rec_html = ""
     if rec["buy_now"]:
         items = " ".join(
-            f'<a href="{STORE_URL.format(appid=d["appid"])}" class="rec-item" target="_blank">{_html_esc(d["steam_name"])} <small>-{d.get("discount",0)}%</small></a>'
+            f'<a href="{STORE_URL.format(appid=d["appid"])}" class="rec-item" target="_blank">{_html_esc(d["steam_name"])} <small>-{d.get("discount", 0)}%</small></a>'
             for d in rec["buy_now"][:6]
         )
         rec_html = f'<div class="rec-buy"><strong>Comprar ahora (>= {rec.get("min_deal", 50)}% off):</strong> {items}</div>'
@@ -997,7 +1180,7 @@ tr.checked-row td{{text-decoration:line-through}}
   <div class="donut-wrap">
     <svg class="donut-svg" viewBox="0 0 180 180">
       <circle class="donut-ring" cx="90" cy="90" r="70"/>
-      <circle class="donut-fill" cx="90" cy="90" r="70" stroke-dasharray="440" stroke-dashoffset="{440 - 440*pct_owned/100}" transform="rotate(-90 90 90)"/>
+      <circle class="donut-fill" cx="90" cy="90" r="70" stroke-dasharray="440" stroke-dashoffset="{440 - 440 * pct_owned / 100}" transform="rotate(-90 90 90)"/>
       <text class="donut-center" x="90" y="86" text-anchor="middle">{pct_owned}%</text>
       <text class="donut-label" x="90" y="105" text-anchor="middle">{owned}/{total} DLCs</text>
     </svg>
@@ -1013,7 +1196,7 @@ tr.checked-row td{{text-decoration:line-through}}
     <div class="st"><div class="v">Mex$ {cost_orig:,.0f}</div><div class="l">Precio normal</div></div>
     <div class="st g"><div class="v" id="s-sale">{on_sale}</div><div class="l">En oferta</div></div>
     <div class="st"><div class="v" id="s-missing">{missing}</div><div class="l">Faltan</div></div>
-    <div class="st g"><div class="v">Mex$ {cost_orig*0.25:,.0f}</div><div class="l">Est. Summer 75%</div></div>
+    <div class="st g"><div class="v">Mex$ {cost_orig * 0.25:,.0f}</div><div class="l">Est. Summer 75%</div></div>
     <div class="st"><div class="v" id="s-checked">0</div><div class="l">Marcados</div></div>
   </div>
 
@@ -1134,9 +1317,10 @@ render(); updateStats(); simulate();
 </html>'''
 
 
-# ─────────────────────────────────────────────
+# ============================================─
 # GENERATE CSV
-# ─────────────────────────────────────────────
+# ============================================─
+
 
 def generate_csv(
     all_dlcs: dict[str, dict],
@@ -1147,33 +1331,52 @@ def generate_csv(
 ) -> str:
     import csv
     import io
+
     buf = io.StringIO()
     buf.write("\ufeff")  # BOM for Excel
     writer = csv.writer(buf)
-    writer.writerow(["AppID", "Name", "Price (MXN)", "Original Price", "Discount%", "ITAD Low", "Status", "URL"])
+    writer.writerow(
+        [
+            "AppID",
+            "Name",
+            "Price (MXN)",
+            "Original Price",
+            "Discount%",
+            "ITAD Low",
+            "Status",
+            "URL",
+        ]
+    )
 
     missing = sorted(
-        [(a, all_dlcs[a]) for a in pd2_dlc_appids if a not in owned_appids and a in all_dlcs],
+        [
+            (a, all_dlcs[a])
+            for a in pd2_dlc_appids
+            if a not in owned_appids and a in all_dlcs
+        ],
         key=lambda x: (-x[1].get("discount", 0), x[1].get("price_raw", 0)),
     )
     for appid, d in missing:
         low = itad_lows.get(appid)
-        writer.writerow([
-            appid,
-            d.get("steam_name", ""),
-            d.get("price_fmt", ""),
-            d.get("orig_fmt", ""),
-            f"-{d['discount']}%" if d.get("discount", 0) > 0 else "",
-            f"${low['price']:.0f}" if low else "",
-            "Missing",
-            STORE_URL.format(appid=appid),
-        ])
+        writer.writerow(
+            [
+                appid,
+                d.get("steam_name", ""),
+                d.get("price_fmt", ""),
+                d.get("orig_fmt", ""),
+                f"-{d['discount']}%" if d.get("discount", 0) > 0 else "",
+                f"${low['price']:.0f}" if low else "",
+                "Missing",
+                STORE_URL.format(appid=appid),
+            ]
+        )
     return buf.getvalue()
 
 
-# ─────────────────────────────────────────────
+# ============================================─
 # MAIN
-# ─────────────────────────────────────────────
+# ============================================─
+
 
 def main():
     sys.stdout.reconfigure(line_buffering=True)
@@ -1190,6 +1393,7 @@ def main():
 
     TOTAL = 9 + (1 if KEY else 0) + (1 if ITAD_KEY else 0) + (1 if cfg["csv"] else 0)
     _n = [0]
+
     def step(msg):
         _n[0] += 1
         print(f"\n{C.CYN}[{_n[0]}/{TOTAL}]{C.RST} {_bold(msg)}", flush=True)
@@ -1243,8 +1447,12 @@ def main():
     missing_appids = [a for a in pd2_dlc_appids if a not in pd2_owned]
     prices = fetch_dlc_prices(missing_appids, NO_CACHE)
     on_sale = sum(1 for a in missing_appids if prices.get(a, {}).get("discount", 0) > 0)
-    total_cost = sum(prices.get(a, {}).get("price_raw", 0) for a in missing_appids) / 100
-    print(f"  {_ok(f'{len(prices)} precios · {on_sale} en oferta · Total: Mex$ {total_cost:,.0f}')}")
+    total_cost = (
+        sum(prices.get(a, {}).get("price_raw", 0) for a in missing_appids) / 100
+    )
+    print(
+        f"  {_ok(f'{len(prices)} precios · {on_sale} en oferta · Total: Mex$ {total_cost:,.0f}')}"
+    )
 
     # [5] Bundles
     step("Obteniendo bundles de Steam...")
@@ -1302,7 +1510,9 @@ def main():
         all_dlcs[appid] = d
 
     missing_list = [all_dlcs[a] for a in missing_appids if a in all_dlcs]
-    recommendations = compute_recommendations(missing_list, cfg["budget"], cfg["alert_price"], MIN_DEAL)
+    recommendations = compute_recommendations(
+        missing_list, cfg["budget"], cfg["alert_price"], MIN_DEAL
+    )
 
     if recommendations["on_sale_count"] > 0:
         n_sale = recommendations["on_sale_count"]
@@ -1334,7 +1544,9 @@ def main():
         if comparison.get("price_drops"):
             parts.append(f"{len(comparison['price_drops'])} bajaron")
         if parts:
-            print(f"  {_ok('vs ' + comparison.get('prev_date', '?') + ': ' + ' · '.join(parts))}")
+            print(
+                f"  {_ok('vs ' + comparison.get('prev_date', '?') + ': ' + ' · '.join(parts))}"
+            )
 
     save_run(owned_count, missing_count, prices, on_sale)
 
@@ -1379,7 +1591,9 @@ def main():
     # CSV (optional)
     if cfg["csv"]:
         step("Generando CSV...")
-        csv_content = generate_csv(all_dlcs, pd2_owned, pd2_dlc_appids, prices, itad_lows)
+        csv_content = generate_csv(
+            all_dlcs, pd2_owned, pd2_dlc_appids, prices, itad_lows
+        )
         csv_file = output_file.with_suffix(".csv")
         csv_file.write_text(csv_content, encoding="utf-8")
         print(f"  {_ok(str(csv_file))}")
