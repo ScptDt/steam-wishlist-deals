@@ -1,0 +1,37 @@
+{
+  "id": "desktop-cross-platform-validation-02",
+  "seq": "02",
+  "title": "Document Linux desktop build and validation checklist",
+  "status": "pending",
+  "depends_on": [
+    "01"
+  ],
+  "parallel": true,
+  "suggested_agent": "CoderAgent",
+  "context_files": [
+    ".opencode/context/core/standards/code-quality.md",
+    ".opencode/context/core/workflows/feature-breakdown.md"
+  ],
+  "reference_files": [
+    "README.md",
+    "build_desktop.py",
+    "build_desktop.sh",
+    "steam_tools_desktop.py",
+    "requirements-desktop.txt",
+    "PENDIENTES.md"
+  ],
+  "acceptance_criteria": [
+    "README.md contiene sección Linux con prerequisitos nativos de pywebview, comando de instalación y build reproducible.",
+    "README.md incluye checklist Linux con al menos: arranque ventana nativa, preflight, run de prueba, generación de outputs y cierre limpio.",
+    "PENDIENTES.md refleja estado Linux (pendiente/en progreso/completado) y pasos siguientes reproducibles.",
+    "Se incluye paso de verificación explícito para fallback web si la ventana nativa no abre."
+  ],
+  "deliverables": [
+    "README.md",
+    "PENDIENTES.md"
+  ],
+  "agent_id": null,
+  "started_at": null,
+  "completed_at": null,
+  "completion_summary": null
+}

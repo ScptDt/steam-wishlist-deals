@@ -29,13 +29,28 @@ def add_data_arg(src: str, dest: str = ".") -> str:
 
 
 def main() -> None:
-    parser = argparse.ArgumentParser(description="Build desktop executable for Steam Tools")
-    parser.add_argument("--skip-install", action="store_true", help="Skip pip install step")
-    parser.add_argument("--onedir", action="store_true", help="Build as one-dir instead of one-file")
+    parser = argparse.ArgumentParser(
+        description="Build desktop executable for Steam Tools"
+    )
+    parser.add_argument(
+        "--skip-install", action="store_true", help="Skip pip install step"
+    )
+    parser.add_argument(
+        "--onedir", action="store_true", help="Build as one-dir instead of one-file"
+    )
     args = parser.parse_args()
 
     if not args.skip_install:
-        run([sys.executable, "-m", "pip", "install", "-r", str(ROOT / "requirements-desktop.txt")])
+        run(
+            [
+                sys.executable,
+                "-m",
+                "pip",
+                "install",
+                "-r",
+                str(ROOT / "requirements-desktop.txt"),
+            ]
+        )
 
     mode_flag = "--onedir" if args.onedir else "--onefile"
 
@@ -57,6 +72,12 @@ def main() -> None:
         add_data_arg("payday2_web.py"),
         "--add-data",
         add_data_arg("payday2_dlc_tracker.py"),
+        "--add-data",
+        add_data_arg("web/payday2/index.html", "web/payday2"),
+        "--add-data",
+        add_data_arg("web/payday2/app.css", "web/payday2"),
+        "--add-data",
+        add_data_arg("web/steam_deals/index.html", "web/steam_deals"),
         str(ROOT / "steam_tools_desktop.py"),
     ]
     run(cmd)

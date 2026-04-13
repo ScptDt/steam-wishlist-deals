@@ -1,0 +1,39 @@
+{
+  "id": "desktop-cross-platform-validation-04",
+  "seq": "04",
+  "title": "Finalize native dependency documentation and execution log",
+  "status": "pending",
+  "depends_on": [
+    "02",
+    "03"
+  ],
+  "parallel": false,
+  "suggested_agent": "CoderAgent",
+  "context_files": [
+    ".opencode/context/core/standards/code-quality.md",
+    ".opencode/context/core/workflows/feature-breakdown.md"
+  ],
+  "reference_files": [
+    "README.md",
+    "PENDIENTES.md",
+    "requirements-desktop.txt",
+    "build_desktop.py",
+    "build_desktop.ps1",
+    "build_desktop.sh",
+    "steam_tools_desktop.py"
+  ],
+  "acceptance_criteria": [
+    "README.md consolida dependencias nativas pywebview por plataforma (Windows/Linux/macOS) con comandos de instalación o referencia explícita verificable.",
+    "PENDIENTES.md registra bitácora con fecha, estado por plataforma, incidencias y próximos pasos accionables.",
+    "La documentación final mantiene estrategia de fallback web como ruta de mitigación de riesgo.",
+    "La sección de validación indica cómo repetir los checks en CI/runners o hosts manuales fuera de Windows."
+  ],
+  "deliverables": [
+    "README.md",
+    "PENDIENTES.md"
+  ],
+  "agent_id": null,
+  "started_at": null,
+  "completed_at": null,
+  "completion_summary": null
+}

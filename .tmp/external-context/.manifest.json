@@ -1,0 +1,24 @@
+{
+  "version": "1.0",
+  "last_updated": "2026-04-12T00:00:00Z",
+  "libraries": {
+    "pywebview": {
+      "files": [
+        {
+          "filename": "os-dependencies-and-install.md",
+          "topic": "native dependencies and install commands by OS",
+          "tech_stack": "pywebview desktop",
+          "fetched": "2026-04-12T00:00:00Z",
+          "source": "Context7 API + official docs"
+        },
+        {
+          "filename": "pyinstaller-and-first-run-caveats.md",
+          "topic": "PyInstaller packaging and macOS first-run/Gatekeeper caveats",
+          "tech_stack": "pywebview + PyInstaller",
+          "fetched": "2026-04-12T00:00:00Z",
+          "source": "Context7 API + official docs"
+        }
+      ]
+    }
+  }
+}

@@ -29,6 +29,9 @@ from pathlib import Path
 import payday2_dlc_tracker as pd2
 
 DEFAULT_PORT = 8081
+WEB_DIR = Path(__file__).resolve().parent / "web" / "payday2"
+PAYDAY2_HTML_FILE = WEB_DIR / "index.html"
+PAYDAY2_CSS_FILE = WEB_DIR / "app.css"
 
 # ─── In-memory data store ─────────────────────────
 
@@ -126,22 +129,24 @@ def load_from_cache():
         last_refresh = prices_cache["saved_at"]
 
     with _store_lock:
-        _store.update({
-            "loaded": bool(pd2_dlc_appids),
-            "last_refresh": last_refresh,
-            "vanity": vanity,
-            "steam_id": steam_id,
-            "pd2_dlc_appids": pd2_dlc_appids,
-            "all_dlcs": all_dlcs,
-            "owned": owned,
-            "prices": prices,
-            "sale_name": "",
-            "recommendations": recommendations,
-            "history_data": history_data,
-            "comparison": comparison,
-            "itad_lows": itad_lows,
-            "bundles": bundles,
-        })
+        _store.update(
+            {
+                "loaded": bool(pd2_dlc_appids),
+                "last_refresh": last_refresh,
+                "vanity": vanity,
+                "steam_id": steam_id,
+                "pd2_dlc_appids": pd2_dlc_appids,
+                "all_dlcs": all_dlcs,
+                "owned": owned,
+                "prices": prices,
+                "sale_name": "",
+                "recommendations": recommendations,
+                "history_data": history_data,
+                "comparison": comparison,
+                "itad_lows": itad_lows,
+                "bundles": bundles,
+            }
+        )
 
 
 def get_data_json() -> dict:
@@ -160,9 +165,19 @@ def get_data_json() -> dict:
         total = len(pd2_dlc_appids)
         owned_count = sum(1 for a in pd2_dlc_appids if a in owned)
         missing = total - owned_count
-        cost_orig = sum(d.get("orig_raw", 0) for a, d in all_dlcs.items() if a not in owned) / 100
-        cost_curr = sum(d.get("price_raw", 0) for a, d in all_dlcs.items() if a not in owned) / 100
-        on_sale = sum(1 for a, d in all_dlcs.items() if a not in owned and d.get("discount", 0) > 0)
+        cost_orig = (
+            sum(d.get("orig_raw", 0) for a, d in all_dlcs.items() if a not in owned)
+            / 100
+        )
+        cost_curr = (
+            sum(d.get("price_raw", 0) for a, d in all_dlcs.items() if a not in owned)
+            / 100
+        )
+        on_sale = sum(
+            1
+            for a, d in all_dlcs.items()
+            if a not in owned and d.get("discount", 0) > 0
+        )
 
         # Build DLC list sorted by discount desc
         dlc_list = []
@@ -172,38 +187,44 @@ def get_data_json() -> dict:
         ):
             appid = d.get("appid", "")
             low = itad_lows.get(appid)
-            dlc_list.append({
-                "id": appid,
-                "name": d.get("steam_name", "?"),
-                "price": d.get("price_raw", 0),
-                "orig": d.get("orig_raw", 0),
-                "priceFmt": d.get("price_fmt", "?"),
-                "origFmt": d.get("orig_fmt", "?"),
-                "discount": d.get("discount", 0),
-                "low": low["price"] if low else None,
-                "lowDate": low["date"] if low else None,
-            })
+            dlc_list.append(
+                {
+                    "id": appid,
+                    "name": d.get("steam_name", "?"),
+                    "price": d.get("price_raw", 0),
+                    "orig": d.get("orig_raw", 0),
+                    "priceFmt": d.get("price_fmt", "?"),
+                    "origFmt": d.get("orig_fmt", "?"),
+                    "discount": d.get("discount", 0),
+                    "low": low["price"] if low else None,
+                    "lowDate": low["date"] if low else None,
+                }
+            )
 
         # Owned DLC list
         owned_list = []
         for a in pd2_dlc_appids:
             if a in owned and a in all_dlcs:
                 d = all_dlcs[a]
-                owned_list.append({
-                    "id": a,
-                    "name": d.get("steam_name", a),
-                })
+                owned_list.append(
+                    {
+                        "id": a,
+                        "name": d.get("steam_name", a),
+                    }
+                )
 
         # Recommendation data
         rec = recommendations or {}
         buy_now = []
         for d in rec.get("buy_now", []):
-            buy_now.append({
-                "id": d.get("appid", ""),
-                "name": d.get("steam_name", "?"),
-                "discount": d.get("discount", 0),
-                "priceFmt": d.get("price_fmt", "?"),
-            })
+            buy_now.append(
+                {
+                    "id": d.get("appid", ""),
+                    "name": d.get("steam_name", "?"),
+                    "discount": d.get("discount", 0),
+                    "priceFmt": d.get("price_fmt", "?"),
+                }
+            )
 
         # Comparison
         comp = {}
@@ -235,13 +256,21 @@ def get_data_json() -> dict:
             "onSaleSavings": round(rec.get("on_sale_savings", 0)),
             "comparison": comp,
             "upcomingSales": [
-                {"event": sl["event"], "date": sl["date"], "discount": sl["discount"],
-                 "est": round(cost_orig * (1 - sl["discount"] / 100))}
+                {
+                    "event": sl["event"],
+                    "date": sl["date"],
+                    "discount": sl["discount"],
+                    "est": round(cost_orig * (1 - sl["discount"] / 100)),
+                }
                 for sl in pd2.UPCOMING_SALES
             ],
             "bundles": [
-                {"name": b["name"], "id": b["bundle_id"],
-                 "dlcAppids": b["dlc_appids"], "count": len(b["dlc_appids"])}
+                {
+                    "name": b["name"],
+                    "id": b["bundle_id"],
+                    "dlcAppids": b["dlc_appids"],
+                    "count": len(b["dlc_appids"]),
+                }
                 for b in s.get("bundles", [])
             ],
         }
@@ -261,10 +290,14 @@ def toggle_owned(appid: str) -> dict:
 
         # Recompute derived data
         missing_appids = [a for a in _store["pd2_dlc_appids"] if a not in owned]
-        missing_list = [_store["all_dlcs"][a] for a in missing_appids if a in _store["all_dlcs"]]
+        missing_list = [
+            _store["all_dlcs"][a] for a in missing_appids if a in _store["all_dlcs"]
+        ]
         cfg = pd2.load_user_config()
         min_deal = cfg.get("payday2_min_deal", 50)
-        _store["recommendations"] = pd2.compute_recommendations(missing_list, None, None, min_deal)
+        _store["recommendations"] = pd2.compute_recommendations(
+            missing_list, None, None, min_deal
+        )
 
         # Persist
         steam_id = _store["steam_id"]
@@ -293,10 +326,14 @@ def mark_bundle_owned(bundle_id: str) -> dict:
 
         # Recompute
         missing_appids = [a for a in _store["pd2_dlc_appids"] if a not in owned]
-        missing_list = [_store["all_dlcs"][a] for a in missing_appids if a in _store["all_dlcs"]]
+        missing_list = [
+            _store["all_dlcs"][a] for a in missing_appids if a in _store["all_dlcs"]
+        ]
         cfg = pd2.load_user_config()
         min_deal = cfg.get("payday2_min_deal", 50)
-        _store["recommendations"] = pd2.compute_recommendations(missing_list, None, None, min_deal)
+        _store["recommendations"] = pd2.compute_recommendations(
+            missing_list, None, None, min_deal
+        )
 
         steam_id = _store["steam_id"]
 
@@ -324,23 +361,44 @@ def unmark_bundle_owned(bundle_id: str) -> dict:
 
         # Recompute
         missing_appids = [a for a in _store["pd2_dlc_appids"] if a not in owned]
-        missing_list = [_store["all_dlcs"][a] for a in missing_appids if a in _store["all_dlcs"]]
+        missing_list = [
+            _store["all_dlcs"][a] for a in missing_appids if a in _store["all_dlcs"]
+        ]
         cfg = pd2.load_user_config()
         min_deal = cfg.get("payday2_min_deal", 50)
-        _store["recommendations"] = pd2.compute_recommendations(missing_list, None, None, min_deal)
+        _store["recommendations"] = pd2.compute_recommendations(
+            missing_list, None, None, min_deal
+        )
 
         steam_id = _store["steam_id"]
 
     if steam_id:
         pd2.save_owned(steam_id, owned)
 
-    return {"bundle_id": bundle_id, "unmarked": unmarked, "total_unmarked": len(unmarked)}
+    return {
+        "bundle_id": bundle_id,
+        "unmarked": unmarked,
+        "total_unmarked": len(unmarked),
+    }
+
+
+def load_payday2_html() -> str:
+    """Load external UI template if available, else fallback to inline HTML."""
+    try:
+        if PAYDAY2_HTML_FILE.exists():
+            return PAYDAY2_HTML_FILE.read_text(encoding="utf-8")
+    except OSError:
+        pass
+    return PAGE_HTML
 
 
 # ─── HTTP Handler ─────────────────────────────────
 
+
 class Handler(BaseHTTPRequestHandler):
-    def log_message(self, fmt, *args):
+    max_json_body_bytes = 64 * 1024
+
+    def log_message(self, format, *args):
         pass
 
     def _json(self, data, status=200):
@@ -359,14 +417,80 @@ class Handler(BaseHTTPRequestHandler):
         self.end_headers()
         self.wfile.write(body)
 
-    def _body(self) -> dict:
-        length = int(self.headers.get("Content-Length", 0))
-        return json.loads(self.rfile.read(length)) if length else {}
+    def _css(self, css: str):
+        body = css.encode("utf-8")
+        self.send_response(200)
+        self.send_header("Content-Type", "text/css; charset=utf-8")
+        self.send_header("Content-Length", str(len(body)))
+        self.end_headers()
+        self.wfile.write(body)
+
+    def _body(self) -> dict | None:
+        raw_length = self.headers.get("Content-Length", "0")
+        try:
+            length = int(raw_length)
+        except (TypeError, ValueError):
+            self._json(
+                {
+                    "error": "invalid_content_length",
+                    "message": "Content-Length invalido.",
+                },
+                400,
+            )
+            return None
+
+        if length <= 0:
+            return {}
+
+        if length > self.max_json_body_bytes:
+            self._json(
+                {
+                    "error": "payload_too_large",
+                    "message": f"Payload excede {self.max_json_body_bytes} bytes.",
+                },
+                413,
+            )
+            return None
+
+        content_type = (
+            (self.headers.get("Content-Type") or "").split(";")[0].strip().lower()
+        )
+        if content_type and content_type != "application/json":
+            self._json(
+                {
+                    "error": "unsupported_media_type",
+                    "message": "Content-Type debe ser application/json.",
+                },
+                415,
+            )
+            return None
+
+        try:
+            payload = json.loads(self.rfile.read(length))
+        except (json.JSONDecodeError, UnicodeDecodeError):
+            self._json(
+                {"error": "invalid_json", "message": "JSON invalido en el body."}, 400
+            )
+            return None
+
+        if not isinstance(payload, dict):
+            self._json(
+                {"error": "invalid_payload", "message": "Se esperaba un objeto JSON."},
+                400,
+            )
+            return None
+
+        return payload
 
     def do_GET(self):
         path = urllib.parse.urlparse(self.path).path
         if path == "/":
-            self._html(PAGE_HTML)
+            self._html(load_payday2_html())
+        elif path == "/app.css":
+            if PAYDAY2_CSS_FILE.exists():
+                self._css(PAYDAY2_CSS_FILE.read_text(encoding="utf-8"))
+            else:
+                self.send_error(404)
         elif path == "/api/data":
             self._json(get_data_json())
         elif path == "/api/config":
@@ -378,7 +502,9 @@ class Handler(BaseHTTPRequestHandler):
         path = urllib.parse.urlparse(self.path).path
         if path == "/api/toggle":
             body = self._body()
-            appid = body.get("appid", "").strip()
+            if body is None:
+                return
+            appid = str(body.get("appid", "")).strip()
             if not appid:
                 self._json({"error": "appid required"}, 400)
                 return
@@ -386,10 +512,21 @@ class Handler(BaseHTTPRequestHandler):
             self._json(result)
         elif path == "/api/toggle-bundle":
             body = self._body()
-            bundle_id = body.get("bundle_id", "").strip()
-            action = body.get("action", "mark")
+            if body is None:
+                return
+            bundle_id = str(body.get("bundle_id", "")).strip()
+            action = str(body.get("action", "mark")).strip().lower() or "mark"
             if not bundle_id:
                 self._json({"error": "bundle_id required"}, 400)
+                return
+            if action not in ("mark", "unmark"):
+                self._json(
+                    {
+                        "error": "invalid_action",
+                        "message": "action debe ser 'mark' o 'unmark'.",
+                    },
+                    400,
+                )
                 return
             if action == "unmark":
                 result = unmark_bundle_owned(bundle_id)
@@ -400,10 +537,14 @@ class Handler(BaseHTTPRequestHandler):
             self._serve_refresh()
         elif path == "/api/config":
             body = self._body()
+            if body is None:
+                return
             cfg = pd2.load_user_config()
             cfg.update(body)
             pd2.CONFIG_FILE.parent.mkdir(parents=True, exist_ok=True)
-            pd2.CONFIG_FILE.write_text(json.dumps(cfg, ensure_ascii=False, indent=2), encoding="utf-8")
+            pd2.CONFIG_FILE.write_text(
+                json.dumps(cfg, ensure_ascii=False, indent=2), encoding="utf-8"
+            )
             self._json({"status": "saved"})
         else:
             self.send_error(404)
@@ -421,7 +562,10 @@ class Handler(BaseHTTPRequestHandler):
             _store["refreshing"] = True
 
         cfg = pd2.load_user_config()
-        cmd = [sys.executable, str(Path(__file__).resolve().parent / "payday2_dlc_tracker.py")]
+        cmd = [
+            sys.executable,
+            str(Path(__file__).resolve().parent / "payday2_dlc_tracker.py"),
+        ]
         if cfg.get("vanity"):
             cmd += ["--vanity", cfg["vanity"]]
         if cfg.get("key"):
@@ -431,8 +575,13 @@ class Handler(BaseHTTPRequestHandler):
 
         env = {**os.environ, "PYTHONUNBUFFERED": "1"}
         proc = subprocess.Popen(
-            cmd, stdout=subprocess.PIPE, stderr=subprocess.STDOUT,
-            stdin=subprocess.DEVNULL, env=env, text=True, bufsize=1,
+            cmd,
+            stdout=subprocess.PIPE,
+            stderr=subprocess.STDOUT,
+            stdin=subprocess.DEVNULL,
+            env=env,
+            text=True,
+            bufsize=1,
         )
         with _refresh_lock:
             _refresh_proc = proc
@@ -446,35 +595,54 @@ class Handler(BaseHTTPRequestHandler):
         self.end_headers()
 
         import re
-        ansi_re = re.compile(r'\033\[[0-9;]*m')
-        step_re = re.compile(r'\[(\d+)/(\d+)\]\s*(.*)')
+
+        ansi_re = re.compile(r"\033\[[0-9;]*m")
+        step_re = re.compile(r"\[(\d+)/(\d+)\]\s*(.*)")
 
         def send_sse(data):
             try:
-                self.wfile.write(f"data: {json.dumps(data, ensure_ascii=False)}\n\n".encode("utf-8"))
+                self.wfile.write(
+                    f"data: {json.dumps(data, ensure_ascii=False)}\n\n".encode("utf-8")
+                )
                 self.wfile.flush()
             except BrokenPipeError:
                 pass
 
+        stream = proc.stdout
+        if stream is None:
+            with _refresh_lock:
+                _refresh_proc = None
+            with _store_lock:
+                _store["refreshing"] = False
+            self._json({"error": "No se pudo leer salida del proceso"}, 500)
+            return
+
         try:
-            for raw_line in proc.stdout:
-                text = ansi_re.sub('', raw_line).rstrip()
+            for raw_line in stream:
+                text = ansi_re.sub("", raw_line).rstrip()
                 if not text:
                     continue
 
                 cls = "normal"
-                if '\u2713' in raw_line or '\u2713' in text:
+                if "\u2713" in raw_line or "\u2713" in text:
                     cls = "ok"
-                elif '\u26a0' in raw_line or '\u26a0' in text:
+                elif "\u26a0" in raw_line or "\u26a0" in text:
                     cls = "warn"
-                elif '\u2717' in raw_line or '\u2717' in text:
+                elif "\u2717" in raw_line or "\u2717" in text:
                     cls = "err"
-                elif '\u2500' in text or '===' in text:
+                elif "\u2500" in text or "===" in text:
                     cls = "bold"
 
                 m = step_re.search(text)
                 if m:
-                    send_sse({"type": "progress", "current": int(m.group(1)), "total": int(m.group(2)), "label": m.group(3).strip()})
+                    send_sse(
+                        {
+                            "type": "progress",
+                            "current": int(m.group(1)),
+                            "total": int(m.group(2)),
+                            "label": m.group(3).strip(),
+                        }
+                    )
                     cls = "step"
 
                 send_sse({"type": "line", "text": text, "cls": cls})
@@ -1407,6 +1575,7 @@ loadData();
 
 
 # ─── Main ─────────────────────────────────────────
+
 
 def main():
     parser = argparse.ArgumentParser(description="PAYDAY 2 DLC Dashboard")

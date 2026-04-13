@@ -1,0 +1,30 @@
+{
+  "id": "desktop-cross-platform-validation",
+  "name": "Desktop Cross-Platform Validation",
+  "status": "active",
+  "objective": "Define reproducible Linux/macOS desktop validation and document pywebview native dependencies with actionable runbook updates.",
+  "context_files": [
+    ".opencode/context/core/standards/code-quality.md",
+    ".opencode/context/core/workflows/feature-breakdown.md"
+  ],
+  "reference_files": [
+    "PENDIENTES.md",
+    "README.md",
+    "build_desktop.py",
+    "build_desktop.ps1",
+    "build_desktop.sh",
+    "SteamToolsDesktop.spec",
+    "steam_tools_desktop.py",
+    "requirements-desktop.txt"
+  ],
+  "exit_criteria": [
+    "Existe checklist de validación Linux completable y con criterios de éxito claros.",
+    "Existe checklist de validación macOS completable y con criterios de éxito claros.",
+    "README/PENDIENTES documentan dependencias nativas pywebview por plataforma.",
+    "Queda registrada bitácora de estado y próximos pasos reproducibles."
+  ],
+  "subtask_count": 4,
+  "completed_count": 0,
+  "created_at": "2026-04-13T00:00:00Z",
+  "completed_at": null
+}

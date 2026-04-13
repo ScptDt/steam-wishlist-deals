@@ -34,7 +34,40 @@ Analiza tu wishlist de Steam y genera reportes detallados con deals, comparacion
 ## Requisitos
 
 - Python 3.10+
-- Sin dependencias externas (solo stdlib)
+- **Core (CLI + Web):** sin dependencias externas (solo stdlib)
+- **Desktop (pywebview):** requiere dependencias extra de `requirements-desktop.txt`
+
+## Superficies del proyecto
+
+Este repo se puede ejecutar en 3 superficies. **Recomendado para la mayoría de usuarios: Web UI**.
+
+| Superficie | Objetivo | Dependencias | Entry point |
+|------------|----------|--------------|-------------|
+| Core CLI | Automatización por terminal y flags avanzados | Solo stdlib | `steam_deals_generator.py`, `payday2_dlc_tracker.py` |
+| Web UI | Flujo guiado en navegador local | Solo stdlib | `steam_deals_web.py` (8080), `payday2_web.py` (8081) |
+| Desktop | App en ventana nativa (empaquetable) | `requirements-desktop.txt` | `steam_tools_desktop.py`, `build_desktop.py` |
+
+### Ruta rápida recomendada
+1. **Web UI (Steam Deals):** `python3 steam_deals_web.py`
+2. **Web UI (PAYDAY 2):** `python3 payday2_web.py`
+3. **Desktop:** `python steam_tools_desktop.py`
+4. **CLI avanzado:** `steam_deals_generator.py` / `payday2_dlc_tracker.py`
+
+## Instalación por superficie
+
+### Core / Web (sin deps externas)
+
+```bash
+python3 --version
+# listo: no necesitas pip install para flujo core/web
+```
+
+### Desktop (con deps extra)
+
+```bash
+pip install -r requirements-desktop.txt
+python steam_tools_desktop.py
+```
 
 ## Uso rápido
 
@@ -63,7 +96,9 @@ python3 steam_deals_web.py
 
 Interfaz visual para configurar y ejecutar el script sin usar la terminal.
 
-## Desktop (Opcion B: pywebview)
+> Para el módulo PAYDAY 2 usa `python3 payday2_web.py` (puerto 8081).
+
+## Desktop (Opción B: pywebview)
 
 Baseline inicial para ejecutable de escritorio:
 
@@ -93,7 +128,95 @@ chmod +x ./build_desktop.sh
 
 Esto abre la misma app web dentro de una ventana nativa.
 
+### Dependencias nativas por plataforma (pywebview)
+
+`pywebview` usa backend nativo distinto por OS. En este repo, la base sigue siendo:
+
+```bash
+pip install -r requirements-desktop.txt
+```
+
+Dependencias/requisitos por plataforma:
+
+- **Windows**
+  - Backend esperado: WebView2 (Edge Chromium).
+  - Requisito recomendado en máquina destino: **Microsoft Edge WebView2 Runtime**.
+  - Si no hay backend nativo disponible, el launcher mantiene fallback al navegador (`steam_deals_web.py`).
+
+- **Linux (Ubuntu LTS)**
+  - Instalar deps del sistema para backend Qt o GTK/WebKit2.
+  - Comandos de referencia (Ubuntu):
+
+```bash
+sudo apt install python3-pyqt5 python3-pyqt5.qtwebengine python3-pyqt5.qtwebchannel libqt5webkit5-dev
+sudo apt install python3-gi python3-gi-cairo gir1.2-gtk-3.0 gir1.2-webkit2-4.1
+```
+
+- **macOS**
+  - Backend nativo: Cocoa/WKWebView (PyObjC).
+  - Si usas Python no-sistema, puede requerir paquetes `pyobjc-*` adicionales.
+  - Para distribuir a terceros, preferir `.app` firmado/notarizado (evita fricción con Gatekeeper).
+
+Referencias oficiales:
+- https://pywebview.flowrl.com/guide/installation
+- https://pywebview.flowrl.com/guide/web_engine
+- https://pywebview.flowrl.com/guide/freezing
+- https://pyinstaller.org/en/stable/feature-notes.html#macos-binary-code-signing
+
+### Checklist de validación desktop por OS
+
+> Nota: desde entorno Windows no se puede validar backend nativo Linux/macOS de forma concluyente. Ejecutar en host nativo o runner CI del OS objetivo.
+
+#### Linux (Ubuntu LTS)
+
+1. `python3 -m pip install -r requirements-desktop.txt`
+2. `python3 build_desktop.py`
+3. Ejecutar artefacto en `dist/SteamToolsDesktop`.
+4. Verificar: ventana nativa, preflight, run de prueba, outputs MD/HTML/CSV, cierre limpio.
+5. Fallback mitigación: `python3 steam_deals_web.py --no-open --port 8080`.
+
+#### macOS
+
+1. `python3 -m pip install -r requirements-desktop.txt`
+2. `python3 build_desktop.py`
+3. Abrir app local: `open dist/SteamToolsDesktop.app`.
+4. Verificar: ventana nativa, preflight, run de prueba, outputs MD/HTML/CSV, cierre limpio.
+5. Si Gatekeeper bloquea artefacto local no firmado: `xattr -dr com.apple.quarantine dist/SteamToolsDesktop.app` y volver a abrir.
+6. Fallback mitigación: `python3 steam_deals_web.py --no-open --port 8080`.
+
 Planes y pendientes unificados: `PENDIENTES.md`.
+
+## Módulos y entrypoints
+
+### Steam Deals
+- **CLI:** `steam_deals_generator.py`
+- **Web:** `steam_deals_web.py` (http://127.0.0.1:8080)
+- **Guía:** `steam_deals_guia.md`
+- **Detalle en este README:** secciones `Watchlist`, `Budget Mode`, `Comparar Wishlists`, `Notificaciones`, `Scheduler`, `Todos los flags`.
+
+### PAYDAY 2
+- **CLI:** `payday2_dlc_tracker.py`
+- **Web:** `payday2_web.py` (http://127.0.0.1:8081)
+- **Guía:** `payday2_guia.md`
+- **Outputs:** `PAYDAY2_Plan_de_Compra.md` y `.html`
+- **Detalle en este README:** sección `PAYDAY 2 DLC Tracker`.
+
+### Desktop Suite
+- **Launcher:** `steam_tools_desktop.py`
+- **Build unificado:** `build_desktop.py`
+- **Wrappers:** `build_desktop.ps1`, `build_desktop.sh`
+
+## Outputs por módulo
+
+| Módulo | Output principal | Formatos |
+|--------|------------------|----------|
+| Steam Deals | Reporte de deals de wishlist | `.md`, `.html`, `.csv` |
+| PAYDAY 2 | `PAYDAY2_Plan_de_Compra` | `.md`, `.html` |
+| Desktop Build | Artefactos de distribución | `dist/` (binario/app según OS) |
+
+Notas rápidas:
+- Los datos intermedios y caché viven en `.cache/steam_deals/`.
+- En desktop, los artefactos finales dependen de la plataforma (Windows/macOS/Linux).
 
 ## Watchlist
 
@@ -144,7 +267,7 @@ python3 steam_deals_generator.py --vanity TU_VANITY_URL \
   --schedule 6
 ```
 
-## Todos los flags
+## Todos los flags (Steam Deals CLI)
 
 | Flag | Descripción |
 |------|-------------|
@@ -175,11 +298,11 @@ python3 steam_deals_generator.py --vanity TU_VANITY_URL \
 | `--schedule` | Ejecutar cada N horas |
 | `--family-json` | JSON de biblioteca familiar |
 
-## PAYDAY 2 DLC Tracker
+## PAYDAY 2 DLC Tracker (detalle)
 
-Script y dashboard web para trackear DLCs de PAYDAY 2: cuales te faltan, precios, ofertas, historial, y recomendaciones de compra. Los DLCs se descubren dinamicamente desde la API de Steam.
+Script y dashboard web para trackear DLCs de PAYDAY 2: cuáles te faltan, precios, ofertas, historial y recomendaciones de compra. Los DLCs se descubren dinámicamente desde la API de Steam.
 
-> **Nota:** La API de Steam no detecta DLCs poseidos (solo juegos base). Marca tus DLCs como comprados via checkboxes en el dashboard o con `--mark-owned` en CLI.
+> **Nota:** La API de Steam no detecta DLCs poseídos (solo juegos base). Marca tus DLCs como comprados vía checkboxes en el dashboard o con `--mark-owned` en CLI.
 
 ### Dashboard Web (recomendado)
 
@@ -189,13 +312,13 @@ python3 payday2_web.py
 ```
 
 Dashboard interactivo con:
-- **Vista instantanea** — Carga datos del cache al abrir, sin esperas
-- **Stats y donut** — Cuantos DLCs tienes, cuanto falta, ofertas activas
+- **Vista instantánea** — Carga datos del caché al abrir, sin esperas
+- **Stats y donut** — Cuántos DLCs tienes, cuánto falta, ofertas activas
 - **Tabla de DLCs** — Sorteable, filtrable por oferta, con imagenes
 - **Marcar como comprado** — Click en el checkbox y se guarda al instante
-- **Simulador de descuento** — Desliza para ver cuanto costaria con X% de descuento
-- **Budget Planner** — "Tengo $500, que compro?" ordenado por mejor oferta
-- **Proximas ofertas** — Estimacion de costo en Summer/Autumn/Winter Sale
+- **Simulador de descuento** — Desliza para ver cuánto costaría con X% de descuento
+- **Budget Planner** — "Tengo $500, ¿qué compro?" ordenado por mejor oferta
+- **Próximas ofertas** — Estimación de costo en Summer/Autumn/Winter Sale
 - **Actualizar datos** — Boton que ejecuta el tracker y muestra progreso en vivo
 - **Config** — Cambia vanity/API keys desde la web
 
@@ -205,7 +328,7 @@ Dashboard interactivo con:
 python3 payday2_dlc_tracker.py --vanity TU_VANITY_URL
 python3 payday2_dlc_tracker.py --budget 500
 python3 payday2_dlc_tracker.py --min-deal 75          # umbral de descuento para recomendar
-python3 payday2_dlc_tracker.py --itad-key TU_KEY      # minimos historicos
+python3 payday2_dlc_tracker.py --itad-key TU_KEY      # mínimos históricos
 python3 payday2_dlc_tracker.py --mark-owned 259381    # marcar DLC como comprado
 ```
 

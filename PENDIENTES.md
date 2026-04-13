@@ -39,9 +39,9 @@ No se mantienen documentos paralelos de planificacion; este archivo es la unica 
 
 ### P3 - Base tecnica y mantenibilidad
 
-- [ ] Blindar handlers web: JSON invalido -> 400, validacion de boundaries y errores mas accionables.
+- [x] Blindar handlers web: JSON invalido -> 400, validacion de boundaries y errores mas accionables.
 - [ ] Aclarar `README.md` por superficies: core stdlib, desktop con deps extra y posicionamiento de modulos.
-- [ ] Separar HTML/CSS/JS embebido de `steam_deals_web.py` y `payday2_web.py`.
+- [ ] Separar HTML/CSS/JS embebido de `steam_deals_web.py` y `payday2_web.py` (en progreso: HTML externo en ambos; CSS externo en PAYDAY 2; falta JS y Steam Deals CSS/JS).
 - [ ] Extraer infraestructura compartida para web local (JSON, SSE, subprocess, server utils).
 - [ ] Reutilizar la base compartida entre Steam Deals Web y PAYDAY 2 Web.
 - [ ] Modularizar `steam_deals_generator.py` por dominios (config, adapters, cache, scoring, renderers, orchestration).
@@ -129,6 +129,61 @@ Ejecutar de forma consistente en Windows, macOS y Linux.
 4. Genera MD/HTML/CSV.
 5. Cierra sin procesos colgados.
 
+### Matriz de validacion reproducible (Linux/macOS)
+
+> Restriccion actual: este repo se esta operando desde entorno Windows. La validacion de Linux/macOS debe correrse en host nativo o runner CI del OS objetivo.
+
+#### Linux (Ubuntu LTS)
+
+1. Preparar entorno
+   - Comando: `python3 --version && python3 -m pip --version`
+   - Esperado: Python/pip disponibles y funcionales.
+2. Instalar dependencias desktop
+   - Comando: `python3 -m pip install -r requirements-desktop.txt`
+   - Esperado: instalacion sin errores; `pywebview` instalado.
+3. Build desktop
+   - Comando: `python3 build_desktop.py`
+   - Esperado: artefacto generado en `dist/SteamToolsDesktop` (o `dist/SteamToolsDesktop/` en `--onedir`).
+4. Ejecutar app y validar ventana nativa
+   - Comando: `./dist/SteamToolsDesktop`
+   - Esperado: abre ventana nativa; UI responde.
+5. Verificacion funcional minima
+   - Acciones: correr preflight, ejecutar run de prueba, generar MD/HTML/CSV, cerrar app.
+   - Esperado: sin crash, outputs presentes, sin procesos colgados.
+6. Fallback web (mitigacion)
+   - Comando: `python3 steam_deals_web.py --no-open --port 8080`
+   - Esperado: servidor arriba en `http://127.0.0.1:8080` si la ventana nativa falla.
+
+#### macOS (app bundle + apertura local)
+
+1. Preparar entorno
+   - Comando: `python3 --version && python3 -m pip --version`
+   - Esperado: Python/pip disponibles y funcionales.
+2. Instalar dependencias desktop
+   - Comando: `python3 -m pip install -r requirements-desktop.txt`
+   - Esperado: instalacion sin errores; `pywebview` instalado.
+3. Build desktop
+   - Comando: `python3 build_desktop.py`
+   - Esperado: artefacto generado en `dist/`.
+4. Abrir app local
+   - Comando: `open dist/SteamToolsDesktop.app`
+   - Esperado: app abre localmente y muestra UI.
+5. Verificacion funcional minima
+   - Acciones: correr preflight, ejecutar run de prueba, generar MD/HTML/CSV, cerrar app.
+   - Esperado: sin crash, outputs presentes, sin procesos colgados.
+6. Quarantine/permisos (si aplica)
+   - Comando: `xattr -dr com.apple.quarantine dist/SteamToolsDesktop.app`
+   - Esperado: app vuelve a abrir cuando Gatekeeper bloquee artefacto local no firmado.
+7. Fallback web (mitigacion)
+   - Comando: `python3 steam_deals_web.py --no-open --port 8080`
+   - Esperado: servidor arriba en `http://127.0.0.1:8080` si la ventana nativa falla.
+
+#### Ejecucion recomendada en CI/runners
+
+- Linux: `ubuntu-latest` (GitHub Actions u otro runner Ubuntu LTS).
+- macOS: `macos-latest` (runner nativo para validar app bundle/apertura local).
+- Guardar bitacora por OS: resultado por paso, error textual y workaround aplicado.
+
 ## Proximo Paso Operativo
 
 - Validar build desktop en Linux y macOS y documentar incidencias por plataforma.
@@ -148,6 +203,10 @@ Ejecutar de forma consistente en Windows, macOS y Linux.
 - 2026-04-08: Se agregan presets de ejecucion (rapido/completo/ahorro) con aplicacion en formulario.
 - 2026-04-08: Se agrega clasificacion de errores por categoria (network/config/rate-limit/encoding) con sugerencias accionables en consola UI.
 - 2026-04-09: Se implementa feature Compartir Deals (URL scheme steamtools://) con modal en Web UI y HTML generado. Falta probar con datos reales (requiere VPN o config de red para Steam API).
+- 2026-04-11: Se blindan handlers web en Steam Deals/PAYDAY 2 (JSON invalido -> 400, limites de payload, validacion de payload/action y errores mas accionables).
+- 2026-04-11: PAYDAY 2 Web inicia separacion UI embebida: `web/payday2/index.html` externo con loader/fallback en `payday2_web.py`; spec desktop actualizado para incluir el HTML.
+- 2026-04-11: Steam Deals Web migra HTML a `web/steam_deals/index.html` con loader/fallback en `steam_deals_web.py`; build desktop/spec incluyen ambos HTML externos.
+- 2026-04-11: PAYDAY 2 Web extrae CSS a `web/payday2/app.css` y sirve `GET /app.css`; build desktop/spec incluyen nuevo asset.
 
 ## Backlog de Features (Propuestos - Planning)
 
