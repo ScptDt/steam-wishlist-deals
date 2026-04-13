@@ -1,0 +1,36 @@
+{
+  "id": "shared-web-infra",
+  "name": "Shared Web Infrastructure Refactor",
+  "status": "active",
+  "objective": "Extract reusable local-web handler infrastructure for Steam Deals and PAYDAY 2 without changing behavior or pywebview compatibility.",
+  "context_files": [
+    "/home/adolfo/Documents/Deals/.opencode/context/core/standards/code-quality.md",
+    "/home/adolfo/Documents/Deals/.opencode/context/project-intelligence/technical-domain.md",
+    "/home/adolfo/Documents/Deals/.opencode/context/development/principles/clean-code.md",
+    "/home/adolfo/Documents/Deals/.opencode/context/development/principles/api-design.md",
+    "/home/adolfo/Documents/Deals/.opencode/context/core/workflows/component-planning.md"
+  ],
+  "reference_files": [
+    "/home/adolfo/Documents/Deals/PENDIENTES.md",
+    "/home/adolfo/Documents/Deals/steam_deals_web.py",
+    "/home/adolfo/Documents/Deals/payday2_web.py",
+    "/home/adolfo/Documents/Deals/steam_tools_desktop.py",
+    "/home/adolfo/Documents/Deals/build_desktop.py",
+    "/home/adolfo/Documents/Deals/web/steam_deals/index.html",
+    "/home/adolfo/Documents/Deals/web/steam_deals/app.css",
+    "/home/adolfo/Documents/Deals/web/steam_deals/app.js",
+    "/home/adolfo/Documents/Deals/web/payday2/index.html",
+    "/home/adolfo/Documents/Deals/web/payday2/app.css",
+    "/home/adolfo/Documents/Deals/web/payday2/app.js"
+  ],
+  "exit_criteria": [
+    "Existe un modulo compartido reutilizable para respuestas HTTP, parsing JSON, assets locales y SSE/subprocess local web.",
+    "steam_deals_web.py y payday2_web.py reutilizan la base compartida sin cambiar rutas clave ni romper compatibilidad con pywebview.",
+    "El comando `python3 -m py_compile shared_web_infra.py steam_deals_web.py payday2_web.py steam_tools_desktop.py build_desktop.py` termina sin errores.",
+    "Smokes locales enfocados con `--no-open` siguen cubriendo `/`, `/app.css`, `/app.js` y una ruta JSON/SSE principal en 127.0.0.1."
+  ],
+  "subtask_count": 5,
+  "completed_count": 0,
+  "created_at": "2026-04-13T18:00:52Z",
+  "completed_at": null
+}

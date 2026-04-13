@@ -1,0 +1,35 @@
+{
+  "id": "shared-web-infra-02",
+  "seq": "02",
+  "title": "Refactor Steam Deals handler to use shared response and asset helpers",
+  "status": "pending",
+  "depends_on": [
+    "01"
+  ],
+  "parallel": true,
+  "suggested_agent": "CoderAgent",
+  "context_files": [
+    "/home/adolfo/Documents/Deals/.opencode/context/core/standards/code-quality.md",
+    "/home/adolfo/Documents/Deals/.opencode/context/project-intelligence/technical-domain.md",
+    "/home/adolfo/Documents/Deals/.opencode/context/development/principles/api-design.md"
+  ],
+  "reference_files": [
+    "/home/adolfo/Documents/Deals/steam_deals_web.py",
+    "/home/adolfo/Documents/Deals/web/steam_deals/index.html",
+    "/home/adolfo/Documents/Deals/web/steam_deals/app.css",
+    "/home/adolfo/Documents/Deals/web/steam_deals/app.js"
+  ],
+  "acceptance_criteria": [
+    "steam_deals_web.py reutiliza el modulo compartido para respuestas JSON/texto/HTML, lectura defensiva de JSON y carga de assets externos.",
+    "Las rutas `GET /`, `GET /app.css`, `GET /app.js` y `GET /api/config` mantienen comportamiento actual local-only.",
+    "El comando `python3 -m py_compile shared_web_infra.py steam_deals_web.py` termina sin errores."
+  ],
+  "deliverables": [
+    "shared_web_infra.py",
+    "steam_deals_web.py"
+  ],
+  "agent_id": null,
+  "started_at": null,
+  "completed_at": null,
+  "completion_summary": null
+}

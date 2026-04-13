@@ -1,0 +1,33 @@
+{
+  "id": "local-smoke-tests-04",
+  "seq": "04",
+  "title": "Add desktop launcher smoke test with clean shutdown",
+  "status": "pending",
+  "depends_on": ["01"],
+  "parallel": true,
+  "suggested_agent": "TestEngineer",
+  "context_files": [
+    "/home/adolfo/Documents/Deals/.opencode/context/core/standards/code-quality.md",
+    "/home/adolfo/Documents/Deals/.opencode/context/core/standards/test-coverage.md",
+    "/home/adolfo/Documents/Deals/.opencode/context/project-intelligence/technical-domain.md"
+  ],
+  "reference_files": [
+    "/home/adolfo/Documents/Deals/README.md",
+    "/home/adolfo/Documents/Deals/smoke_test_windows.ps1",
+    "/home/adolfo/Documents/Deals/steam_tools_desktop.py",
+    "/home/adolfo/Documents/Deals/steam_deals_web.py"
+  ],
+  "acceptance_criteria": [
+    "`python3 .tmp/local-smoke-tests/desktop_smoke.py` exits 0 when the desktop launcher or its documented local fallback is exercised through localhost-only checks.",
+    "The smoke test clearly documents whether it is validating the pywebview launcher path, a packaged launcher path, or a safer repo-local fallback path, and why.",
+    "The smoke test avoids remote network calls and verifies readiness using local HTTP checks only.",
+    "The smoke test always closes spawned launcher and server processes before exit, even after timeout or readiness failure."
+  ],
+  "deliverables": [
+    ".tmp/local-smoke-tests/desktop_smoke.py"
+  ],
+  "agent_id": null,
+  "started_at": null,
+  "completed_at": null,
+  "completion_summary": null
+}

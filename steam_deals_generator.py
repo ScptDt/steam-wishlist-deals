@@ -32,6 +32,40 @@ from concurrent.futures import ThreadPoolExecutor, as_completed
 from datetime import date, datetime
 from difflib import SequenceMatcher
 from pathlib import Path
+from shared.cache_utils import load_timestamped_cache, save_timestamped_cache
+from shared.io_utils import http_get_json, http_post_json, load_json_file, write_json_file
+
+try:
+    from renderers.common import html_escape as _renderer_html_escape
+except Exception:
+    # Compatibility fallback for contexts where the scaffold package is not yet
+    # present in the runtime path. Behavior stays equivalent to the in-file
+    # helper.
+    def _renderer_html_escape(text: str) -> str:
+        return (
+            text.replace("&", "&amp;")
+            .replace("<", "&lt;")
+            .replace(">", "&gt;")
+            .replace('"', "&quot;")
+        )
+
+
+try:
+    from renderers.markdown_renderer import generate_md as _generate_md_renderer
+except Exception:
+    _generate_md_renderer = None
+
+
+try:
+    from renderers.html_renderer import generate_html as _generate_html_renderer
+except Exception:
+    _generate_html_renderer = None
+
+
+try:
+    from renderers.share_html_renderer import generate_share_html as _generate_share_html_renderer
+except Exception:
+    _generate_share_html_renderer = None
 
 
 # ─────────────────────────────────────────────
@@ -93,17 +127,11 @@ CONFIG_FILE = Path.home() / ".config" / "steam_deals.json"
 
 
 def load_user_config() -> dict:
-    if not CONFIG_FILE.exists():
-        return {}
-    try:
-        return json.loads(CONFIG_FILE.read_text(encoding="utf-8"))
-    except (json.JSONDecodeError, OSError):
-        return {}
+    return load_json_file(CONFIG_FILE, {})
 
 
 def save_user_config(cfg: dict) -> None:
-    CONFIG_FILE.parent.mkdir(parents=True, exist_ok=True)
-    CONFIG_FILE.write_text(json.dumps(cfg, ensure_ascii=False, indent=2), encoding="utf-8")
+    write_json_file(CONFIG_FILE, cfg, ensure_ascii=False, indent=2)
     print(f"  {_ok(f'Config guardada en {CONFIG_FILE}')}")
 
 
@@ -823,11 +851,8 @@ def _fmt_mxn(centavos: int) -> str:
 
 
 def load_price_history(steam_id: str) -> dict:
-    if not PRICE_HISTORY_FILE.exists():
-        return {"version": 1, "steam_id": steam_id, "games": {}}
-    try:
-        data = json.loads(PRICE_HISTORY_FILE.read_text(encoding="utf-8"))
-    except (json.JSONDecodeError, OSError):
+    data = load_json_file(PRICE_HISTORY_FILE, None)
+    if not isinstance(data, dict):
         return {"version": 1, "steam_id": steam_id, "games": {}}
     if data.get("steam_id") != steam_id:
         return {"version": 1, "steam_id": steam_id, "games": {}}
@@ -835,8 +860,7 @@ def load_price_history(steam_id: str) -> dict:
 
 
 def save_price_history(history: dict) -> None:
-    CACHE_DIR.mkdir(parents=True, exist_ok=True)
-    PRICE_HISTORY_FILE.write_text(json.dumps(history, ensure_ascii=False), encoding="utf-8")
+    write_json_file(PRICE_HISTORY_FILE, history, ensure_ascii=False, indent=None)
 
 
 def log_price_snapshot(history: dict, deals: list[dict]) -> None:
@@ -932,24 +956,23 @@ ACHIEVEMENTS_CACHE_TTL  = 720  # 30 days in hours
 
 
 def load_price_cache(steam_id: str) -> tuple[dict, float]:
-    if not CACHE_FILE.exists():
-        return {}, float("inf")
-    try:
-        data = json.loads(CACHE_FILE.read_text(encoding="utf-8"))
-    except (json.JSONDecodeError, OSError):
-        return {}, float("inf")
-    if data.get("steam_id") != steam_id:
-        return {}, float("inf")
-    age_hours = (datetime.now() - datetime.fromisoformat(data["saved_at"])).total_seconds() / 3600
-    return data.get("fetched", {}), age_hours
+    return load_timestamped_cache(
+        CACHE_FILE,
+        "fetched",
+        identity_key="steam_id",
+        identity_value=steam_id,
+    )
 
 
 def save_price_cache(steam_id: str, fetched: dict) -> None:
-    CACHE_DIR.mkdir(parents=True, exist_ok=True)
-    CACHE_FILE.write_text(
-        json.dumps({"steam_id": steam_id, "saved_at": datetime.now().isoformat(), "fetched": fetched},
-                   ensure_ascii=False, indent=2),
-        encoding="utf-8",
+    save_timestamped_cache(
+        CACHE_FILE,
+        "fetched",
+        fetched,
+        identity_key="steam_id",
+        identity_value=steam_id,
+        ensure_ascii=False,
+        indent=2,
     )
 
 
@@ -1427,24 +1450,23 @@ def _fetch_single_deck(appid: str) -> int | None:
 
 
 def load_reviews_cache(steam_id: str) -> tuple[dict, float]:
-    if not REVIEWS_CACHE_FILE.exists():
-        return {}, float("inf")
-    try:
-        data = json.loads(REVIEWS_CACHE_FILE.read_text(encoding="utf-8"))
-    except (json.JSONDecodeError, OSError):
-        return {}, float("inf")
-    if data.get("steam_id") != steam_id:
-        return {}, float("inf")
-    age_hours = (datetime.now() - datetime.fromisoformat(data["saved_at"])).total_seconds() / 3600
-    return data.get("reviews", {}), age_hours
+    return load_timestamped_cache(
+        REVIEWS_CACHE_FILE,
+        "reviews",
+        identity_key="steam_id",
+        identity_value=steam_id,
+    )
 
 
 def save_reviews_cache(steam_id: str, reviews: dict) -> None:
-    CACHE_DIR.mkdir(parents=True, exist_ok=True)
-    REVIEWS_CACHE_FILE.write_text(
-        json.dumps({"steam_id": steam_id, "saved_at": datetime.now().isoformat(), "reviews": reviews},
-                   ensure_ascii=False, indent=2),
-        encoding="utf-8",
+    save_timestamped_cache(
+        REVIEWS_CACHE_FILE,
+        "reviews",
+        reviews,
+        identity_key="steam_id",
+        identity_value=steam_id,
+        ensure_ascii=False,
+        indent=2,
     )
 
 
@@ -1471,24 +1493,23 @@ def deck_badge(category: int) -> str:
 
 
 def load_deck_cache(steam_id: str) -> tuple[dict, float]:
-    if not DECK_CACHE_FILE.exists():
-        return {}, float("inf")
-    try:
-        data = json.loads(DECK_CACHE_FILE.read_text(encoding="utf-8"))
-    except (json.JSONDecodeError, OSError):
-        return {}, float("inf")
-    if data.get("steam_id") != steam_id:
-        return {}, float("inf")
-    age_hours = (datetime.now() - datetime.fromisoformat(data["saved_at"])).total_seconds() / 3600
-    return data.get("deck", {}), age_hours
+    return load_timestamped_cache(
+        DECK_CACHE_FILE,
+        "deck",
+        identity_key="steam_id",
+        identity_value=steam_id,
+    )
 
 
 def save_deck_cache(steam_id: str, deck: dict) -> None:
-    CACHE_DIR.mkdir(parents=True, exist_ok=True)
-    DECK_CACHE_FILE.write_text(
-        json.dumps({"steam_id": steam_id, "saved_at": datetime.now().isoformat(), "deck": deck},
-                   ensure_ascii=False, indent=2),
-        encoding="utf-8",
+    save_timestamped_cache(
+        DECK_CACHE_FILE,
+        "deck",
+        deck,
+        identity_key="steam_id",
+        identity_value=steam_id,
+        ensure_ascii=False,
+        indent=2,
     )
 
 
@@ -1522,22 +1543,11 @@ def protondb_badge(tier: str) -> str:
 
 
 def load_protondb_cache() -> tuple[dict, float]:
-    if not PROTONDB_CACHE_FILE.exists():
-        return {}, float("inf")
-    try:
-        data = json.loads(PROTONDB_CACHE_FILE.read_text(encoding="utf-8"))
-    except (json.JSONDecodeError, OSError):
-        return {}, float("inf")
-    age_hours = (datetime.now() - datetime.fromisoformat(data["saved_at"])).total_seconds() / 3600
-    return data.get("protondb", {}), age_hours
+    return load_timestamped_cache(PROTONDB_CACHE_FILE, "protondb")
 
 
 def save_protondb_cache(protondb: dict) -> None:
-    CACHE_DIR.mkdir(parents=True, exist_ok=True)
-    PROTONDB_CACHE_FILE.write_text(
-        json.dumps({"saved_at": datetime.now().isoformat(), "protondb": protondb}, ensure_ascii=False),
-        encoding="utf-8",
-    )
+    save_timestamped_cache(PROTONDB_CACHE_FILE, "protondb", protondb, ensure_ascii=False, indent=None)
 
 
 def _fetch_single_protondb(appid: str) -> dict | None:
@@ -1571,22 +1581,11 @@ ANTICHEAT_WARN = {"Denied", "Broken"}  # statuses worth warning about
 
 
 def load_anticheat_cache() -> tuple[dict, float]:
-    if not ANTICHEAT_CACHE_FILE.exists():
-        return {}, float("inf")
-    try:
-        data = json.loads(ANTICHEAT_CACHE_FILE.read_text(encoding="utf-8"))
-    except (json.JSONDecodeError, OSError):
-        return {}, float("inf")
-    age_hours = (datetime.now() - datetime.fromisoformat(data["saved_at"])).total_seconds() / 3600
-    return data.get("games", {}), age_hours
+    return load_timestamped_cache(ANTICHEAT_CACHE_FILE, "games")
 
 
 def save_anticheat_cache(games: dict) -> None:
-    CACHE_DIR.mkdir(parents=True, exist_ok=True)
-    ANTICHEAT_CACHE_FILE.write_text(
-        json.dumps({"saved_at": datetime.now().isoformat(), "games": games}, ensure_ascii=False),
-        encoding="utf-8",
-    )
+    save_timestamped_cache(ANTICHEAT_CACHE_FILE, "games", games, ensure_ascii=False, indent=None)
 
 
 def fetch_anticheat_db() -> dict[str, dict]:
@@ -1649,14 +1648,7 @@ GENERIC_TAGS = {
 
 
 def load_tags_cache() -> tuple[dict, float]:
-    if not TAGS_CACHE_FILE.exists():
-        return {}, float("inf")
-    try:
-        data = json.loads(TAGS_CACHE_FILE.read_text(encoding="utf-8"))
-    except (json.JSONDecodeError, OSError):
-        return {}, float("inf")
-    age_hours = (datetime.now() - datetime.fromisoformat(data["saved_at"])).total_seconds() / 3600
-    tags = data.get("tags", {})
+    tags, age_hours = load_timestamped_cache(TAGS_CACHE_FILE, "tags")
     # Migrate old format: {appid: {tag: votes}} → {appid: {tags: {...}, players: {}}}
     for appid, val in tags.items():
         if isinstance(val, dict) and "tags" not in val:
@@ -1665,11 +1657,7 @@ def load_tags_cache() -> tuple[dict, float]:
 
 
 def save_tags_cache(tags: dict) -> None:
-    CACHE_DIR.mkdir(parents=True, exist_ok=True)
-    TAGS_CACHE_FILE.write_text(
-        json.dumps({"saved_at": datetime.now().isoformat(), "tags": tags}, ensure_ascii=False),
-        encoding="utf-8",
-    )
+    save_timestamped_cache(TAGS_CACHE_FILE, "tags", tags, ensure_ascii=False, indent=None)
 
 
 def fetch_tags(appids: list[str], cached: dict, rate_limit: float = 1.1) -> dict[str, dict]:
@@ -1770,24 +1758,23 @@ def players_badge(tags_entry: dict) -> str:
 
 
 def load_achievements_cache(steam_id: str) -> tuple[dict, float]:
-    if not ACHIEVEMENTS_CACHE_FILE.exists():
-        return {}, float("inf")
-    try:
-        data = json.loads(ACHIEVEMENTS_CACHE_FILE.read_text(encoding="utf-8"))
-    except (json.JSONDecodeError, OSError):
-        return {}, float("inf")
-    if data.get("steam_id") != steam_id:
-        return {}, float("inf")
-    age_hours = (datetime.now() - datetime.fromisoformat(data["saved_at"])).total_seconds() / 3600
-    return data.get("achievements", {}), age_hours
+    return load_timestamped_cache(
+        ACHIEVEMENTS_CACHE_FILE,
+        "achievements",
+        identity_key="steam_id",
+        identity_value=steam_id,
+    )
 
 
 def save_achievements_cache(steam_id: str, achievements: dict) -> None:
-    CACHE_DIR.mkdir(parents=True, exist_ok=True)
-    ACHIEVEMENTS_CACHE_FILE.write_text(
-        json.dumps({"steam_id": steam_id, "saved_at": datetime.now().isoformat(),
-                     "achievements": achievements}, ensure_ascii=False, indent=2),
-        encoding="utf-8",
+    save_timestamped_cache(
+        ACHIEVEMENTS_CACHE_FILE,
+        "achievements",
+        achievements,
+        identity_key="steam_id",
+        identity_value=steam_id,
+        ensure_ascii=False,
+        indent=2,
     )
 
 
@@ -1995,42 +1982,6 @@ MESES = {
 }
 
 
-def _md_esc(text: str) -> str:
-    """Escape characters that break markdown tables and links."""
-    return text.replace("|", "\\|").replace("[", "\\[").replace("]", "\\]")
-
-
-def _link(name: str, appid: str) -> str:
-    return f"[{_md_esc(name)}]({STORE_URL.format(appid=appid)})"
-
-
-def _prio_badge(priority: int) -> str:
-    if priority == 0:
-        return ""
-    if priority <= 10:
-        return f" **#{priority}**"
-    if priority <= 50:
-        return f" #{priority}"
-    return ""
-
-
-def format_deal_row(game: dict, show_storefront: bool = False) -> str:
-    pct  = f"-{game['discount']}%"
-    name = _link(game["steam_name"], game["appid"])
-    if game["score"] < 0.95 and game["hltb_title"].lower() != game["steam_name"].lower():
-        name += f" _(HLTB: {_md_esc(game['hltb_title'])})_"
-    # Precio/hora
-    pph = game.get("price_per_hour")
-    pph_str = f" · ${pph:.1f}/h" if pph is not None else ""
-    hours = game.get("hours")
-    hours_str = f" · {hours:.0f}h" if hours else ""
-    extra = f"{hours_str}{pph_str}" if (hours_str or pph_str) else ""
-
-    if show_storefront:
-        return f"| {pct} | {game['price']}{extra} | {game['storefront'] or '?'} | {name} |"
-    return f"| {pct} | {game['price']}{extra} | {game['price_original']} | {name} |"
-
-
 def group_by_tier(games: list[dict]) -> list[tuple[str, list[dict]]]:
     tiers = [
         ("90%+",   lambda d: d >= 90),
@@ -2074,467 +2025,50 @@ def generate_md(
     compare_data: dict | None = None,
     gift_ideas: list[dict] | None = None,
 ) -> str:
-    today_obj = date.today()
-    today = f"{today_obj.day} de {MESES[today_obj.month]} de {today_obj.year}"
-    priorities = priorities or {}
-    historical_lows = historical_lows or {}
-    previous_appids = previous_appids or set()
-    reviews = reviews or {}
-    deck_compat_data = deck_compat or {}
-    tags_data = tags_data or {}
-    protondb_data = protondb_data or {}
-    anticheat_data = anticheat_data or {}
-    achievements_data = achievements_data or {}
-    local_trends = local_trends or {}
-    active_bundles_data = active_bundles or {}
-    current_prices = current_prices or {}
-    top_picks = top_picks or []
-    watchlist_alerts = watchlist_alerts or []
-    comp = comparison or {}
-    owned_and_wishlisted = sorted(
-        [(a, owned[a]) for a in set(owned) & set(wishlist_appids)],
-        key=lambda x: x[1].lower(),
+    if _generate_md_renderer is None:
+        raise RuntimeError("Markdown renderer module is not available")
+    return _generate_md_renderer(
+        deals,
+        backlog_on_sale,
+        have_on_sale,
+        vanity,
+        owned,
+        wishlist_appids,
+        min_discount,
+        genres,
+        hltb_used=hltb_used,
+        family_appids=family_appids,
+        sale_name=sale_name,
+        priorities=priorities,
+        historical_lows=historical_lows,
+        previous_appids=previous_appids,
+        reviews=reviews,
+        deck_compat=deck_compat,
+        current_prices=current_prices,
+        top_picks=top_picks,
+        comparison=comparison,
+        sort_field=sort_field,
+        tags_data=tags_data,
+        local_trends=local_trends,
+        active_bundles=active_bundles,
+        protondb_data=protondb_data,
+        anticheat_data=anticheat_data,
+        achievements_data=achievements_data,
+        watchlist_alerts=watchlist_alerts,
+        budget_result=budget_result,
+        compare_data=compare_data,
+        gift_ideas=gift_ideas,
+        group_by_tier=group_by_tier,
+        filter_by_genres=filter_by_genres,
+        group_deals_by_tag=group_deals_by_tag,
+        linux_badge=linux_badge,
+        multiplayer_badges=multiplayer_badges,
+        get_top_tags=get_top_tags,
+        players_badge=players_badge,
+        format_trend=format_trend,
+        achievements_badge=achievements_badge,
+        compute_value_score=compute_value_score,
     )
-
-    # Clasificar grupos HLTB si aplica
-    otras = familia = steam_sf = sin_sf = []
-    if hltb_used:
-        family_appids = family_appids or set()
-        otras    = [g for g in backlog_on_sale if g["storefront"] and g["storefront"].lower() not in ("steam", "") and not g["in_family"]]
-        familia  = [g for g in backlog_on_sale if g["in_family"]]
-        steam_sf = [g for g in backlog_on_sale if g["storefront"].lower() == "steam" and not g["in_family"]]
-        sin_sf   = [g for g in backlog_on_sale if not g["storefront"] and not g["in_family"]]
-
-    # Header
-    sale_line = f"Evento: 🏷️ **{sale_name}** | " if sale_name else ""
-    lines = [
-        f"# Steam Wishlist Deals — {vanity}",
-        f"> {sale_line}{today} | Precios en MXN | Perfil: {vanity.lower()}",
-        f"> Wishlist: {len(wishlist_appids):,} juegos | Deals (≥{min_discount}%): {len(deals):,}"
-        + (f" | Backlog en oferta: {len(backlog_on_sale)}" if hltb_used else ""),
-    ]
-    # Comparison summary in header
-    delta_parts = []
-    new_deal_count = len(comp.get("new_deals", set()))
-    disappeared_count = len(comp.get("disappeared", []))
-    price_drops = sum(1 for v in comp.get("price_changes", {}).values() if v["direction"] == "down")
-    if new_deal_count:
-        delta_parts.append(f"🆕 {new_deal_count} nuevos")
-    if disappeared_count:
-        delta_parts.append(f"❌ {disappeared_count} terminaron")
-    if price_drops:
-        delta_parts.append(f"⬇️ {price_drops} bajaron de precio")
-    if delta_parts:
-        lines.append(f"> {' · '.join(delta_parts)}")
-    lines += ["", "---", ""]
-
-    # Top Picks
-    if top_picks:
-        lines += [
-            "## 🏆 Top 10 Picks",
-            "",
-            "> Ranking: reviews (26%) + descuento (22%) + prioridad (18%) + $/hora HLTB (14%) + Deck (10%) + Metacritic (5%) + edad (5%).",
-            "",
-            "| # | Score | % | Precio | Año | Reviews | MC | Deck/Linux | Modo | Juego |",
-            "|---|-------|---|--------|-----|---------|----|-----------|----|-------|",
-        ]
-        for idx, tp in enumerate(top_picks, 1):
-            rev = tp.get("review")
-            rev_str = f"{rev['desc']} ({rev['pct']}%)" if rev else "—"
-            tp_dk = tp.get("deck", 0)
-            tp_pdb = protondb_data.get(tp["appid"])
-            tp_ac = anticheat_data.get(tp["appid"])
-            dk_str = linux_badge(tp_dk, tp_pdb, tp_ac, tp.get("linux_native", False))
-            mc = tp.get("metacritic_score")
-            mc_str = str(mc) if mc else "—"
-            mp_str = multiplayer_badges(tp.get("categories", []))  or "—"
-            prio = _prio_badge(tp.get("priority", 0))
-            name_col = f"{_link(tp['name'], tp['appid'])}{prio}"
-            yr = tp.get("release_year") or "—"
-            lines.append(f"| {idx} | {tp['score']} | -{tp['discount']}% | {tp['price_final']} | {yr} | {rev_str} | {mc_str} | {dk_str} | {mp_str} | {name_col} |")
-        lines += ["", "---", ""]
-
-    # Watchlist Alerts
-    if watchlist_alerts:
-        lines += [
-            "## 🎯 Watchlist Alerts",
-            "",
-            f"> **{len(watchlist_alerts)} juegos** de tu watchlist alcanzaron el precio objetivo.",
-            "",
-            "| Juego | Precio Actual | Objetivo | Descuento | Ahorro extra |",
-            "|-------|---------------|----------|-----------|--------------|",
-        ]
-        for wa in watchlist_alerts:
-            savings = wa["target_price"] - (wa["price_raw"] / 100)
-            savings_str = f"${savings:.0f}" if savings > 0 else "—"
-            lines.append(f"| {_link(wa['name'], wa['appid'])} | {wa['price_final']} | ${wa['target_price']:.0f} | -{wa['discount']}% | {savings_str} |")
-        lines += ["", "---", ""]
-
-    # Budget Mode
-    if budget_result:
-        b = budget_result
-        lines += [
-            f"## 💰 Budget Mode — ${b['budget']:.0f} MXN",
-            "",
-            f"> Con **${b['budget']:.0f} MXN** puedes comprar **{b['games_count']} juegos**.",
-            f"> Total: ${b['total_spent']:.0f} | Ahorro vs original: ${b['total_savings']:.0f} | Restante: ${b['remaining']:.0f}",
-            "",
-            "| # | Score | % | Precio | Juego |",
-            "|---|-------|---|--------|-------|",
-        ]
-        for idx, pick in enumerate(b["selected"], 1):
-            lines.append(f"| {idx} | {pick.get('score', '—')} | -{pick['discount']}% | {pick['price_final']} | {_link(pick['name'], pick['appid'])} |")
-        lines += ["", "---", ""]
-
-    # Wishlist Comparison
-    if compare_data:
-        friend = compare_data.get("friend_vanity", "?")
-        overlap = compare_data.get("overlap", set())
-        lines += [
-            f"## 👥 Wishlist Comparison — {friend}",
-            "",
-            f"> **{len(overlap)} juegos en común** entre tu wishlist y la de {friend}.",
-            "",
-        ]
-        overlap_deals = [d for d in deals if d["appid"] in overlap]
-        if overlap_deals:
-            lines += [
-                f"### En común y en oferta ({len(overlap_deals)} juegos)",
-                "", "| % | Precio | Juego |", "|---|--------|-------|",
-            ]
-            for d in sorted(overlap_deals, key=lambda x: -x["discount"])[:20]:
-                lines.append(f"| -{d['discount']}% | {d['price_final']} | {_link(d['name'], d['appid'])} |")
-            lines.append("")
-        if gift_ideas:
-            lines += [
-                f"### 🎁 Gift Ideas para {friend} ({len(gift_ideas)} juegos)",
-                "", f"> Juegos que {friend} quiere, están en oferta, y tú no los tienes.", "",
-                "| % | Precio | Juego |", "|---|--------|-------|",
-            ]
-            for g in gift_ideas[:20]:
-                lines.append(f"| -{g['discount']}% | {g['price_final']} | {_link(g['name'], g['appid'])} |")
-        lines += ["", "---", ""]
-
-    # Bundles activos
-    if active_bundles_data:
-        bundles_grouped: dict[str, dict] = {}
-        for appid, bundle_list in active_bundles_data.items():
-            for b in bundle_list:
-                key = b["title"]
-                if key not in bundles_grouped:
-                    bundles_grouped[key] = {**b, "appids": []}
-                bundles_grouped[key]["appids"].append(appid)
-        lines += [
-            "## 📦 Bundles Activos",
-            "",
-            f"> **{len(bundles_grouped)} bundle(s)** activos con juegos de tu wishlist.",
-            "",
-        ]
-        for bname, binfo in bundles_grouped.items():
-            price_str = f"${binfo['price']:.0f} {binfo['currency']}" if binfo['price'] else "Gratis"
-            link = f"[{binfo['store']}]({binfo['url']})" if binfo.get("url") else binfo["store"]
-            lines += [f"### 📦 {bname}", f"> {price_str} en {link}", "", "| Juego | Precio Steam |", "|-------|-------------|"]
-            for aid in binfo["appids"]:
-                deal = next((d for d in deals if d["appid"] == aid), None)
-                if deal:
-                    lines.append(f"| {_link(deal['name'], aid)} | {deal['price_final']} |")
-            lines.append("")
-        lines += ["---", ""]
-
-    # Backlog en Oferta (solo familia + sin storefront = deals útiles)
-    if hltb_used:
-        backlog_display = familia + sin_sf
-        if backlog_display:
-            lines += [
-                "## Backlog en Oferta — Ya los Tienes en HLTB",
-                "",
-                f"> **{len(backlog_display)} juegos** de tu backlog de HLTB están en oferta en tu wishlist.",
-                "",
-            ]
-            for emoji, subtitle, group in [
-                ("🟡", "Confirmado en Familia de Steam",       familia),
-                ("🟢", "Sin plataforma registrada en HLTB",   sin_sf),
-            ]:
-                if not group:
-                    continue
-                lines += [
-                    f"### {emoji} {subtitle} ({len(group)} juegos)",
-                    "",
-                    "| % | Precio | HLTB en | Juego |",
-                    "|---|--------|---------|-------|",
-                ]
-                for g in sorted(group, key=lambda x: -x["discount"]):
-                    lines.append(format_deal_row(g, show_storefront=True))
-                lines.append("")
-
-    # Genre Deals
-    if genres:
-        genre_deals = filter_by_genres(deals, genres)
-        genre_label = ", ".join(genres)
-        lines += [
-            "---", "",
-            f"## Genre Deals — {genre_label}",
-            "",
-            f"> **{len(genre_deals)} juegos** en oferta que coinciden con: _{genre_label}_.",
-            "",
-        ]
-        if genre_deals:
-            lines += ["| % | Precio | Era | Juego |", "|---|--------|-----|-------|"]
-            for d in genre_deals:
-                lines.append(f"| -{d['discount']}% | {d['price_final']} | {d['price_original']} | {_link(d['name'], d['appid'])} |")
-        else:
-            lines.append("_Ningún juego de tu wishlist en oferta coincide con esos géneros._")
-        lines.append("")
-
-    # Deals por Tag
-    if tags_data:
-        tag_groups = group_deals_by_tag(deals, tags_data)
-        if tag_groups:
-            lines += ["---", "", "## Deals por Tag", ""]
-            for tag_name, tag_deals in tag_groups:
-                lines += [
-                    f"### {tag_name} ({len(tag_deals)} juegos)",
-                    "",
-                    "| % | Precio | Juego |",
-                    "|---|--------|-------|",
-                ]
-                for d in sorted(tag_deals, key=lambda x: -x["discount"])[:10]:
-                    lines.append(f"| -{d['discount']}% | {d['price_final']} | {_link(d['name'], d['appid'])} |")
-                lines.append("")
-
-    # ── Quitar de la Wishlist ──
-    lines += [
-        "---", "",
-        "## Quitar de la Wishlist",
-        "",
-        "> Limpieza: juegos que siguen en tu wishlist pero ya no deberían estar ahí.",
-        "",
-        "### Ya comprados en Steam (Steam no siempre los quita automáticamente)",
-        "",
-    ]
-    if owned_and_wishlisted:
-        lines += ["| AppID | Nombre |", "|-------|--------|"]
-        for appid, name in owned_and_wishlisted:
-            lines.append(f"| {appid} | {_link(name, appid)} |")
-    else:
-        lines.append("_Ninguno encontrado._")
-
-    if hltb_used:
-        if otras:
-            lines += [
-                "",
-                f"### 🔴 Otra plataforma — GOG, Epic, Amazon… ({len(otras)} juegos)",
-                "",
-                "> Ya los tienes en otra plataforma según HLTB. Considera quitarlos de la wishlist.",
-                "",
-                "| % | Precio | HLTB en | Juego |",
-                "|---|--------|---------|-------|",
-            ]
-            for g in sorted(otras, key=lambda x: -x["discount"]):
-                lines.append(format_deal_row(g, show_storefront=True))
-
-        if steam_sf:
-            lines += [
-                "",
-                f"### ⚠️ Steam en HLTB — no localizado en familia ({len(steam_sf)} juegos)",
-                "",
-                "> HLTB dice que los tienes en Steam, pero no aparecen en tu biblioteca familiar.",
-                "",
-                "| % | Precio | HLTB en | Juego |",
-                "|---|--------|---------|-------|",
-            ]
-            for g in sorted(steam_sf, key=lambda x: -x["discount"]):
-                lines.append(format_deal_row(g, show_storefront=True))
-
-        lines += ["", "### Completados / Retirados en HLTB en oferta en la Wishlist", ""]
-        if have_on_sale:
-            lines += ["| % | Precio | Estado | Juego |", "|---|--------|--------|-------|"]
-            for g in have_on_sale:
-                lines.append(f"| -{g['discount']}% | {g['price']} | {g['status']} | {_link(g['steam_name'], g['appid'])} |")
-        else:
-            lines.append("_Ninguno encontrado._")
-
-    # ── Sugerencias inteligentes de limpieza ──
-    current_year = date.today().year
-    cleanup_neg = [(d, reviews.get(d["appid"])) for d in deals
-                   if (r := reviews.get(d["appid"])) and r.get("pct", 100) < 50]
-    cleanup_always = [(d, local_trends.get(d["appid"])) for d in deals
-                      if (t := local_trends.get(d["appid"])) and t.get("times_on_sale", 0) >= 5]
-    cleanup_nolinux = [d for d in deals
-                       if deck_compat_data.get(d["appid"], 0) == 1
-                       and (p := protondb_data.get(d["appid"])) and p.get("tier") == "borked"]
-    cleanup_ac = [(d, anticheat_data.get(d["appid"])) for d in deals
-                  if (a := anticheat_data.get(d["appid"])) and a.get("status") in ("Denied", "Broken")]
-    cleanup_old = [(d, d.get("release_year")) for d in deals
-                   if d.get("release_year") and (current_year - d["release_year"]) > 8 and d["discount"] < 70]
-
-    if cleanup_neg:
-        cleanup_neg.sort(key=lambda x: x[1]["pct"])
-        lines += ["", f"### 👎 Reviews muy negativas ({len(cleanup_neg)} juegos)", "",
-                   "> Estos juegos tienen reviews negativas, ¿seguro que los quieres?", "",
-                   "| % | Precio | Reviews | Juego |", "|---|--------|---------|-------|"]
-        for d, rev in cleanup_neg:
-            lines.append(f"| -{d['discount']}% | {d['price_final']} | {rev['desc']} ({rev['pct']}%) | {_link(d['name'], d['appid'])} |")
-
-    if cleanup_always:
-        cleanup_always.sort(key=lambda x: -x[1]["times_on_sale"])
-        lines += ["", f"### 🔄 Siempre en oferta ({len(cleanup_always)} juegos)", "",
-                   "> Estos juegos están siempre en oferta, no hay prisa.", "",
-                   "| % | Precio | Veces | Prom. | Juego |", "|---|--------|-------|-------|-------|"]
-        for d, trend in cleanup_always:
-            lines.append(f"| -{d['discount']}% | {d['price_final']} | {trend['times_on_sale']}x | {trend.get('avg_fmt', '?')} | {_link(d['name'], d['appid'])} |")
-
-    if cleanup_nolinux:
-        lines += ["", f"### 🐧 Sin soporte Linux/Deck ({len(cleanup_nolinux)} juegos)", "",
-                   "> ProtonDB Borked + Deck Unsupported.", "",
-                   "| % | Precio | Juego |", "|---|--------|-------|"]
-        for d in sorted(cleanup_nolinux, key=lambda x: -x["discount"]):
-            lines.append(f"| -{d['discount']}% | {d['price_final']} | {_link(d['name'], d['appid'])} |")
-
-    if cleanup_ac:
-        lines += ["", f"### ⛔ Anti-cheat no funciona en Linux ({len(cleanup_ac)} juegos)", "",
-                   "> Anti-cheat status Denied o Broken en Linux.", "",
-                   "| % | Precio | Anti-Cheat | Status | Juego |", "|---|--------|------------|--------|-------|"]
-        for d, ac in cleanup_ac:
-            ac_names = ", ".join(ac.get("anticheats", []))
-            lines.append(f"| -{d['discount']}% | {d['price_final']} | {ac_names} | {ac['status']} | {_link(d['name'], d['appid'])} |")
-
-    if cleanup_old:
-        cleanup_old.sort(key=lambda x: (x[1], -x[0]["discount"]))
-        lines += ["", f"### 🕰️ Juego viejo, descuento bajo ({len(cleanup_old)} juegos)", "",
-                   "> Juegos de más de 8 años con menos de 70% de descuento. Suelen bajar más.", "",
-                   "| % | Precio | Año | Juego |", "|---|--------|-----|-------|"]
-        for d, year in cleanup_old:
-            lines.append(f"| -{d['discount']}% | {d['price_final']} | {year} | {_link(d['name'], d['appid'])} |")
-
-    lines += ["", "---", ""]
-
-    # Ofertas terminadas
-    disappeared = comp.get("disappeared", [])
-    if disappeared:
-        lines += [
-            f"## ❌ Ofertas Terminadas ({len(disappeared)} juegos)",
-            "",
-            "> Juegos que estaban en oferta el run anterior pero ya no.",
-            "",
-            "| % | Último precio | Juego |",
-            "|---|---------------|-------|",
-        ]
-        for dd in disappeared:
-            lines.append(f"| -{dd['discount']}% | {dd['price_final']} | {_link(dd['name'], dd['appid'])} |")
-        lines += ["", "---", ""]
-
-    # Deals por tier (con prioridad, mínimo histórico, reviews, deck, mejor precio)
-    has_itad = bool(historical_lows)
-    has_best_prices = bool(current_prices)
-    for tier_name, tier_deals in group_by_tier(deals):
-        # Ordenar tiers según --sort
-        _sort_keys = {
-            "discount": lambda d: -d["discount"],
-            "price":    lambda d: d.get("price_raw", 0),
-            "reviews":  lambda d: -(reviews.get(d["appid"], {}).get("pct", 0)),
-            "priority": lambda d: (priorities.get(d["appid"], 0) == 0, priorities.get(d["appid"], 9999)),
-            "score":    lambda d: -(compute_value_score(d["discount"], reviews.get(d["appid"], {}).get("pct"), priorities.get(d["appid"], 0), None, deck_compat_data.get(d["appid"], 0), release_year=d.get("release_year"), metacritic_score=d.get("metacritic_score"))),
-        }
-        tier_deals.sort(key=_sort_keys.get(sort_field, _sort_keys["discount"]))
-
-        lines += [
-            f"## {tier_name} de Descuento ({len(tier_deals)} juegos)",
-            "",
-        ]
-
-        # Build dynamic header
-        has_tags = bool(tags_data)
-        has_ach = bool(achievements_data)
-        header = "| | % | Precio | Era | Año | Reviews | MC | Deck/Linux | Modo"
-        sep    = "|-|---|--------|-----|-----|---------|----|-----------|----|"
-        if has_ach:
-            header += " | Logros"
-            sep    += "|-------"
-        if has_tags:
-            header += " | Tags"
-            sep    += "|------"
-        if has_itad:
-            header += " | Min. hist."
-            sep    += "|------------"
-        if has_best_prices:
-            header += " | Mejor precio"
-            sep    += "|--------------"
-        has_trends = bool(local_trends)
-        if has_trends:
-            header += " | Tendencia"
-            sep    += "|-----------"
-        header += " | Juego |"
-        sep    += "|-------|"
-        lines += [header, sep]
-
-        for d in tier_deals:
-            # Rich markers from comparison
-            markers = []
-            appid = d["appid"]
-            if appid in comp.get("new_deals", set()):
-                markers.append("🆕")
-            pc = comp.get("price_changes", {}).get(appid)
-            if pc:
-                markers.append(f"⬇️ -{pc['delta_str']}" if pc["direction"] == "down" else f"⬆️ +{pc['delta_str']}")
-            streak = comp.get("deal_streak", {}).get(appid, 0)
-            if streak >= 3:
-                markers.append(f"🔥 {streak}º run")
-            # Fallback to previous_appids if no comparison data
-            if not markers and not comp and previous_appids and appid not in previous_appids:
-                markers.append("🆕")
-            new_marker = " ".join(markers)
-            prio = _prio_badge(priorities.get(d["appid"], 0))
-            name_col = f"{_link(d['name'], d['appid'])}{prio}"
-
-            # Reviews
-            rev = reviews.get(d["appid"])
-            rev_str = f"{rev['desc']} ({rev['pct']}%)" if rev else "—"
-
-            # Deck/Linux (combined)
-            dk = deck_compat_data.get(d["appid"], 0)
-            pdb = protondb_data.get(d["appid"])
-            ac = anticheat_data.get(d["appid"])
-            dk_str = linux_badge(dk, pdb, ac, d.get("linux_native", False))
-
-            # Metacritic
-            mc = d.get("metacritic_score")
-            mc_str = str(mc) if mc else "—"
-            # Multiplayer/Co-op
-            mp_str = multiplayer_badges(d.get("categories", [])) or "—"
-
-            year_str = str(d.get("release_year", "")) if d.get("release_year") else "—"
-            row = f"| {new_marker} | -{d['discount']}% | {d['price_final']} | {d['price_original']} | {year_str} | {rev_str} | {mc_str} | {dk_str} | {mp_str}"
-            if has_ach:
-                ach = achievements_data.get(d["appid"])
-                row += f" | {achievements_badge(ach)}"
-            if has_tags:
-                top_t = get_top_tags(tags_data, d["appid"], n=3)
-                tags_str = " ".join(f"`{t}`" for t in top_t) if top_t else "—"
-                pb = players_badge(tags_data.get(d["appid"], {}))
-                if pb:
-                    tags_str += f" {pb}"
-                row += f" | {tags_str}"
-
-            if has_itad:
-                low = historical_lows.get(d["appid"])
-                low_str = f"${low['price']:.0f} ({low['date']})" if low else "—"
-                row += f" | {low_str}"
-
-            if has_best_prices:
-                bp = current_prices.get(d["appid"])
-                bp_str = f"${bp['price']:.0f} en [{bp['store']}]({bp['url']})" if bp else "—"
-                row += f" | {bp_str}"
-
-            if has_trends:
-                trend = local_trends.get(d["appid"])
-                row += f" | {format_trend(trend)}" if trend else " | —"
-
-            row += f" | {name_col} |"
-            lines.append(row)
-        lines += ["", "---", ""]
-
-    return "\n".join(lines)
 
 
 # ─────────────────────────────────────────────
@@ -2542,7 +2076,7 @@ def generate_md(
 # ─────────────────────────────────────────────
 
 def _html_esc(text: str) -> str:
-    return text.replace("&", "&amp;").replace("<", "&lt;").replace(">", "&gt;").replace('"', "&quot;")
+    return _renderer_html_escape(text)
 
 
 def _html_link(name: str, appid: str) -> str:
@@ -3014,6 +2548,38 @@ def generate_html(
     local_trends: dict[str, dict] | None = None,
     price_history: dict | None = None,
 ) -> str:
+    if _generate_html_renderer is not None:
+        return _generate_html_renderer(
+            deals,
+            backlog_on_sale,
+            have_on_sale,
+            vanity,
+            owned,
+            wishlist_appids,
+            min_discount,
+            genres,
+            hltb_used=hltb_used,
+            family_appids=family_appids,
+            sale_name=sale_name,
+            priorities=priorities,
+            historical_lows=historical_lows,
+            previous_appids=previous_appids,
+            reviews=reviews,
+            deck_compat=deck_compat,
+            current_prices=current_prices,
+            top_picks=top_picks,
+            tags_data=tags_data,
+            protondb_data=protondb_data,
+            achievements_data=achievements_data,
+            watchlist_alerts=watchlist_alerts,
+            budget_result=budget_result,
+            compare_data=compare_data,
+            gift_ideas=gift_ideas,
+            local_trends=local_trends,
+            price_history=price_history,
+            group_by_tier=group_by_tier,
+            group_deals_by_tag=group_deals_by_tag,
+        )
     today_obj = date.today()
     today = f"{today_obj.day} de {MESES[today_obj.month]} de {today_obj.year}"
     priorities = priorities or {}
@@ -3295,6 +2861,16 @@ def _csv_trend(trend: dict) -> str:
 
 def generate_share_html(deals, vanity, min_discount, sale_name="", top_picks=None, reviews=None, deck_compat=None):
     """Generate a lightweight shareable HTML page with the deals list."""
+    if _generate_share_html_renderer is not None:
+        return _generate_share_html_renderer(
+            deals,
+            vanity,
+            min_discount,
+            sale_name=sale_name,
+            top_picks=top_picks,
+            reviews=reviews,
+            deck_compat=deck_compat,
+        )
     reviews = reviews or {}
     deck_compat = deck_compat or {}
     top_picks = top_picks or []
@@ -3427,16 +3003,11 @@ def generate_csv(
 # ─────────────────────────────────────────────
 
 def _get_json(url: str, headers: dict = None) -> dict:
-    req = urllib.request.Request(url, headers=headers or {})
-    with urllib.request.urlopen(req, timeout=15) as r:
-        return json.loads(r.read())
+    return http_get_json(url, headers=headers, timeout=15)
 
 
 def _post_json(url: str, body) -> dict:
-    data = json.dumps(body).encode("utf-8")
-    req = urllib.request.Request(url, data=data, headers={"Content-Type": "application/json"})
-    with urllib.request.urlopen(req, timeout=30) as r:
-        return json.loads(r.read())
+    return http_post_json(url, body, timeout=30)
 
 
 # ─────────────────────────────────────────────

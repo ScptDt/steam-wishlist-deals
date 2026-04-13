@@ -1,0 +1,40 @@
+{
+  "id": "generator-renderers-06",
+  "seq": "06",
+  "title": "Run focused renderer integration sweep for CLI web and desktop",
+  "status": "pending",
+  "depends_on": [
+    "02",
+    "03",
+    "04",
+    "05"
+  ],
+  "parallel": false,
+  "suggested_agent": "TestEngineer",
+  "context_files": [
+    "/home/adolfo/Documents/Deals/.opencode/context/project-intelligence/technical-domain.md",
+    "/home/adolfo/Documents/Deals/.opencode/context/core/standards/test-coverage.md",
+    "/home/adolfo/Documents/Deals/.opencode/context/core/workflows/feature-breakdown.md"
+  ],
+  "reference_files": [
+    "/home/adolfo/Documents/Deals/steam_deals_generator.py",
+    "/home/adolfo/Documents/Deals/steam_deals_web.py",
+    "/home/adolfo/Documents/Deals/steam_tools_desktop.py",
+    "/home/adolfo/Documents/Deals/README.md"
+  ],
+  "acceptance_criteria": [
+    "Compatibility wrappers in steam_deals_generator.py still cover current renderer entrypoints after extraction.",
+    "CLI, web, and desktop entry scripts import or invoke the generator without renderer-related import errors.",
+    "The first cut remains limited to renderers and does not pull cache, adapters, or orchestration into the refactor.",
+    "Validation commands recorded and runnable: python3 -m py_compile steam_deals_generator.py steam_deals_web.py steam_tools_desktop.py renderers/*.py; python3 steam_deals_generator.py --help; python3 steam_deals_web.py --help; python3 steam_tools_desktop.py --help"
+  ],
+  "deliverables": [
+    "steam_deals_generator.py",
+    "steam_deals_web.py",
+    "steam_tools_desktop.py"
+  ],
+  "agent_id": null,
+  "started_at": null,
+  "completed_at": null,
+  "completion_summary": null
+}

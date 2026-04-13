@@ -1,0 +1,35 @@
+{
+  "id": "shared-web-infra-03",
+  "seq": "03",
+  "title": "Refactor PAYDAY 2 handler to use shared response and asset helpers",
+  "status": "pending",
+  "depends_on": [
+    "01"
+  ],
+  "parallel": true,
+  "suggested_agent": "CoderAgent",
+  "context_files": [
+    "/home/adolfo/Documents/Deals/.opencode/context/core/standards/code-quality.md",
+    "/home/adolfo/Documents/Deals/.opencode/context/project-intelligence/technical-domain.md",
+    "/home/adolfo/Documents/Deals/.opencode/context/development/principles/api-design.md"
+  ],
+  "reference_files": [
+    "/home/adolfo/Documents/Deals/payday2_web.py",
+    "/home/adolfo/Documents/Deals/web/payday2/index.html",
+    "/home/adolfo/Documents/Deals/web/payday2/app.css",
+    "/home/adolfo/Documents/Deals/web/payday2/app.js"
+  ],
+  "acceptance_criteria": [
+    "payday2_web.py reutiliza el modulo compartido para respuestas JSON/HTML/CSS/JS, parsing defensivo de JSON y carga de assets externos.",
+    "Las rutas `GET /`, `GET /app.css`, `GET /app.js`, `GET /api/data` y `POST /api/config` mantienen comportamiento actual.",
+    "El comando `python3 -m py_compile shared_web_infra.py payday2_web.py` termina sin errores."
+  ],
+  "deliverables": [
+    "shared_web_infra.py",
+    "payday2_web.py"
+  ],
+  "agent_id": null,
+  "started_at": null,
+  "completed_at": null,
+  "completion_summary": null
+}

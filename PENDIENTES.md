@@ -40,25 +40,37 @@ No se mantienen documentos paralelos de planificacion; este archivo es la unica 
 ### P3 - Base tecnica y mantenibilidad
 
 - [x] Blindar handlers web: JSON invalido -> 400, validacion de boundaries y errores mas accionables.
-- [ ] Aclarar `README.md` por superficies: core stdlib, desktop con deps extra y posicionamiento de modulos.
-- [ ] Separar HTML/CSS/JS embebido de `steam_deals_web.py` y `payday2_web.py` (en progreso: HTML externo en ambos; CSS externo en PAYDAY 2; falta JS y Steam Deals CSS/JS).
-- [ ] Extraer infraestructura compartida para web local (JSON, SSE, subprocess, server utils).
-- [ ] Reutilizar la base compartida entre Steam Deals Web y PAYDAY 2 Web.
+- [x] Aclarar `README.md` por superficies: core stdlib, desktop con deps extra y posicionamiento de modulos.
+- [x] Separar HTML/CSS/JS embebido de `steam_deals_web.py` y `payday2_web.py`.
+- [x] Extraer infraestructura compartida para web local (JSON, SSE, subprocess, server utils).
+- [x] Reutilizar la base compartida entre Steam Deals Web y PAYDAY 2 Web.
 - [ ] Modularizar `steam_deals_generator.py` por dominios (config, adapters, cache, scoring, renderers, orchestration).
-- [ ] Crear capa shared entre Steam Deals y PAYDAY 2 para config/cache/helpers reutilizables.
-- [ ] Agregar smoke tests minimos para web, desktop y PAYDAY 2.
-- [ ] Agregar tests para logica pura critica (score, filtros, compare, budget, recomendaciones).
+- [x] Agregar smoke tests minimos para web, desktop y PAYDAY 2.
+- [x] Agregar tests para logica pura critica (score, filtros, compare, budget, recomendaciones).
+- [x] Crear capa shared entre Steam Deals y PAYDAY 2 para config/cache/helpers reutilizables.
+
+Nota actual sobre la capa shared Steam Deals / PAYDAY 2:
+- Completado en un primer corte pragmatico: `shared/io_utils.py` + `shared/cache_utils.py` centralizan config JSON, HTTP JSON y helpers genericos de cache reutilizados por `steam_deals_generator.py` y `payday2_dlc_tracker.py`.
+- Los formatos de cache/historial siguen siendo propios de cada app cuando corresponde, pero ya sobre helpers compartidos.
+
+Nota actual sobre `steam_deals_generator.py`:
+- La modularizacion por dominios queda **pausada** por ahora.
+- Avance ya hecho: seam inicial de `renderers/` + extraccion de Markdown, HTML y Share HTML.
+- Pendiente directo para retomar: extraccion de CSV + barrido de integracion final.
+- Motivo de pausa: el refactor completo se volvio demasiado pesado para seguirlo de golpe sin elevar riesgo.
+- Siguiente accion recomendada: retomar esta modularizacion en pasos chicos, empezando por `CSV` + barrido de integracion final.
+- Prioridad actual acordada: el siguiente foco pendiente es `modularizar steam_deals_generator.py`.
 
 ### Nota de trabajo futuro - orden sugerido de ejecucion
 
-- 1. Cerrar base actual: cross-platform + README + handlers robustos.
-- 2. Separar HTML/CSS/JS embebido.
-- 3. Extraer infraestructura compartida para web local.
-- 4. Reutilizar la base compartida entre Steam Deals y PAYDAY 2.
-- 5. Modularizar `steam_deals_generator.py`.
-- 6. Crear capa shared reutilizable.
-- 7. Agregar smoke tests y tests de logica pura.
-- 8. Implementar features nuevas sobre una base mas sana.
+- 1. Cerrar base actual: cross-platform + README + handlers robustos. ✅
+- 2. Separar HTML/CSS/JS embebido. ✅
+- 3. Extraer infraestructura compartida para web local. ✅
+- 4. Reutilizar la base compartida entre Steam Deals y PAYDAY 2. ✅
+- 5. Agregar smoke tests minimos reproducibles para web, desktop y PAYDAY 2. ✅
+- 6. Agregar tests de logica pura critica. ✅
+- 7. Crear capa shared reutilizable para config/cache/helpers. ✅
+- 8. Modularizar `steam_deals_generator.py`. ← siguiente foco
 
 Objetivo de esta secuencia: bajar costo de mantenimiento sin frenar el avance del producto.
 
@@ -207,6 +219,13 @@ Ejecutar de forma consistente en Windows, macOS y Linux.
 - 2026-04-11: PAYDAY 2 Web inicia separacion UI embebida: `web/payday2/index.html` externo con loader/fallback en `payday2_web.py`; spec desktop actualizado para incluir el HTML.
 - 2026-04-11: Steam Deals Web migra HTML a `web/steam_deals/index.html` con loader/fallback en `steam_deals_web.py`; build desktop/spec incluyen ambos HTML externos.
 - 2026-04-11: PAYDAY 2 Web extrae CSS a `web/payday2/app.css` y sirve `GET /app.css`; build desktop/spec incluyen nuevo asset.
+- 2026-04-13: Se completa la extraccion de UI restante: `web/steam_deals/app.css`, `web/steam_deals/app.js` y `web/payday2/app.js`; ambos web servers sirven `/app.css` y `/app.js` con fallback a HTML inline.
+- 2026-04-13: Se agrega `shared_web_infra.py` y se reutiliza en Steam Deals/PAYDAY 2 para respuestas HTTP, lectura defensiva de JSON, assets de texto, subprocess y SSE local.
+- 2026-04-13: Se corrige shutdown de `payday2_web.py` para cerrar limpio con refresh activo, incluyendo terminacion del child process.
+- 2026-04-13: README se actualiza para aclarar superficies, dependencias desktop y mapa de modulos/entrypoints.
+- 2026-04-13: Se agregan smoke tests locales minimos en `.tmp/local-smoke-tests/` para Steam Deals Web, PAYDAY 2 Web y la ruta segura desktop `--internal-web`; quedan fuera del flujo normal de Git en este clon. `smoke_test_windows.ps1` se mantiene como smoke separado para Windows empaquetado.
+- 2026-04-13: Se agregan tests unitarios puros en `tests/test_generator_logic.py` para score, filtros, matching/gift ideas y budget picks.
+- 2026-04-13: Se completa el primer corte de capa shared con `shared/io_utils.py` y `shared/cache_utils.py`; Steam Deals y PAYDAY 2 ya comparten helpers de config JSON, HTTP JSON y cache reutilizable, con tests locales para los helpers shared.
 
 ## Backlog de Features (Propuestos - Planning)
 

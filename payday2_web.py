@@ -13,9 +13,7 @@ Uso:
 
 import argparse
 import json
-import os
 import signal
-import subprocess
 import sys
 import threading
 import time
@@ -25,6 +23,19 @@ from datetime import date, datetime
 from http.server import HTTPServer, BaseHTTPRequestHandler
 from pathlib import Path
 
+from shared_web_infra import (
+    load_html_with_fallback,
+    load_text_asset,
+    ProcessStreamUnavailable,
+    read_json_body,
+    send_html,
+    send_json,
+    send_text,
+    start_text_subprocess,
+    stop_process,
+    stream_process_as_sse,
+)
+
 # Import tracker logic
 import payday2_dlc_tracker as pd2
 
@@ -32,6 +43,7 @@ DEFAULT_PORT = 8081
 WEB_DIR = Path(__file__).resolve().parent / "web" / "payday2"
 PAYDAY2_HTML_FILE = WEB_DIR / "index.html"
 PAYDAY2_CSS_FILE = WEB_DIR / "app.css"
+PAYDAY2_JS_FILE = WEB_DIR / "app.js"
 
 # ─── In-memory data store ─────────────────────────
 
@@ -383,13 +395,15 @@ def unmark_bundle_owned(bundle_id: str) -> dict:
 
 
 def load_payday2_html() -> str:
-    """Load external UI template if available, else fallback to inline HTML."""
-    try:
-        if PAYDAY2_HTML_FILE.exists():
-            return PAYDAY2_HTML_FILE.read_text(encoding="utf-8")
-    except OSError:
-        pass
-    return PAGE_HTML
+    return load_html_with_fallback(
+        PAYDAY2_HTML_FILE,
+        [PAYDAY2_CSS_FILE, PAYDAY2_JS_FILE],
+        PAGE_HTML,
+    )
+
+
+def load_payday2_asset(asset_file: Path) -> str | None:
+    return load_text_asset(asset_file)
 
 
 # ─── HTTP Handler ─────────────────────────────────
@@ -402,95 +416,36 @@ class Handler(BaseHTTPRequestHandler):
         pass
 
     def _json(self, data, status=200):
-        body = json.dumps(data, ensure_ascii=False).encode("utf-8")
-        self.send_response(status)
-        self.send_header("Content-Type", "application/json; charset=utf-8")
-        self.send_header("Content-Length", str(len(body)))
-        self.end_headers()
-        self.wfile.write(body)
+        send_json(self, data, status=status)
 
     def _html(self, html):
-        body = html.encode("utf-8")
-        self.send_response(200)
-        self.send_header("Content-Type", "text/html; charset=utf-8")
-        self.send_header("Content-Length", str(len(body)))
-        self.end_headers()
-        self.wfile.write(body)
+        send_html(self, html)
 
     def _css(self, css: str):
-        body = css.encode("utf-8")
-        self.send_response(200)
-        self.send_header("Content-Type", "text/css; charset=utf-8")
-        self.send_header("Content-Length", str(len(body)))
-        self.end_headers()
-        self.wfile.write(body)
+        send_text(self, css, "text/css; charset=utf-8")
+
+    def _js(self, script: str):
+        send_text(self, script, "application/javascript; charset=utf-8")
 
     def _body(self) -> dict | None:
-        raw_length = self.headers.get("Content-Length", "0")
-        try:
-            length = int(raw_length)
-        except (TypeError, ValueError):
-            self._json(
-                {
-                    "error": "invalid_content_length",
-                    "message": "Content-Length invalido.",
-                },
-                400,
-            )
-            return None
-
-        if length <= 0:
-            return {}
-
-        if length > self.max_json_body_bytes:
-            self._json(
-                {
-                    "error": "payload_too_large",
-                    "message": f"Payload excede {self.max_json_body_bytes} bytes.",
-                },
-                413,
-            )
-            return None
-
-        content_type = (
-            (self.headers.get("Content-Type") or "").split(";")[0].strip().lower()
-        )
-        if content_type and content_type != "application/json":
-            self._json(
-                {
-                    "error": "unsupported_media_type",
-                    "message": "Content-Type debe ser application/json.",
-                },
-                415,
-            )
-            return None
-
-        try:
-            payload = json.loads(self.rfile.read(length))
-        except (json.JSONDecodeError, UnicodeDecodeError):
-            self._json(
-                {"error": "invalid_json", "message": "JSON invalido en el body."}, 400
-            )
-            return None
-
-        if not isinstance(payload, dict):
-            self._json(
-                {"error": "invalid_payload", "message": "Se esperaba un objeto JSON."},
-                400,
-            )
-            return None
-
-        return payload
+        return read_json_body(self, max_json_body_bytes=self.max_json_body_bytes)
 
     def do_GET(self):
         path = urllib.parse.urlparse(self.path).path
         if path == "/":
             self._html(load_payday2_html())
         elif path == "/app.css":
-            if PAYDAY2_CSS_FILE.exists():
-                self._css(PAYDAY2_CSS_FILE.read_text(encoding="utf-8"))
-            else:
+            css = load_payday2_asset(PAYDAY2_CSS_FILE)
+            if css is None:
                 self.send_error(404)
+                return
+            self._css(css)
+        elif path == "/app.js":
+            script = load_payday2_asset(PAYDAY2_JS_FILE)
+            if script is None:
+                self.send_error(404)
+                return
+            self._js(script)
         elif path == "/api/data":
             self._json(get_data_json())
         elif path == "/api/config":
@@ -553,6 +508,16 @@ class Handler(BaseHTTPRequestHandler):
         """Run the tracker script and stream progress via SSE."""
         global _refresh_proc
 
+        def clear_refresh_proc() -> None:
+            global _refresh_proc
+            with _refresh_lock:
+                _refresh_proc = None
+
+        def finish_refresh() -> None:
+            clear_refresh_proc()
+            with _store_lock:
+                _store["refreshing"] = False
+
         with _refresh_lock:
             if _refresh_proc and _refresh_proc.poll() is None:
                 self._json({"error": "Already refreshing"}, 409)
@@ -573,91 +538,62 @@ class Handler(BaseHTTPRequestHandler):
         if cfg.get("itad_key"):
             cmd += ["--itad-key", cfg["itad_key"]]
 
-        env = {**os.environ, "PYTHONUNBUFFERED": "1"}
-        proc = subprocess.Popen(
-            cmd,
-            stdout=subprocess.PIPE,
-            stderr=subprocess.STDOUT,
-            stdin=subprocess.DEVNULL,
-            env=env,
-            text=True,
-            bufsize=1,
-        )
+        try:
+            proc = start_text_subprocess(cmd)
+        except Exception as exc:
+            finish_refresh()
+            self._json({"error": f"No se pudo iniciar proceso: {exc}"}, 500)
+            return
+
         with _refresh_lock:
             _refresh_proc = proc
-
-        # SSE
-        self.send_response(200)
-        self.send_header("Content-Type", "text/event-stream")
-        self.send_header("Cache-Control", "no-cache")
-        self.send_header("Connection", "keep-alive")
-        self.send_header("X-Accel-Buffering", "no")
-        self.end_headers()
 
         import re
 
         ansi_re = re.compile(r"\033\[[0-9;]*m")
         step_re = re.compile(r"\[(\d+)/(\d+)\]\s*(.*)")
 
-        def send_sse(data):
-            try:
-                self.wfile.write(
-                    f"data: {json.dumps(data, ensure_ascii=False)}\n\n".encode("utf-8")
-                )
-                self.wfile.flush()
-            except BrokenPipeError:
-                pass
+        def handle_process_line(raw_line: str, emit_sse):
+            text = ansi_re.sub("", raw_line).rstrip()
+            if not text:
+                return
 
-        stream = proc.stdout
-        if stream is None:
-            with _refresh_lock:
-                _refresh_proc = None
-            with _store_lock:
-                _store["refreshing"] = False
-            self._json({"error": "No se pudo leer salida del proceso"}, 500)
-            return
+            cls = "normal"
+            if "\u2713" in raw_line or "\u2713" in text:
+                cls = "ok"
+            elif "\u26a0" in raw_line or "\u26a0" in text:
+                cls = "warn"
+            elif "\u2717" in raw_line or "\u2717" in text:
+                cls = "err"
+            elif "\u2500" in text or "===" in text:
+                cls = "bold"
+
+            m = step_re.search(text)
+            if m:
+                emit_sse(
+                    {
+                        "type": "progress",
+                        "current": int(m.group(1)),
+                        "total": int(m.group(2)),
+                        "label": m.group(3).strip(),
+                    }
+                )
+                cls = "step"
+
+            emit_sse({"type": "line", "text": text, "cls": cls})
+
+        def handle_process_done(done_proc, emit_sse):
+            finish_refresh()
+            load_from_cache()
+            emit_sse({"type": "done", "exit_code": done_proc.returncode})
 
         try:
-            for raw_line in stream:
-                text = ansi_re.sub("", raw_line).rstrip()
-                if not text:
-                    continue
-
-                cls = "normal"
-                if "\u2713" in raw_line or "\u2713" in text:
-                    cls = "ok"
-                elif "\u26a0" in raw_line or "\u26a0" in text:
-                    cls = "warn"
-                elif "\u2717" in raw_line or "\u2717" in text:
-                    cls = "err"
-                elif "\u2500" in text or "===" in text:
-                    cls = "bold"
-
-                m = step_re.search(text)
-                if m:
-                    send_sse(
-                        {
-                            "type": "progress",
-                            "current": int(m.group(1)),
-                            "total": int(m.group(2)),
-                            "label": m.group(3).strip(),
-                        }
-                    )
-                    cls = "step"
-
-                send_sse({"type": "line", "text": text, "cls": cls})
-
-            proc.wait()
-        except Exception:
-            proc.kill()
-
-        with _store_lock:
-            _store["refreshing"] = False
-
-        # Reload data from cache
-        load_from_cache()
-
-        send_sse({"type": "done", "exit_code": proc.returncode})
+            stream_process_as_sse(self, proc, handle_process_line, handle_process_done)
+        except ProcessStreamUnavailable:
+            finish_refresh()
+            self._json({"error": "No se pudo leer salida del proceso"}, 500)
+        finally:
+            finish_refresh()
 
 
 # ─── HTML Page ────────────────────────────────────
@@ -1132,9 +1068,7 @@ async function loadData() {
       $('empty-state').style.display = 'block';
       $('dashboard').style.display = 'none';
     }
-  } catch(e) {
-    console.error('Failed to load data:', e);
-  }
+  } catch(e) {}
   // Load config into settings
   try {
     const r = await fetch('/api/config');
@@ -1300,9 +1234,7 @@ async function toggleOwned(appid) {
     const result = await r.json();
     // Reload data and re-render
     await loadData();
-  } catch(e) {
-    console.error('Toggle failed:', e);
-  }
+  } catch(e) {}
 }
 
 async function unmarkOwned(appid) {
@@ -1345,7 +1277,7 @@ async function markBundle(bundleId) {
     });
     await r.json();
     await loadData();
-  } catch(e) { console.error('markBundle failed:', e); }
+  } catch(e) {}
 }
 
 async function unmarkBundle(bundleId) {
@@ -1357,7 +1289,7 @@ async function unmarkBundle(bundleId) {
     });
     await r.json();
     await loadData();
-  } catch(e) { console.error('unmarkBundle failed:', e); }
+  } catch(e) {}
 }
 
 /* ──── Owned panel ──── */
@@ -1606,10 +1538,23 @@ def main():
         threading.Timer(0.5, lambda: webbrowser.open(url)).start()
 
     # Graceful shutdown
-    def shutdown(sig, frame):
+    shutdown_started = threading.Event()
+
+    def stop_active_refresh():
+        with _refresh_lock:
+            if _refresh_proc and _refresh_proc.poll() is None:
+                stop_process(_refresh_proc)
+
+    def request_shutdown():
+        if shutdown_started.is_set():
+            return
+        shutdown_started.set()
         print("\nCerrando...")
-        server.shutdown()
-        sys.exit(0)
+        stop_active_refresh()
+        threading.Thread(target=server.shutdown, daemon=True).start()
+
+    def shutdown(sig, frame):
+        request_shutdown()
 
     signal.signal(signal.SIGINT, shutdown)
     signal.signal(signal.SIGTERM, shutdown)
@@ -1617,7 +1562,10 @@ def main():
     try:
         server.serve_forever()
     except KeyboardInterrupt:
-        pass
+        request_shutdown()
+    finally:
+        stop_active_refresh()
+        server.server_close()
 
 
 if __name__ == "__main__":

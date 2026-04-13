@@ -39,13 +39,27 @@ Analiza tu wishlist de Steam y genera reportes detallados con deals, comparacion
 
 ## Superficies del proyecto
 
-Este repo se puede ejecutar en 3 superficies. **Recomendado para la mayoría de usuarios: Web UI**.
+Este repo tiene **dos superficies de UX** y una superficie operativa por CLI:
+
+- **Web UI**: flujo principal en navegador local
+- **Desktop**: la misma UI web dentro de una ventana nativa con `pywebview`
+- **CLI**: automatización, scripting y flags avanzados
+
+**Recomendado para la mayoría de usuarios: Web UI**.
 
 | Superficie | Objetivo | Dependencias | Entry point |
 |------------|----------|--------------|-------------|
 | Core CLI | Automatización por terminal y flags avanzados | Solo stdlib | `steam_deals_generator.py`, `payday2_dlc_tracker.py` |
 | Web UI | Flujo guiado en navegador local | Solo stdlib | `steam_deals_web.py` (8080), `payday2_web.py` (8081) |
 | Desktop | App en ventana nativa (empaquetable) | `requirements-desktop.txt` | `steam_tools_desktop.py`, `build_desktop.py` |
+
+### Cómo se relacionan
+
+- `steam_deals_web.py` es el entrypoint principal de UX para Steam Tools.
+- `steam_tools_desktop.py` **no implementa otro frontend**: levanta el mismo server local y abre la misma UI en una ventana nativa.
+- `payday2_web.py` sigue disponible como dashboard standalone para PAYDAY 2.
+- La lógica pesada vive en los scripts CLI (`steam_deals_generator.py` y `payday2_dlc_tracker.py`); la capa web coordina ejecución, validación y progreso.
+- Para trabajo operativo, roadmap y deuda técnica, la fuente de verdad sigue siendo `PENDIENTES.md`.
 
 ### Ruta rápida recomendada
 1. **Web UI (Steam Deals):** `python3 steam_deals_web.py`
@@ -68,6 +82,8 @@ python3 --version
 pip install -r requirements-desktop.txt
 python steam_tools_desktop.py
 ```
+
+Desktop agrega dependencias solo para la ventana nativa / empaquetado. El flujo funcional sigue siendo el mismo server/UI local.
 
 ## Uso rápido
 
@@ -186,7 +202,37 @@ Referencias oficiales:
 
 Planes y pendientes unificados: `PENDIENTES.md`.
 
-## Módulos y entrypoints
+## Mapa de módulos y entrypoints
+
+### Núcleo y superficies
+
+- `steam_deals_generator.py`
+  - Engine principal de Steam Deals.
+  - Hace análisis, scoring, exportaciones y flujo CLI.
+- `steam_deals_web.py`
+  - Entry point principal de UX para Steam Deals.
+  - Sirve la UI local, valida requests y coordina ejecuciones largas por SSE.
+- `payday2_dlc_tracker.py`
+  - Engine/CLI de PAYDAY 2.
+  - Genera el plan de compra y mantiene el flujo standalone del tracker.
+- `payday2_web.py`
+  - Dashboard web standalone para PAYDAY 2.
+  - Sirve UI local y ejecuta refresh del tracker con progreso en vivo.
+- `steam_tools_desktop.py`
+  - Wrapper desktop con `pywebview`.
+  - Reutiliza `steam_deals_web.py` y hace fallback al navegador si falta backend nativo.
+- `build_desktop.py`
+  - Build unificado para empaquetar la superficie desktop.
+
+### Infraestructura compartida
+
+- `shared_web_infra.py`
+  - Helpers compartidos para server local: respuestas HTTP, JSON defensivo, assets de texto, subprocess y SSE.
+  - Evita duplicación entre `steam_deals_web.py` y `payday2_web.py`.
+- `web/steam_deals/`
+  - Assets HTML/CSS/JS servidos por `steam_deals_web.py`.
+- `web/payday2/`
+  - Assets HTML/CSS/JS servidos por `payday2_web.py`.
 
 ### Steam Deals
 - **CLI:** `steam_deals_generator.py`

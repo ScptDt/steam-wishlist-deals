@@ -23,6 +23,10 @@ import urllib.request
 from datetime import date, datetime
 from pathlib import Path
 
+from shared.io_utils import http_get_json, http_post_json, load_json_file, write_json_file
+
+from shared.io_utils import http_get_json, http_post_json, load_json_file
+
 
 # ============================================
 # ANSI + HELPERS
@@ -60,18 +64,11 @@ def _bold(msg):
 
 
 def _get_json(url: str, headers: dict = None) -> dict:
-    req = urllib.request.Request(url, headers=headers or {})
-    with urllib.request.urlopen(req, timeout=15) as r:
-        return json.loads(r.read())
+    return http_get_json(url, headers=headers, timeout=15)
 
 
 def _post_json(url: str, body) -> dict:
-    data = json.dumps(body).encode("utf-8")
-    req = urllib.request.Request(
-        url, data=data, headers={"Content-Type": "application/json"}
-    )
-    with urllib.request.urlopen(req, timeout=30) as r:
-        return json.loads(r.read())
+    return http_post_json(url, body, timeout=30)
 
 
 STORE_URL = "https://store.steampowered.com/app/{appid}/"
@@ -109,12 +106,7 @@ CONFIG_FILE = Path.home() / ".config" / "steam_deals.json"
 
 
 def load_user_config() -> dict:
-    if not CONFIG_FILE.exists():
-        return {}
-    try:
-        return json.loads(CONFIG_FILE.read_text(encoding="utf-8"))
-    except (json.JSONDecodeError, OSError):
-        return {}
+    return load_json_file(CONFIG_FILE, {})
 
 
 def get_config():
@@ -565,12 +557,7 @@ def itad_current_prices(itad_ids: dict[str, str], itad_key: str) -> dict[str, di
 
 
 def load_price_history() -> dict:
-    if not HISTORY_FILE.exists():
-        return {"snapshots": []}
-    try:
-        return json.loads(HISTORY_FILE.read_text(encoding="utf-8"))
-    except (json.JSONDecodeError, OSError):
-        return {"snapshots": []}
+    return load_json_file(HISTORY_FILE, {"snapshots": []})
 
 
 def save_price_snapshot(history: dict, prices: dict):
@@ -587,10 +574,7 @@ def save_price_snapshot(history: dict, prices: dict):
         snaps.append({"date": today, "prices": entry})
     # Keep last 365 days
     history["snapshots"] = snaps[-365:]
-    PD2_CACHE_DIR.mkdir(parents=True, exist_ok=True)
-    HISTORY_FILE.write_text(
-        json.dumps(history, ensure_ascii=False, indent=2), encoding="utf-8"
-    )
+    write_json_file(HISTORY_FILE, history, ensure_ascii=False, indent=2)
 
 
 def analyze_trends(history: dict, prices: dict) -> dict[str, dict]:
@@ -910,17 +894,13 @@ RUN_HISTORY_FILE = PD2_CACHE_DIR / "run_history.json"
 
 
 def load_previous_run() -> dict | None:
-    if not RUN_HISTORY_FILE.exists():
+    data = load_json_file(RUN_HISTORY_FILE, None)
+    if not isinstance(data, dict):
         return None
-    try:
-        data = json.loads(RUN_HISTORY_FILE.read_text(encoding="utf-8"))
-        return data.get("last_run")
-    except (json.JSONDecodeError, OSError):
-        return None
+    return data.get("last_run")
 
 
 def save_run(owned_count: int, missing_count: int, prices: dict, on_sale: int):
-    PD2_CACHE_DIR.mkdir(parents=True, exist_ok=True)
     run = {
         "date": date.today().isoformat(),
         "owned": owned_count,
@@ -931,9 +911,7 @@ def save_run(owned_count: int, missing_count: int, prices: dict, on_sale: int):
             for a, p in prices.items()
         },
     }
-    RUN_HISTORY_FILE.write_text(
-        json.dumps({"last_run": run}, ensure_ascii=False, indent=2), encoding="utf-8"
-    )
+    write_json_file(RUN_HISTORY_FILE, {"last_run": run}, ensure_ascii=False, indent=2)
 
 
 def compute_run_comparison(prices: dict, prev_run: dict | None) -> dict:

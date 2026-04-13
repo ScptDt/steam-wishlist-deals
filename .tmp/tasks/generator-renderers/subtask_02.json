@@ -1,0 +1,34 @@
+{
+  "id": "generator-renderers-02",
+  "seq": "02",
+  "title": "Extract markdown renderer into its own module",
+  "status": "completed",
+  "agent_id": "coder-agent",
+  "started_at": "2026-04-13T00:00:00Z",
+  "depends_on": [
+    "01"
+  ],
+  "parallel": true,
+  "suggested_agent": "CoderAgent",
+  "context_files": [
+    "/home/adolfo/Documents/Deals/.opencode/context/core/standards/code-quality.md",
+    "/home/adolfo/Documents/Deals/.opencode/context/development/principles/clean-code.md",
+    "/home/adolfo/Documents/Deals/.opencode/context/core/standards/test-coverage.md"
+  ],
+  "reference_files": [
+    "/home/adolfo/Documents/Deals/steam_deals_generator.py",
+    "/home/adolfo/Documents/Deals/README.md"
+  ],
+  "acceptance_criteria": [
+    "Markdown-specific helpers and generate_md live in a focused renderer module.",
+    "The generator wrapper keeps the existing generate_md call shape intact.",
+    "Markdown output behavior remains mechanically equivalent for the current report sections.",
+    "Validation command recorded and runnable: python3 -m py_compile steam_deals_generator.py renderers/common.py renderers/markdown_renderer.py"
+  ],
+  "deliverables": [
+    "renderers/markdown_renderer.py",
+    "steam_deals_generator.py"
+  ],
+  "completed_at": "2026-04-13T00:00:00Z",
+  "completion_summary": "Extracted Markdown renderer to renderers/markdown_renderer.py with a compatibility wrapper in steam_deals_generator.py"
+}

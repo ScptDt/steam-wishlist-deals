@@ -1,0 +1,38 @@
+{
+  "id": "shared-web-infra-05",
+  "seq": "05",
+  "title": "Reuse shared SSE flow in PAYDAY 2 and run focused compatibility validation",
+  "status": "pending",
+  "depends_on": [
+    "03",
+    "04"
+  ],
+  "parallel": false,
+  "suggested_agent": "CoderAgent",
+  "context_files": [
+    "/home/adolfo/Documents/Deals/.opencode/context/core/standards/code-quality.md",
+    "/home/adolfo/Documents/Deals/.opencode/context/project-intelligence/technical-domain.md",
+    "/home/adolfo/Documents/Deals/.opencode/context/development/principles/api-design.md",
+    "/home/adolfo/Documents/Deals/.opencode/context/core/workflows/component-planning.md"
+  ],
+  "reference_files": [
+    "/home/adolfo/Documents/Deals/payday2_web.py",
+    "/home/adolfo/Documents/Deals/steam_deals_web.py",
+    "/home/adolfo/Documents/Deals/steam_tools_desktop.py",
+    "/home/adolfo/Documents/Deals/build_desktop.py"
+  ],
+  "acceptance_criteria": [
+    "payday2_web.py reutiliza la infraestructura SSE/subprocess compartida para `/api/refresh` sin cambiar el contrato esperado por la UI actual.",
+    "El comando `python3 -m py_compile shared_web_infra.py steam_deals_web.py payday2_web.py steam_tools_desktop.py build_desktop.py` termina sin errores.",
+    "Smokes locales enfocados con `python3 steam_deals_web.py --no-open --port 8090` y `python3 payday2_web.py --no-open --port 8091` siguen permitiendo verificar `/`, `/app.css`, `/app.js` y una ruta JSON/SSE principal sobre 127.0.0.1."
+  ],
+  "deliverables": [
+    "shared_web_infra.py",
+    "payday2_web.py",
+    "steam_deals_web.py"
+  ],
+  "agent_id": null,
+  "started_at": null,
+  "completed_at": null,
+  "completion_summary": null
+}

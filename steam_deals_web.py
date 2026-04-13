@@ -6,9 +6,7 @@ Abre: http://127.0.0.1:8080
 """
 
 import json
-import os
 import re
-import signal
 import subprocess
 import sys
 import threading
@@ -17,12 +15,28 @@ import webbrowser
 from http.server import HTTPServer, BaseHTTPRequestHandler
 from pathlib import Path
 
+from shared_web_infra import (
+    load_html_with_fallback,
+    load_text_asset,
+    ProcessStreamUnavailable,
+    read_json_body,
+    send_html,
+    send_json,
+    send_sse_event,
+    send_text,
+    start_text_subprocess,
+    stop_process,
+    stream_process_as_sse,
+)
+
 SCRIPT_PATH = Path(__file__).resolve().parent / "steam_deals_generator.py"
 PD2_SCRIPT_PATH = Path(__file__).resolve().parent / "payday2_dlc_tracker.py"
 CONFIG_FILE = Path.home() / ".config" / "steam_deals.json"
 DEFAULT_PORT = 8080
 WEB_DIR = Path(__file__).resolve().parent / "web" / "steam_deals"
 STEAM_DEALS_HTML_FILE = WEB_DIR / "index.html"
+STEAM_DEALS_CSS_FILE = WEB_DIR / "app.css"
+STEAM_DEALS_JS_FILE = WEB_DIR / "app.js"
 
 _running_proc = None
 _proc_lock = threading.Lock()
@@ -132,13 +146,15 @@ def detect_file_path(text: str) -> str | None:
 
 
 def load_steam_deals_html() -> str:
-    """Load external UI template if available, else fallback to inline HTML."""
-    try:
-        if STEAM_DEALS_HTML_FILE.exists():
-            return STEAM_DEALS_HTML_FILE.read_text(encoding="utf-8")
-    except OSError:
-        pass
-    return PAGE_HTML
+    return load_html_with_fallback(
+        STEAM_DEALS_HTML_FILE,
+        [STEAM_DEALS_CSS_FILE, STEAM_DEALS_JS_FILE],
+        PAGE_HTML,
+    )
+
+
+def load_steam_deals_asset(asset_file: Path) -> str | None:
+    return load_text_asset(asset_file)
 
 
 def normalize_steam_profile_value(raw: str | None) -> str:
@@ -1655,84 +1671,16 @@ class Handler(BaseHTTPRequestHandler):
         pass  # Silenciar logs del server
 
     def _send_json(self, data, status=200):
-        body = json.dumps(data, ensure_ascii=False).encode("utf-8")
-        self.send_response(status)
-        self.send_header("Content-Type", "application/json; charset=utf-8")
-        self.send_header("Content-Length", str(len(body)))
-        self.end_headers()
-        self.wfile.write(body)
+        send_json(self, data, status=status)
 
     def _send_html(self, html, status=200):
-        body = html.encode("utf-8")
-        self.send_response(status)
-        self.send_header("Content-Type", "text/html; charset=utf-8")
-        self.send_header("Content-Length", str(len(body)))
-        self.end_headers()
-        self.wfile.write(body)
+        send_html(self, html, status=status)
+
+    def _send_text(self, text: str, content_type: str, status=200):
+        send_text(self, text, content_type, status=status)
 
     def _read_json_body(self) -> dict | None:
-        raw_length = self.headers.get("Content-Length", "0")
-        try:
-            length = int(raw_length)
-        except (TypeError, ValueError):
-            self._send_json(
-                {
-                    "error": "invalid_content_length",
-                    "message": "Content-Length invalido.",
-                },
-                status=400,
-            )
-            return None
-
-        if length <= 0:
-            return {}
-
-        if length > self.max_json_body_bytes:
-            self._send_json(
-                {
-                    "error": "payload_too_large",
-                    "message": f"Payload excede {self.max_json_body_bytes} bytes.",
-                },
-                status=413,
-            )
-            return None
-
-        content_type = (
-            (self.headers.get("Content-Type") or "").split(";")[0].strip().lower()
-        )
-        if content_type and content_type != "application/json":
-            self._send_json(
-                {
-                    "error": "unsupported_media_type",
-                    "message": "Content-Type debe ser application/json.",
-                },
-                status=415,
-            )
-            return None
-
-        try:
-            payload = json.loads(self.rfile.read(length))
-        except (json.JSONDecodeError, UnicodeDecodeError):
-            self._send_json(
-                {
-                    "error": "invalid_json",
-                    "message": "JSON invalido en el body.",
-                },
-                status=400,
-            )
-            return None
-
-        if not isinstance(payload, dict):
-            self._send_json(
-                {
-                    "error": "invalid_payload",
-                    "message": "Se esperaba un objeto JSON.",
-                },
-                status=400,
-            )
-            return None
-
-        return payload
+        return read_json_body(self, max_json_body_bytes=self.max_json_body_bytes)
 
     # ── GET routes ──
 
@@ -1740,6 +1688,18 @@ class Handler(BaseHTTPRequestHandler):
         path = urllib.parse.urlparse(self.path).path
         if path == "/":
             self._send_html(load_steam_deals_html())
+        elif path == "/app.css":
+            css = load_steam_deals_asset(STEAM_DEALS_CSS_FILE)
+            if css is None:
+                self.send_error(404)
+                return
+            self._send_text(css, "text/css; charset=utf-8")
+        elif path == "/app.js":
+            script = load_steam_deals_asset(STEAM_DEALS_JS_FILE)
+            if script is None:
+                self.send_error(404)
+                return
+            self._send_text(script, "application/javascript; charset=utf-8")
         elif path == "/api/config":
             self._send_json(load_config())
         elif path == "/api/ui-state":
@@ -1945,6 +1905,11 @@ class Handler(BaseHTTPRequestHandler):
     def _serve_run_sse(self, pd2: bool = False):
         global _running_proc
 
+        def clear_running_proc() -> None:
+            global _running_proc
+            with _proc_lock:
+                _running_proc = None
+
         with _proc_lock:
             if _running_proc and _running_proc.poll() is None:
                 self._send_json({"error": "Already running"}, status=409)
@@ -2000,111 +1965,75 @@ class Handler(BaseHTTPRequestHandler):
             else build_command(config, filters)
         )
 
-        # Start subprocess
-        env = {
-            **os.environ,
-            "PYTHONUNBUFFERED": "1",
-            "PYTHONIOENCODING": "utf-8",
-            "PYTHONUTF8": "1",
-        }
         try:
-            proc = subprocess.Popen(
-                cmd,
-                stdout=subprocess.PIPE,
-                stderr=subprocess.STDOUT,
-                stdin=subprocess.DEVNULL,
-                env=env,
-                text=True,
-                encoding="utf-8",
-                errors="replace",
-                bufsize=1,
-            )
+            proc = start_text_subprocess(cmd)
         except Exception as e:
             self._send_json({"error": f"No se pudo iniciar proceso: {e}"}, status=500)
             return
+
         with _proc_lock:
             _running_proc = proc
 
-        # SSE response
-        self.send_response(200)
-        self.send_header("Content-Type", "text/event-stream")
-        self.send_header("Cache-Control", "no-cache")
-        self.send_header("Connection", "keep-alive")
-        self.send_header("X-Accel-Buffering", "no")
-        self.end_headers()
-
         generated_files = []
 
-        def send_sse(data: dict):
-            try:
-                self.wfile.write(
-                    f"data: {json.dumps(data, ensure_ascii=False)}\n\n".encode("utf-8")
-                )
-                self.wfile.flush()
-            except BrokenPipeError:
-                pass
+        def handle_process_line(raw_line: str, emit_sse):
+            raw_text = raw_line.strip()
+            if raw_text.startswith(EVENT_PREFIX):
+                try:
+                    event = json.loads(raw_text[len(EVENT_PREFIX) :])
+                    if event.get("type") == "file" and event.get("path"):
+                        generated_files.append(event["path"])
+                    elif event.get("type") == "progress":
+                        emit_sse(
+                            {
+                                "type": "progress",
+                                "current": event.get("current", 0),
+                                "total": event.get("total", 0),
+                                "label": event.get("label", ""),
+                            }
+                        )
+                    return
+                except Exception:
+                    pass
 
-        stream = proc.stdout
-        if stream is None:
-            with _proc_lock:
-                _running_proc = None
-            self._send_json({"error": "No se pudo leer salida del proceso"}, status=500)
-            return
+            text, cls = classify_line(raw_line)
+            if not text and not raw_line.strip():
+                return
+
+            prog = extract_progress(text)
+            if prog:
+                emit_sse(
+                    {
+                        "type": "progress",
+                        "current": prog[0],
+                        "total": prog[1],
+                        "label": prog[2],
+                    }
+                )
+
+            fpath = detect_file_path(text)
+            if fpath:
+                generated_files.append(fpath)
+
+            emit_sse({"type": "line", "text": text, "cls": cls})
+
+        def handle_process_done(done_proc, emit_sse):
+            clear_running_proc()
+            emit_sse(
+                {
+                    "type": "done",
+                    "exit_code": done_proc.returncode,
+                    "files": generated_files,
+                }
+            )
 
         try:
-            for raw_line in stream:
-                raw_text = raw_line.strip()
-                if raw_text.startswith(EVENT_PREFIX):
-                    try:
-                        event = json.loads(raw_text[len(EVENT_PREFIX) :])
-                        if event.get("type") == "file" and event.get("path"):
-                            generated_files.append(event["path"])
-                        elif event.get("type") == "progress":
-                            send_sse(
-                                {
-                                    "type": "progress",
-                                    "current": event.get("current", 0),
-                                    "total": event.get("total", 0),
-                                    "label": event.get("label", ""),
-                                }
-                            )
-                        continue
-                    except Exception:
-                        pass
-
-                text, cls = classify_line(raw_line)
-                if not text and not raw_line.strip():
-                    continue
-
-                # Detect progress
-                prog = extract_progress(text)
-                if prog:
-                    send_sse(
-                        {
-                            "type": "progress",
-                            "current": prog[0],
-                            "total": prog[1],
-                            "label": prog[2],
-                        }
-                    )
-
-                # Detect generated file paths
-                fpath = detect_file_path(text)
-                if fpath:
-                    generated_files.append(fpath)
-
-                send_sse({"type": "line", "text": text, "cls": cls})
-
-            proc.wait()
-        except Exception:
-            proc.kill()
-
-        with _proc_lock:
-            _running_proc = None
-
-        send_sse(
-            {"type": "done", "exit_code": proc.returncode, "files": generated_files}
-        )
+            stream_process_as_sse(self, proc, handle_process_line, handle_process_done)
+        except ProcessStreamUnavailable:
+            clear_running_proc()
+            self._send_json({"error": "No se pudo leer salida del proceso"}, status=500)
+        finally:
+            clear_running_proc()
 
     # ── Stop ──
 
@@ -2112,11 +2041,7 @@ class Handler(BaseHTTPRequestHandler):
         global _running_proc
         with _proc_lock:
             if _running_proc and _running_proc.poll() is None:
-                _running_proc.terminate()
-                try:
-                    _running_proc.wait(timeout=3)
-                except subprocess.TimeoutExpired:
-                    _running_proc.kill()
+                stop_process(_running_proc)
                 self._send_json({"status": "stopped"})
             else:
                 self._send_json({"status": "not_running"})
@@ -2166,7 +2091,7 @@ def main():
     except KeyboardInterrupt:
         with _proc_lock:
             if _running_proc and _running_proc.poll() is None:
-                _running_proc.terminate()
+                stop_process(_running_proc)
         server.server_close()
         print("\n  Cerrado.")
 

@@ -1,0 +1,32 @@
+{
+  "id": "shared-web-infra-01",
+  "seq": "01",
+  "title": "Create shared local-web infrastructure module skeleton",
+  "status": "pending",
+  "depends_on": [],
+  "parallel": false,
+  "suggested_agent": "CoderAgent",
+  "context_files": [
+    "/home/adolfo/Documents/Deals/.opencode/context/core/standards/code-quality.md",
+    "/home/adolfo/Documents/Deals/.opencode/context/development/principles/clean-code.md",
+    "/home/adolfo/Documents/Deals/.opencode/context/core/workflows/component-planning.md"
+  ],
+  "reference_files": [
+    "/home/adolfo/Documents/Deals/steam_deals_web.py",
+    "/home/adolfo/Documents/Deals/payday2_web.py",
+    "/home/adolfo/Documents/Deals/steam_tools_desktop.py",
+    "/home/adolfo/Documents/Deals/build_desktop.py"
+  ],
+  "acceptance_criteria": [
+    "Existe un modulo compartido nuevo para infraestructura web local con helpers reutilizables de respuestas HTTP, lectura segura de JSON y carga de assets de texto.",
+    "La API del modulo compartido permite reutilizacion incremental sin forzar cambios masivos en ambos handlers.",
+    "El comando `python3 -m py_compile shared_web_infra.py` termina sin errores."
+  ],
+  "deliverables": [
+    "shared_web_infra.py"
+  ],
+  "agent_id": null,
+  "started_at": null,
+  "completed_at": null,
+  "completion_summary": null
+}

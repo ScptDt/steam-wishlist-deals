@@ -1,0 +1,31 @@
+{
+  "id": "generator-renderers",
+  "name": "Generator Renderers Refactor",
+  "status": "active",
+  "objective": "Extract renderer functions from steam_deals_generator.py into focused modules while preserving current CLI, web, and desktop behavior.",
+  "context_files": [
+    "/home/adolfo/Documents/Deals/.opencode/context/core/standards/code-quality.md",
+    "/home/adolfo/Documents/Deals/.opencode/context/project-intelligence/technical-domain.md",
+    "/home/adolfo/Documents/Deals/.opencode/context/core/workflows/feature-breakdown.md",
+    "/home/adolfo/Documents/Deals/.opencode/context/core/workflows/component-planning.md",
+    "/home/adolfo/Documents/Deals/.opencode/context/development/principles/clean-code.md",
+    "/home/adolfo/Documents/Deals/.opencode/context/core/standards/test-coverage.md"
+  ],
+  "reference_files": [
+    "/home/adolfo/Documents/Deals/PENDIENTES.md",
+    "/home/adolfo/Documents/Deals/README.md",
+    "/home/adolfo/Documents/Deals/steam_deals_generator.py",
+    "/home/adolfo/Documents/Deals/steam_deals_web.py",
+    "/home/adolfo/Documents/Deals/steam_tools_desktop.py"
+  ],
+  "exit_criteria": [
+    "Renderer extraction is limited to renderers and compatibility wrappers for current generator entrypoints.",
+    "Markdown, HTML, share HTML, and CSV rendering each have an atomic execution step.",
+    "Current CLI, web, and desktop flows keep calling the generator safely during the transition.",
+    "task-cli.ts validate generator-renderers passes."
+  ],
+  "subtask_count": 6,
+  "completed_count": 0,
+  "created_at": "2026-04-13T13:45:34-07:00",
+  "completed_at": null
+}

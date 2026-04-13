@@ -77,7 +77,13 @@ def main() -> None:
         "--add-data",
         add_data_arg("web/payday2/app.css", "web/payday2"),
         "--add-data",
+        add_data_arg("web/payday2/app.js", "web/payday2"),
+        "--add-data",
         add_data_arg("web/steam_deals/index.html", "web/steam_deals"),
+        "--add-data",
+        add_data_arg("web/steam_deals/app.css", "web/steam_deals"),
+        "--add-data",
+        add_data_arg("web/steam_deals/app.js", "web/steam_deals"),
         str(ROOT / "steam_tools_desktop.py"),
     ]
     run(cmd)

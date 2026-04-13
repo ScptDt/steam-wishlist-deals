@@ -1,0 +1,33 @@
+{
+  "id": "local-smoke-tests-03",
+  "seq": "03",
+  "title": "Add PAYDAY 2 Web localhost smoke test",
+  "status": "pending",
+  "depends_on": ["01"],
+  "parallel": true,
+  "suggested_agent": "TestEngineer",
+  "context_files": [
+    "/home/adolfo/Documents/Deals/.opencode/context/core/standards/code-quality.md",
+    "/home/adolfo/Documents/Deals/.opencode/context/core/standards/test-coverage.md",
+    "/home/adolfo/Documents/Deals/.opencode/context/project-intelligence/technical-domain.md"
+  ],
+  "reference_files": [
+    "/home/adolfo/Documents/Deals/payday2_web.py",
+    "/home/adolfo/Documents/Deals/shared_web_infra.py",
+    "/home/adolfo/Documents/Deals/web/payday2/index.html",
+    "/home/adolfo/Documents/Deals/web/payday2/app.js"
+  ],
+  "acceptance_criteria": [
+    "`python3 .tmp/local-smoke-tests/payday2_web_smoke.py` exits 0 after starting PAYDAY 2 Web and verifying a bounded localhost readiness check.",
+    "The smoke test only calls localhost endpoints and avoids dependence on Steam or any other remote service.",
+    "The smoke test terminates any process it started before exit, including timeout and failure paths.",
+    "The test remains reproducible on a machine with only the repo checkout and Python stdlib available for the web surface."
+  ],
+  "deliverables": [
+    ".tmp/local-smoke-tests/payday2_web_smoke.py"
+  ],
+  "agent_id": null,
+  "started_at": null,
+  "completed_at": null,
+  "completion_summary": null
+}
