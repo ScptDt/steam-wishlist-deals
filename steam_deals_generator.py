@@ -33,7 +33,12 @@ from datetime import date, datetime
 from difflib import SequenceMatcher
 from pathlib import Path
 from shared.cache_utils import load_timestamped_cache, save_timestamped_cache
-from shared.io_utils import http_get_json, http_post_json, load_json_file, write_json_file
+from shared.io_utils import (
+    http_get_json,
+    http_post_json,
+    load_json_file,
+    write_json_file,
+)
 
 try:
     from renderers.common import html_escape as _renderer_html_escape
@@ -63,31 +68,42 @@ except Exception:
 
 
 try:
-    from renderers.share_html_renderer import generate_share_html as _generate_share_html_renderer
+    from renderers.share_html_renderer import (
+        generate_share_html as _generate_share_html_renderer,
+    )
 except Exception:
     _generate_share_html_renderer = None
+
+
+try:
+    from renderers.csv_renderer import generate_csv as _generate_csv_renderer
+except Exception:
+    _generate_csv_renderer = None
 
 
 # ─────────────────────────────────────────────
 # COLORES ANSI
 # ─────────────────────────────────────────────
 
+
 class C:
-    RST  = "\033[0m"
+    RST = "\033[0m"
     BOLD = "\033[1m"
-    DIM  = "\033[2m"
-    GRN  = "\033[32m"
-    YLW  = "\033[33m"
-    RED  = "\033[31m"
-    CYN  = "\033[36m"
+    DIM = "\033[2m"
+    GRN = "\033[32m"
+    YLW = "\033[33m"
+    RED = "\033[31m"
+    CYN = "\033[36m"
+
 
 def _safe_symbol(unicode_symbol: str, fallback: str) -> str:
-    enc = (sys.stdout.encoding or "utf-8")
+    enc = sys.stdout.encoding or "utf-8"
     try:
         unicode_symbol.encode(enc)
         return unicode_symbol
     except Exception:
         return fallback
+
 
 SYM_OK = _safe_symbol("✓", "OK")
 SYM_WARN = _safe_symbol("⚠", "!")
@@ -101,11 +117,25 @@ BAR_EMPTY = _safe_symbol("░", "-")
 EVENT_PREFIX = "__STEAM_EVENT__"
 WEB_EVENT_MODE = False
 
-def _ok(msg):   return f"{C.GRN}{SYM_OK}{C.RST}  {msg}"
-def _warn(msg): return f"{C.YLW}{SYM_WARN}{C.RST}  {msg}"
-def _err(msg):  return f"{C.RED}{SYM_ERR}{C.RST}  {msg}"
-def _dim(msg):  return f"{C.DIM}{msg}{C.RST}"
-def _bold(msg): return f"{C.BOLD}{msg}{C.RST}"
+
+def _ok(msg):
+    return f"{C.GRN}{SYM_OK}{C.RST}  {msg}"
+
+
+def _warn(msg):
+    return f"{C.YLW}{SYM_WARN}{C.RST}  {msg}"
+
+
+def _err(msg):
+    return f"{C.RED}{SYM_ERR}{C.RST}  {msg}"
+
+
+def _dim(msg):
+    return f"{C.DIM}{msg}{C.RST}"
+
+
+def _bold(msg):
+    return f"{C.BOLD}{msg}{C.RST}"
 
 
 def emit_event(event_type: str, **payload) -> None:
@@ -153,7 +183,9 @@ def load_watchlist() -> list[dict]:
 
 def save_watchlist(items: list[dict]) -> None:
     WATCHLIST_FILE.parent.mkdir(parents=True, exist_ok=True)
-    WATCHLIST_FILE.write_text(json.dumps(items, ensure_ascii=False, indent=2), encoding="utf-8")
+    WATCHLIST_FILE.write_text(
+        json.dumps(items, ensure_ascii=False, indent=2), encoding="utf-8"
+    )
 
 
 def handle_watchlist_command(args: list[str]) -> bool:
@@ -166,13 +198,17 @@ def handle_watchlist_command(args: list[str]) -> bool:
 
     if cmd == "list":
         if not items:
-            print(f"  {_dim('Watchlist vacía. Usa --watchlist add APPID PRECIO para agregar.')}")
+            print(
+                f"  {_dim('Watchlist vacía. Usa --watchlist add APPID PRECIO para agregar.')}"
+            )
         else:
             print(f"\n  {_bold('Watchlist Personal')} ({len(items)} juegos)\n")
             print(f"  {'AppID':<10} {'Precio objetivo':>16}  Nombre")
             print(f"  {'─' * 10} {'─' * 16}  {'─' * 30}")
             for w in items:
-                print(f"  {w['appid']:<10} ${w['target_price']:>14,.0f}  {w.get('name', '?')}")
+                print(
+                    f"  {w['appid']:<10} ${w['target_price']:>14,.0f}  {w.get('name', '?')}"
+                )
         return True
 
     elif cmd == "add":
@@ -198,7 +234,9 @@ def handle_watchlist_command(args: list[str]) -> bool:
         items = [w for w in items if w["appid"] != appid]
         items.append({"appid": appid, "name": name, "target_price": target})
         save_watchlist(items)
-        print(f"  {_ok(f'Agregado: {name} (AppID {appid}) — objetivo ${target:.0f} MXN')}")
+        print(
+            f"  {_ok(f'Agregado: {name} (AppID {appid}) — objetivo ${target:.0f} MXN')}"
+        )
         return True
 
     elif cmd == "remove":
@@ -227,10 +265,12 @@ def check_watchlist_alerts(deals: list[dict], watchlist: list[dict]) -> list[dic
     for w in watchlist:
         deal = deal_map.get(w["appid"])
         if deal and deal.get("price_raw", 0) / 100 <= w["target_price"]:
-            alerts.append({
-                **deal,
-                "target_price": w["target_price"],
-            })
+            alerts.append(
+                {
+                    **deal,
+                    "target_price": w["target_price"],
+                }
+            )
     return alerts
 
 
@@ -238,45 +278,113 @@ def check_watchlist_alerts(deals: list[dict], watchlist: list[dict]) -> list[dic
 # ARGUMENTOS + CONFIG FILE + FALLBACK INTERACTIVO
 # ─────────────────────────────────────────────
 
+
 def get_config():
     parser = argparse.ArgumentParser(description="Steam Wishlist Deals Generator")
     parser.add_argument("--web-run", action="store_true", help=argparse.SUPPRESS)
-    parser.add_argument("--interactive", action="store_true",
-                        help="Habilita prompts en terminal para configurar valores faltantes")
-    parser.add_argument("--key",         help="Steam API Key (opcional, habilita sección de juegos propios)")
-    parser.add_argument("--vanity",      help="Vanity URL, Steam ID, o link de perfil de Steam")
-    parser.add_argument("--hltb",        help="Ruta al CSV de HLTB")
-    parser.add_argument("--output",      help="Directorio de salida para los MD")
-    parser.add_argument("--discount",    type=int, help="Descuento mínimo %%")
-    parser.add_argument("--genre",       nargs="*", metavar="GENRE",
-                        help="Géneros de interés (ej. --genre roguelike --genre indie)")
-    parser.add_argument("--no-cache",    action="store_true",
-                        help="Re-fetch aunque haya caché válida")
-    parser.add_argument("--family-json", nargs="?", const="", default=None,
-                        help="Ruta al JSON de biblioteca familiar. Sin valor = omitir")
-    parser.add_argument("--itad-key",    help="IsThereAnyDeal API Key (para mínimo histórico)")
+    parser.add_argument(
+        "--interactive",
+        action="store_true",
+        help="Habilita prompts en terminal para configurar valores faltantes",
+    )
+    parser.add_argument(
+        "--key", help="Steam API Key (opcional, habilita sección de juegos propios)"
+    )
+    parser.add_argument(
+        "--vanity", help="Vanity URL, Steam ID, o link de perfil de Steam"
+    )
+    parser.add_argument("--hltb", help="Ruta al CSV de HLTB")
+    parser.add_argument("--output", help="Directorio de salida para los MD")
+    parser.add_argument("--discount", type=int, help="Descuento mínimo %%")
+    parser.add_argument(
+        "--genre",
+        nargs="*",
+        metavar="GENRE",
+        help="Géneros de interés (ej. --genre roguelike --genre indie)",
+    )
+    parser.add_argument(
+        "--no-cache", action="store_true", help="Re-fetch aunque haya caché válida"
+    )
+    parser.add_argument(
+        "--family-json",
+        nargs="?",
+        const="",
+        default=None,
+        help="Ruta al JSON de biblioteca familiar. Sin valor = omitir",
+    )
+    parser.add_argument(
+        "--itad-key", help="IsThereAnyDeal API Key (para mínimo histórico)"
+    )
     # Filtros avanzados
-    parser.add_argument("--max-price",       type=float, metavar="N", help="Solo deals bajo N MXN")
-    parser.add_argument("--deck-only",       action="store_true", help="Solo Deck Verified o Playable")
-    parser.add_argument("--deck-verified",   action="store_true", help="Solo Deck Verified")
-    parser.add_argument("--min-reviews",     type=int, metavar="N", help="Solo juegos con >= N%% reviews positivas")
-    parser.add_argument("--min-review-count",type=int, metavar="N", help="Solo juegos con >= N reviews totales")
-    parser.add_argument("--max-hours",       type=float, metavar="N", help="Solo juegos con HLTB <= N horas")
-    parser.add_argument("--top",             type=int, metavar="N", default=10, help="Top N picks (default: 10)")
-    parser.add_argument("--sort",            choices=["discount","price","reviews","priority","score"], default="discount", help="Ordenar tiers por campo")
-    parser.add_argument("--new-only",        action="store_true", help="Solo deals nuevos vs run anterior")
-    parser.add_argument("--csv",             action="store_true", help="Generar CSV para Excel/Sheets")
-    parser.add_argument("--watchlist",       nargs="*", metavar="CMD",
-                        help="Watchlist: add APPID PRECIO / remove APPID / list")
-    parser.add_argument("--budget",          type=float, metavar="MXN",
-                        help="Presupuesto en MXN — recomendación óptima de compras")
-    parser.add_argument("--compare",         metavar="VANITY2",
-                        help="Comparar tu wishlist con otro perfil de Steam")
-    parser.add_argument("--telegram-token",  help="Telegram Bot API token para notificaciones")
-    parser.add_argument("--telegram-chat",   help="Telegram chat ID para notificaciones")
-    parser.add_argument("--discord-webhook", help="Discord webhook URL para notificaciones")
-    parser.add_argument("--schedule",        type=float, metavar="HOURS",
-                        help="Ejecutar automáticamente cada N horas (ej: --schedule 6)")
+    parser.add_argument(
+        "--max-price", type=float, metavar="N", help="Solo deals bajo N MXN"
+    )
+    parser.add_argument(
+        "--deck-only", action="store_true", help="Solo Deck Verified o Playable"
+    )
+    parser.add_argument(
+        "--deck-verified", action="store_true", help="Solo Deck Verified"
+    )
+    parser.add_argument(
+        "--min-reviews",
+        type=int,
+        metavar="N",
+        help="Solo juegos con >= N%% reviews positivas",
+    )
+    parser.add_argument(
+        "--min-review-count",
+        type=int,
+        metavar="N",
+        help="Solo juegos con >= N reviews totales",
+    )
+    parser.add_argument(
+        "--max-hours", type=float, metavar="N", help="Solo juegos con HLTB <= N horas"
+    )
+    parser.add_argument(
+        "--top", type=int, metavar="N", default=10, help="Top N picks (default: 10)"
+    )
+    parser.add_argument(
+        "--sort",
+        choices=["discount", "price", "reviews", "priority", "score"],
+        default="discount",
+        help="Ordenar tiers por campo",
+    )
+    parser.add_argument(
+        "--new-only", action="store_true", help="Solo deals nuevos vs run anterior"
+    )
+    parser.add_argument(
+        "--csv", action="store_true", help="Generar CSV para Excel/Sheets"
+    )
+    parser.add_argument(
+        "--watchlist",
+        nargs="*",
+        metavar="CMD",
+        help="Watchlist: add APPID PRECIO / remove APPID / list",
+    )
+    parser.add_argument(
+        "--budget",
+        type=float,
+        metavar="MXN",
+        help="Presupuesto en MXN — recomendación óptima de compras",
+    )
+    parser.add_argument(
+        "--compare",
+        metavar="VANITY2",
+        help="Comparar tu wishlist con otro perfil de Steam",
+    )
+    parser.add_argument(
+        "--telegram-token", help="Telegram Bot API token para notificaciones"
+    )
+    parser.add_argument("--telegram-chat", help="Telegram chat ID para notificaciones")
+    parser.add_argument(
+        "--discord-webhook", help="Discord webhook URL para notificaciones"
+    )
+    parser.add_argument(
+        "--schedule",
+        type=float,
+        metavar="HOURS",
+        help="Ejecutar automáticamente cada N horas (ej: --schedule 6)",
+    )
     args = parser.parse_args()
 
     # Handle watchlist subcommand (standalone, exits early)
@@ -315,8 +423,13 @@ def get_config():
         return raw or default or ""
 
     # Key es opcional — sin key funciona con endpoints públicos
-    key    = args.key or cfg.get("key") or None
-    vanity = from_arg_cfg_or_ask(args.vanity, "vanity", "Vanity URL, Steam ID, o link de perfil", "BG00G") or "BG00G"
+    key = args.key or cfg.get("key") or None
+    vanity = (
+        from_arg_cfg_or_ask(
+            args.vanity, "vanity", "Vanity URL, Steam ID, o link de perfil", "BG00G"
+        )
+        or "BG00G"
+    )
 
     # HLTB
     if args.hltb:
@@ -378,19 +491,25 @@ def get_config():
 
     # Ofrecer guardar config si se usó algún prompt
     if can_prompt and interactive_keys:
-        raw = input("\n  ¿Guardar como configuración por defecto? [s/N]: ").strip().lower()
+        raw = (
+            input("\n  ¿Guardar como configuración por defecto? [s/N]: ")
+            .strip()
+            .lower()
+        )
         if raw == "s":
-            save_user_config({
-                **cfg,
-                "key":         key,
-                "vanity":      vanity,
-                "hltb":        str(hltb) if hltb else None,
-                "output_dir":  str(output_dir),
-                "discount":    discount,
-                "genres":      genres,
-                "family_json": str(family_json) if family_json else None,
-                "itad_key":    itad_key,
-            })
+            save_user_config(
+                {
+                    **cfg,
+                    "key": key,
+                    "vanity": vanity,
+                    "hltb": str(hltb) if hltb else None,
+                    "output_dir": str(output_dir),
+                    "discount": discount,
+                    "genres": genres,
+                    "family_json": str(family_json) if family_json else None,
+                    "itad_key": itad_key,
+                }
+            )
 
     filters = {
         "max_price": args.max_price,
@@ -411,20 +530,34 @@ def get_config():
         "schedule": args.schedule,
     }
 
-    return args.web_run, args.interactive, key, vanity, hltb, output_dir, discount, genres, no_cache, family_json, itad_key, filters
+    return (
+        args.web_run,
+        args.interactive,
+        key,
+        vanity,
+        hltb,
+        output_dir,
+        discount,
+        genres,
+        no_cache,
+        family_json,
+        itad_key,
+        filters,
+    )
 
 
 # ─────────────────────────────────────────────
 # STEAM API
 # ─────────────────────────────────────────────
 
+
 def resolve_steam_id(api_key: str | None, vanity: str) -> str:
     """Convierte vanity URL, link de perfil, o Steam ID numérico a Steam ID."""
     # Extraer vanity/ID de URLs de perfil
-    m = re.match(r'https?://steamcommunity\.com/profiles/(\d+)', vanity)
+    m = re.match(r"https?://steamcommunity\.com/profiles/(\d+)", vanity)
     if m:
         return m.group(1)
-    m = re.match(r'https?://steamcommunity\.com/id/([^/]+)', vanity)
+    m = re.match(r"https?://steamcommunity\.com/id/([^/]+)", vanity)
     if m:
         vanity = m.group(1)
 
@@ -444,13 +577,15 @@ def resolve_steam_id(api_key: str | None, vanity: str) -> str:
     req = urllib.request.Request(url, headers={"User-Agent": "Mozilla/5.0"})
     with urllib.request.urlopen(req, timeout=15) as r:
         text = r.read().decode("utf-8")
-    m = re.search(r'<steamID64>(\d+)</steamID64>', text)
+    m = re.search(r"<steamID64>(\d+)</steamID64>", text)
     if not m:
         raise ValueError(f"No se pudo resolver el perfil: {vanity}")
     return m.group(1)
 
 
-def get_wishlist(api_key: str | None, steam_id: str) -> tuple[list[str], dict[str, int]]:
+def get_wishlist(
+    api_key: str | None, steam_id: str
+) -> tuple[list[str], dict[str, int]]:
     """Devuelve (lista de appids, dict appid→priority). Funciona con o sin API key."""
     url = f"https://api.steampowered.com/IWishlistService/GetWishlist/v1/?steamid={steam_id}"
     if api_key:
@@ -459,7 +594,9 @@ def get_wishlist(api_key: str | None, steam_id: str) -> tuple[list[str], dict[st
         data = _get_json(url)
     except urllib.error.HTTPError as exc:
         if exc.code in (401, 403):
-            raise ValueError(f"No se pudo acceder a la wishlist (HTTP {exc.code}). ¿Es privada?") from exc
+            raise ValueError(
+                f"No se pudo acceder a la wishlist (HTTP {exc.code}). ¿Es privada?"
+            ) from exc
         raise
     items = data.get("response", {}).get("items", [])
     appids = [str(item["appid"]) for item in items]
@@ -474,7 +611,9 @@ def get_owned_games(api_key: str, steam_id: str) -> dict[str, str]:
         f"?key={api_key}&steamid={steam_id}&include_appinfo=1&include_played_free_games=1"
     )
     data = _get_json(url)
-    return {str(g["appid"]): g["name"] for g in data.get("response", {}).get("games", [])}
+    return {
+        str(g["appid"]): g["name"] for g in data.get("response", {}).get("games", [])
+    }
 
 
 def compare_wishlists(api_key, steam_id_1, vanity_2):
@@ -549,7 +688,7 @@ def itad_lookup_games(appids: list[str], itad_key: str) -> dict[str, str]:
     """Resuelve Steam appids → ITAD game IDs. Devuelve {appid: itad_id}."""
     result = {}
     for i in range(0, len(appids), ITAD_BATCH):
-        batch = appids[i:i + ITAD_BATCH]
+        batch = appids[i : i + ITAD_BATCH]
         body = [{"type": "steam", "id": f"app/{a}"} for a in batch]
         try:
             data = _post_json(
@@ -566,7 +705,9 @@ def itad_lookup_games(appids: list[str], itad_key: str) -> dict[str, str]:
     return result
 
 
-def itad_get_store_lows(itad_ids: dict[str, str], itad_key: str, country: str = "MX") -> dict[str, dict]:
+def itad_get_store_lows(
+    itad_ids: dict[str, str], itad_key: str, country: str = "MX"
+) -> dict[str, dict]:
     """Obtiene mínimo histórico en Steam. Devuelve {appid: {price, cut, date}}."""
     # Invertir: itad_id → appid
     id_to_appid = {v: k for k, v in itad_ids.items()}
@@ -574,7 +715,7 @@ def itad_get_store_lows(itad_ids: dict[str, str], itad_key: str, country: str = 
     result = {}
 
     for i in range(0, len(all_ids), ITAD_BATCH):
-        batch = all_ids[i:i + ITAD_BATCH]
+        batch = all_ids[i : i + ITAD_BATCH]
         try:
             data = _post_json(
                 f"https://api.isthereanydeal.com/games/storelow/v2?key={itad_key}&country={country}&shops=61",
@@ -589,10 +730,10 @@ def itad_get_store_lows(itad_ids: dict[str, str], itad_key: str, country: str = 
                         low = lows[0]
                         price_obj = low.get("price", {})
                         result[appid] = {
-                            "price":    price_obj.get("amount", 0),
+                            "price": price_obj.get("amount", 0),
                             "currency": price_obj.get("currency", ""),
-                            "cut":      low.get("cut", 0),
-                            "date":     (low.get("timestamp") or "")[:10],
+                            "cut": low.get("cut", 0),
+                            "date": (low.get("timestamp") or "")[:10],
                         }
         except Exception as exc:
             print(f"\n  {_warn(f'ITAD storelow error: {exc}')}", flush=True)
@@ -601,14 +742,16 @@ def itad_get_store_lows(itad_ids: dict[str, str], itad_key: str, country: str = 
     return result
 
 
-def itad_get_current_prices(itad_ids: dict[str, str], itad_key: str, country: str = "MX") -> dict[str, dict]:
+def itad_get_current_prices(
+    itad_ids: dict[str, str], itad_key: str, country: str = "MX"
+) -> dict[str, dict]:
     """Current best prices across stores. Returns {appid: {store, price, url}} only when another store beats Steam."""
     id_to_appid = {v: k for k, v in itad_ids.items()}
     all_ids = list(itad_ids.values())
     result = {}
 
     for i in range(0, len(all_ids), ITAD_BATCH):
-        batch = all_ids[i:i + ITAD_BATCH]
+        batch = all_ids[i : i + ITAD_BATCH]
         try:
             data = _post_json(
                 f"https://api.isthereanydeal.com/games/prices/v3?key={itad_key}&country={country}",
@@ -636,7 +779,11 @@ def itad_get_current_prices(itad_ids: dict[str, str], itad_key: str, country: st
                                 "price": price_amt,
                                 "url": pd.get("url", ""),
                             }
-                    if best_other and steam_price is not None and best_other["price"] < steam_price:
+                    if (
+                        best_other
+                        and steam_price is not None
+                        and best_other["price"] < steam_price
+                    ):
                         result[appid] = best_other
         except Exception as exc:
             print(f"\n  {_warn(f'ITAD prices error: {exc}')}", flush=True)
@@ -645,14 +792,16 @@ def itad_get_current_prices(itad_ids: dict[str, str], itad_key: str, country: st
     return result
 
 
-def itad_get_active_bundles(itad_ids: dict[str, str], itad_key: str, country: str = "US") -> dict[str, list[dict]]:
+def itad_get_active_bundles(
+    itad_ids: dict[str, str], itad_key: str, country: str = "US"
+) -> dict[str, list[dict]]:
     """Active bundles containing deal games. Returns {appid: [{title, store, price, currency, url}]}."""
     id_to_appid = {v: k for k, v in itad_ids.items()}
     all_ids = list(itad_ids.values())
     result: dict[str, list[dict]] = {}
 
     for i in range(0, len(all_ids), ITAD_BATCH):
-        batch = all_ids[i:i + ITAD_BATCH]
+        batch = all_ids[i : i + ITAD_BATCH]
         try:
             data = _post_json(
                 f"https://api.isthereanydeal.com/games/overview/v2?key={itad_key}&country={country}",
@@ -673,8 +822,13 @@ def itad_get_active_bundles(itad_ids: dict[str, str], itad_key: str, country: st
                         appid = id_to_appid.get(game_id)
                         if not appid:
                             continue
-                        entry = {"title": title, "store": store, "price": tier_price,
-                                 "currency": tier_currency, "url": url}
+                        entry = {
+                            "title": title,
+                            "store": store,
+                            "price": tier_price,
+                            "currency": tier_currency,
+                            "url": url,
+                        }
                         if appid not in result:
                             result[appid] = []
                         if not any(b["title"] == title for b in result[appid]):
@@ -690,9 +844,14 @@ def itad_get_active_bundles(itad_ids: dict[str, str], itad_key: str, country: st
 # COMPARAR CON MD ANTERIOR
 # ─────────────────────────────────────────────
 
+
 def load_previous_deal_appids(output_dir: Path, current_filename: str) -> set[str]:
     """Busca el MD anterior más reciente y extrae los appids de deals."""
-    md_files = sorted(output_dir.glob("Steam Deals*.md"), key=lambda f: f.stat().st_mtime, reverse=True)
+    md_files = sorted(
+        output_dir.glob("Steam Deals*.md"),
+        key=lambda f: f.stat().st_mtime,
+        reverse=True,
+    )
     for f in md_files:
         if f.name == current_filename:
             continue
@@ -711,8 +870,9 @@ def load_previous_deal_appids(output_dir: Path, current_filename: str) -> set[st
 # ─────────────────────────────────────────────
 
 
-def save_run_history(steam_id: str, vanity: str, sale_name: str,
-                     min_discount: int, deals: list[dict]) -> Path:
+def save_run_history(
+    steam_id: str, vanity: str, sale_name: str, min_discount: int, deals: list[dict]
+) -> Path:
     """Guarda snapshot del run actual en historial JSON."""
     HISTORY_DIR.mkdir(parents=True, exist_ok=True)
     ts = datetime.now()
@@ -788,7 +948,12 @@ def compute_deal_comparison(
     run_history: list[dict],
 ) -> dict:
     """Compara deals actuales con run anterior y historial."""
-    result = {"price_changes": {}, "new_deals": set(), "disappeared": [], "deal_streak": {}}
+    result = {
+        "price_changes": {},
+        "new_deals": set(),
+        "disappeared": [],
+        "deal_streak": {},
+    }
     if not previous_run:
         return result
 
@@ -811,7 +976,9 @@ def compute_deal_comparison(
             delta_pesos = abs(delta) / 100
             result["price_changes"][appid] = {
                 "delta_raw": delta,
-                "delta_str": f"${delta_pesos:.0f}" if delta_pesos >= 1 else f"${delta_pesos:.2f}",
+                "delta_str": f"${delta_pesos:.0f}"
+                if delta_pesos >= 1
+                else f"${delta_pesos:.2f}",
                 "prev_price": prev.get("price_final", "?"),
                 "direction": "down" if delta < 0 else "up",
             }
@@ -820,11 +987,15 @@ def compute_deal_comparison(
     prev_date = previous_run.get("date", "?")
     for appid in sorted(prev_appids - current_appids):
         info = prev_deals[appid]
-        result["disappeared"].append({
-            "appid": appid, "name": info.get("name", "?"),
-            "discount": info.get("discount", 0), "price_final": info.get("price_final", "?"),
-            "last_seen": prev_date,
-        })
+        result["disappeared"].append(
+            {
+                "appid": appid,
+                "name": info.get("name", "?"),
+                "discount": info.get("discount", 0),
+                "price_final": info.get("price_final", "?"),
+                "last_seen": prev_date,
+            }
+        )
 
     # Deal streak
     for deal in current_deals:
@@ -877,7 +1048,9 @@ def log_price_snapshot(history: dict, deals: list[dict]) -> None:
         # Replace same-day snapshot
         snaps = game_entry["snapshots"]
         snaps[:] = [s for s in snaps if s["date"] != today_str]
-        snaps.append({"date": today_str, "discount": deal["discount"], "price_raw": price_raw})
+        snaps.append(
+            {"date": today_str, "discount": deal["discount"], "price_raw": price_raw}
+        )
         # Keep max 60 snapshots per game
         if len(snaps) > 60:
             snaps[:] = snaps[-60:]
@@ -937,22 +1110,22 @@ def format_trend(trend: dict) -> str:
 # CACHÉ DE PRECIOS (smart partial refresh)
 # ─────────────────────────────────────────────
 
-PROJECT_DIR     = Path(__file__).resolve().parent
-CACHE_DIR       = PROJECT_DIR / ".cache" / "steam_deals"
-CACHE_FILE      = CACHE_DIR / "prices_cache.json"
+PROJECT_DIR = Path(__file__).resolve().parent
+CACHE_DIR = PROJECT_DIR / ".cache" / "steam_deals"
+CACHE_FILE = CACHE_DIR / "prices_cache.json"
 CACHE_MAX_HOURS = 24
 REVIEWS_CACHE_FILE = CACHE_DIR / "reviews_cache.json"
-DECK_CACHE_FILE    = CACHE_DIR / "deck_cache.json"
-EXTRA_CACHE_TTL    = 168  # 7 days in hours
-HISTORY_DIR        = CACHE_DIR / "history"
-HISTORY_MAX_FILES  = 100
-TAGS_CACHE_FILE    = CACHE_DIR / "tags_cache.json"
-TAGS_CACHE_TTL     = 720  # 30 days in hours
+DECK_CACHE_FILE = CACHE_DIR / "deck_cache.json"
+EXTRA_CACHE_TTL = 168  # 7 days in hours
+HISTORY_DIR = CACHE_DIR / "history"
+HISTORY_MAX_FILES = 100
+TAGS_CACHE_FILE = CACHE_DIR / "tags_cache.json"
+TAGS_CACHE_TTL = 720  # 30 days in hours
 PRICE_HISTORY_FILE = CACHE_DIR / "price_history.json"
 PROTONDB_CACHE_FILE = CACHE_DIR / "protondb_cache.json"
 ANTICHEAT_CACHE_FILE = CACHE_DIR / "anticheat_cache.json"
 ACHIEVEMENTS_CACHE_FILE = CACHE_DIR / "achievements_cache.json"
-ACHIEVEMENTS_CACHE_TTL  = 720  # 30 days in hours
+ACHIEVEMENTS_CACHE_TTL = 720  # 30 days in hours
 
 
 def load_price_cache(steam_id: str) -> tuple[dict, float]:
@@ -1002,7 +1175,7 @@ def _parse_release_year(date_str: str) -> int | None:
     """Extrae el año de una fecha de Steam (ej. 'Mar 25, 2019' → 2019)."""
     if not date_str:
         return None
-    m = re.search(r'((?:19|20)\d{2})', date_str)
+    m = re.search(r"((?:19|20)\d{2})", date_str)
     return int(m.group(1)) if m else None
 
 
@@ -1019,21 +1192,21 @@ def _process_app_entry(appid: str, data: dict) -> dict | None:
     release_str = rd.get("date", "") if not rd.get("coming_soon") else ""
     # Strip HTML from short_description
     raw_desc = info.get("short_description", "")
-    clean_desc = re.sub(r'<[^>]+>', '', raw_desc).strip()[:120] if raw_desc else ""
+    clean_desc = re.sub(r"<[^>]+>", "", raw_desc).strip()[:120] if raw_desc else ""
     return {
-        "name":             info.get("name", ""),
-        "type":             info.get("type", "game"),
+        "name": info.get("name", ""),
+        "type": info.get("type", "game"),
         "discount_percent": price_info.get("discount_percent", 0),
-        "price_final":      price_info.get("final_formatted", ""),
-        "price_original":   price_info.get("initial_formatted", ""),
-        "price_final_raw":  price_info.get("final", 0),
-        "genres":           [g["description"].lower() for g in info.get("genres", [])],
-        "release_year":     _parse_release_year(release_str),
-        "description":      clean_desc,
-        "linux_native":     info.get("platforms", {}).get("linux", False),
+        "price_final": price_info.get("final_formatted", ""),
+        "price_original": price_info.get("initial_formatted", ""),
+        "price_final_raw": price_info.get("final", 0),
+        "genres": [g["description"].lower() for g in info.get("genres", [])],
+        "release_year": _parse_release_year(release_str),
+        "description": clean_desc,
+        "linux_native": info.get("platforms", {}).get("linux", False),
         "metacritic_score": info.get("metacritic", {}).get("score"),
-        "metacritic_url":   info.get("metacritic", {}).get("url", ""),
-        "categories":       [c["id"] for c in info.get("categories", [])],
+        "metacritic_url": info.get("metacritic", {}).get("url", ""),
+        "categories": [c["id"] for c in info.get("categories", [])],
     }
 
 
@@ -1046,26 +1219,35 @@ def get_deals_from_wishlist(
     rate_limit: float = 1.5,
 ) -> tuple[list[dict], int]:
     to_fetch = [a for a in appids if a not in fetched_cache]
-    total    = len(to_fetch)
-    BAR_W    = 25
-    delay    = rate_limit
+    total = len(to_fetch)
+    BAR_W = 25
+    delay = rate_limit
 
     if total > 0:
-        batches = [to_fetch[i:i + BATCH_SIZE] for i in range(0, total, BATCH_SIZE)]
+        batches = [to_fetch[i : i + BATCH_SIZE] for i in range(0, total, BATCH_SIZE)]
         n_batches = len(batches)
         start = time.monotonic()
         eta_str = f"~{n_batches * delay / 60:.1f} min"
-        print(f"  Fetching {total:,} juegos en {n_batches} batches ({eta_str})...", flush=True)
+        print(
+            f"  Fetching {total:,} juegos en {n_batches} batches ({eta_str})...",
+            flush=True,
+        )
 
         fetched_count = 0
         for bi, batch in enumerate(batches):
-            pct    = fetched_count / total
+            pct = fetched_count / total
             filled = int(pct * BAR_W)
-            bar    = f"{C.GRN}{BAR_FILL * filled}{C.DIM}{BAR_EMPTY * (BAR_W - filled)}{C.RST}"
+            bar = f"{C.GRN}{BAR_FILL * filled}{C.DIM}{BAR_EMPTY * (BAR_W - filled)}{C.RST}"
             if fetched_count > 0:
-                eta_sec = (time.monotonic() - start) / fetched_count * (total - fetched_count)
+                eta_sec = (
+                    (time.monotonic() - start) / fetched_count * (total - fetched_count)
+                )
                 eta_str = f"{eta_sec / 60:.1f}m"
-            print(f"\r  {bar} {fetched_count:,}/{total:,} ETA {eta_str}  ", end="", flush=True)
+            print(
+                f"\r  {bar} {fetched_count:,}/{total:,} ETA {eta_str}  ",
+                end="",
+                flush=True,
+            )
 
             ids_str = ",".join(batch)
             url = (
@@ -1074,30 +1256,42 @@ def get_deals_from_wishlist(
             )
 
             backoff = 30
-            data    = None
+            data = None
             for attempt in range(4):
                 try:
                     data = _get_json(url, headers={"User-Agent": "Mozilla/5.0"})
                     break
                 except urllib.error.HTTPError as e:
                     if e.code == 429:
-                        print(f"\n  {_warn(f'Rate limit — esperando {backoff}s (intento {attempt+1}/4)')}", flush=True)
+                        print(
+                            f"\n  {_warn(f'Rate limit — esperando {backoff}s (intento {attempt + 1}/4)')}",
+                            flush=True,
+                        )
                         time.sleep(backoff)
                         backoff = min(backoff * 2, 120)
                         delay = min(delay * 1.5, 5.0)
-                        print(f"  {_dim(f'Delay ajustado a {delay:.1f}s entre batches')}", flush=True)
+                        print(
+                            f"  {_dim(f'Delay ajustado a {delay:.1f}s entre batches')}",
+                            flush=True,
+                        )
                     else:
-                        print(f"\n  {_warn(f'HTTP {e.code} en batch {bi+1}, saltando')}", flush=True)
+                        print(
+                            f"\n  {_warn(f'HTTP {e.code} en batch {bi + 1}, saltando')}",
+                            flush=True,
+                        )
                         time.sleep(delay)
                         break
                 except Exception as exc:
-                    print(f"\n  {_warn(f'Error en batch {bi+1}: {exc}')}", flush=True)
+                    print(f"\n  {_warn(f'Error en batch {bi + 1}: {exc}')}", flush=True)
                     time.sleep(delay * 3)
                     break
 
             if data is None:
                 # Fallback: intentar individualmente
-                print(f"\n  {_dim('Batch falló, intentando individualmente...')}", flush=True)
+                print(
+                    f"\n  {_dim('Batch falló, intentando individualmente...')}",
+                    flush=True,
+                )
                 for appid in batch:
                     single = _fetch_single(appid, country, delay)
                     if single:
@@ -1109,9 +1303,14 @@ def get_deals_from_wishlist(
                 continue
 
             # Verificar si el batch devolvió todo null (Steam a veces rechaza batches)
-            null_count = sum(1 for a in batch if not data.get(a) or not isinstance(data.get(a), dict))
+            null_count = sum(
+                1 for a in batch if not data.get(a) or not isinstance(data.get(a), dict)
+            )
             if null_count == len(batch) and len(batch) > 1:
-                print(f"\n  {_dim('Batch devolvió todo null, reintentando individualmente...')}", flush=True)
+                print(
+                    f"\n  {_dim('Batch devolvió todo null, reintentando individualmente...')}",
+                    flush=True,
+                )
                 for appid in batch:
                     single = _fetch_single(appid, country, delay)
                     if single:
@@ -1137,23 +1336,25 @@ def get_deals_from_wishlist(
 
     deals = [
         {
-            "appid":          appid,
-            "name":           info["name"],
-            "type":           info.get("type", "game"),
-            "discount":       info["discount_percent"],
-            "price_final":    info["price_final"],
+            "appid": appid,
+            "name": info["name"],
+            "type": info.get("type", "game"),
+            "discount": info["discount_percent"],
+            "price_final": info["price_final"],
             "price_original": info["price_original"],
-            "price_raw":      info.get("price_final_raw", 0),
-            "genres":         info["genres"],
-            "release_year":   info.get("release_year"),
-            "description":    info.get("description", ""),
-            "linux_native":   info.get("linux_native", False),
+            "price_raw": info.get("price_final_raw", 0),
+            "genres": info["genres"],
+            "release_year": info.get("release_year"),
+            "description": info.get("description", ""),
+            "linux_native": info.get("linux_native", False),
             "metacritic_score": info.get("metacritic_score"),
-            "metacritic_url":   info.get("metacritic_url", ""),
-            "categories":     info.get("categories", []),
+            "metacritic_url": info.get("metacritic_url", ""),
+            "categories": info.get("categories", []),
         }
         for appid in appids
-        if (info := fetched_cache.get(appid)) and info and info.get("discount_percent", 0) >= min_discount
+        if (info := fetched_cache.get(appid))
+        and info
+        and info.get("discount_percent", 0) >= min_discount
     ]
     deals.sort(key=lambda x: -x["discount"])
     return deals, total
@@ -1162,6 +1363,7 @@ def get_deals_from_wishlist(
 # ─────────────────────────────────────────────
 # PARSEAR HLTB CSV
 # ─────────────────────────────────────────────
+
 
 def _parse_hltb_hours(val: str) -> float | None:
     """Convierte 'HH:MM:SS' o '--' a horas decimales."""
@@ -1191,10 +1393,14 @@ def parse_hltb(csv_path: Path) -> dict[str, list[dict]]:
                 "storefront": row.get("Storefront", "").strip(),
                 "hours": hours,
             }
-            if   row.get("Backlog",    "").strip() == "X": result["backlog"].append(entry)
-            elif row.get("Completed",  "").strip() == "X": result["completed"].append(entry)
-            elif row.get("Playing",    "").strip() == "X": result["playing"].append(entry)
-            elif row.get("Retired",    "").strip() == "X": result["retired"].append(entry)
+            if row.get("Backlog", "").strip() == "X":
+                result["backlog"].append(entry)
+            elif row.get("Completed", "").strip() == "X":
+                result["completed"].append(entry)
+            elif row.get("Playing", "").strip() == "X":
+                result["playing"].append(entry)
+            elif row.get("Retired", "").strip() == "X":
+                result["retired"].append(entry)
     return result
 
 
@@ -1203,14 +1409,39 @@ def parse_hltb(csv_path: Path) -> dict[str, list[dict]]:
 # ─────────────────────────────────────────────
 
 EDITION_WORDS = {
-    "definitive", "remastered", "complete", "deluxe", "hd", "edition",
-    "goty", "collection", "director", "cut", "enhanced", "anniversary",
-    "intergrade", "gold", "platinum", "ultimate",
+    "definitive",
+    "remastered",
+    "complete",
+    "deluxe",
+    "hd",
+    "edition",
+    "goty",
+    "collection",
+    "director",
+    "cut",
+    "enhanced",
+    "anniversary",
+    "intergrade",
+    "gold",
+    "platinum",
+    "ultimate",
 }
 ROMAN = {
-    "i": "1", "ii": "2", "iii": "3", "iv": "4", "v": "5",
-    "vi": "6", "vii": "7", "viii": "8", "ix": "9", "x": "10",
-    "xi": "11", "xii": "12", "xiii": "13", "xiv": "14", "xv": "15",
+    "i": "1",
+    "ii": "2",
+    "iii": "3",
+    "iv": "4",
+    "v": "5",
+    "vi": "6",
+    "vii": "7",
+    "viii": "8",
+    "ix": "9",
+    "x": "10",
+    "xi": "11",
+    "xii": "12",
+    "xiii": "13",
+    "xiv": "14",
+    "xv": "15",
 }
 
 
@@ -1225,21 +1456,39 @@ def extract_numbers(s: str) -> set[str]:
 
 
 def significant_words(s: str) -> set[str]:
-    stop = {"the", "a", "an", "of", "in", "and", "or", "to", "is", "it", "at", "on", "for"}
+    stop = {
+        "the",
+        "a",
+        "an",
+        "of",
+        "in",
+        "and",
+        "or",
+        "to",
+        "is",
+        "it",
+        "at",
+        "on",
+        "for",
+    }
     return set(normalize(s).split()) - stop
 
 
 def is_same_game(a: str, b: str) -> bool:
     na, nb = extract_numbers(a), extract_numbers(b)
-    if na and nb and na != nb:          return False
-    if bool(na) != bool(nb):            return False
-    wa, wb   = significant_words(a), significant_words(b)
-    only_a   = (wa - wb) - EDITION_WORDS
-    only_b   = (wb - wa) - EDITION_WORDS
-    if only_a and only_b:               return False
-    shared   = wa & wb
-    if not shared:                      return False
-    shorter  = wa if len(wa) <= len(wb) else wb
+    if na and nb and na != nb:
+        return False
+    if bool(na) != bool(nb):
+        return False
+    wa, wb = significant_words(a), significant_words(b)
+    only_a = (wa - wb) - EDITION_WORDS
+    only_b = (wb - wa) - EDITION_WORDS
+    if only_a and only_b:
+        return False
+    shared = wa & wb
+    if not shared:
+        return False
+    shorter = wa if len(wa) <= len(wb) else wb
     return len(shared) / len(shorter) >= 0.7
 
 
@@ -1252,7 +1501,11 @@ def find_best_match(hltb_title: str, deals: list[dict], threshold: float = 0.75)
         score = SequenceMatcher(None, hn, normalize(deal["name"])).ratio()
         if score > best_score:
             best_score, best_deal = score, deal
-    if best_score >= threshold and best_deal and is_same_game(hltb_title, best_deal["name"]):
+    if (
+        best_score >= threshold
+        and best_deal
+        and is_same_game(hltb_title, best_deal["name"])
+    ):
         return best_score, best_deal
     return 0.0, None
 
@@ -1263,16 +1516,16 @@ def cross_hltb_with_deals(
     threshold: float = 0.75,
     family_appids: set[str] | None = None,
 ) -> tuple[list[dict], list[dict]]:
-    used_names     = set()
+    used_names = set()
     backlog_on_sale = []
-    have_on_sale   = []
-    family_appids  = family_appids or set()
+    have_on_sale = []
+    family_appids = family_appids or set()
 
     for status, games in [
-        ("backlog",   hltb["backlog"]),
+        ("backlog", hltb["backlog"]),
         ("completed", hltb["completed"]),
-        ("playing",   hltb["playing"]),
-        ("retired",   hltb["retired"]),
+        ("playing", hltb["playing"]),
+        ("retired", hltb["retired"]),
     ]:
         for game in games:
             score, deal = find_best_match(game["title"], deals, threshold)
@@ -1285,17 +1538,17 @@ def cross_hltb_with_deals(
                     price_per_hour = (price_raw / 100) / hours
 
                 entry = {
-                    "appid":          deal["appid"],
-                    "hltb_title":     game["title"],
-                    "steam_name":     deal["name"],
-                    "storefront":     game["storefront"],
-                    "discount":       deal["discount"],
-                    "price":          deal["price_final"],
+                    "appid": deal["appid"],
+                    "hltb_title": game["title"],
+                    "steam_name": deal["name"],
+                    "storefront": game["storefront"],
+                    "discount": deal["discount"],
+                    "price": deal["price_final"],
                     "price_original": deal["price_original"],
-                    "score":          round(score, 2),
-                    "status":         status,
-                    "in_family":      deal["appid"] in family_appids,
-                    "hours":          hours,
+                    "score": round(score, 2),
+                    "status": status,
+                    "in_family": deal["appid"] in family_appids,
+                    "hours": hours,
                     "price_per_hour": price_per_hour,
                 }
                 (backlog_on_sale if status == "backlog" else have_on_sale).append(entry)
@@ -1310,10 +1563,13 @@ def cross_hltb_with_deals(
 # FILTRO POR GÉNERO
 # ─────────────────────────────────────────────
 
+
 def filter_by_genres(deals: list[dict], genres: list[str]) -> list[dict]:
     if not genres:
         return []
-    matched = [d for d in deals if any(g in dg for g in genres for dg in d.get("genres", []))]
+    matched = [
+        d for d in deals if any(g in dg for g in genres for dg in d.get("genres", []))
+    ]
     matched.sort(key=lambda x: -x["discount"])
     return matched
 
@@ -1341,16 +1597,28 @@ def apply_filters(
         filtered = [d for d in filtered if deck_compat.get(d["appid"], 0) >= 2]
 
     if filters.get("min_reviews") is not None:
-        filtered = [d for d in filtered
-                    if (r := reviews.get(d["appid"])) and r.get("pct", 0) >= filters["min_reviews"]]
+        filtered = [
+            d
+            for d in filtered
+            if (r := reviews.get(d["appid"]))
+            and r.get("pct", 0) >= filters["min_reviews"]
+        ]
 
     if filters.get("min_review_count") is not None:
-        filtered = [d for d in filtered
-                    if (r := reviews.get(d["appid"])) and r.get("total", 0) >= filters["min_review_count"]]
+        filtered = [
+            d
+            for d in filtered
+            if (r := reviews.get(d["appid"]))
+            and r.get("total", 0) >= filters["min_review_count"]
+        ]
 
     if filters.get("max_hours") is not None:
-        filtered = [d for d in filtered
-                    if (h := hltb_hours.get(d["appid"])) is not None and h <= filters["max_hours"]]
+        filtered = [
+            d
+            for d in filtered
+            if (h := hltb_hours.get(d["appid"])) is not None
+            and h <= filters["max_hours"]
+        ]
 
     if filters.get("new_only"):
         new_set = comp.get("new_deals", set())
@@ -1370,8 +1638,13 @@ MAX_WORKERS = 8
 RATE_LIMIT_INTERVAL = 0.15
 
 
-def _fetch_parallel(items: list[str], fetch_fn, label: str,
-                    rate_limit: float = RATE_LIMIT_INTERVAL, max_workers: int = MAX_WORKERS) -> dict:
+def _fetch_parallel(
+    items: list[str],
+    fetch_fn,
+    label: str,
+    rate_limit: float = RATE_LIMIT_INTERVAL,
+    max_workers: int = MAX_WORKERS,
+) -> dict:
     """Execute fetch_fn(appid) in parallel with global rate limiting."""
     total = len(items)
     if total == 0:
@@ -1407,7 +1680,9 @@ def _fetch_parallel(items: list[str], fetch_fn, label: str,
             if completed[0] > 1:
                 eta_sec = elapsed / completed[0] * (total - completed[0])
                 eta_str = f"{eta_sec / 60:.1f}m"
-            print(f"\r  {bar} {completed[0]}/{total} ETA {eta_str}  ", end="", flush=True)
+            print(
+                f"\r  {bar} {completed[0]}/{total} ETA {eta_str}  ", end="", flush=True
+            )
             try:
                 appid, result = future.result()
                 if result is not None:
@@ -1428,7 +1703,11 @@ def _fetch_single_review(appid: str) -> dict | None:
         total_reviews = qs.get("total_reviews", 0)
         if total_reviews > 0:
             pos = qs.get("total_positive", 0)
-            return {"desc": qs.get("review_score_desc", ""), "pct": round(pos / total_reviews * 100), "total": total_reviews}
+            return {
+                "desc": qs.get("review_score_desc", ""),
+                "pct": round(pos / total_reviews * 100),
+                "total": total_reviews,
+            }
     except Exception:
         pass
     return None
@@ -1470,13 +1749,17 @@ def save_reviews_cache(steam_id: str, reviews: dict) -> None:
     )
 
 
-def fetch_reviews(appids: list[str], cached: dict, rate_limit: float = 0.15) -> dict[str, dict]:
+def fetch_reviews(
+    appids: list[str], cached: dict, rate_limit: float = 0.15
+) -> dict[str, dict]:
     """Fetch Steam reviews in parallel. Returns merged {appid: {desc, pct, total}}."""
     to_fetch = [a for a in appids if a not in cached]
     if not to_fetch:
         return cached
     result = dict(cached)
-    fetched = _fetch_parallel(to_fetch, _fetch_single_review, "reviews", rate_limit=rate_limit)
+    fetched = _fetch_parallel(
+        to_fetch, _fetch_single_review, "reviews", rate_limit=rate_limit
+    )
     result.update(fetched)
     return result
 
@@ -1513,13 +1796,17 @@ def save_deck_cache(steam_id: str, deck: dict) -> None:
     )
 
 
-def fetch_deck_compat(appids: list[str], cached: dict, rate_limit: float = 0.15) -> dict[str, int]:
+def fetch_deck_compat(
+    appids: list[str], cached: dict, rate_limit: float = 0.15
+) -> dict[str, int]:
     """Fetch Steam Deck compatibility in parallel. Returns merged {appid: category}."""
     to_fetch = [a for a in appids if a not in cached]
     if not to_fetch:
         return cached
     result = dict(cached)
-    fetched = _fetch_parallel(to_fetch, _fetch_single_deck, "Deck compat", rate_limit=rate_limit)
+    fetched = _fetch_parallel(
+        to_fetch, _fetch_single_deck, "Deck compat", rate_limit=rate_limit
+    )
     result.update(fetched)
     return result
 
@@ -1547,7 +1834,9 @@ def load_protondb_cache() -> tuple[dict, float]:
 
 
 def save_protondb_cache(protondb: dict) -> None:
-    save_timestamped_cache(PROTONDB_CACHE_FILE, "protondb", protondb, ensure_ascii=False, indent=None)
+    save_timestamped_cache(
+        PROTONDB_CACHE_FILE, "protondb", protondb, ensure_ascii=False, indent=None
+    )
 
 
 def _fetch_single_protondb(appid: str) -> dict | None:
@@ -1556,19 +1845,27 @@ def _fetch_single_protondb(appid: str) -> dict | None:
         data = _get_json(url, headers={"User-Agent": "Mozilla/5.0"})
         tier = data.get("tier", "")
         if tier:
-            return {"tier": tier, "score": data.get("score", 0), "total": data.get("total", 0)}
+            return {
+                "tier": tier,
+                "score": data.get("score", 0),
+                "total": data.get("total", 0),
+            }
     except Exception:
         pass
     return None
 
 
-def fetch_protondb(appids: list[str], cached: dict, rate_limit: float = 0.15) -> dict[str, dict]:
+def fetch_protondb(
+    appids: list[str], cached: dict, rate_limit: float = 0.15
+) -> dict[str, dict]:
     """Fetch ProtonDB tiers in parallel. Returns merged {appid: {tier, score, total}}."""
     to_fetch = [a for a in appids if a not in cached]
     if not to_fetch:
         return cached
     result = dict(cached)
-    fetched = _fetch_parallel(to_fetch, _fetch_single_protondb, "ProtonDB", rate_limit=rate_limit)
+    fetched = _fetch_parallel(
+        to_fetch, _fetch_single_protondb, "ProtonDB", rate_limit=rate_limit
+    )
     result.update(fetched)
     return result
 
@@ -1585,7 +1882,9 @@ def load_anticheat_cache() -> tuple[dict, float]:
 
 
 def save_anticheat_cache(games: dict) -> None:
-    save_timestamped_cache(ANTICHEAT_CACHE_FILE, "games", games, ensure_ascii=False, indent=None)
+    save_timestamped_cache(
+        ANTICHEAT_CACHE_FILE, "games", games, ensure_ascii=False, indent=None
+    )
 
 
 def fetch_anticheat_db() -> dict[str, dict]:
@@ -1610,7 +1909,12 @@ def fetch_anticheat_db() -> dict[str, dict]:
         return {}
 
 
-def linux_badge(deck_cat: int, protondb: dict | None, anticheat: dict | None, linux_native: bool = False) -> str:
+def linux_badge(
+    deck_cat: int,
+    protondb: dict | None,
+    anticheat: dict | None,
+    linux_native: bool = False,
+) -> str:
     """Build combined Deck/Linux badge string."""
     parts = []
     # Linux native (from Steam platforms data)
@@ -1641,9 +1945,22 @@ def linux_badge(deck_cat: int, protondb: dict | None, anticheat: dict | None, li
 # ─────────────────────────────────────────────
 
 GENERIC_TAGS = {
-    "singleplayer", "multiplayer", "action", "indie", "adventure",
-    "free to play", "early access", "2d", "3d", "casual", "simulation",
-    "strategy", "rpg", "fps", "puzzle", "platformer",
+    "singleplayer",
+    "multiplayer",
+    "action",
+    "indie",
+    "adventure",
+    "free to play",
+    "early access",
+    "2d",
+    "3d",
+    "casual",
+    "simulation",
+    "strategy",
+    "rpg",
+    "fps",
+    "puzzle",
+    "platformer",
 }
 
 
@@ -1657,10 +1974,14 @@ def load_tags_cache() -> tuple[dict, float]:
 
 
 def save_tags_cache(tags: dict) -> None:
-    save_timestamped_cache(TAGS_CACHE_FILE, "tags", tags, ensure_ascii=False, indent=None)
+    save_timestamped_cache(
+        TAGS_CACHE_FILE, "tags", tags, ensure_ascii=False, indent=None
+    )
 
 
-def fetch_tags(appids: list[str], cached: dict, rate_limit: float = 1.1) -> dict[str, dict]:
+def fetch_tags(
+    appids: list[str], cached: dict, rate_limit: float = 1.1
+) -> dict[str, dict]:
     """Fetch tags from SteamSpy for appids not in cache."""
     to_fetch = [a for a in appids if a not in cached]
     if not to_fetch:
@@ -1712,7 +2033,9 @@ def get_top_tags(tags_data: dict, appid: str, n: int = 3) -> list[str]:
     return [t for t, _ in sorted_tags if t.lower() not in GENERIC_TAGS][:n]
 
 
-def group_deals_by_tag(deals: list[dict], tags_data: dict, min_count: int = 3) -> list[tuple[str, list[dict]]]:
+def group_deals_by_tag(
+    deals: list[dict], tags_data: dict, min_count: int = 3
+) -> list[tuple[str, list[dict]]]:
     """Group deals by their most popular tags."""
     tag_to_deals: dict[str, list[dict]] = {}
     for d in deals:
@@ -1744,10 +2067,14 @@ def players_badge(tags_entry: dict) -> str:
     _, hi = _parse_owners(owners)
     if hi == 0:
         return ""
+
     def _fmt(n: int) -> str:
-        if n >= 1_000_000: return f"{n / 1_000_000:.0f}M"
-        if n >= 1_000: return f"{n // 1_000}K"
+        if n >= 1_000_000:
+            return f"{n / 1_000_000:.0f}M"
+        if n >= 1_000:
+            return f"{n // 1_000}K"
         return str(n)
+
     lo, _ = _parse_owners(owners)
     return f"👥 {_fmt(lo)}-{_fmt(hi)}" if lo else f"👥 <{_fmt(hi)}"
 
@@ -1792,13 +2119,17 @@ def _fetch_single_achievement(appid: str) -> dict | None:
         return None
 
 
-def fetch_achievements(appids: list[str], cached: dict, rate_limit: float = 0.15) -> dict[str, dict]:
+def fetch_achievements(
+    appids: list[str], cached: dict, rate_limit: float = 0.15
+) -> dict[str, dict]:
     """Fetch achievement data in parallel. Returns merged {appid: {count, avg_completion}}."""
     to_fetch = [a for a in appids if a not in cached]
     if not to_fetch:
         return cached
     result = dict(cached)
-    fetched = _fetch_parallel(to_fetch, _fetch_single_achievement, "achievements", rate_limit=rate_limit)
+    fetched = _fetch_parallel(
+        to_fetch, _fetch_single_achievement, "achievements", rate_limit=rate_limit
+    )
     result.update(fetched)
     return result
 
@@ -1821,10 +2152,15 @@ def _html_achievements_badge(ach: dict | None) -> str:
 # ─────────────────────────────────────────────
 
 
-def compute_value_score(discount: int, review_pct: int | None, priority: int,
-                        price_per_hour: float | None, deck_cat: int,
-                        release_year: int | None = None,
-                        metacritic_score: int | None = None) -> float:
+def compute_value_score(
+    discount: int,
+    review_pct: int | None,
+    priority: int,
+    price_per_hour: float | None,
+    deck_cat: int,
+    release_year: int | None = None,
+    metacritic_score: int | None = None,
+) -> float:
     """Compute a 0-100 value score combining multiple signals."""
     s_discount = min(discount, 100)
     s_reviews = review_pct if review_pct is not None else 50
@@ -1851,11 +2187,16 @@ def compute_value_score(discount: int, review_pct: int | None, priority: int,
         s_age = 50
     else:
         age = max(0, date.today().year - release_year)
-        if age <= 1: s_age = 100
-        elif age <= 3: s_age = 80
-        elif age <= 5: s_age = 60
-        elif age <= 8: s_age = 50
-        else: s_age = 35
+        if age <= 1:
+            s_age = 100
+        elif age <= 3:
+            s_age = 80
+        elif age <= 5:
+            s_age = 60
+        elif age <= 8:
+            s_age = 50
+        else:
+            s_age = 35
     # Metacritic bonus
     if metacritic_score is None:
         s_mc = 50
@@ -1867,7 +2208,15 @@ def compute_value_score(discount: int, review_pct: int | None, priority: int,
         s_mc = 60
     else:
         s_mc = 30
-    return s_discount * 0.22 + s_reviews * 0.26 + s_priority * 0.18 + s_pph * 0.14 + s_deck * 0.10 + s_age * 0.05 + s_mc * 0.05
+    return (
+        s_discount * 0.22
+        + s_reviews * 0.26
+        + s_priority * 0.18
+        + s_pph * 0.14
+        + s_deck * 0.10
+        + s_age * 0.05
+        + s_mc * 0.05
+    )
 
 
 def rank_top_picks(
@@ -1887,26 +2236,36 @@ def rank_top_picks(
         priority = priorities.get(appid, 0)
         hours = hltb_hours.get(appid)
         price_raw = deal.get("price_raw", 0)
-        pph = (price_raw / 100) / hours if hours and hours > 0 and price_raw > 0 else None
+        pph = (
+            (price_raw / 100) / hours if hours and hours > 0 and price_raw > 0 else None
+        )
         deck_cat = deck_compat.get(appid, 0)
         mc_score = deal.get("metacritic_score")
-        score = compute_value_score(deal["discount"], review_pct, priority, pph, deck_cat,
-                                    release_year=deal.get("release_year"),
-                                    metacritic_score=mc_score)
-        scored.append({
-            "appid": appid,
-            "name": deal["name"],
-            "discount": deal["discount"],
-            "price_final": deal["price_final"],
-            "score": round(score, 1),
-            "review": review,
-            "deck": deck_cat,
-            "priority": priority,
-            "release_year": deal.get("release_year"),
-            "linux_native": deal.get("linux_native", False),
-            "metacritic_score": mc_score,
-            "categories": deal.get("categories", []),
-        })
+        score = compute_value_score(
+            deal["discount"],
+            review_pct,
+            priority,
+            pph,
+            deck_cat,
+            release_year=deal.get("release_year"),
+            metacritic_score=mc_score,
+        )
+        scored.append(
+            {
+                "appid": appid,
+                "name": deal["name"],
+                "discount": deal["discount"],
+                "price_final": deal["price_final"],
+                "score": round(score, 1),
+                "review": review,
+                "deck": deck_cat,
+                "priority": priority,
+                "release_year": deal.get("release_year"),
+                "linux_native": deal.get("linux_native", False),
+                "metacritic_score": mc_score,
+                "categories": deal.get("categories", []),
+            }
+        )
     scored.sort(key=lambda x: -x["score"])
     return scored[:n]
 
@@ -1971,20 +2330,29 @@ def compute_budget_picks(deals, budget_mxn, top_picks, watchlist_alerts=None):
 # GENERAR MARKDOWN
 # ─────────────────────────────────────────────
 
-STORE_URL    = "https://store.steampowered.com/app/{appid}/"
-CAPSULE_URL  = "https://cdn.akamai.steamstatic.com/steam/apps/{appid}/capsule_231x87.jpg"
-HEADER_URL   = "https://cdn.akamai.steamstatic.com/steam/apps/{appid}/header.jpg"
+STORE_URL = "https://store.steampowered.com/app/{appid}/"
+CAPSULE_URL = "https://cdn.akamai.steamstatic.com/steam/apps/{appid}/capsule_231x87.jpg"
+HEADER_URL = "https://cdn.akamai.steamstatic.com/steam/apps/{appid}/header.jpg"
 
 MESES = {
-    1: "enero", 2: "febrero", 3: "marzo", 4: "abril",
-    5: "mayo", 6: "junio", 7: "julio", 8: "agosto",
-    9: "septiembre", 10: "octubre", 11: "noviembre", 12: "diciembre",
+    1: "enero",
+    2: "febrero",
+    3: "marzo",
+    4: "abril",
+    5: "mayo",
+    6: "junio",
+    7: "julio",
+    8: "agosto",
+    9: "septiembre",
+    10: "octubre",
+    11: "noviembre",
+    12: "diciembre",
 }
 
 
 def group_by_tier(games: list[dict]) -> list[tuple[str, list[dict]]]:
     tiers = [
-        ("90%+",   lambda d: d >= 90),
+        ("90%+", lambda d: d >= 90),
         ("80–89%", lambda d: 80 <= d < 90),
         ("70–79%", lambda d: 70 <= d < 80),
         ("60–69%", lambda d: 60 <= d < 70),
@@ -2075,6 +2443,7 @@ def generate_md(
 # GENERAR HTML INTERACTIVO
 # ─────────────────────────────────────────────
 
+
 def _html_esc(text: str) -> str:
     return _renderer_html_escape(text)
 
@@ -2084,7 +2453,11 @@ def _html_link(name: str, appid: str) -> str:
 
 
 def _html_deck_badge(category: int) -> str:
-    labels = {3: ("Verified", "verified"), 2: ("Playable", "playable"), 1: ("Unsupported", "unsupported")}
+    labels = {
+        3: ("Verified", "verified"),
+        2: ("Playable", "playable"),
+        1: ("Unsupported", "unsupported"),
+    }
     if category not in labels:
         return '<span class="badge deck-unknown">\u2014</span>'
     text, cls = labels[category]
@@ -2144,7 +2517,9 @@ def _html_multiplayer_badges(categories: list[int]) -> str:
     return " ".join(parts) if parts else '<span class="review-na">\u2014</span>'
 
 
-def _build_sparkline_svg(snapshots: list[dict], width: int = 80, height: int = 24) -> str:
+def _build_sparkline_svg(
+    snapshots: list[dict], width: int = 80, height: int = 24
+) -> str:
     """Build an inline SVG sparkline from price snapshots."""
     if len(snapshots) < 2:
         return ""
@@ -2159,16 +2534,24 @@ def _build_sparkline_svg(snapshots: list[dict], width: int = 80, height: int = 2
         points.append(f"{x},{y}")
     polyline = " ".join(points)
     last_price = prices[-1]
-    color = "#6cc644" if last_price <= mn else "#f0b232" if last_price <= mn + rng * 0.3 else "#c7d5e0"
+    color = (
+        "#6cc644"
+        if last_price <= mn
+        else "#f0b232"
+        if last_price <= mn + rng * 0.3
+        else "#c7d5e0"
+    )
     # Dot on current price
     lx, ly = points[-1].split(",")
-    return (f'<svg width="{width}" height="{height}" style="vertical-align:middle" title="Historial: ${mn:.0f}-${mx:.0f}">'
-            f'<polyline points="{polyline}" fill="none" stroke="{color}" stroke-width="1.5"/>'
-            f'<circle cx="{lx}" cy="{ly}" r="2" fill="{color}"/></svg>')
+    return (
+        f'<svg width="{width}" height="{height}" style="vertical-align:middle" title="Historial: ${mn:.0f}-${mx:.0f}">'
+        f'<polyline points="{polyline}" fill="none" stroke="{color}" stroke-width="1.5"/>'
+        f'<circle cx="{lx}" cy="{ly}" r="2" fill="{color}"/></svg>'
+    )
 
 
 def _html_price_raw(price_str: str) -> float:
-    m = re.search(r'[\d,.]+', price_str.replace(',', ''))
+    m = re.search(r"[\d,.]+", price_str.replace(",", ""))
     return float(m.group()) if m else 0.0
 
 
@@ -2439,7 +2822,7 @@ def _build_dashboard_html(deals, reviews, deck_compat_data, tags_data, protondb_
     prices = sorted(_html_price_raw(d["price_final"]) for d in deals)
     median_price = prices[len(prices) // 2] if prices else 0
 
-    fin_html = f'''<div class="dash-card" style="grid-column:1/-1">
+    fin_html = f"""<div class="dash-card" style="grid-column:1/-1">
   <h3>&#128176; Resumen Financiero</h3>
   <div class="fin-grid">
     <div class="fin-item"><div class="fin-value">${total_orig:,.0f}</div><div class="fin-label">Precio original</div></div>
@@ -2448,10 +2831,16 @@ def _build_dashboard_html(deals, reviews, deck_compat_data, tags_data, protondb_
     <div class="fin-item"><div class="fin-value">-{avg_disc:.0f}%</div><div class="fin-label">Descuento promedio</div></div>
     <div class="fin-item"><div class="fin-value">${median_price:.0f}</div><div class="fin-label">Precio mediana</div></div>
   </div>
-</div>'''
+</div>"""
 
     # Discount distribution bars
-    tier_colors = {"90%+": "#6cc644", "80–89%": "#4eaa5a", "70–79%": "#f0b232", "60–69%": "#e89030", "50–59%": "#c7322e"}
+    tier_colors = {
+        "90%+": "#6cc644",
+        "80–89%": "#4eaa5a",
+        "70–79%": "#f0b232",
+        "60–69%": "#e89030",
+        "50–59%": "#c7322e",
+    }
     tiers = group_by_tier(deals)
     max_t = max((len(ds) for _, ds in tiers), default=1) or 1
     bars_html = ""
@@ -2464,8 +2853,15 @@ def _build_dashboard_html(deals, reviews, deck_compat_data, tags_data, protondb_
     # Deck + ProtonDB stacked bars
     dk_counts = {3: 0, 2: 0, 1: 0, 0: 0}
     for d in deals:
-        dk_counts[deck_compat_data.get(d["appid"], 0)] = dk_counts.get(deck_compat_data.get(d["appid"], 0), 0) + 1
-    dk_colors = {3: ("#6cc644", "Verified"), 2: ("#f0b232", "Playable"), 1: ("#c7322e", "Unsupported"), 0: ("#555", "Unknown")}
+        dk_counts[deck_compat_data.get(d["appid"], 0)] = (
+            dk_counts.get(deck_compat_data.get(d["appid"], 0), 0) + 1
+        )
+    dk_colors = {
+        3: ("#6cc644", "Verified"),
+        2: ("#f0b232", "Playable"),
+        1: ("#c7322e", "Unsupported"),
+        0: ("#555", "Unknown"),
+    }
     dk_segs = ""
     dk_legend = ""
     for cat in (3, 2, 1, 0):
@@ -2481,7 +2877,14 @@ def _build_dashboard_html(deals, reviews, deck_compat_data, tags_data, protondb_
         if pdb:
             t = pdb.get("tier", "")
             pdb_counts[t] = pdb_counts.get(t, 0) + 1
-    pdb_colors = {"native": "#6cc644", "platinum": "#b4c7dc", "gold": "#d4a84b", "silver": "#a8a8a8", "bronze": "#cd7f32", "borked": "#c7322e"}
+    pdb_colors = {
+        "native": "#6cc644",
+        "platinum": "#b4c7dc",
+        "gold": "#d4a84b",
+        "silver": "#a8a8a8",
+        "bronze": "#cd7f32",
+        "borked": "#c7322e",
+    }
     pdb_segs = ""
     pdb_legend = ""
     for t in ("native", "platinum", "gold", "silver", "bronze", "borked"):
@@ -2491,10 +2894,10 @@ def _build_dashboard_html(deals, reviews, deck_compat_data, tags_data, protondb_
             pdb_segs += f'<div class="stacked-seg" style="width:{pct}%;background:{pdb_colors[t]}">{c if pct > 5 else ""}</div>'
             pdb_legend += f'<span class="legend-item"><span class="legend-dot" style="background:{pdb_colors[t]}"></span>{t.title()} ({c})</span>'
 
-    compat_html = f'''<div class="dash-card"><h3>&#127918; Deck / ProtonDB</h3>
+    compat_html = f"""<div class="dash-card"><h3>&#127918; Deck / ProtonDB</h3>
   <div style="margin-bottom:.6rem"><div style="font-size:.75rem;color:var(--text-secondary);margin-bottom:.2rem">Steam Deck</div><div class="stacked-bar">{dk_segs}</div><div class="stacked-legend">{dk_legend}</div></div>
   <div><div style="font-size:.75rem;color:var(--text-secondary);margin-bottom:.2rem">ProtonDB</div><div class="stacked-bar">{pdb_segs}</div><div class="stacked-legend">{pdb_legend}</div></div>
-</div>'''
+</div>"""
 
     # Top tags bars
     tags_html = ""
@@ -2506,9 +2909,11 @@ def _build_dashboard_html(deals, reviews, deck_compat_data, tags_data, protondb_
             for tname, tdeals in tag_groups[:8]:
                 pct = len(tdeals) / max_tg * 100
                 tg_bars += f'<div class="hbar-row"><span class="hbar-label">{_html_esc(tname)}</span><div class="hbar-track"><div class="hbar-fill" style="width:{pct}%;background:var(--accent-blue)">{len(tdeals)}</div></div><span class="hbar-value">{len(tdeals)}</span></div>\n'
-            tags_html = f'<div class="dash-card"><h3>&#127991; Top Tags</h3>{tg_bars}</div>'
+            tags_html = (
+                f'<div class="dash-card"><h3>&#127991; Top Tags</h3>{tg_bars}</div>'
+            )
 
-    return f'''<details open class="dashboard">
+    return f"""<details open class="dashboard">
   <summary>&#128202; Dashboard</summary>
   <div class="dash-grid">
     {fin_html}
@@ -2516,7 +2921,7 @@ def _build_dashboard_html(deals, reviews, deck_compat_data, tags_data, protondb_
     {compat_html}
     {tags_html}
   </div>
-</details>'''
+</details>"""
 
 
 def generate_html(
@@ -2601,14 +3006,26 @@ def generate_html(
     # Stats
     total_deals = len(deals)
     avg_disc = sum(d["discount"] for d in deals) / total_deals if total_deals else 0
-    avg_price = sum(_html_price_raw(d["price_final"]) for d in deals) / total_deals if total_deals else 0
+    avg_price = (
+        sum(_html_price_raw(d["price_final"]) for d in deals) / total_deals
+        if total_deals
+        else 0
+    )
     verified = sum(1 for d in deals if deck_compat_data.get(d["appid"]) == 3)
-    new_count = sum(1 for d in deals if previous_appids and d["appid"] not in previous_appids) if previous_appids else 0
+    new_count = (
+        sum(1 for d in deals if previous_appids and d["appid"] not in previous_appids)
+        if previous_appids
+        else 0
+    )
 
     parts = []
 
     # ── Stats bar ──
-    sale_html = f'Evento: <span class="sale-badge">&#127991; {_html_esc(sale_name)}</span> | ' if sale_name else ""
+    sale_html = (
+        f'Evento: <span class="sale-badge">&#127991; {_html_esc(sale_name)}</span> | '
+        if sale_name
+        else ""
+    )
     pills = [
         f'<span class="pill">{len(wishlist_appids):,} en wishlist</span>',
         f'<span class="pill pill-accent" id="stat-deals">{total_deals:,} deals (&ge;{min_discount}%)</span>',
@@ -2618,55 +3035,71 @@ def generate_html(
     ]
     if new_count:
         pills.append(f'<span class="pill pill-new">{new_count} nuevos</span>')
-    parts.append(f'''<header class="stats-bar">
+    parts.append(f"""<header class="stats-bar">
   <h1>Steam Deals &mdash; {_html_esc(vanity)}</h1>
   <div class="stats-meta">{sale_html}{today} | Precios en MXN</div>
   <div class="stats-pills">{"".join(pills)}</div>
-</header>''')
+</header>""")
 
     # ── Dashboard ──
-    parts.append(_build_dashboard_html(deals, reviews, deck_compat_data, tags_data or {}, protondb_data or {}))
+    parts.append(
+        _build_dashboard_html(
+            deals, reviews, deck_compat_data, tags_data or {}, protondb_data or {}
+        )
+    )
 
     # ── Top Picks ──
     if top_picks:
         cards = []
         for idx, tp in enumerate(top_picks, 1):
-            rank_cls = "rank-gold" if idx == 1 else "rank-silver" if idx == 2 else "rank-bronze" if idx == 3 else ""
+            rank_cls = (
+                "rank-gold"
+                if idx == 1
+                else "rank-silver"
+                if idx == 2
+                else "rank-bronze"
+                if idx == 3
+                else ""
+            )
             rev_html = _html_review_badge(tp.get("review"))
             dk_html = _html_deck_badge(tp.get("deck", 0))
             mc_html = _html_metacritic_badge(tp.get("metacritic_score"))
             mp_html = _html_multiplayer_badges(tp.get("categories", []))
             prio_html = _html_prio_badge(tp.get("priority", 0))
-            header_img = HEADER_URL.format(appid=tp['appid'])
-            store_url = STORE_URL.format(appid=tp['appid'])
-            min_hist = historical_lows.get(tp['appid'])
+            header_img = HEADER_URL.format(appid=tp["appid"])
+            store_url = STORE_URL.format(appid=tp["appid"])
+            min_hist = historical_lows.get(tp["appid"])
             min_hist_str = f"${min_hist['price']:.0f}" if min_hist else ""
-            tp_data = f'{{"name":"{_html_esc(tp["name"])}","appid":"{tp["appid"]}","price":"{_html_esc(tp["price_final"])}","price_original":"{_html_esc(tp.get("price_original",""))}","discount":{tp["discount"]},"min_hist":"{min_hist_str}"}}'
+            tp_data = f'{{"name":"{_html_esc(tp["name"])}","appid":"{tp["appid"]}","price":"{_html_esc(tp["price_final"])}","price_original":"{_html_esc(tp.get("price_original", ""))}","discount":{tp["discount"]},"min_hist":"{min_hist_str}"}}'
             cards.append(f'''<div class="pick-card {rank_cls}">
   <a href="{store_url}" target="_blank" style="display:block">
     <img class="pick-img" src="{header_img}" alt="" loading="lazy" onerror="this.style.display='none'">
     <div class="pick-body">
       <div class="pick-rank">#{idx}</div>
-      <div class="pick-score">{tp['score']}</div>
-      <div class="pick-name">{_html_esc(tp['name'])}{prio_html}</div>
-      <div class="pick-details"><span class="pick-discount">-{tp['discount']}%</span><span class="pick-price">{_html_esc(tp['price_final'])}</span></div>
+      <div class="pick-score">{tp["score"]}</div>
+      <div class="pick-name">{_html_esc(tp["name"])}{prio_html}</div>
+      <div class="pick-details"><span class="pick-discount">-{tp["discount"]}%</span><span class="pick-price">{_html_esc(tp["price_final"])}</span></div>
       <div class="pick-meta">{rev_html} &middot; {mc_html} &middot; {dk_html} &middot; {mp_html}</div>
     </div>
   </a>
   <button class="share-btn-mini" onclick="openShareModal({tp_data})" title="Compartir">&#128279;</button>
 </div>''')
-        parts.append(f'''<section class="top-picks">
+        parts.append(f"""<section class="top-picks">
   <h2>&#127942; Top {len(top_picks)} Picks</h2>
   <p class="section-desc">Ranking: reviews (26%) + descuento (22%) + prioridad (18%) + $/hora HLTB (14%) + Deck (10%) + Metacritic (5%) + edad (5%).</p>
   <div class="picks-grid">{"".join(cards)}</div>
-</section>''')
+</section>""")
 
     # ── Watchlist Alerts ──
     if watchlist_alerts:
         wl_rows = []
         for wa in watchlist_alerts:
             savings = wa["target_price"] - (wa.get("price_raw", 0) / 100)
-            savings_html = f'<span style="color:var(--accent-green)">+${savings:.0f}</span>' if savings > 0 else ""
+            savings_html = (
+                f'<span style="color:var(--accent-green)">+${savings:.0f}</span>'
+                if savings > 0
+                else ""
+            )
             capsule = CAPSULE_URL.format(appid=wa["appid"])
             wl_rows.append(f'''<div class="wl-card">
   <img src="{capsule}" alt="" loading="lazy" style="width:120px;height:45px;border-radius:4px;object-fit:cover" onerror="this.style.display='none'">
@@ -2676,11 +3109,11 @@ def generate_html(
     <div style="font-size:.8rem"><span class="pick-discount">-{wa["discount"]}%</span></div>
   </div>
 </div>''')
-        parts.append(f'''<section class="top-picks" style="margin-bottom:1.5rem">
+        parts.append(f"""<section class="top-picks" style="margin-bottom:1.5rem">
   <h2>&#127919; Watchlist Alerts</h2>
   <p class="section-desc">{len(watchlist_alerts)} juegos alcanzaron tu precio objetivo</p>
   <div style="display:grid;grid-template-columns:repeat(auto-fill,minmax(280px,1fr));gap:.6rem">{"".join(wl_rows)}</div>
-</section>''')
+</section>""")
 
     # ── Budget Mode ──
     if budget_result:
@@ -2694,7 +3127,7 @@ def generate_html(
   <td>{_html_esc(pick["price_final"])}</td>
   <td><div class="game-cell"><img class="game-thumb" src="{capsule}" alt="" loading="lazy" onerror="this.style.display='none'"><span>{_html_link(pick["name"], pick["appid"])}</span></div></td>
 </tr>'''
-        parts.append(f'''<section style="margin-bottom:1.5rem">
+        parts.append(f"""<section style="margin-bottom:1.5rem">
   <h2>&#128176; Budget Mode &mdash; ${b["budget"]:.0f} MXN</h2>
   <p class="section-desc">Con ${b["budget"]:.0f} MXN puedes comprar {b["games_count"]} juegos &middot; Ahorro: ${b["total_savings"]:.0f} &middot; Restante: ${b["remaining"]:.0f}</p>
   <div style="background:var(--bg-secondary);border-radius:6px;height:24px;margin-bottom:.8rem;overflow:hidden;position:relative">
@@ -2702,16 +3135,16 @@ def generate_html(
     <div style="position:absolute;inset:0;display:flex;align-items:center;justify-content:center;font-size:.75rem;font-weight:600;color:var(--text-primary)">${b["total_spent"]:.0f} / ${b["budget"]:.0f} ({pct_used:.0f}%)</div>
   </div>
   <div class="table-wrap"><table class="deals-table"><thead><tr><th>#</th><th>Score</th><th>%</th><th>Precio</th><th>Juego</th></tr></thead><tbody>{budget_rows}</tbody></table></div>
-</section>''')
+</section>""")
 
     # ── Wishlist Comparison ──
     if compare_data:
         friend = compare_data.get("friend_vanity", "?")
         overlap = compare_data.get("overlap", set())
         overlap_deals = [d for d in deals if d["appid"] in overlap]
-        comp_html = f'''<section style="margin-bottom:1.5rem">
+        comp_html = f"""<section style="margin-bottom:1.5rem">
   <h2>&#128101; Wishlist Comparison &mdash; {_html_esc(friend)}</h2>
-  <p class="section-desc">{len(overlap)} juegos en com&uacute;n'''
+  <p class="section-desc">{len(overlap)} juegos en com&uacute;n"""
         if overlap_deals:
             comp_html += f" &middot; {len(overlap_deals)} en oferta"
         comp_html += "</p>"
@@ -2747,11 +3180,25 @@ def generate_html(
 
     # ── Tier tables ──
     for tier_name, tier_deals in group_by_tier(deals):
-        tier_deals.sort(key=lambda d: (priorities.get(d["appid"], 0) == 0, priorities.get(d["appid"], 9999)))
-        tid = re.sub(r'[^a-z0-9]', '', tier_name.lower())
+        tier_deals.sort(
+            key=lambda d: (
+                priorities.get(d["appid"], 0) == 0,
+                priorities.get(d["appid"], 9999),
+            )
+        )
+        tid = re.sub(r"[^a-z0-9]", "", tier_name.lower())
 
         # Headers
-        cols = [("", "text"), ("%", "num"), ("Precio", "price"), ("Era", "price"), ("Reviews", "num"), ("MC", "num"), ("Deck", "text"), ("Modo", "text")]
+        cols = [
+            ("", "text"),
+            ("%", "num"),
+            ("Precio", "price"),
+            ("Era", "price"),
+            ("Reviews", "num"),
+            ("MC", "num"),
+            ("Deck", "text"),
+            ("Modo", "text"),
+        ]
         if has_ach:
             cols.append(("Logros", "num"))
         if has_sparklines:
@@ -2763,7 +3210,7 @@ def generate_html(
         cols.append(("Juego", "text"))
 
         ths = "".join(
-            f'<th onclick="sortTable(\'t-{tid}\',{i},\'{ct}\')">{_html_esc(h)} <span class="sort-arrow">&#9650;&#9660;</span></th>'
+            f"<th onclick=\"sortTable('t-{tid}',{i},'{ct}')\">{_html_esc(h)} <span class=\"sort-arrow\">&#9650;&#9660;</span></th>"
             for i, (h, ct) in enumerate(cols)
         )
 
@@ -2813,53 +3260,55 @@ def generate_html(
                 else:
                     cells.append("<td>\u2014</td>")
             capsule_img = CAPSULE_URL.format(appid=appid)
-            desc_attr = f' title="{_html_esc(d.get("description", ""))}"' if d.get("description") else ""
+            desc_attr = (
+                f' title="{_html_esc(d.get("description", ""))}"'
+                if d.get("description")
+                else ""
+            )
             min_hist = historical_lows.get(appid)
             min_hist_str = f"${min_hist['price']:.0f}" if min_hist else ""
             game_data = f'{{"name":"{_html_esc(d["name"])}","appid":"{appid}","price":"{_html_esc(d["price_final"])}","price_original":"{_html_esc(d["price_original"])}","discount":{d["discount"]},"min_hist":"{min_hist_str}"}}'
             name_html = (
                 f'<div class="game-cell">'
                 f'<img class="game-thumb" src="{capsule_img}" alt="" loading="lazy" onerror="this.style.display=\'none\'">'
-                f'<span{desc_attr}>{_html_link(d["name"], appid)}{_html_prio_badge(prio)}</span>'
+                f"<span{desc_attr}>{_html_link(d['name'], appid)}{_html_prio_badge(prio)}</span>"
                 f'<button class="share-btn-mini" onclick="openShareModal({game_data})" title="Compartir" style="margin-left:.4rem;position:relative;top:-1px">&#128279;</button>'
-                f'</div>'
+                f"</div>"
             )
             cells.append(f"<td>{name_html}</td>")
 
             data_attrs = f'data-discount="{d["discount"]}" data-price="{price_num}" data-deck="{dk}" data-review="{rev_pct}" data-name="{_html_esc(d["name"].lower())}" data-new="{"1" if is_new else "0"}"'
             rows.append(f"<tr {data_attrs}>{''.join(cells)}</tr>")
 
-        parts.append(f'''<details open class="tier-section">
+        parts.append(f"""<details open class="tier-section">
   <summary class="tier-header">{_html_esc(tier_name)} de Descuento <span class="tier-count">(<span class="visible-count">{len(tier_deals)}</span> juegos)</span></summary>
   <div class="table-wrap"><table class="deals-table" id="t-{tid}"><thead><tr>{ths}</tr></thead><tbody>{"".join(rows)}</tbody></table></div>
-</details>''')
+</details>""")
 
-    return f'''<!DOCTYPE html>
+    return f"""<!DOCTYPE html>
 <html lang="es">
 <head><meta charset="UTF-8"><meta name="viewport" content="width=device-width,initial-scale=1.0"><title>Steam Deals &mdash; {_html_esc(vanity)}</title><style>{_HTML_CSS}</style></head>
 <body>
 {"".join(parts)}
 <script>{_HTML_JS}</script>
 </body>
-</html>'''
+</html>"""
 
 
 # ─────────────────────────────────────────────
 # GENERAR CSV
 # ─────────────────────────────────────────────
 
-CSV_DECK = {3: "Verified", 2: "Playable", 1: "Unsupported", 0: ""}
-CSV_PROTON = {"native": "Native", "platinum": "Platinum", "gold": "Gold",
-              "silver": "Silver", "bronze": "Bronze", "borked": "Borked"}
 
-def _csv_trend(trend: dict) -> str:
-    if trend.get("is_first_time"): return "1ra vez"
-    if trend.get("is_best_local") and trend.get("times_on_sale", 0) > 1: return "Min. local"
-    if trend.get("is_first_at_price"): return "1ra vez a este precio"
-    return f"{trend.get('times_on_sale', 0)}x, prom {trend.get('avg_fmt', '?')}"
-
-
-def generate_share_html(deals, vanity, min_discount, sale_name="", top_picks=None, reviews=None, deck_compat=None):
+def generate_share_html(
+    deals,
+    vanity,
+    min_discount,
+    sale_name="",
+    top_picks=None,
+    reviews=None,
+    deck_compat=None,
+):
     """Generate a lightweight shareable HTML page with the deals list."""
     if _generate_share_html_renderer is not None:
         return _generate_share_html_renderer(
@@ -2880,7 +3329,7 @@ def generate_share_html(deals, vanity, min_discount, sale_name="", top_picks=Non
     for d in deals:
         appid = d["appid"]
         rev = reviews.get(appid)
-        rev_str = f'{rev["desc"]} ({rev["pct"]}%)' if rev else ""
+        rev_str = f"{rev['desc']} ({rev['pct']}%)" if rev else ""
         dk = deck_compat.get(appid, 0)
         dk_str = {3: "Verified", 2: "Playable"}.get(dk, "")
         capsule = CAPSULE_URL.format(appid=appid)
@@ -2896,8 +3345,8 @@ def generate_share_html(deals, vanity, min_discount, sale_name="", top_picks=Non
             pick_cards += f'<a href="{store}" target="_blank" style="text-decoration:none;color:inherit;background:#16202d;border:1px solid #2a475e;border-radius:6px;overflow:hidden;display:flex;flex-direction:column"><img src="{header}" style="width:100%;aspect-ratio:460/215;object-fit:cover" loading="lazy"><div style="padding:.4rem .6rem"><div style="font-size:1.2rem;font-weight:bold;color:#66c0f4">{tp["score"]}</div><div style="font-size:.8rem;margin:.2rem 0">{_html_esc(tp["name"])}</div><div style="font-size:.8rem"><span style="color:#6cc644">-{tp["discount"]}%</span> {_html_esc(tp["price_final"])}</div></div></a>'
         picks_html = f'<h2 style="margin:1rem 0 .5rem">Top Picks</h2><div style="display:grid;grid-template-columns:repeat(auto-fill,minmax(160px,1fr));gap:.5rem">{pick_cards}</div>'
 
-    sale_line = f' — {_html_esc(sale_name)}' if sale_name else ""
-    return f'''<!DOCTYPE html>
+    sale_line = f" — {_html_esc(sale_name)}" if sale_name else ""
+    return f"""<!DOCTYPE html>
 <html lang="es"><head><meta charset="UTF-8"><meta name="viewport" content="width=device-width,initial-scale=1.0">
 <title>{_html_esc(title)}</title>
 <style>{{*{{box-sizing:border-box;margin:0;padding:0}}body{{font-family:system-ui,sans-serif;background:#1b2838;color:#c7d5e0;padding:1rem;max-width:1000px;margin:0 auto}}a{{color:#66c0f4;text-decoration:none}}a:hover{{text-decoration:underline}}h1{{font-size:1.3rem;margin-bottom:.3rem}}table{{width:100%;border-collapse:collapse;font-size:.85rem;margin-top:.5rem}}th{{background:#2a475e;padding:.4rem .5rem;text-align:left;border-bottom:2px solid #2a475e}}td{{padding:.35rem .5rem;border-bottom:1px solid #2a475e}}tr:hover{{background:#1a3a5c}}.meta{{color:#8f98a0;font-size:.85rem;margin-bottom:1rem}}.share-modal{{display:none;position:fixed;inset:0;background:rgba(0,0,0,0.7);z-index:1000;align-items:center;justify-content:center}}.share-modal.active{{display:flex}}.share-modal-content{{background:#16202d;border:1px solid #2a475e;border-radius:12px;padding:1.5rem;max-width:420px;width:90%}}.share-modal h3{{color:#66c0f4;margin-bottom:1rem;font-size:1.1rem}}.share-game-info{{background:#1b2838;border-radius:8px;padding:1rem;margin-bottom:1rem}}.share-game-name{{font-weight:600;font-size:1rem;margin-bottom:.5rem}}.share-game-price{{color:#6cc644;font-size:1.2rem;font-weight:700}}.share-game-price span{{text-decoration:line-through;color:#8f98a0;font-weight:400;font-size:.9rem}}.share-game-minhist{{font-size:.8rem;color:#8f98a0;margin-top:.3rem}}.share-game-minhist span{{color:#f0b232}}.share-actions{{display:flex;flex-direction:column;gap:.6rem}}.share-btn{{padding:.6rem 1rem;border-radius:6px;font-size:.85rem;font-weight:600;cursor:pointer;text-align:center}}.share-btn-copy-app{{background:#66c0f4;color:#000;border:none}}.share-btn-copy-app:hover{{background:#4db8e8}}.share-btn-copy-steam{{background:#2a475e;color:#c7d5e0;border:1px solid #2a475e}}.share-btn-copy-steam:hover{{border-color:#66c0f4}}.share-btn-open{{background:#1b2838;color:#8f98a0;border:1px solid #2a475e}}.share-close{{margin-top:.8rem;text-align:center;color:#8f98a0;font-size:.85rem;cursor:pointer}}.share-close:hover{{color:#c7d5e0}}</style>
@@ -2927,15 +3376,65 @@ def generate_share_html(deals, vanity, min_discount, sale_name="", top_picks=Non
   </div>
 </div>
 <script>let currentShareData=null,currentSteamUrl='';function openShareModal(game){{currentShareData=game;currentSteamUrl='https://store.steampowered.com/app/'+game.appid+'/';document.getElementById('share-name').textContent=game.name||'';document.getElementById('share-price').innerHTML=(game.price_original&&game.price?'<span>$'+game.price_original+' </span>':'')+(game.price||'')+(game.discount?' ('+game.discount+'% OFF)':'');document.getElementById('share-minhist').innerHTML=game.min_hist?'Minimo historico: <span>$'+game.min_hist+'</span>':'';document.getElementById('share-modal').classList.add('active')}}function closeShareModal(){{document.getElementById('share-modal').classList.remove('active');currentShareData=null}}function copyShareLink(){{if(!currentShareData)return;const encoded=btoa(JSON.stringify(currentShareData));const shareUrl='steamtools://share?data='+encoded;navigator.clipboard.writeText(shareUrl).then(()=>{{const btn=document.getElementById('btn-copy-app');btn.textContent='Copiado!';setTimeout(()=>btn.textContent='Copiar link steamtools://',2000)}})}}function copySteamLink(){{if(!currentSteamUrl)return;navigator.clipboard.writeText(currentSteamUrl).then(()=>{{const btn=document.querySelector('.share-btn-copy-steam');btn.textContent='Copiado!';setTimeout(()=>btn.textContent='Copiar link de Steam',2000)}})}}function openInSteam(){{if(currentSteamUrl)window.open(currentSteamUrl,'_blank')}}</script>
-</body></html>'''
+</body></html>"""
+
+
+CSV_DECK = {3: "Verified", 2: "Playable", 1: "Unsupported", 0: ""}
+CSV_PROTON = {
+    "native": "Native",
+    "platinum": "Platinum",
+    "gold": "Gold",
+    "silver": "Silver",
+    "bronze": "Bronze",
+    "borked": "Borked",
+}
+
+
+def _csv_trend(trend: dict) -> str:
+    if trend.get("is_first_time"):
+        return "1ra vez"
+    if trend.get("is_best_local") and trend.get("times_on_sale", 0) > 1:
+        return "Min. local"
+    if trend.get("is_first_at_price"):
+        return "1ra vez a este precio"
+    return f"{trend.get('times_on_sale', 0)}x, prom {trend.get('avg_fmt', '?')}"
 
 
 def generate_csv(
-    deals, priorities=None, reviews=None, deck_compat=None,
-    protondb_data=None, anticheat_data=None, tags_data=None,
-    hltb_hours=None, historical_lows=None, current_prices=None,
-    top_picks=None, local_trends=None, achievements_data=None,
+    deals,
+    priorities=None,
+    reviews=None,
+    deck_compat=None,
+    protondb_data=None,
+    anticheat_data=None,
+    tags_data=None,
+    hltb_hours=None,
+    historical_lows=None,
+    current_prices=None,
+    top_picks=None,
+    local_trends=None,
+    achievements_data=None,
 ) -> str:
+    if _generate_csv_renderer is not None:
+        return _generate_csv_renderer(
+            deals,
+            priorities=priorities,
+            reviews=reviews,
+            deck_compat=deck_compat,
+            protondb_data=protondb_data,
+            anticheat_data=anticheat_data,
+            tags_data=tags_data,
+            hltb_hours=hltb_hours,
+            historical_lows=historical_lows,
+            current_prices=current_prices,
+            top_picks=top_picks,
+            local_trends=local_trends,
+            achievements_data=achievements_data,
+            get_top_tags=get_top_tags,
+            multiplayer_badges=multiplayer_badges,
+            store_url_template=STORE_URL,
+        )
+
     priorities = priorities or {}
     reviews = reviews or {}
     deck_compat = deck_compat or {}
@@ -2952,11 +3451,35 @@ def generate_csv(
     buf = io.StringIO()
     buf.write("\ufeff")
     writer = csv.writer(buf)
-    writer.writerow(["AppID", "Name", "Discount%", "Price (MXN)", "Original Price", "Year",
-                      "Reviews", "Reviews%", "ReviewCount", "Metacritic", "Deck", "ProtonDB",
-                      "AntiCheat", "Tags", "Mode", "Achievements", "AvgCompletion%",
-                      "HLTB Hours", "Price/Hour", "Priority",
-                      "Score", "Historical Low", "Best Price", "Trend", "URL"])
+    writer.writerow(
+        [
+            "AppID",
+            "Name",
+            "Discount%",
+            "Price (MXN)",
+            "Original Price",
+            "Year",
+            "Reviews",
+            "Reviews%",
+            "ReviewCount",
+            "Metacritic",
+            "Deck",
+            "ProtonDB",
+            "AntiCheat",
+            "Tags",
+            "Mode",
+            "Achievements",
+            "AvgCompletion%",
+            "HLTB Hours",
+            "Price/Hour",
+            "Priority",
+            "Score",
+            "Historical Low",
+            "Best Price",
+            "Trend",
+            "URL",
+        ]
+    )
 
     for d in deals:
         appid = d["appid"]
@@ -2968,32 +3491,46 @@ def generate_csv(
         trend = local_trends.get(appid)
         hours = hltb_hours.get(appid)
         price_raw = d.get("price_raw", 0)
-        pph = f"{(price_raw / 100) / hours:.2f}" if hours and hours > 0 and price_raw > 0 else ""
+        pph = (
+            f"{(price_raw / 100) / hours:.2f}"
+            if hours and hours > 0 and price_raw > 0
+            else ""
+        )
         prio = priorities.get(appid, 0)
         top_tags = get_top_tags(tags_data, appid, n=5)
 
         mc = d.get("metacritic_score", "")
         mp = multiplayer_badges(d.get("categories", []))
         ach = achievements_data.get(appid)
-        writer.writerow([
-            appid, d["name"], d["discount"], d["price_final"], d.get("price_original", ""),
-            d.get("release_year", ""),
-            rev["desc"] if rev else "", rev["pct"] if rev else "", rev["total"] if rev else "",
-            mc if mc else "",
-            CSV_DECK.get(deck_compat.get(appid, 0), ""),
-            CSV_PROTON.get(pdb["tier"], "") if pdb else "",
-            f"{', '.join(ac.get('anticheats', []))} ({ac['status']})" if ac else "",
-            "; ".join(top_tags),
-            mp,
-            ach["count"] if ach else "", f"{ach['avg_completion']:.1f}" if ach else "",
-            f"{hours:.1f}" if hours else "", pph,
-            prio if prio > 0 else "",
-            pick_scores.get(appid, ""),
-            f"${low['price']:.0f} ({low['date']})" if low else "",
-            f"${bp['price']:.0f} en {bp['store']}" if bp else "",
-            _csv_trend(trend) if trend else "",
-            STORE_URL.format(appid=appid),
-        ])
+        writer.writerow(
+            [
+                appid,
+                d["name"],
+                d["discount"],
+                d["price_final"],
+                d.get("price_original", ""),
+                d.get("release_year", ""),
+                rev["desc"] if rev else "",
+                rev["pct"] if rev else "",
+                rev["total"] if rev else "",
+                mc if mc else "",
+                CSV_DECK.get(deck_compat.get(appid, 0), ""),
+                CSV_PROTON.get(pdb["tier"], "") if pdb else "",
+                f"{', '.join(ac.get('anticheats', []))} ({ac['status']})" if ac else "",
+                "; ".join(top_tags),
+                mp,
+                ach["count"] if ach else "",
+                f"{ach['avg_completion']:.1f}" if ach else "",
+                f"{hours:.1f}" if hours else "",
+                pph,
+                prio if prio > 0 else "",
+                pick_scores.get(appid, ""),
+                f"${low['price']:.0f} ({low['date']})" if low else "",
+                f"${bp['price']:.0f} en {bp['store']}" if bp else "",
+                _csv_trend(trend) if trend else "",
+                STORE_URL.format(appid=appid),
+            ]
+        )
 
     return buf.getvalue()
 
@@ -3001,6 +3538,7 @@ def generate_csv(
 # ─────────────────────────────────────────────
 # HELPERS
 # ─────────────────────────────────────────────
+
 
 def _get_json(url: str, headers: dict = None) -> dict:
     return http_get_json(url, headers=headers, timeout=15)
@@ -3019,7 +3557,11 @@ def build_notification_summary(deals, comparison, top_picks, watchlist_alerts=No
     """Build a summary dict for notifications. Returns None if nothing notable."""
     comp = comparison or {}
     new_count = len(comp.get("new_deals", set()))
-    price_drops = [(appid, v) for appid, v in comp.get("price_changes", {}).items() if v["direction"] == "down"]
+    price_drops = [
+        (appid, v)
+        for appid, v in comp.get("price_changes", {}).items()
+        if v["direction"] == "down"
+    ]
     price_drops.sort(key=lambda x: x[1]["delta_raw"])  # biggest drop first
 
     if new_count == 0 and not price_drops and not watchlist_alerts:
@@ -3031,15 +3573,40 @@ def build_notification_summary(deals, comparison, top_picks, watchlist_alerts=No
     return {
         "total_deals": len(deals),
         "new_count": new_count,
-        "top_3": [{"name": tp["name"], "discount": tp["discount"], "price": tp["price_final"], "score": tp["score"]} for tp in top3],
-        "price_drops": [{"name": deal_map.get(appid, {}).get("name", appid), "delta": v["delta_str"], "prev": v["prev_price"]} for appid, v in price_drops[:5]],
-        "watchlist_hits": [{"name": wa["name"], "price": wa["price_final"], "target": wa["target_price"]} for wa in (watchlist_alerts or [])],
+        "top_3": [
+            {
+                "name": tp["name"],
+                "discount": tp["discount"],
+                "price": tp["price_final"],
+                "score": tp["score"],
+            }
+            for tp in top3
+        ],
+        "price_drops": [
+            {
+                "name": deal_map.get(appid, {}).get("name", appid),
+                "delta": v["delta_str"],
+                "prev": v["prev_price"],
+            }
+            for appid, v in price_drops[:5]
+        ],
+        "watchlist_hits": [
+            {
+                "name": wa["name"],
+                "price": wa["price_final"],
+                "target": wa["target_price"],
+            }
+            for wa in (watchlist_alerts or [])
+        ],
     }
 
 
 def send_telegram(token: str, chat_id: str, summary: dict) -> bool:
     """Send notification via Telegram Bot API."""
-    lines = [f"🎮 *Steam Deals Update*", f"📊 {summary['total_deals']} deals encontrados"]
+    lines = [
+        f"🎮 *Steam Deals Update*",
+        f"📊 {summary['total_deals']} deals encontrados",
+    ]
     if summary["new_count"]:
         lines.append(f"🆕 {summary['new_count']} nuevos")
     if summary["top_3"]:
@@ -3053,14 +3620,18 @@ def send_telegram(token: str, chat_id: str, summary: dict) -> bool:
     if summary["watchlist_hits"]:
         lines.append("\n🎯 *Watchlist Alerts:*")
         for wh in summary["watchlist_hits"]:
-            lines.append(f"  • {wh['name']} a {wh['price']} \\(objetivo: ${wh['target']:.0f}\\)")
+            lines.append(
+                f"  • {wh['name']} a {wh['price']} \\(objetivo: ${wh['target']:.0f}\\)"
+            )
 
     text = "\n".join(lines)
     url = f"https://api.telegram.org/bot{token}/sendMessage"
     try:
         body = {"chat_id": chat_id, "text": text, "parse_mode": "MarkdownV2"}
         data = json.dumps(body).encode("utf-8")
-        req = urllib.request.Request(url, data=data, headers={"Content-Type": "application/json"})
+        req = urllib.request.Request(
+            url, data=data, headers={"Content-Type": "application/json"}
+        )
         with urllib.request.urlopen(req, timeout=15) as r:
             resp = json.loads(r.read())
         return resp.get("ok", False)
@@ -3072,24 +3643,43 @@ def send_telegram(token: str, chat_id: str, summary: dict) -> bool:
 def send_discord(webhook_url: str, summary: dict) -> bool:
     """Send notification via Discord webhook."""
     fields = [
-        {"name": "📊 Deals", "value": f"{summary['total_deals']} encontrados", "inline": True},
+        {
+            "name": "📊 Deals",
+            "value": f"{summary['total_deals']} encontrados",
+            "inline": True,
+        },
     ]
     if summary["new_count"]:
-        fields.append({"name": "🆕 Nuevos", "value": str(summary["new_count"]), "inline": True})
+        fields.append(
+            {"name": "🆕 Nuevos", "value": str(summary["new_count"]), "inline": True}
+        )
     if summary["top_3"]:
-        top_text = "\n".join(f"{i}. **{tp['name']}** -{tp['discount']}% {tp['price']}" for i, tp in enumerate(summary["top_3"], 1))
+        top_text = "\n".join(
+            f"{i}. **{tp['name']}** -{tp['discount']}% {tp['price']}"
+            for i, tp in enumerate(summary["top_3"], 1)
+        )
         fields.append({"name": "🏆 Top Picks", "value": top_text})
     if summary["price_drops"]:
-        drops_text = "\n".join(f"• {pd['name']} -{pd['delta']}" for pd in summary["price_drops"])
+        drops_text = "\n".join(
+            f"• {pd['name']} -{pd['delta']}" for pd in summary["price_drops"]
+        )
         fields.append({"name": "⬇️ Bajaron", "value": drops_text})
     if summary["watchlist_hits"]:
-        wl_text = "\n".join(f"• {wh['name']} a {wh['price']}" for wh in summary["watchlist_hits"])
+        wl_text = "\n".join(
+            f"• {wh['name']} a {wh['price']}" for wh in summary["watchlist_hits"]
+        )
         fields.append({"name": "🎯 Watchlist", "value": wl_text})
 
-    payload = {"embeds": [{"title": "🎮 Steam Deals Update", "color": 0x66c0f4, "fields": fields}]}
+    payload = {
+        "embeds": [
+            {"title": "🎮 Steam Deals Update", "color": 0x66C0F4, "fields": fields}
+        ]
+    }
     try:
         data = json.dumps(payload).encode("utf-8")
-        req = urllib.request.Request(webhook_url, data=data, headers={"Content-Type": "application/json"})
+        req = urllib.request.Request(
+            webhook_url, data=data, headers={"Content-Type": "application/json"}
+        )
         with urllib.request.urlopen(req, timeout=15) as r:
             pass
         return True
@@ -3114,22 +3704,49 @@ def send_notifications(filters: dict, summary: dict) -> None:
 # MAIN
 # ─────────────────────────────────────────────
 
+
 def main():
     global WEB_EVENT_MODE
     sys.stdout.reconfigure(line_buffering=True)
 
     print(f"{C.BOLD}=== Steam Wishlist Deals Generator ==={C.RST}\n")
 
-    WEB_RUN, INTERACTIVE, KEY, VANITY, HLTB_CSV, OUTPUT_DIR, MIN_DISCOUNT, genres, no_cache, FAMILY_JSON, ITAD_KEY, FILTERS = get_config()
+    (
+        WEB_RUN,
+        INTERACTIVE,
+        KEY,
+        VANITY,
+        HLTB_CSV,
+        OUTPUT_DIR,
+        MIN_DISCOUNT,
+        genres,
+        no_cache,
+        FAMILY_JSON,
+        ITAD_KEY,
+        FILTERS,
+    ) = get_config()
     WEB_EVENT_MODE = bool(WEB_RUN)
     if not WEB_RUN and not INTERACTIVE:
-        print(f"  {_dim('Flujo recomendado: wizard web (python3 steam_deals_web.py).')}" )
-        print(f"  {_dim('CLI disponible con flags/config, o modo interactivo con --interactive.')}\n")
+        print(
+            f"  {_dim('Flujo recomendado: wizard web (python3 steam_deals_web.py).')}"
+        )
+        print(
+            f"  {_dim('CLI disponible con flags/config, o modo interactivo con --interactive.')}\n"
+        )
     RATE_LIMIT = 1.5
     t0 = time.monotonic()
 
     # Calcular total de pasos dinámicamente (+2 reviews/deck, +1 protondb/ac, +1 tags, +1 HTML, owned solo con key)
-    TOTAL = 11 + (1 if KEY else 0) + (1 if FAMILY_JSON else 0) + (1 if HLTB_CSV else 0) + (1 if ITAD_KEY else 0) + (1 if FILTERS.get("csv") else 0) + (1 if FILTERS.get("telegram_token") or FILTERS.get("discord_webhook") else 0) + (1 if FILTERS.get("compare") else 0)
+    TOTAL = (
+        11
+        + (1 if KEY else 0)
+        + (1 if FAMILY_JSON else 0)
+        + (1 if HLTB_CSV else 0)
+        + (1 if ITAD_KEY else 0)
+        + (1 if FILTERS.get("csv") else 0)
+        + (1 if FILTERS.get("telegram_token") or FILTERS.get("discord_webhook") else 0)
+        + (1 if FILTERS.get("compare") else 0)
+    )
 
     if not KEY:
         print(f"  {_dim('Sin API Key — modo público (wishlist debe ser pública)')}")
@@ -3177,7 +3794,9 @@ def main():
             my_set = set(wishlist_appids)
             overlap = my_set & friend_set
             compare_data["overlap"] = overlap
-            print(f"  {_ok(f'Friend: {len(compare_data['friend_appids']):,} juegos en wishlist')}")
+            print(
+                f"  {_ok(f'Friend: {len(compare_data['friend_appids']):,} juegos en wishlist')}"
+            )
             print(f"  {_ok(f'{len(overlap)} en común')}")
         except Exception as e:
             print(f"  {_err(f'No se pudo comparar: {e}')}")
@@ -3195,7 +3814,7 @@ def main():
     today_obj = date.today()
     date_str = today_obj.strftime("%Y-%m-%d")
     if sale_name:
-        safe_sale = re.sub(r'[<>:"/\\|?*]', '', sale_name).strip()
+        safe_sale = re.sub(r'[<>:"/\\|?*]', "", sale_name).strip()
         filename = f"Steam Deals {safe_sale} {date_str}.md"
     else:
         filename = f"Steam Deals {date_str}.md"
@@ -3215,7 +3834,9 @@ def main():
     if not previous_run:
         previous_appids = load_previous_deal_appids(Path(OUTPUT_DIR), filename)
         if previous_appids:
-            print(f"  {_dim(f'MD anterior encontrado ({len(previous_appids)} deals) — fallback')}")
+            print(
+                f"  {_dim(f'MD anterior encontrado ({len(previous_appids)} deals) — fallback')}"
+            )
 
     # [5] Precios (con smart cache + batching)
     step("Obteniendo precios de Steam...")
@@ -3224,14 +3845,25 @@ def main():
     if no_cache:
         fetched_cache = {}
         # Also clear reviews, deck, tags, protondb, anticheat caches
-        for cf in (REVIEWS_CACHE_FILE, DECK_CACHE_FILE, TAGS_CACHE_FILE, PROTONDB_CACHE_FILE, ANTICHEAT_CACHE_FILE, ACHIEVEMENTS_CACHE_FILE):
+        for cf in (
+            REVIEWS_CACHE_FILE,
+            DECK_CACHE_FILE,
+            TAGS_CACHE_FILE,
+            PROTONDB_CACHE_FILE,
+            ANTICHEAT_CACHE_FILE,
+            ACHIEVEMENTS_CACHE_FILE,
+        ):
             if cf.exists():
                 cf.unlink()
         print(f"  {_warn('--no-cache: ignorando caché existente')}")
     elif fetched_cache:
         new_appids = [a for a in wishlist_appids if a not in fetched_cache]
         if cache_age <= CACHE_MAX_HOURS:
-            status_msg = f"{len(new_appids)} nuevos por fetchear" if new_appids else _dim("sin nuevos, skip fetch")
+            status_msg = (
+                f"{len(new_appids)} nuevos por fetchear"
+                if new_appids
+                else _dim("sin nuevos, skip fetch")
+            )
             print(f"  {_ok(f'Caché válida ({cache_age:.1f}h)')} — {status_msg}")
         else:
             print(f"  {_warn(f'Caché expirada ({cache_age:.0f}h) — re-fetching todo')}")
@@ -3241,18 +3873,26 @@ def main():
 
     try:
         deals, n_fetched = get_deals_from_wishlist(
-            wishlist_appids, fetched_cache, steam_id,
-            country="mx", min_discount=MIN_DISCOUNT, rate_limit=RATE_LIMIT,
+            wishlist_appids,
+            fetched_cache,
+            steam_id,
+            country="mx",
+            min_discount=MIN_DISCOUNT,
+            rate_limit=RATE_LIMIT,
         )
     except KeyboardInterrupt:
         print(f"\n  {_warn('Interrumpido — guardando caché parcial...')}")
         save_price_cache(steam_id, fetched_cache)
-        print(f"  {_ok('Caché guardada. Ejecuta de nuevo para continuar donde quedó.')}")
+        print(
+            f"  {_ok('Caché guardada. Ejecuta de nuevo para continuar donde quedó.')}"
+        )
         sys.exit(1)
 
     if n_fetched > 0:
         save_price_cache(steam_id, fetched_cache)
-        print(f"  {_ok(f'{len(deals):,} deals (≥{MIN_DISCOUNT}%) — caché actualizada')}")
+        print(
+            f"  {_ok(f'{len(deals):,} deals (≥{MIN_DISCOUNT}%) — caché actualizada')}"
+        )
     else:
         print(f"  {_ok(f'{len(deals):,} deals (≥{MIN_DISCOUNT}%) — desde caché')}")
 
@@ -3260,12 +3900,19 @@ def main():
     comparison = compute_deal_comparison(deals, previous_run, run_history)
     comp_new = len(comparison.get("new_deals", set()))
     comp_gone = len(comparison.get("disappeared", []))
-    comp_drops = sum(1 for v in comparison.get("price_changes", {}).values() if v["direction"] == "down")
+    comp_drops = sum(
+        1
+        for v in comparison.get("price_changes", {}).values()
+        if v["direction"] == "down"
+    )
     if comp_new or comp_gone or comp_drops:
         parts = []
-        if comp_new: parts.append(f"{comp_new} nuevos")
-        if comp_gone: parts.append(f"{comp_gone} terminaron")
-        if comp_drops: parts.append(f"{comp_drops} bajaron")
+        if comp_new:
+            parts.append(f"{comp_new} nuevos")
+        if comp_gone:
+            parts.append(f"{comp_gone} terminaron")
+        if comp_drops:
+            parts.append(f"{comp_drops} bajaron")
         print(f"  {_ok(' · '.join(parts))}")
 
     # Guardar run actual en historial
@@ -3279,7 +3926,9 @@ def main():
     trend_count = sum(1 for t in local_trends.values() if not t.get("is_first_time"))
     best_count = sum(1 for t in local_trends.values() if t.get("is_best_local"))
     if trend_count:
-        print(f"  {_ok(f'{trend_count} con historial · {best_count} en mejor precio local')}")
+        print(
+            f"  {_ok(f'{trend_count} con historial · {best_count} en mejor precio local')}"
+        )
 
     # [6] Reviews de Steam (solo para deals)
     step("Obteniendo reviews de Steam...")
@@ -3290,9 +3939,13 @@ def main():
     elif reviews_cache and reviews_age <= EXTRA_CACHE_TTL:
         missing = [a for a in deal_appids if a not in reviews_cache]
         if missing:
-            print(f"  {_ok(f'Caché válida ({reviews_age:.0f}h)')} — {len(missing)} nuevos por fetchear")
+            print(
+                f"  {_ok(f'Caché válida ({reviews_age:.0f}h)')} — {len(missing)} nuevos por fetchear"
+            )
         else:
-            print(f"  {_ok(f'Caché válida ({reviews_age:.0f}h)')} — {_dim('todos en caché')}")
+            print(
+                f"  {_ok(f'Caché válida ({reviews_age:.0f}h)')} — {_dim('todos en caché')}"
+            )
     elif reviews_cache:
         print(f"  {_warn(f'Caché expirada ({reviews_age:.0f}h) — re-fetching')}")
         reviews_cache = {}
@@ -3309,9 +3962,13 @@ def main():
     elif deck_cache and deck_age <= EXTRA_CACHE_TTL:
         missing = [a for a in deal_appids if a not in deck_cache]
         if missing:
-            print(f"  {_ok(f'Caché válida ({deck_age:.0f}h)')} — {len(missing)} nuevos por fetchear")
+            print(
+                f"  {_ok(f'Caché válida ({deck_age:.0f}h)')} — {len(missing)} nuevos por fetchear"
+            )
         else:
-            print(f"  {_ok(f'Caché válida ({deck_age:.0f}h)')} — {_dim('todos en caché')}")
+            print(
+                f"  {_ok(f'Caché válida ({deck_age:.0f}h)')} — {_dim('todos en caché')}"
+            )
     elif deck_cache:
         print(f"  {_warn(f'Caché expirada ({deck_age:.0f}h) — re-fetching')}")
         deck_cache = {}
@@ -3329,7 +3986,9 @@ def main():
     elif protondb_cache and protondb_age <= EXTRA_CACHE_TTL:
         missing_pdb = [a for a in deal_appids if a not in protondb_cache]
         if missing_pdb:
-            print(f"  {_ok(f'ProtonDB caché válida ({protondb_age:.0f}h)')} — {len(missing_pdb)} nuevos")
+            print(
+                f"  {_ok(f'ProtonDB caché válida ({protondb_age:.0f}h)')} — {len(missing_pdb)} nuevos"
+            )
         else:
             print(f"  {_ok(f'ProtonDB caché válida ({protondb_age:.0f}h)')}")
     elif protondb_cache:
@@ -3337,8 +3996,14 @@ def main():
     protondb_data = fetch_protondb(deal_appids, protondb_cache)
     save_protondb_cache(protondb_data)
     pdb_count = sum(1 for a in deal_appids if a in protondb_data)
-    platinum = sum(1 for a in deal_appids if protondb_data.get(a, {}).get("tier") in ("platinum", "native"))
-    print(f"  {_ok(f'ProtonDB: {pdb_count}/{len(deal_appids)} · {platinum} Platinum/Native')}")
+    platinum = sum(
+        1
+        for a in deal_appids
+        if protondb_data.get(a, {}).get("tier") in ("platinum", "native")
+    )
+    print(
+        f"  {_ok(f'ProtonDB: {pdb_count}/{len(deal_appids)} · {platinum} Platinum/Native')}"
+    )
 
     # Anti-cheat DB (single download, cached)
     anticheat_cache, anticheat_age = load_anticheat_cache()
@@ -3350,7 +4015,11 @@ def main():
     else:
         anticheat_data = anticheat_cache
         print(f"  {_ok(f'Anti-Cheat DB desde caché ({anticheat_age:.0f}h)')}")
-    ac_issues = sum(1 for a in deal_appids if anticheat_data.get(a, {}).get("status") in ("Denied", "Broken"))
+    ac_issues = sum(
+        1
+        for a in deal_appids
+        if anticheat_data.get(a, {}).get("status") in ("Denied", "Broken")
+    )
     if ac_issues:
         print(f"  {_warn(f'{ac_issues} deals con problemas de anti-cheat en Linux')}")
 
@@ -3362,9 +4031,13 @@ def main():
     elif tags_cache and tags_age <= TAGS_CACHE_TTL:
         missing_tags = [a for a in deal_appids if a not in tags_cache]
         if missing_tags:
-            print(f"  {_ok(f'Caché válida ({tags_age:.0f}h)')} — {len(missing_tags)} nuevos")
+            print(
+                f"  {_ok(f'Caché válida ({tags_age:.0f}h)')} — {len(missing_tags)} nuevos"
+            )
         else:
-            print(f"  {_ok(f'Caché válida ({tags_age:.0f}h)')} — {_dim('todos en caché')}")
+            print(
+                f"  {_ok(f'Caché válida ({tags_age:.0f}h)')} — {_dim('todos en caché')}"
+            )
     elif tags_cache:
         print(f"  {_warn(f'Caché expirada ({tags_age:.0f}h) — re-fetching')}")
         tags_cache = {}
@@ -3381,9 +4054,13 @@ def main():
     elif ach_cache and ach_age <= ACHIEVEMENTS_CACHE_TTL:
         missing_ach = [a for a in deal_appids if a not in ach_cache]
         if missing_ach:
-            print(f"  {_ok(f'Caché válida ({ach_age:.0f}h)')} — {len(missing_ach)} nuevos por fetchear")
+            print(
+                f"  {_ok(f'Caché válida ({ach_age:.0f}h)')} — {len(missing_ach)} nuevos por fetchear"
+            )
         else:
-            print(f"  {_ok(f'Caché válida ({ach_age:.0f}h)')} — {_dim('todos en caché')}")
+            print(
+                f"  {_ok(f'Caché válida ({ach_age:.0f}h)')} — {_dim('todos en caché')}"
+            )
     elif ach_cache:
         print(f"  {_warn(f'Caché expirada ({ach_age:.0f}h) — re-fetching')}")
         ach_cache = {}
@@ -3404,10 +4081,21 @@ def main():
     if HLTB_CSV:
         step("Cruzando con HLTB...")
         hltb = parse_hltb(HLTB_CSV)
-        bl, cp, pl, rt = len(hltb["backlog"]), len(hltb["completed"]), len(hltb["playing"]), len(hltb["retired"])
-        print(f"  {_dim(f'Backlog: {bl:,} | Completados: {cp} | Playing: {pl} | Retired: {rt}')}")
-        backlog_on_sale, have_on_sale = cross_hltb_with_deals(hltb, deals, family_appids=family_appids)
-        print(f"  {_ok(f'{len(backlog_on_sale)} backlog en oferta | {len(have_on_sale)} completados/retirados')}")
+        bl, cp, pl, rt = (
+            len(hltb["backlog"]),
+            len(hltb["completed"]),
+            len(hltb["playing"]),
+            len(hltb["retired"]),
+        )
+        print(
+            f"  {_dim(f'Backlog: {bl:,} | Completados: {cp} | Playing: {pl} | Retired: {rt}')}"
+        )
+        backlog_on_sale, have_on_sale = cross_hltb_with_deals(
+            hltb, deals, family_appids=family_appids
+        )
+        print(
+            f"  {_ok(f'{len(backlog_on_sale)} backlog en oferta | {len(have_on_sale)} completados/retirados')}"
+        )
 
     # IsThereAnyDeal (mínimo histórico + precios multi-tienda + bundles, opcional)
     historical_lows: dict[str, dict] = {}
@@ -3417,19 +4105,27 @@ def main():
     if ITAD_KEY:
         step("Obteniendo datos de IsThereAnyDeal...")
         itad_ids = itad_lookup_games(deal_appids, ITAD_KEY)
-        print(f"  {_ok(f'{len(itad_ids):,}/{len(deal_appids):,} juegos encontrados en ITAD')}")
+        print(
+            f"  {_ok(f'{len(itad_ids):,}/{len(deal_appids):,} juegos encontrados en ITAD')}"
+        )
         if itad_ids:
             historical_lows = itad_get_store_lows(itad_ids, ITAD_KEY, country="MX")
             print(f"  {_ok(f'{len(historical_lows):,} mínimos históricos obtenidos')}")
             current_prices = itad_get_current_prices(itad_ids, ITAD_KEY, country="MX")
             if current_prices:
-                print(f"  {_ok(f'{len(current_prices):,} juegos más baratos en otra tienda')}")
+                print(
+                    f"  {_ok(f'{len(current_prices):,} juegos más baratos en otra tienda')}"
+                )
             else:
                 print(f"  {_dim('Steam es el mejor precio en todos los deals')}")
             active_bundles = itad_get_active_bundles(itad_ids, ITAD_KEY)
             if active_bundles:
-                bundle_names = {b["title"] for bs in active_bundles.values() for b in bs}
-                print(f"  {_ok(f'{len(active_bundles)} juegos en {len(bundle_names)} bundle(s)')}")
+                bundle_names = {
+                    b["title"] for bs in active_bundles.values() for b in bs
+                }
+                print(
+                    f"  {_ok(f'{len(active_bundles)} juegos en {len(bundle_names)} bundle(s)')}"
+                )
             else:
                 print(f"  {_dim('Ningún juego en bundles activos')}")
 
@@ -3441,12 +4137,16 @@ def main():
 
     # Aplicar filtros CLI avanzados
     original_count = len(deals)
-    deals = apply_filters(deals, FILTERS, reviews_data, deck_data, hltb_hours, previous_appids, comparison)
+    deals = apply_filters(
+        deals, FILTERS, reviews_data, deck_data, hltb_hours, previous_appids, comparison
+    )
     if len(deals) < original_count:
         print(f"  {_ok(f'Filtros aplicados: {original_count} → {len(deals)} deals')}")
 
     # Top Picks
-    top_picks = rank_top_picks(deals, priorities, reviews_data, hltb_hours, deck_data, n=FILTERS.get("top", 10))
+    top_picks = rank_top_picks(
+        deals, priorities, reviews_data, hltb_hours, deck_data, n=FILTERS.get("top", 10)
+    )
 
     # Watchlist alerts
     watchlist = load_watchlist()
@@ -3456,13 +4156,19 @@ def main():
         if watchlist_alerts:
             print(f"  {_ok(f'{SYM_TARGET} {len(watchlist_alerts)} watchlist alerts!')}")
             for wa in watchlist_alerts:
-                print(f"    {wa['name']} — {wa['price_final']} (objetivo: ${wa['target_price']:.0f})")
+                print(
+                    f"    {wa['name']} — {wa['price_final']} (objetivo: ${wa['target_price']:.0f})"
+                )
 
     # Budget mode
     budget_result = None
     if FILTERS.get("budget"):
-        budget_result = compute_budget_picks(deals, FILTERS["budget"], top_picks, watchlist_alerts)
-        print(f"  {_ok(f'{SYM_BUDGET} Budget ${FILTERS['budget']:.0f}: {budget_result['games_count']} juegos, ${budget_result['total_spent']:.0f} gastados')}")
+        budget_result = compute_budget_picks(
+            deals, FILTERS["budget"], top_picks, watchlist_alerts
+        )
+        print(
+            f"  {_ok(f'{SYM_BUDGET} Budget ${FILTERS['budget']:.0f}: {budget_result['games_count']} juegos, ${budget_result['total_spent']:.0f} gastados')}"
+        )
 
     # Gift ideas (compare wishlists)
     if compare_data:
@@ -3473,9 +4179,14 @@ def main():
     # Generar MD
     step("Generando Markdown...")
     md = generate_md(
-        deals, backlog_on_sale, have_on_sale,
-        VANITY, owned, wishlist_appids,
-        MIN_DISCOUNT, genres,
+        deals,
+        backlog_on_sale,
+        have_on_sale,
+        VANITY,
+        owned,
+        wishlist_appids,
+        MIN_DISCOUNT,
+        genres,
         hltb_used=HLTB_CSV is not None,
         family_appids=family_appids,
         sale_name=sale_name,
@@ -3507,9 +4218,14 @@ def main():
     # Generar HTML interactivo
     step("Generando HTML interactivo...")
     html = generate_html(
-        deals, backlog_on_sale, have_on_sale,
-        VANITY, owned, wishlist_appids,
-        MIN_DISCOUNT, genres,
+        deals,
+        backlog_on_sale,
+        have_on_sale,
+        VANITY,
+        owned,
+        wishlist_appids,
+        MIN_DISCOUNT,
+        genres,
         hltb_used=HLTB_CSV is not None,
         family_appids=family_appids,
         sale_name=sale_name,
@@ -3536,9 +4252,18 @@ def main():
     emit_event("file", path=str(OUTPUT_HTML))
 
     # Generar HTML compartible (lightweight)
-    share_html = generate_share_html(deals, VANITY, MIN_DISCOUNT, sale_name=sale_name,
-                                      top_picks=top_picks, reviews=reviews_data, deck_compat=deck_data)
-    OUTPUT_SHARE = OUTPUT_MD.parent / f"Steam Deals Share {date.today().strftime('%Y-%m-%d')}.html"
+    share_html = generate_share_html(
+        deals,
+        VANITY,
+        MIN_DISCOUNT,
+        sale_name=sale_name,
+        top_picks=top_picks,
+        reviews=reviews_data,
+        deck_compat=deck_data,
+    )
+    OUTPUT_SHARE = (
+        OUTPUT_MD.parent / f"Steam Deals Share {date.today().strftime('%Y-%m-%d')}.html"
+    )
     OUTPUT_SHARE.write_text(share_html, encoding="utf-8")
     print(f"  {_ok(str(OUTPUT_SHARE))}")
     emit_event("file", path=str(OUTPUT_SHARE))
@@ -3547,10 +4272,19 @@ def main():
     if FILTERS.get("csv"):
         step("Generando CSV...")
         csv_content = generate_csv(
-            deals, priorities=priorities, reviews=reviews_data, deck_compat=deck_data,
-            protondb_data=protondb_data, anticheat_data=anticheat_data, tags_data=tags_data,
-            hltb_hours=hltb_hours, historical_lows=historical_lows, current_prices=current_prices,
-            top_picks=top_picks, local_trends=local_trends, achievements_data=achievements_data,
+            deals,
+            priorities=priorities,
+            reviews=reviews_data,
+            deck_compat=deck_data,
+            protondb_data=protondb_data,
+            anticheat_data=anticheat_data,
+            tags_data=tags_data,
+            hltb_hours=hltb_hours,
+            historical_lows=historical_lows,
+            current_prices=current_prices,
+            top_picks=top_picks,
+            local_trends=local_trends,
+            achievements_data=achievements_data,
         )
         OUTPUT_CSV = OUTPUT_MD.with_suffix(".csv")
         OUTPUT_CSV.write_text(csv_content, encoding="utf-8")
@@ -3560,7 +4294,9 @@ def main():
     # Notifications (optional)
     if FILTERS.get("telegram_token") or FILTERS.get("discord_webhook"):
         step("Enviando notificaciones...")
-        notif_summary = build_notification_summary(deals, comparison, top_picks, watchlist_alerts)
+        notif_summary = build_notification_summary(
+            deals, comparison, top_picks, watchlist_alerts
+        )
         if notif_summary:
             send_notifications(FILTERS, notif_summary)
         else:
@@ -3568,7 +4304,11 @@ def main():
 
     # Resumen final
     elapsed = time.monotonic() - t0
-    new_count = sum(1 for d in deals if previous_appids and d["appid"] not in previous_appids) if previous_appids else 0
+    new_count = (
+        sum(1 for d in deals if previous_appids and d["appid"] not in previous_appids)
+        if previous_appids
+        else 0
+    )
     print(f"\n{C.GRN}{'─' * 42}{C.RST}")
     print(f"  {_bold('Listo')} en {elapsed:.1f}s")
     summary = f"  {len(deals):,} deals · {len(backlog_on_sale)} backlog"
@@ -3585,6 +4325,7 @@ def run_scheduled():
     """Run main() in a loop if --schedule is set."""
     # Peek at --schedule arg without full config parse
     import shlex
+
     schedule_hours = None
     for i, arg in enumerate(sys.argv):
         if arg == "--schedule" and i + 1 < len(sys.argv):
@@ -3613,11 +4354,13 @@ def run_scheduled():
             break
         except Exception as e:
             print(f"\n  {C.RED}Error en run #{run_count}: {e}{C.RST}")
-        next_run = datetime.now().strftime('%H:%M')
+        next_run = datetime.now().strftime("%H:%M")
         wait_secs = schedule_hours * 3600
-        next_time = (datetime.now().timestamp() + wait_secs)
-        next_str = datetime.fromtimestamp(next_time).strftime('%H:%M')
-        print(f"\n  {C.DIM}Próximo run a las {next_str} (en {schedule_hours:.1f}h). Ctrl+C para salir.{C.RST}")
+        next_time = datetime.now().timestamp() + wait_secs
+        next_str = datetime.fromtimestamp(next_time).strftime("%H:%M")
+        print(
+            f"\n  {C.DIM}Próximo run a las {next_str} (en {schedule_hours:.1f}h). Ctrl+C para salir.{C.RST}"
+        )
         try:
             time.sleep(wait_secs)
         except KeyboardInterrupt:

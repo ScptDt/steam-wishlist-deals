@@ -2,7 +2,7 @@
   "id": "desktop-cross-platform-validation-03",
   "seq": "03",
   "title": "Document macOS desktop build and validation checklist",
-  "status": "pending",
+  "status": "completed",
   "depends_on": [
     "01"
   ],
@@ -32,7 +32,7 @@
     "PENDIENTES.md"
   ],
   "agent_id": null,
-  "started_at": null,
-  "completed_at": null,
-  "completion_summary": null
+  "started_at": "2026-04-14T01:51:32Z",
+  "completed_at": "2026-04-14T01:59:15Z",
+  "completion_summary": "README.md actualizado con checklist macOS reproducible y verificable por paso (dependencias, build, apertura app, verificacion funcional, quarantine y codesign, fallback web). PENDIENTES.md actualizado con estado macOS en progreso, proximo paso operativo en runner macOS y bitacora accionable."
 }

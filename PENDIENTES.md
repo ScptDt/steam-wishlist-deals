@@ -1,6 +1,6 @@
 # Pendientes (Fuente Unica)
 
-Ultima actualizacion: 2026-04-09
+Ultima actualizacion: 2026-04-14
 
 ## Regla de Oro
 
@@ -33,9 +33,9 @@ No se mantienen documentos paralelos de planificacion; este archivo es la unica 
 
 ### P2 - Cross-platform
 
-- [ ] Validar build desktop en Linux (Ubuntu LTS).
-- [ ] Validar build desktop en macOS (app bundle + apertura local).
-- [ ] Documentar dependencias nativas por plataforma para pywebview.
+- [~] Validar build desktop en Linux (Ubuntu LTS). (runbook/checklist reproducible documentado; falta ejecución en host Linux)
+- [~] Validar build desktop en macOS (app bundle + apertura local). (runbook/checklist reproducible documentado; falta ejecución en host macOS)
+- [x] Documentar dependencias nativas por plataforma para pywebview.
 
 ### P3 - Base tecnica y mantenibilidad
 
@@ -44,7 +44,7 @@ No se mantienen documentos paralelos de planificacion; este archivo es la unica 
 - [x] Separar HTML/CSS/JS embebido de `steam_deals_web.py` y `payday2_web.py`.
 - [x] Extraer infraestructura compartida para web local (JSON, SSE, subprocess, server utils).
 - [x] Reutilizar la base compartida entre Steam Deals Web y PAYDAY 2 Web.
-- [ ] Modularizar `steam_deals_generator.py` por dominios (config, adapters, cache, scoring, renderers, orchestration).
+- [~] Modularizar `steam_deals_generator.py` por dominios (config, adapters, cache, scoring, renderers, orchestration). (fase renderers completada; faltan dominios restantes)
 - [x] Agregar smoke tests minimos para web, desktop y PAYDAY 2.
 - [x] Agregar tests para logica pura critica (score, filtros, compare, budget, recomendaciones).
 - [x] Crear capa shared entre Steam Deals y PAYDAY 2 para config/cache/helpers reutilizables.
@@ -54,12 +54,11 @@ Nota actual sobre la capa shared Steam Deals / PAYDAY 2:
 - Los formatos de cache/historial siguen siendo propios de cada app cuando corresponde, pero ya sobre helpers compartidos.
 
 Nota actual sobre `steam_deals_generator.py`:
-- La modularizacion por dominios queda **pausada** por ahora.
-- Avance ya hecho: seam inicial de `renderers/` + extraccion de Markdown, HTML y Share HTML.
-- Pendiente directo para retomar: extraccion de CSV + barrido de integracion final.
-- Motivo de pausa: el refactor completo se volvio demasiado pesado para seguirlo de golpe sin elevar riesgo.
-- Siguiente accion recomendada: retomar esta modularizacion en pasos chicos, empezando por `CSV` + barrido de integracion final.
-- Prioridad actual acordada: el siguiente foco pendiente es `modularizar steam_deals_generator.py`.
+- Estado: modularizacion en progreso por cortes pequeños.
+- Avance completado: paquete `renderers/` con extraccion de Markdown, HTML, Share HTML y CSV.
+- Integracion completada: barrido CLI/web/desktop validado (imports/renderers/entrypoints).
+- Ajuste de robustez: `steam_tools_desktop.py --help` ahora sale de forma inmediata (sin iniciar server/UI).
+- Siguiente paso recomendado: continuar extraccion por dominios no-renderer (p. ej. scoring u orchestration) en subtareas atomicas.
 
 ### Nota de trabajo futuro - orden sugerido de ejecucion
 
@@ -70,7 +69,7 @@ Nota actual sobre `steam_deals_generator.py`:
 - 5. Agregar smoke tests minimos reproducibles para web, desktop y PAYDAY 2. ✅
 - 6. Agregar tests de logica pura critica. ✅
 - 7. Crear capa shared reutilizable para config/cache/helpers. ✅
-- 8. Modularizar `steam_deals_generator.py`. ← siguiente foco
+- 8. Modularizar `steam_deals_generator.py`. [~ en progreso: renderers completado]
 
 Objetivo de esta secuencia: bajar costo de mantenimiento sin frenar el avance del producto.
 
@@ -198,7 +197,14 @@ Ejecutar de forma consistente en Windows, macOS y Linux.
 
 ## Proximo Paso Operativo
 
-- Validar build desktop en Linux y macOS y documentar incidencias por plataforma.
+- Ejecutar validacion Linux en host nativo/runner `ubuntu-latest` y validacion macOS en host nativo/runner `macos-latest`, con bitacora por paso (build, apertura app/binario, preflight, run de prueba, outputs, cierre, quarantine/codesign cuando aplique) y documentar incidencias/workarounds.
+
+## Bitacora Cross-Platform por OS
+
+| Fecha | Plataforma | Estado | Incidencias | Proximo paso |
+|---|---|---|---|---|
+| 2026-04-14 | Linux (Ubuntu LTS) | en progreso | Sin ejecucion nativa aun en este entorno Windows. | Correr checklist en `ubuntu-latest`/host Ubuntu y registrar resultados por paso. |
+| 2026-04-14 | macOS | en progreso | Sin ejecucion nativa aun en este entorno Windows. | Correr checklist en `macos-latest`/host macOS y registrar resultados por paso, incluyendo quarantine/codesign. |
 
 ## Bitacora
 
@@ -226,6 +232,10 @@ Ejecutar de forma consistente en Windows, macOS y Linux.
 - 2026-04-13: Se agregan smoke tests locales minimos en `.tmp/local-smoke-tests/` para Steam Deals Web, PAYDAY 2 Web y la ruta segura desktop `--internal-web`; quedan fuera del flujo normal de Git en este clon. `smoke_test_windows.ps1` se mantiene como smoke separado para Windows empaquetado.
 - 2026-04-13: Se agregan tests unitarios puros en `tests/test_generator_logic.py` para score, filtros, matching/gift ideas y budget picks.
 - 2026-04-13: Se completa el primer corte de capa shared con `shared/io_utils.py` y `shared/cache_utils.py`; Steam Deals y PAYDAY 2 ya comparten helpers de config JSON, HTTP JSON y cache reutilizable, con tests locales para los helpers shared.
+- 2026-04-14: Linux desktop validation documentado como runbook reproducible en `README.md` (preparación, instalación, build, ejecución del artefacto, verificación funcional y fallback web). Estado Linux pasa a en progreso; pendiente ejecutar en host Linux/runner `ubuntu-latest` y registrar incidencias/resultados.
+- 2026-04-14: macOS desktop validation documentado como runbook reproducible en `README.md` (preparación, instalación, build, apertura `.app`, verificación funcional, quarantine y verificación de codesign). Estado macOS pasa a en progreso; pendiente ejecutar en host macOS/runner `macos-latest` y registrar incidencias/resultados.
+- 2026-04-14: Se consolidan dependencias nativas pywebview por plataforma en `README.md` (Windows/Linux/macOS) con referencias/comandos verificables y se agrega bitacora cross-platform por OS en este archivo para seguimiento accionable.
+- 2026-04-14: Se completa `generator-renderers`: extracción de renderers (Markdown/HTML/Share HTML/CSV) desde `steam_deals_generator.py` con wrappers de compatibilidad y barrido de integración final para CLI/web/desktop (`py_compile` + `--help` en entrypoints).
 
 ## Backlog de Features (Propuestos - Planning)
 

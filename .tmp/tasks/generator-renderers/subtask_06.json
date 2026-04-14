@@ -2,7 +2,7 @@
   "id": "generator-renderers-06",
   "seq": "06",
   "title": "Run focused renderer integration sweep for CLI web and desktop",
-  "status": "pending",
+  "status": "completed",
   "depends_on": [
     "02",
     "03",
@@ -33,8 +33,8 @@
     "steam_deals_web.py",
     "steam_tools_desktop.py"
   ],
-  "agent_id": null,
-  "started_at": null,
-  "completed_at": null,
-  "completion_summary": null
+  "agent_id": "coder-agent",
+  "started_at": "2026-04-14T02:50:36Z",
+  "completed_at": "2026-04-14T04:37:13Z",
+  "completion_summary": "Barrido de integración completado para CLI/web/desktop tras extracción de renderers. Se agregó salida temprana de ayuda en steam_tools_desktop.py para evitar bloqueo con --help. Validaciones ejecutadas: py_compile de entrypoints+renderers y --help en generator/web/desktop." 
 }

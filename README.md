@@ -157,6 +157,7 @@ Dependencias/requisitos por plataforma:
 - **Windows**
   - Backend esperado: WebView2 (Edge Chromium).
   - Requisito recomendado en máquina destino: **Microsoft Edge WebView2 Runtime**.
+  - Referencia oficial de instalación/verificación: https://developer.microsoft.com/en-us/microsoft-edge/webview2/
   - Si no hay backend nativo disponible, el launcher mantiene fallback al navegador (`steam_deals_web.py`).
 
 - **Linux (Ubuntu LTS)**
@@ -171,6 +172,8 @@ sudo apt install python3-gi python3-gi-cairo gir1.2-gtk-3.0 gir1.2-webkit2-4.1
 - **macOS**
   - Backend nativo: Cocoa/WKWebView (PyObjC).
   - Si usas Python no-sistema, puede requerir paquetes `pyobjc-*` adicionales.
+  - Comando de referencia (cuando aplique): `python3 -m pip install pyobjc-core pyobjc-framework-Cocoa pyobjc-framework-WebKit`
+  - Recomendado: tener Command Line Tools disponibles (`xcode-select --install`) para flujo de build/firma local.
   - Para distribuir a terceros, preferir `.app` firmado/notarizado (evita fricción con Gatekeeper).
 
 Referencias oficiales:
@@ -185,20 +188,57 @@ Referencias oficiales:
 
 #### Linux (Ubuntu LTS)
 
-1. `python3 -m pip install -r requirements-desktop.txt`
-2. `python3 build_desktop.py`
-3. Ejecutar artefacto en `dist/SteamToolsDesktop`.
-4. Verificar: ventana nativa, preflight, run de prueba, outputs MD/HTML/CSV, cierre limpio.
-5. Fallback mitigación: `python3 steam_deals_web.py --no-open --port 8080`.
+1. Preparar entorno:
+   - `python3 --version && python3 -m pip --version`
+   - Esperado: Python/pip disponibles y funcionales.
+2. Instalar dependencias desktop:
+   - `python3 -m pip install -r requirements-desktop.txt`
+   - Esperado: instalación sin errores; `pywebview` instalado.
+3. Build desktop:
+   - `python3 build_desktop.py`
+   - Esperado: artefacto generado en `dist/SteamToolsDesktop` (o `dist/SteamToolsDesktop/` según modo de build).
+4. Ejecutar artefacto nativo:
+   - `./dist/SteamToolsDesktop`
+   - Esperado: ventana nativa abre y la UI responde.
+5. Verificación funcional mínima:
+   - Ejecutar preflight, correr run de prueba, generar MD/HTML/CSV y cerrar app.
+   - Esperado: sin crash, outputs presentes, sin procesos colgados.
+6. Fallback mitigación (si la ventana nativa no abre):
+   - `python3 steam_deals_web.py --no-open --port 8080`
+   - Esperado: servidor arriba en `http://127.0.0.1:8080`.
 
 #### macOS
 
-1. `python3 -m pip install -r requirements-desktop.txt`
-2. `python3 build_desktop.py`
-3. Abrir app local: `open dist/SteamToolsDesktop.app`.
-4. Verificar: ventana nativa, preflight, run de prueba, outputs MD/HTML/CSV, cierre limpio.
-5. Si Gatekeeper bloquea artefacto local no firmado: `xattr -dr com.apple.quarantine dist/SteamToolsDesktop.app` y volver a abrir.
-6. Fallback mitigación: `python3 steam_deals_web.py --no-open --port 8080`.
+1. Preparar entorno:
+   - `python3 --version && python3 -m pip --version`
+   - Esperado: Python/pip disponibles y funcionales.
+2. Instalar dependencias desktop:
+   - `python3 -m pip install -r requirements-desktop.txt`
+   - Esperado: instalación sin errores; `pywebview` instalado.
+3. Build desktop:
+   - `python3 build_desktop.py`
+   - Esperado: artefacto `.app` generado en `dist/SteamToolsDesktop.app`.
+4. Abrir app local:
+   - `open dist/SteamToolsDesktop.app`
+   - Esperado: app abre localmente y muestra UI.
+5. Verificación funcional mínima:
+   - Ejecutar preflight, correr run de prueba, generar MD/HTML/CSV y cerrar app.
+   - Esperado: sin crash, outputs presentes, sin procesos colgados.
+6. Quarantine/permisos (si aplica):
+   - `xattr -dr com.apple.quarantine dist/SteamToolsDesktop.app`
+   - Esperado: app vuelve a abrir cuando Gatekeeper bloquee artefacto local no firmado.
+7. Verificación de codesign (si aplica distribución):
+   - `codesign --verify --deep --strict --verbose=2 dist/SteamToolsDesktop.app`
+   - Esperado: verificación exitosa del bundle (o error explícito a resolver antes de distribuir).
+8. Fallback mitigación (si la ventana nativa no abre):
+   - `python3 steam_deals_web.py --no-open --port 8080`
+   - Esperado: servidor arriba en `http://127.0.0.1:8080`.
+
+#### Repetición recomendada en CI/runners (fuera de Windows)
+
+- Linux: ejecutar checklist de Linux en host nativo o runner `ubuntu-latest`.
+- macOS: ejecutar checklist de macOS en host nativo o runner `macos-latest`.
+- Registrar por plataforma: resultado por paso, error textual y workaround aplicado.
 
 Planes y pendientes unificados: `PENDIENTES.md`.
 

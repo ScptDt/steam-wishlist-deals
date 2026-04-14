@@ -2,7 +2,7 @@
   "id": "desktop-cross-platform-validation-04",
   "seq": "04",
   "title": "Finalize native dependency documentation and execution log",
-  "status": "pending",
+  "status": "completed",
   "depends_on": [
     "02",
     "03"
@@ -33,7 +33,7 @@
     "PENDIENTES.md"
   ],
   "agent_id": null,
-  "started_at": null,
-  "completed_at": null,
-  "completion_summary": null
+  "started_at": "2026-04-14T01:59:15Z",
+  "completed_at": "2026-04-14T02:19:36Z",
+  "completion_summary": "README.md consolidado con dependencias nativas pywebview por plataforma (Windows/Linux/macOS) con referencia/comandos verificables, fallback web y repeticion en CI/runners fuera de Windows. PENDIENTES.md actualizado con bitacora cross-platform por OS, estado por plataforma, incidencias actuales y proximos pasos accionables Linux/macOS."
 }
