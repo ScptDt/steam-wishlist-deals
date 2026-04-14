@@ -142,7 +142,7 @@ chmod +x ./build_desktop.sh
 ./build_desktop.sh
 ```
 
-Esto abre la misma app web dentro de una ventana nativa.
+Esto abre la misma app web dentro de una ventana nativa. Si `pywebview` o el backend nativo no arrancan, el launcher abre automaticamente la misma Web UI en el navegador por defecto y muestra un aviso visible de fallback.
 
 ### Dependencias nativas por plataforma (pywebview)
 
@@ -157,8 +157,7 @@ Dependencias/requisitos por plataforma:
 - **Windows**
   - Backend esperado: WebView2 (Edge Chromium).
   - Requisito recomendado en máquina destino: **Microsoft Edge WebView2 Runtime**.
-  - Referencia oficial de instalación/verificación: https://developer.microsoft.com/en-us/microsoft-edge/webview2/
-  - Si no hay backend nativo disponible, el launcher mantiene fallback al navegador (`steam_deals_web.py`).
+  - Si no hay backend nativo disponible, el launcher mantiene fallback al navegador (`steam_deals_web.py`) y la UI indica que estas en modo web.
 
 - **Linux (Ubuntu LTS)**
   - Instalar deps del sistema para backend Qt o GTK/WebKit2.
@@ -248,7 +247,37 @@ Planes y pendientes unificados: `PENDIENTES.md`.
 
 - `steam_deals_generator.py`
   - Engine principal de Steam Deals.
-  - Hace análisis, scoring, exportaciones y flujo CLI.
+  - Orquesta analisis, exportaciones y flujo CLI.
+- `steam_deals_config.py`
+  - Boundary de config/CLI: carga/guardado de config, argparse y fallback interactivo reutilizable y testeable.
+- `steam_deals_prices.py`
+  - Dominio de precios Steam: cache por `steam_id`, fetch batch con fallback individual y normalizacion del shape de deals.
+- `steam_deals_run_output.py`
+  - Slice de salida/orquestacion: nombres de archivos, contexto previo, escritura de artefactos y resumen final del run.
+- `steam_deals_runtime_reporting.py`
+  - Contrato runtime compartido: symbols Unicode-safe, estilos ANSI, step/progress y eventos consumidos por web/SSE.
+- `steam_deals_enrichment.py`
+  - Fetchers/caches de enrichment: reviews, Steam Deck, ProtonDB, anti-cheat, tags y achievements con helpers reutilizables.
+- `steam_deals_presentation.py`
+  - Helpers puros de presentacion: badges, grouping por tier/tag y formateos reutilizados por los renderers.
+- `steam_deals_scheduler.py`
+  - Bucle programado CLI: parseo de `--schedule`, loop por intervalos y manejo suave de interrupciones/errores.
+- `steam_deals_notifications.py`
+  - Frontera de notificaciones: resumen notable del run y envios soft-fail para Telegram/Discord.
+- `steam_deals_steam_api.py`
+  - Adaptador de Steam account/profile/sale: resolucion de vanity/profile, wishlist, owned games, compare, family JSON y evento activo.
+- `steam_deals_watchlist.py`
+  - Frontera compartida de watchlist: I/O local, comando CLI y seleccion de alertas reutilizable desde generator/web.
+- `steam_deals_itad.py`
+  - Integracion/adaptador de IsThereAnyDeal: lookup, minimos historicos, mejores precios y bundles activos con soft-fail tolerante.
+- `steam_deals_history.py`
+  - Logica de historial/comparacion/tendencias: fallback al MD anterior, snapshots de runs y trend formatting local.
+- `steam_deals_filters.py`
+  - Logica pura de filtros/selection: filtros CLI y seleccion por genero para reutilizar sin tocar orchestration.
+- `steam_deals_hltb.py`
+  - Logica pura de HLTB/matching: parseo del CSV, normalizacion de titulos, fuzzy matching y cruce HLTB × deals.
+- `steam_deals_recommendations.py`
+  - Logica pura de scoring/recommendations: value score, top picks, budget picks y gift ideas.
 - `steam_deals_web.py`
   - Entry point principal de UX para Steam Deals.
   - Sirve la UI local, valida requests y coordina ejecuciones largas por SSE.
@@ -260,7 +289,7 @@ Planes y pendientes unificados: `PENDIENTES.md`.
   - Sirve UI local y ejecuta refresh del tracker con progreso en vivo.
 - `steam_tools_desktop.py`
   - Wrapper desktop con `pywebview`.
-  - Reutiliza `steam_deals_web.py` y hace fallback al navegador si falta backend nativo.
+  - Reutiliza `steam_deals_web.py` y hace fallback al navegador con aviso visible en la UI si falta backend nativo o falla la ventana nativa.
 - `build_desktop.py`
   - Build unificado para empaquetar la superficie desktop.
 

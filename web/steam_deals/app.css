@@ -121,6 +121,12 @@ details .details-body { padding-top: 0.75rem; }
 }
 .mode-banner strong { color: var(--accent); font-size: .9rem; }
 .mode-banner .hint-inline { color: var(--text2); font-size: .82rem; }
+.mode-banner.mode-banner-fallback {
+  border-color: rgba(240,178,50,.5);
+  background: rgba(240,178,50,.08);
+}
+.mode-banner.mode-banner-fallback strong { color: var(--yellow); }
+.mode-banner.mode-banner-fallback .hint-inline { color: var(--text); }
 .preset-row {
   display: flex; flex-wrap: wrap; gap: .45rem; margin-top: .55rem;
 }

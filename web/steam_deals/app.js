@@ -16,6 +16,24 @@ const GENRE_SUGGESTIONS = [
   'real-time strategy', 'deckbuilder', 'card game', 'tactical', 'shooter', 'fps', 'third-person',
   'co-op', 'multiplayer', 'singleplayer', 'visual novel', 'rhythm', 'bullet hell', 'tower defense'
 ];
+const DESKTOP_FALLBACK_HINTS = {
+  'missing-webview': 'No se encontro un backend nativo compatible para pywebview. Continuas en la misma Web UI desde tu navegador.',
+  'window-timeout': 'La ventana nativa tardo demasiado en iniciar. Se abrio automaticamente la Web UI en el navegador.',
+  'window-error': 'La ventana nativa fallo al iniciar. Se abrio automaticamente la Web UI en el navegador.',
+};
+const desktopFallback = getDesktopFallbackInfo();
+let desktopFallbackAnnounced = false;
+
+function getDesktopFallbackInfo() {
+  const params = new URLSearchParams(window.location.search);
+  if (params.get('desktop_fallback') !== '1') return null;
+  const reason = params.get('reason') || 'window-error';
+  return {
+    reason,
+    title: 'Modo: Fallback web desde desktop',
+    hint: DESKTOP_FALLBACK_HINTS[reason] || DESKTOP_FALLBACK_HINTS['window-error'],
+  };
+}
 
 function getConfig() {
   const c = {};
@@ -246,6 +264,7 @@ Promise.all([
   prefillWizard(cfg, false);
   if (state) {
     setModeBanner(!!state.has_cache, !!state.has_config);
+    announceDesktopFallback();
   }
   setActivePreset('rapido');
   if (state && state.has_cache) {
@@ -258,6 +277,7 @@ Promise.all([
     fillForm(cfg);
     prefillWizard(cfg, false);
     setModeBanner(false, !!(cfg && cfg.vanity));
+    announceDesktopFallback();
     setActivePreset('rapido');
     if (cfg && cfg.vanity) closeWizard();
     else openWizard();
@@ -278,8 +298,17 @@ let abortCtrl = null;
 let shownErrorHints = new Set();
 
 function setModeBanner(hasCache, hasConfig) {
+  const banner = $('mode-banner');
   const title = $('mode-title');
   const hint = $('mode-hint');
+  if (banner) {
+    banner.classList.toggle('mode-banner-fallback', !!desktopFallback);
+  }
+  if (desktopFallback) {
+    title.textContent = desktopFallback.title;
+    hint.textContent = desktopFallback.hint;
+    return;
+  }
   if (hasCache) {
     title.textContent = 'Modo: Actualizacion rapida';
     hint.textContent = hasConfig
@@ -289,6 +318,12 @@ function setModeBanner(hasCache, hasConfig) {
     title.textContent = 'Modo: Primer setup';
     hint.textContent = 'No se detecto cache local. Usa el wizard y ejecuta tu primer analisis.';
   }
+}
+
+function announceDesktopFallback() {
+  if (!desktopFallback || desktopFallbackAnnounced) return;
+  desktopFallbackAnnounced = true;
+  appendLine('Desktop fallback activo: ' + desktopFallback.hint, 'warn');
 }
 
 function setActivePreset(name) {

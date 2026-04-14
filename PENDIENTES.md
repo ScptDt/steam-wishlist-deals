@@ -1,6 +1,7 @@
 # Pendientes (Fuente Unica)
 
 Ultima actualizacion: 2026-04-14
+Ultima actualizacion: 2026-04-14
 
 ## Regla de Oro
 
@@ -33,9 +34,10 @@ No se mantienen documentos paralelos de planificacion; este archivo es la unica 
 
 ### P2 - Cross-platform
 
-- [~] Validar build desktop en Linux (Ubuntu LTS). (runbook/checklist reproducible documentado; falta ejecución en host Linux)
-- [~] Validar build desktop en macOS (app bundle + apertura local). (runbook/checklist reproducible documentado; falta ejecución en host macOS)
-- [x] Documentar dependencias nativas por plataforma para pywebview.
+- [ ] Validar build desktop en Linux (Ubuntu LTS).
+- [ ] Validar build desktop en macOS (app bundle + apertura local).
+- [ ] Documentar dependencias nativas por plataforma para pywebview.
+- [ ] Validar cross-platform el fallback web: si `pywebview` no es compatible o no inicia backend nativo, abrir la Web UI en el navegador por defecto con aviso visible en la interfaz.
 
 ### P3 - Base tecnica y mantenibilidad
 
@@ -44,7 +46,9 @@ No se mantienen documentos paralelos de planificacion; este archivo es la unica 
 - [x] Separar HTML/CSS/JS embebido de `steam_deals_web.py` y `payday2_web.py`.
 - [x] Extraer infraestructura compartida para web local (JSON, SSE, subprocess, server utils).
 - [x] Reutilizar la base compartida entre Steam Deals Web y PAYDAY 2 Web.
-- [~] Modularizar `steam_deals_generator.py` por dominios (config, adapters, cache, scoring, renderers, orchestration). (fase renderers completada; faltan dominios restantes)
+- [ ] Modularizar `steam_deals_generator.py` por dominios (config, adapters, cache, scoring, renderers, orchestration).
+- [ ] Hacer limpieza local del repo: depurar archivos, artefactos, scripts y restos de baja utilidad actual para reducir ruido y costo de mantenimiento.
+- [ ] Hacer limpieza de GitHub y documentacion: depurar README, docs y referencias/metadatos del repo para reflejar solo flujos y superficies vigentes.
 - [x] Agregar smoke tests minimos para web, desktop y PAYDAY 2.
 - [x] Agregar tests para logica pura critica (score, filtros, compare, budget, recomendaciones).
 - [x] Crear capa shared entre Steam Deals y PAYDAY 2 para config/cache/helpers reutilizables.
@@ -54,11 +58,43 @@ Nota actual sobre la capa shared Steam Deals / PAYDAY 2:
 - Los formatos de cache/historial siguen siendo propios de cada app cuando corresponde, pero ya sobre helpers compartidos.
 
 Nota actual sobre `steam_deals_generator.py`:
-- Estado: modularizacion en progreso por cortes pequeños.
-- Avance completado: paquete `renderers/` con extraccion de Markdown, HTML, Share HTML y CSV.
-- Integracion completada: barrido CLI/web/desktop validado (imports/renderers/entrypoints).
-- Ajuste de robustez: `steam_tools_desktop.py --help` ahora sale de forma inmediata (sin iniciar server/UI).
-- Siguiente paso recomendado: continuar extraccion por dominios no-renderer (p. ej. scoring u orchestration) en subtareas atomicas.
+- La modularizacion por dominios queda **pausada** por ahora.
+- Avance ya hecho: primer corte `renderers/` completado con extraccion de Markdown, HTML, Share HTML y CSV.
+- Avance ya hecho adicional: barrido de integracion final del corte `renderers/` validado para CLI/web y la ruta desktop segura `--internal-web`.
+- Avance ya hecho adicional: corte `scoring / recommendations` extraido a `steam_deals_recommendations.py` con wrappers de compatibilidad en `steam_deals_generator.py`.
+- Validacion del corte `scoring / recommendations`: tests de logica pura OK en `tests/test_generator_logic.py`.
+- Avance ya hecho adicional: corte `HLTB / matching` extraido a `steam_deals_hltb.py` con wrappers de compatibilidad en `steam_deals_generator.py`.
+- Validacion del corte `HLTB / matching`: tests de logica pura OK en `tests/test_generator_logic.py`.
+- Avance ya hecho adicional: corte `filters / selection` extraido a `steam_deals_filters.py` con wrappers de compatibilidad en `steam_deals_generator.py`.
+- Validacion del corte `filters / selection`: tests de logica pura OK en `tests/test_generator_logic.py`.
+- Avance ya hecho adicional: corte `history / comparison / local trends` extraido a `steam_deals_history.py` con wrappers de compatibilidad en `steam_deals_generator.py`.
+- Validacion del corte `history / comparison / local trends`: tests de logica pura OK en `tests/test_generator_logic.py`.
+- Avance ya hecho adicional: corte `ITAD adapter / integration` extraido a `steam_deals_itad.py` con wrappers de compatibilidad en `steam_deals_generator.py`.
+- Validacion del corte `ITAD adapter / integration`: tests de logica/reconfiguracion OK en `tests/test_generator_logic.py`.
+- Avance ya hecho adicional: corte `watchlist` extraido a `steam_deals_watchlist.py` con wrappers de compatibilidad en `steam_deals_generator.py` y reuse desde `steam_deals_web.py`.
+- Validacion del corte `watchlist`: tests de logica/reconfiguracion OK en `tests/test_generator_logic.py`.
+- Avance ya hecho adicional: corte `Steam account/profile/sale adapter` extraido a `steam_deals_steam_api.py` con wrappers de compatibilidad en `steam_deals_generator.py`.
+- Validacion del corte `Steam account/profile/sale adapter`: tests de logica/reconfiguracion OK en `tests/test_generator_logic.py`.
+- Avance ya hecho adicional: corte `notifications` extraido a `steam_deals_notifications.py` con wrappers de compatibilidad en `steam_deals_generator.py`.
+- Validacion del corte `notifications`: tests de logica/reconfiguracion OK en `tests/test_generator_logic.py`.
+- Avance ya hecho adicional: corte `scheduler` extraido a `steam_deals_scheduler.py` con wrapper compatible en `steam_deals_generator.py`.
+- Validacion del corte `scheduler`: tests de logica/reconfiguracion OK en `tests/test_generator_logic.py`.
+- Avance ya hecho adicional: corte `config / CLI boundary` extraido a `steam_deals_config.py` con wrappers de compatibilidad en `steam_deals_generator.py`.
+- Validacion del corte `config / CLI boundary`: tests de logica/reconfiguracion OK en `tests/test_generator_logic.py`.
+- Avance ya hecho adicional: corte `presentation helpers / badges / grouping` extraido a `steam_deals_presentation.py` con wrappers de compatibilidad en `steam_deals_generator.py`.
+- Validacion del corte `presentation helpers / badges / grouping`: tests de logica/reconfiguracion OK en `tests/test_generator_logic.py`.
+- Avance ya hecho adicional: corte `metadata enrichment fetchers/caches` extraido a `steam_deals_enrichment.py` con wrappers de compatibilidad en `steam_deals_generator.py`.
+- Validacion del corte `metadata enrichment fetchers/caches`: tests de logica/reconfiguracion OK en `tests/test_generator_logic.py`.
+- Avance ya hecho adicional: corte `Steam price-fetch/cache` extraido a `steam_deals_prices.py` con wrappers de compatibilidad en `steam_deals_generator.py`.
+- Validacion del corte `Steam price-fetch/cache`: tests de logica/reconfiguracion OK en `tests/test_generator_logic.py`.
+- Avance ya hecho adicional: corte `run/output orchestration slice` extraido a `steam_deals_run_output.py` con wrappers de compatibilidad en `steam_deals_generator.py`.
+- Validacion del corte `run/output orchestration slice`: tests de logica/reconfiguracion OK en `tests/test_generator_logic.py`.
+- Avance ya hecho adicional: corte `runtime progress / event reporting` extraido a `steam_deals_runtime_reporting.py` y alineado con `steam_deals_web.py`.
+- Validacion del corte `runtime progress / event reporting`: tests de logica/reconfiguracion OK en `tests/test_generator_logic.py`.
+- Pendiente directo para retomar: corte pequeno `cache policy / cache lifecycle` como siguiente extraccion de modularizacion de `steam_deals_generator.py`.
+- Motivo de pausa: el refactor completo se volvio demasiado pesado para seguirlo de golpe sin elevar riesgo.
+- Siguiente accion recomendada: extraer `cache policy / cache lifecycle` con el mismo enfoque incremental y wrappers de compatibilidad.
+- Prioridad actual acordada: el siguiente foco pendiente es `modularizar steam_deals_generator.py`.
 
 ### Nota de trabajo futuro - orden sugerido de ejecucion
 
@@ -232,10 +268,25 @@ Ejecutar de forma consistente en Windows, macOS y Linux.
 - 2026-04-13: Se agregan smoke tests locales minimos en `.tmp/local-smoke-tests/` para Steam Deals Web, PAYDAY 2 Web y la ruta segura desktop `--internal-web`; quedan fuera del flujo normal de Git en este clon. `smoke_test_windows.ps1` se mantiene como smoke separado para Windows empaquetado.
 - 2026-04-13: Se agregan tests unitarios puros en `tests/test_generator_logic.py` para score, filtros, matching/gift ideas y budget picks.
 - 2026-04-13: Se completa el primer corte de capa shared con `shared/io_utils.py` y `shared/cache_utils.py`; Steam Deals y PAYDAY 2 ya comparten helpers de config JSON, HTTP JSON y cache reutilizable, con tests locales para los helpers shared.
-- 2026-04-14: Linux desktop validation documentado como runbook reproducible en `README.md` (preparación, instalación, build, ejecución del artefacto, verificación funcional y fallback web). Estado Linux pasa a en progreso; pendiente ejecutar en host Linux/runner `ubuntu-latest` y registrar incidencias/resultados.
-- 2026-04-14: macOS desktop validation documentado como runbook reproducible en `README.md` (preparación, instalación, build, apertura `.app`, verificación funcional, quarantine y verificación de codesign). Estado macOS pasa a en progreso; pendiente ejecutar en host macOS/runner `macos-latest` y registrar incidencias/resultados.
-- 2026-04-14: Se consolidan dependencias nativas pywebview por plataforma en `README.md` (Windows/Linux/macOS) con referencias/comandos verificables y se agrega bitacora cross-platform por OS en este archivo para seguimiento accionable.
-- 2026-04-14: Se completa `generator-renderers`: extracción de renderers (Markdown/HTML/Share HTML/CSV) desde `steam_deals_generator.py` con wrappers de compatibilidad y barrido de integración final para CLI/web/desktop (`py_compile` + `--help` en entrypoints).
+- 2026-04-14: Se extrae CSV a `renderers/csv_renderer.py` manteniendo wrapper compatible en `steam_deals_generator.py`; validacion puntual OK con `py_compile`, `steam_deals_generator.py --help`, `steam_deals_web.py --help` e import seguro de `steam_tools_desktop.py`.
+- 2026-04-14: Se agrega pendiente explicito para asegurar/validar fallback al navegador cuando `pywebview` no sea compatible o no pueda iniciar backend nativo.
+- 2026-04-14: `steam_tools_desktop.py` ahora abre la Web UI con flag explicito de fallback y la UI compartida muestra banner/aviso cuando `pywebview` no esta disponible, se demora demasiado o falla al iniciar; falta validar este comportamiento en Linux/macOS nativos.
+- 2026-04-14: Se completa el barrido de integracion del corte `renderers/` con `py_compile`, `steam_deals_generator.py --help`, `steam_deals_web.py --help`, `steam_web_smoke.py` y `desktop_smoke.py`; el primer corte de modularizacion de `renderers/` queda validado.
+- 2026-04-14: Se extrae `steam_deals_recommendations.py` con `build_gift_ideas`, `compute_value_score`, `rank_top_picks` y `compute_budget_picks`; `steam_deals_generator.py` conserva wrappers compatibles y `tests/test_generator_logic.py` queda OK (9 tests).
+- 2026-04-14: Se extrae `steam_deals_hltb.py` con parseo HLTB, normalizacion/matching y cruce HLTB × deals; `steam_deals_generator.py` conserva wrappers compatibles y `tests/test_generator_logic.py` queda OK (11 tests).
+- 2026-04-14: Se extrae `steam_deals_filters.py` con `filter_by_genres` y `apply_filters`; `steam_deals_generator.py` conserva wrappers compatibles y `tests/test_generator_logic.py` queda OK (12 tests).
+- 2026-04-14: Se extrae `steam_deals_history.py` con fallback al MD anterior, historial de runs, comparacion de deals, historial local de precios y formateo de tendencias; `steam_deals_generator.py` conserva wrappers compatibles y `tests/test_generator_logic.py` queda OK (15 tests).
+- 2026-04-14: Se extrae `steam_deals_watchlist.py` con I/O, comando CLI y alertas de watchlist; `steam_deals_generator.py` conserva wrappers compatibles, `steam_deals_web.py` reutiliza la misma frontera shared y `tests/test_generator_logic.py` queda OK (22 tests).
+- 2026-04-14: Se extrae `steam_deals_itad.py` con lookup, minimos historicos, mejores precios actuales y bundles activos de ITAD; `steam_deals_generator.py` conserva wrappers compatibles y `tests/test_generator_logic.py` queda OK (19 tests).
+- 2026-04-14: Se extrae `steam_deals_scheduler.py` con parseo de `--schedule` y loop programado con dependencias inyectables; `steam_deals_generator.py` conserva wrapper compatible y `tests/test_generator_logic.py` queda OK (38 tests).
+- 2026-04-14: Se extrae `steam_deals_steam_api.py` con resolucion de perfil/Steam ID, wishlist, owned games, compare, family JSON y oferta activa; `steam_deals_generator.py` conserva wrappers compatibles y `tests/test_generator_logic.py` queda OK (28 tests).
+- 2026-04-14: Se extrae `steam_deals_notifications.py` con resumen, Telegram, Discord y dispatcher de notificaciones; `steam_deals_generator.py` conserva wrappers compatibles y `tests/test_generator_logic.py` queda OK (33 tests).
+- 2026-04-14: Se extrae `steam_deals_config.py` con carga/guardado de config y boundary CLI/interactivo; `steam_deals_generator.py` conserva wrappers compatibles y `tests/test_generator_logic.py` queda OK (41 tests).
+- 2026-04-14: Se extrae `steam_deals_presentation.py` con badges, grouping por tier/tag y helpers de presentacion compartidos por renderers; `steam_deals_generator.py` conserva wrappers compatibles y `tests/test_generator_logic.py` queda OK (44 tests).
+- 2026-04-14: Se extrae `steam_deals_enrichment.py` con fetch paralelo, reviews, Steam Deck, ProtonDB, anti-cheat, tags y achievements; `steam_deals_generator.py` conserva wrappers compatibles y `tests/test_generator_logic.py` queda OK (48 tests).
+- 2026-04-14: Se extrae `steam_deals_prices.py` con cache de precios, fetch batch con fallback individual y normalizacion de `deals`; `steam_deals_generator.py` conserva wrappers compatibles y `tests/test_generator_logic.py` queda OK (51 tests).
+- 2026-04-14: Se extrae `steam_deals_run_output.py` con nombre de archivos, fallback al MD anterior, escritura de artefactos y resumen final; `steam_deals_generator.py` conserva wrappers compatibles y `tests/test_generator_logic.py` queda OK (55 tests).
+- 2026-04-14: Se extrae `steam_deals_runtime_reporting.py` con symbols Unicode-safe, estilos ANSI, contrato de eventos y step/progress reporting; `steam_deals_generator.py` conserva wrappers compatibles, `steam_deals_web.py` reutiliza el mismo `EVENT_PREFIX` y `tests/test_generator_logic.py` queda OK (58 tests).
 
 ## Backlog de Features (Propuestos - Planning)
 
@@ -249,12 +300,15 @@ Ejecutar de forma consistente en Windows, macOS y Linux.
 
 - [x] Generar link publica para compartir deals individuales (URL con data encodeada) - implementado, falta probar
 - [ ] Detectar bundles activos de juegos en wishlist (mejorar integracion ITAD)
+- [ ] Mostrar recomendaciones sociales tipo "un amigo te recomendo esto" usando overlap, juegos compartidos y senales sociales simples
 
 ### Recomendaciones
 
-- [ ] Sugerir juegos similares basados en generos de la biblioteca del usuario
+- [ ] Sugerir juegos similares segun los ultimos juegos jugados del usuario (por generos o por relaciones marcadas por el usuario: "me gusta" / "similar a")
+- [ ] Sugerir regalos para amigos de Steam segun sus juegos mas jugados, recientes y titulos similares
 - [ ] Analisis de biblioteca: tiempo total (HLTB), distribucion por genero, precio promedio
 - [ ] Explicar score y recomendacion de compra (por que esta arriba, comprar ahora vs esperar)
+- [ ] Explicar recomendaciones sociales/regalos con contexto breve ("juega mucho X", "jugo Y recientemente", "se parece a Z")
 
 ### Producto / Plataforma
 
@@ -270,6 +324,7 @@ Ejecutar de forma consistente en Windows, macOS y Linux.
 - [ ] Importar wishlists de otras plataformas (GOG, Epic - investigar APIs)
 - [ ] Detectar juegos eliminados del catalogo Steam (alertas)
 - [ ] Comparar wishlist con historial y mostrar delta (nuevos juegos, bajadas y ofertas terminadas)
+- [ ] Ampliar la comparativa multi-tienda para soportar mejor Fanatical y sumar mas stores (tiendas oficiales y keyshops), con metadata normalizada por tienda, tipo de tienda y filtros de confianza.
 
 ### Optimizacion (Velocidad - P0)
 

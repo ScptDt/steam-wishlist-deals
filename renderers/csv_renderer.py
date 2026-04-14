@@ -4,6 +4,8 @@ import csv
 import io
 
 
+STORE_URL = "https://store.steampowered.com/app/{appid}/"
+
 CSV_DECK = {3: "Verified", 2: "Playable", 1: "Unsupported", 0: ""}
 CSV_PROTON = {
     "native": "Native",
@@ -25,6 +27,69 @@ def _csv_trend(trend: dict) -> str:
     return f"{trend.get('times_on_sale', 0)}x, prom {trend.get('avg_fmt', '?')}"
 
 
+def _build_csv_row(
+    deal: dict,
+    priorities: dict[str, int],
+    reviews: dict[str, dict],
+    deck_compat: dict[str, int],
+    protondb_data: dict[str, dict],
+    anticheat_data: dict[str, dict],
+    tags_data: dict[str, dict],
+    hltb_hours: dict[str, float],
+    historical_lows: dict[str, dict],
+    current_prices: dict[str, dict],
+    pick_scores: dict[str, int],
+    local_trends: dict[str, dict],
+    achievements_data: dict[str, dict],
+    *,
+    get_top_tags,
+    multiplayer_badges,
+) -> list[object]:
+    appid = deal["appid"]
+    review = reviews.get(appid)
+    proton = protondb_data.get(appid)
+    anticheat = anticheat_data.get(appid)
+    historical_low = historical_lows.get(appid)
+    best_price = current_prices.get(appid)
+    trend = local_trends.get(appid)
+    hours = hltb_hours.get(appid)
+    achievement = achievements_data.get(appid)
+    price_raw = deal.get("price_raw", 0)
+    price_per_hour = f"{(price_raw / 100) / hours:.2f}" if hours and hours > 0 and price_raw > 0 else ""
+    priority = priorities.get(appid, 0)
+    top_tags = get_top_tags(tags_data, appid, n=5)
+    metacritic = deal.get("metacritic_score", "")
+    mode = multiplayer_badges(deal.get("categories", []))
+
+    return [
+        appid,
+        deal["name"],
+        deal["discount"],
+        deal["price_final"],
+        deal.get("price_original", ""),
+        deal.get("release_year", ""),
+        review["desc"] if review else "",
+        review["pct"] if review else "",
+        review["total"] if review else "",
+        metacritic if metacritic else "",
+        CSV_DECK.get(deck_compat.get(appid, 0), ""),
+        CSV_PROTON.get(proton["tier"], "") if proton else "",
+        f"{', '.join(anticheat.get('anticheats', []))} ({anticheat['status']})" if anticheat else "",
+        "; ".join(top_tags),
+        mode,
+        achievement["count"] if achievement else "",
+        f"{achievement['avg_completion']:.1f}" if achievement else "",
+        f"{hours:.1f}" if hours else "",
+        price_per_hour,
+        priority if priority > 0 else "",
+        pick_scores.get(appid, ""),
+        f"${historical_low['price']:.0f} ({historical_low['date']})" if historical_low else "",
+        f"${best_price['price']:.0f} en {best_price['store']}" if best_price else "",
+        _csv_trend(trend) if trend else "",
+        STORE_URL.format(appid=appid),
+    ]
+
+
 def generate_csv(
     deals,
     priorities=None,
@@ -42,7 +107,6 @@ def generate_csv(
     *,
     get_top_tags,
     multiplayer_badges,
-    store_url_template,
 ) -> str:
     priorities = priorities or {}
     reviews = reviews or {}
@@ -55,11 +119,11 @@ def generate_csv(
     current_prices = current_prices or {}
     local_trends = local_trends or {}
     achievements_data = achievements_data or {}
-    pick_scores = {tp["appid"]: tp["score"] for tp in (top_picks or [])}
+    pick_scores = {top_pick["appid"]: top_pick["score"] for top_pick in (top_picks or [])}
 
-    buf = io.StringIO()
-    buf.write("\ufeff")
-    writer = csv.writer(buf)
+    buffer = io.StringIO()
+    buffer.write("\ufeff")
+    writer = csv.writer(buffer)
     writer.writerow(
         [
             "AppID",
@@ -91,59 +155,24 @@ def generate_csv(
     )
 
     for deal in deals:
-        appid = deal["appid"]
-        review = reviews.get(appid)
-        proton = protondb_data.get(appid)
-        anticheat = anticheat_data.get(appid)
-        low = historical_lows.get(appid)
-        best_price = current_prices.get(appid)
-        trend = local_trends.get(appid)
-        hours = hltb_hours.get(appid)
-        price_raw = deal.get("price_raw", 0)
-        price_per_hour = (
-            f"{(price_raw / 100) / hours:.2f}"
-            if hours and hours > 0 and price_raw > 0
-            else ""
-        )
-        priority = priorities.get(appid, 0)
-        top_tags = get_top_tags(tags_data, appid, n=5)
-
-        metacritic = deal.get("metacritic_score", "")
-        multiplayer = multiplayer_badges(deal.get("categories", []))
-        achievements = achievements_data.get(appid)
-
         writer.writerow(
-            [
-                appid,
-                deal["name"],
-                deal["discount"],
-                deal["price_final"],
-                deal.get("price_original", ""),
-                deal.get("release_year", ""),
-                review["desc"] if review else "",
-                review["pct"] if review else "",
-                review["total"] if review else "",
-                metacritic if metacritic else "",
-                CSV_DECK.get(deck_compat.get(appid, 0), ""),
-                CSV_PROTON.get(proton["tier"], "") if proton else "",
-                f"{', '.join(anticheat.get('anticheats', []))} ({anticheat['status']})"
-                if anticheat
-                else "",
-                "; ".join(top_tags),
-                multiplayer,
-                achievements["count"] if achievements else "",
-                f"{achievements['avg_completion']:.1f}" if achievements else "",
-                f"{hours:.1f}" if hours else "",
-                price_per_hour,
-                priority if priority > 0 else "",
-                pick_scores.get(appid, ""),
-                f"${low['price']:.0f} ({low['date']})" if low else "",
-                f"${best_price['price']:.0f} en {best_price['store']}"
-                if best_price
-                else "",
-                _csv_trend(trend) if trend else "",
-                store_url_template.format(appid=appid),
-            ]
+            _build_csv_row(
+                deal,
+                priorities,
+                reviews,
+                deck_compat,
+                protondb_data,
+                anticheat_data,
+                tags_data,
+                hltb_hours,
+                historical_lows,
+                current_prices,
+                pick_scores,
+                local_trends,
+                achievements_data,
+                get_top_tags=get_top_tags,
+                multiplayer_badges=multiplayer_badges,
+            )
         )
 
-    return buf.getvalue()
+    return buffer.getvalue()

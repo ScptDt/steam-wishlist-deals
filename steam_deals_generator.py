@@ -18,27 +18,14 @@ debe ser pública). Con key: además muestra juegos propios para limpiar la wish
 Config guardada en ~/.config/steam_deals.json tras el primer run interactivo.
 """
 
-import argparse
-import csv
-import io
 import json
 import re
 import sys
 import time
-import threading
 import urllib.request
-import urllib.error
-from concurrent.futures import ThreadPoolExecutor, as_completed
 from datetime import date, datetime
-from difflib import SequenceMatcher
 from pathlib import Path
-from shared.cache_utils import load_timestamped_cache, save_timestamped_cache
-from shared.io_utils import (
-    http_get_json,
-    http_post_json,
-    load_json_file,
-    write_json_file,
-)
+from shared.io_utils import http_get_json, http_post_json, load_json_file, write_json_file
 
 try:
     from renderers.common import html_escape as _renderer_html_escape
@@ -81,23 +68,240 @@ except Exception:
     _generate_csv_renderer = None
 
 
+try:
+    from steam_deals_recommendations import (
+        build_gift_ideas as _build_gift_ideas_impl,
+        compute_budget_picks as _compute_budget_picks_impl,
+        compute_value_score as _compute_value_score_impl,
+        rank_top_picks as _rank_top_picks_impl,
+    )
+except Exception:
+    _build_gift_ideas_impl = None
+    _compute_budget_picks_impl = None
+    _compute_value_score_impl = None
+    _rank_top_picks_impl = None
+
+
+try:
+    from steam_deals_hltb import (
+        cross_hltb_with_deals as _cross_hltb_with_deals_impl,
+        extract_numbers as _extract_numbers_impl,
+        find_best_match as _find_best_match_impl,
+        is_same_game as _is_same_game_impl,
+        normalize as _normalize_impl,
+        parse_hltb as _parse_hltb_impl,
+        significant_words as _significant_words_impl,
+    )
+except Exception:
+    _cross_hltb_with_deals_impl = None
+    _extract_numbers_impl = None
+    _find_best_match_impl = None
+    _is_same_game_impl = None
+    _normalize_impl = None
+    _parse_hltb_impl = None
+    _significant_words_impl = None
+
+
+try:
+    from steam_deals_filters import (
+        apply_filters as _apply_filters_impl,
+        filter_by_genres as _filter_by_genres_impl,
+    )
+except Exception:
+    _apply_filters_impl = None
+    _filter_by_genres_impl = None
+
+
+try:
+    from steam_deals_history import (
+        analyze_trends as _analyze_trends_impl,
+        compute_deal_comparison as _compute_deal_comparison_impl,
+        format_trend as _format_trend_impl,
+        load_previous_deal_appids as _load_previous_deal_appids_impl,
+        load_previous_run as _load_previous_run_impl,
+        load_price_history as _load_price_history_impl,
+        load_run_history as _load_run_history_impl,
+        log_price_snapshot as _log_price_snapshot_impl,
+        save_price_history as _save_price_history_impl,
+        save_run_history as _save_run_history_impl,
+    )
+except Exception:
+    _analyze_trends_impl = None
+    _compute_deal_comparison_impl = None
+    _format_trend_impl = None
+    _load_previous_deal_appids_impl = None
+    _load_previous_run_impl = None
+    _load_price_history_impl = None
+    _load_run_history_impl = None
+    _log_price_snapshot_impl = None
+    _save_price_history_impl = None
+    _save_run_history_impl = None
+
+
+try:
+    from steam_deals_itad import (
+        itad_get_active_bundles as _itad_get_active_bundles_impl,
+        itad_get_current_prices as _itad_get_current_prices_impl,
+        itad_get_store_lows as _itad_get_store_lows_impl,
+        itad_lookup_games as _itad_lookup_games_impl,
+    )
+except Exception:
+    _itad_get_active_bundles_impl = None
+    _itad_get_current_prices_impl = None
+    _itad_get_store_lows_impl = None
+    _itad_lookup_games_impl = None
+
+
+try:
+    from steam_deals_watchlist import (
+        check_watchlist_alerts as _check_watchlist_alerts_impl,
+        handle_watchlist_command as _handle_watchlist_command_impl,
+        load_watchlist as _load_watchlist_impl,
+        save_watchlist as _save_watchlist_impl,
+    )
+except Exception:
+    _check_watchlist_alerts_impl = None
+    _handle_watchlist_command_impl = None
+    _load_watchlist_impl = None
+    _save_watchlist_impl = None
+
+
+try:
+    from steam_deals_steam_api import (
+        compare_wishlists as _compare_wishlists_impl,
+        get_active_sale as _get_active_sale_impl,
+        get_owned_games as _get_owned_games_impl,
+        get_wishlist as _get_wishlist_impl,
+        load_family_games as _load_family_games_impl,
+        resolve_steam_id as _resolve_steam_id_impl,
+    )
+except Exception:
+    _compare_wishlists_impl = None
+    _get_active_sale_impl = None
+    _get_owned_games_impl = None
+    _get_wishlist_impl = None
+    _load_family_games_impl = None
+    _resolve_steam_id_impl = None
+
+
+try:
+    from steam_deals_notifications import (
+        build_notification_summary as _build_notification_summary_impl,
+        send_discord as _send_discord_impl,
+        send_notifications as _send_notifications_impl,
+        send_telegram as _send_telegram_impl,
+    )
+except Exception:
+    _build_notification_summary_impl = None
+    _send_discord_impl = None
+    _send_notifications_impl = None
+    _send_telegram_impl = None
+
+
+try:
+    from steam_deals_scheduler import run_scheduled as _run_scheduled_impl
+except Exception:
+    _run_scheduled_impl = None
+
+
+try:
+    from steam_deals_config import (
+        get_config as _get_config_impl,
+        load_user_config as _load_user_config_impl,
+        save_user_config as _save_user_config_impl,
+    )
+except Exception:
+    _get_config_impl = None
+    _load_user_config_impl = None
+    _save_user_config_impl = None
+
+
+try:
+    from steam_deals_presentation import (
+        achievements_badge as _achievements_badge_impl,
+        deck_badge as _deck_badge_impl,
+        get_top_tags as _get_top_tags_impl,
+        group_by_tier as _group_by_tier_impl,
+        group_deals_by_tag as _group_deals_by_tag_impl,
+        linux_badge as _linux_badge_impl,
+        multiplayer_badges as _multiplayer_badges_impl,
+        players_badge as _players_badge_impl,
+        protondb_badge as _protondb_badge_impl,
+    )
+except Exception:
+    _achievements_badge_impl = None
+    _deck_badge_impl = None
+    _get_top_tags_impl = None
+    _group_by_tier_impl = None
+    _group_deals_by_tag_impl = None
+    _linux_badge_impl = None
+    _multiplayer_badges_impl = None
+    _players_badge_impl = None
+    _protondb_badge_impl = None
+
+
+try:
+    import steam_deals_enrichment as _enrichment_module
+except Exception:
+    _enrichment_module = None
+
+
+try:
+    import steam_deals_prices as _prices_module
+except Exception:
+    _prices_module = None
+
+
+try:
+    import steam_deals_run_output as _run_output_module
+except Exception:
+    _run_output_module = None
+
+
+try:
+    from steam_deals_runtime_reporting import (
+        AnsiColors as _RuntimeAnsiColors,
+        EVENT_PREFIX as _RUNTIME_EVENT_PREFIX,
+        bold_text as _bold_text_impl,
+        dim_text as _dim_text_impl,
+        emit_event as _emit_event_impl,
+        err_text as _err_text_impl,
+        ok_text as _ok_text_impl,
+        report_step as _report_step_impl,
+        safe_symbol as _safe_symbol_impl,
+        warn_text as _warn_text_impl,
+    )
+except Exception:
+    _RuntimeAnsiColors = None
+    _RUNTIME_EVENT_PREFIX = "__STEAM_EVENT__"
+    _bold_text_impl = None
+    _dim_text_impl = None
+    _emit_event_impl = None
+    _err_text_impl = None
+    _ok_text_impl = None
+    _report_step_impl = None
+    _safe_symbol_impl = None
+    _warn_text_impl = None
+
+
 # ─────────────────────────────────────────────
 # COLORES ANSI
 # ─────────────────────────────────────────────
 
 
 class C:
-    RST = "\033[0m"
-    BOLD = "\033[1m"
-    DIM = "\033[2m"
-    GRN = "\033[32m"
-    YLW = "\033[33m"
-    RED = "\033[31m"
-    CYN = "\033[36m"
-
+    RST  = _RuntimeAnsiColors.RST if _RuntimeAnsiColors else "\033[0m"
+    BOLD = _RuntimeAnsiColors.BOLD if _RuntimeAnsiColors else "\033[1m"
+    DIM  = _RuntimeAnsiColors.DIM if _RuntimeAnsiColors else "\033[2m"
+    GRN  = _RuntimeAnsiColors.GRN if _RuntimeAnsiColors else "\033[32m"
+    YLW  = _RuntimeAnsiColors.YLW if _RuntimeAnsiColors else "\033[33m"
+    RED  = _RuntimeAnsiColors.RED if _RuntimeAnsiColors else "\033[31m"
+    CYN  = _RuntimeAnsiColors.CYN if _RuntimeAnsiColors else "\033[36m"
 
 def _safe_symbol(unicode_symbol: str, fallback: str) -> str:
-    enc = sys.stdout.encoding or "utf-8"
+    if _safe_symbol_impl is not None:
+        return _safe_symbol_impl(unicode_symbol, fallback, stdout_encoding=(sys.stdout.encoding or "utf-8"))
+    enc = (sys.stdout.encoding or "utf-8")
     try:
         unicode_symbol.encode(enc)
         return unicode_symbol
@@ -114,31 +318,43 @@ SYM_BUDGET = _safe_symbol("💰", "[BUDGET]")
 SYM_GIFT = _safe_symbol("🎁", "[GIFT]")
 BAR_FILL = _safe_symbol("█", "#")
 BAR_EMPTY = _safe_symbol("░", "-")
-EVENT_PREFIX = "__STEAM_EVENT__"
+EVENT_PREFIX = _RUNTIME_EVENT_PREFIX
 WEB_EVENT_MODE = False
 
-
 def _ok(msg):
+    if _ok_text_impl is not None:
+        return _ok_text_impl(msg, green=C.GRN, reset=C.RST, symbol=SYM_OK)
     return f"{C.GRN}{SYM_OK}{C.RST}  {msg}"
 
 
 def _warn(msg):
+    if _warn_text_impl is not None:
+        return _warn_text_impl(msg, yellow=C.YLW, reset=C.RST, symbol=SYM_WARN)
     return f"{C.YLW}{SYM_WARN}{C.RST}  {msg}"
 
 
 def _err(msg):
+    if _err_text_impl is not None:
+        return _err_text_impl(msg, red=C.RED, reset=C.RST, symbol=SYM_ERR)
     return f"{C.RED}{SYM_ERR}{C.RST}  {msg}"
 
 
 def _dim(msg):
+    if _dim_text_impl is not None:
+        return _dim_text_impl(msg, dim=C.DIM, reset=C.RST)
     return f"{C.DIM}{msg}{C.RST}"
 
 
 def _bold(msg):
+    if _bold_text_impl is not None:
+        return _bold_text_impl(msg, bold=C.BOLD, reset=C.RST)
     return f"{C.BOLD}{msg}{C.RST}"
 
 
 def emit_event(event_type: str, **payload) -> None:
+    if _emit_event_impl is not None:
+        _emit_event_impl(event_type, web_event_mode=WEB_EVENT_MODE, emit=print, event_prefix=EVENT_PREFIX, **payload)
+        return
     if not WEB_EVENT_MODE:
         return
     try:
@@ -157,11 +373,15 @@ CONFIG_FILE = Path.home() / ".config" / "steam_deals.json"
 
 
 def load_user_config() -> dict:
-    return load_json_file(CONFIG_FILE, {})
+    if _load_user_config_impl is None:
+        raise RuntimeError("Config module is not available")
+    return _load_user_config_impl(CONFIG_FILE, load_json_file=load_json_file)
 
 
 def save_user_config(cfg: dict) -> None:
-    write_json_file(CONFIG_FILE, cfg, ensure_ascii=False, indent=2)
+    if _save_user_config_impl is None:
+        raise RuntimeError("Config module is not available")
+    _save_user_config_impl(CONFIG_FILE, cfg, write_json_file=write_json_file)
     print(f"  {_ok(f'Config guardada en {CONFIG_FILE}')}")
 
 
@@ -169,109 +389,52 @@ def save_user_config(cfg: dict) -> None:
 # WATCHLIST (PRICE ALERTS)
 # ─────────────────────────────────────────────
 
-WATCHLIST_FILE = Path.home() / ".config" / "steam_deals_watchlist.json"
+
+def _resolve_watchlist_name(appid: str) -> str:
+    name = appid
+    try:
+        url = f"https://store.steampowered.com/api/appdetails?appids={appid}&filters=basic"
+        data = _get_json(url, headers={"User-Agent": "Mozilla/5.0"})
+        info = data.get(appid, {}).get("data", {})
+        name = info.get("name", appid)
+    except Exception:
+        pass
+    return name
 
 
 def load_watchlist() -> list[dict]:
-    if not WATCHLIST_FILE.exists():
-        return []
-    try:
-        return json.loads(WATCHLIST_FILE.read_text(encoding="utf-8"))
-    except (json.JSONDecodeError, OSError):
-        return []
+    if _load_watchlist_impl is None:
+        raise RuntimeError("Watchlist module is not available")
+    return _load_watchlist_impl()
 
 
 def save_watchlist(items: list[dict]) -> None:
-    WATCHLIST_FILE.parent.mkdir(parents=True, exist_ok=True)
-    WATCHLIST_FILE.write_text(
-        json.dumps(items, ensure_ascii=False, indent=2), encoding="utf-8"
-    )
+    if _save_watchlist_impl is None:
+        raise RuntimeError("Watchlist module is not available")
+    _save_watchlist_impl(items)
 
 
 def handle_watchlist_command(args: list[str]) -> bool:
     """Handle --watchlist subcommands. Returns True if handled (should exit)."""
-    if not args:
-        # --watchlist with no args = list
-        args = ["list"]
-    cmd = args[0].lower()
-    items = load_watchlist()
-
-    if cmd == "list":
-        if not items:
-            print(
-                f"  {_dim('Watchlist vacía. Usa --watchlist add APPID PRECIO para agregar.')}"
-            )
-        else:
-            print(f"\n  {_bold('Watchlist Personal')} ({len(items)} juegos)\n")
-            print(f"  {'AppID':<10} {'Precio objetivo':>16}  Nombre")
-            print(f"  {'─' * 10} {'─' * 16}  {'─' * 30}")
-            for w in items:
-                print(
-                    f"  {w['appid']:<10} ${w['target_price']:>14,.0f}  {w.get('name', '?')}"
-                )
-        return True
-
-    elif cmd == "add":
-        if len(args) < 3:
-            print(f"  {_err('Uso: --watchlist add APPID PRECIO')}")
-            return True
-        appid = args[1]
-        try:
-            target = float(args[2])
-        except ValueError:
-            print(f"  {_err(f'Precio inválido: {args[2]}')}")
-            return True
-        # Fetch game name
-        name = appid
-        try:
-            url = f"https://store.steampowered.com/api/appdetails?appids={appid}&filters=basic"
-            data = _get_json(url, headers={"User-Agent": "Mozilla/5.0"})
-            info = data.get(appid, {}).get("data", {})
-            name = info.get("name", appid)
-        except Exception:
-            pass
-        # Remove existing entry for same appid
-        items = [w for w in items if w["appid"] != appid]
-        items.append({"appid": appid, "name": name, "target_price": target})
-        save_watchlist(items)
-        print(
-            f"  {_ok(f'Agregado: {name} (AppID {appid}) — objetivo ${target:.0f} MXN')}"
-        )
-        return True
-
-    elif cmd == "remove":
-        if len(args) < 2:
-            print(f"  {_err('Uso: --watchlist remove APPID')}")
-            return True
-        appid = args[1]
-        before = len(items)
-        items = [w for w in items if w["appid"] != appid]
-        if len(items) < before:
-            save_watchlist(items)
-            print(f"  {_ok(f'Removido AppID {appid} de la watchlist')}")
-        else:
-            print(f"  {_warn(f'AppID {appid} no está en la watchlist')}")
-        return True
-
-    else:
-        print(f"  {_err(f'Subcomando desconocido: {cmd}. Usa: add, remove, list')}")
-        return True
+    if _handle_watchlist_command_impl is None:
+        raise RuntimeError("Watchlist module is not available")
+    return _handle_watchlist_command_impl(
+        args,
+        resolve_name=_resolve_watchlist_name,
+        emit=print,
+        ok=_ok,
+        warn=_warn,
+        err=_err,
+        dim=_dim,
+        bold=_bold,
+    )
 
 
 def check_watchlist_alerts(deals: list[dict], watchlist: list[dict]) -> list[dict]:
     """Check which watchlist games have hit their target price."""
-    deal_map = {d["appid"]: d for d in deals}
-    alerts = []
-    for w in watchlist:
-        deal = deal_map.get(w["appid"])
-        if deal and deal.get("price_raw", 0) / 100 <= w["target_price"]:
-            alerts.append(
-                {
-                    **deal,
-                    "target_price": w["target_price"],
-                }
-            )
-    return alerts
+    if _check_watchlist_alerts_impl is None:
+        raise RuntimeError("Watchlist module is not available")
+    return _check_watchlist_alerts_impl(deals, watchlist)
 
 
 # ─────────────────────────────────────────────
@@ -280,269 +443,16 @@ def check_watchlist_alerts(deals: list[dict], watchlist: list[dict]) -> list[dic
 
 
 def get_config():
-    parser = argparse.ArgumentParser(description="Steam Wishlist Deals Generator")
-    parser.add_argument("--web-run", action="store_true", help=argparse.SUPPRESS)
-    parser.add_argument(
-        "--interactive",
-        action="store_true",
-        help="Habilita prompts en terminal para configurar valores faltantes",
-    )
-    parser.add_argument(
-        "--key", help="Steam API Key (opcional, habilita sección de juegos propios)"
-    )
-    parser.add_argument(
-        "--vanity", help="Vanity URL, Steam ID, o link de perfil de Steam"
-    )
-    parser.add_argument("--hltb", help="Ruta al CSV de HLTB")
-    parser.add_argument("--output", help="Directorio de salida para los MD")
-    parser.add_argument("--discount", type=int, help="Descuento mínimo %%")
-    parser.add_argument(
-        "--genre",
-        nargs="*",
-        metavar="GENRE",
-        help="Géneros de interés (ej. --genre roguelike --genre indie)",
-    )
-    parser.add_argument(
-        "--no-cache", action="store_true", help="Re-fetch aunque haya caché válida"
-    )
-    parser.add_argument(
-        "--family-json",
-        nargs="?",
-        const="",
-        default=None,
-        help="Ruta al JSON de biblioteca familiar. Sin valor = omitir",
-    )
-    parser.add_argument(
-        "--itad-key", help="IsThereAnyDeal API Key (para mínimo histórico)"
-    )
-    # Filtros avanzados
-    parser.add_argument(
-        "--max-price", type=float, metavar="N", help="Solo deals bajo N MXN"
-    )
-    parser.add_argument(
-        "--deck-only", action="store_true", help="Solo Deck Verified o Playable"
-    )
-    parser.add_argument(
-        "--deck-verified", action="store_true", help="Solo Deck Verified"
-    )
-    parser.add_argument(
-        "--min-reviews",
-        type=int,
-        metavar="N",
-        help="Solo juegos con >= N%% reviews positivas",
-    )
-    parser.add_argument(
-        "--min-review-count",
-        type=int,
-        metavar="N",
-        help="Solo juegos con >= N reviews totales",
-    )
-    parser.add_argument(
-        "--max-hours", type=float, metavar="N", help="Solo juegos con HLTB <= N horas"
-    )
-    parser.add_argument(
-        "--top", type=int, metavar="N", default=10, help="Top N picks (default: 10)"
-    )
-    parser.add_argument(
-        "--sort",
-        choices=["discount", "price", "reviews", "priority", "score"],
-        default="discount",
-        help="Ordenar tiers por campo",
-    )
-    parser.add_argument(
-        "--new-only", action="store_true", help="Solo deals nuevos vs run anterior"
-    )
-    parser.add_argument(
-        "--csv", action="store_true", help="Generar CSV para Excel/Sheets"
-    )
-    parser.add_argument(
-        "--watchlist",
-        nargs="*",
-        metavar="CMD",
-        help="Watchlist: add APPID PRECIO / remove APPID / list",
-    )
-    parser.add_argument(
-        "--budget",
-        type=float,
-        metavar="MXN",
-        help="Presupuesto en MXN — recomendación óptima de compras",
-    )
-    parser.add_argument(
-        "--compare",
-        metavar="VANITY2",
-        help="Comparar tu wishlist con otro perfil de Steam",
-    )
-    parser.add_argument(
-        "--telegram-token", help="Telegram Bot API token para notificaciones"
-    )
-    parser.add_argument("--telegram-chat", help="Telegram chat ID para notificaciones")
-    parser.add_argument(
-        "--discord-webhook", help="Discord webhook URL para notificaciones"
-    )
-    parser.add_argument(
-        "--schedule",
-        type=float,
-        metavar="HOURS",
-        help="Ejecutar automáticamente cada N horas (ej: --schedule 6)",
-    )
-    args = parser.parse_args()
-
-    # Handle watchlist subcommand (standalone, exits early)
-    if args.watchlist is not None:
-        handle_watchlist_command(args.watchlist)
-        sys.exit(0)
-
-    cfg = load_user_config()
-    local_cache_dir = Path(__file__).resolve().parent / ".cache" / "steam_deals"
-    has_local_cache = local_cache_dir.exists() and any(local_cache_dir.iterdir())
-    can_prompt = bool(
-        not args.web_run
-        and sys.stdin
-        and sys.stdin.isatty()
-        and (args.interactive or not has_local_cache)
-    )
-    interactive_keys: list[str] = []
-
-    def ask(prompt, default=None):
-        if not can_prompt:
-            return default or ""
-        suffix = f" [{default}]" if default else ""
-        try:
-            return input(f"  {prompt}{suffix}: ").strip()
-        except EOFError:
-            return default or ""
-
-    def from_arg_cfg_or_ask(arg_val, cfg_key, prompt, default=None):
-        if arg_val is not None:
-            return arg_val
-        if cfg.get(cfg_key) is not None:
-            return cfg[cfg_key]
-        if can_prompt:
-            interactive_keys.append(cfg_key)
-        raw = ask(prompt, default)
-        return raw or default or ""
-
-    # Key es opcional — sin key funciona con endpoints públicos
-    key = args.key or cfg.get("key") or None
-    vanity = (
-        from_arg_cfg_or_ask(
-            args.vanity, "vanity", "Vanity URL, Steam ID, o link de perfil", "BG00G"
-        )
-        or "BG00G"
-    )
-
-    # HLTB
-    if args.hltb:
-        hltb = Path(args.hltb).expanduser()
-    elif cfg.get("hltb"):
-        hltb = Path(cfg["hltb"]).expanduser()
-    else:
-        if can_prompt:
-            interactive_keys.append("hltb")
-        raw = ask("Ruta al CSV de HLTB (Enter para omitir)")
-        hltb = Path(raw).expanduser() if raw else None
-
-    # Output dir (el nombre del archivo se genera dinámicamente en main)
-    script_dir = str(Path(__file__).resolve().parent)
-    if args.output:
-        output_dir = Path(args.output).expanduser()
-    elif cfg.get("output_dir"):
-        output_dir = Path(cfg["output_dir"]).expanduser()
-    else:
-        if can_prompt:
-            interactive_keys.append("output_dir")
-        raw = ask("Directorio de salida para los MD", script_dir)
-        output_dir = Path(raw or script_dir).expanduser()
-
-    # Discount
-    if args.discount is not None:
-        discount = args.discount
-    elif cfg.get("discount") is not None:
-        discount = cfg["discount"]
-    else:
-        if can_prompt:
-            interactive_keys.append("discount")
-        raw = ask("Descuento mínimo %", "50")
-        discount = int(raw) if raw else 50
-
-    # Genres
-    if args.genre is not None:
-        genres = [g.strip().lower() for g in args.genre if g.strip()]
-    elif cfg.get("genres") is not None:
-        genres = cfg["genres"]
-    else:
-        if can_prompt:
-            interactive_keys.append("genres")
-        raw = ask("Géneros de interés (coma-separados, Enter para omitir)")
-        genres = [g.strip().lower() for g in raw.split(",") if g.strip()]
-
-    # Family JSON — avanzado, sin prompt interactivo
-    if args.family_json is not None:
-        family_json = Path(args.family_json).expanduser() if args.family_json else None
-    elif cfg.get("family_json"):
-        family_json = Path(cfg["family_json"]).expanduser()
-    else:
-        family_json = None
-
-    # ITAD Key — sin prompt interactivo
-    itad_key = args.itad_key or cfg.get("itad_key") or None
-
-    no_cache = args.no_cache
-
-    # Ofrecer guardar config si se usó algún prompt
-    if can_prompt and interactive_keys:
-        raw = (
-            input("\n  ¿Guardar como configuración por defecto? [s/N]: ")
-            .strip()
-            .lower()
-        )
-        if raw == "s":
-            save_user_config(
-                {
-                    **cfg,
-                    "key": key,
-                    "vanity": vanity,
-                    "hltb": str(hltb) if hltb else None,
-                    "output_dir": str(output_dir),
-                    "discount": discount,
-                    "genres": genres,
-                    "family_json": str(family_json) if family_json else None,
-                    "itad_key": itad_key,
-                }
-            )
-
-    filters = {
-        "max_price": args.max_price,
-        "deck_only": args.deck_only,
-        "deck_verified": args.deck_verified,
-        "min_reviews": args.min_reviews,
-        "min_review_count": args.min_review_count,
-        "max_hours": args.max_hours,
-        "top": args.top,
-        "sort": args.sort,
-        "new_only": args.new_only,
-        "csv": args.csv,
-        "budget": args.budget,
-        "compare": args.compare,
-        "telegram_token": args.telegram_token or cfg.get("telegram_token"),
-        "telegram_chat": args.telegram_chat or cfg.get("telegram_chat"),
-        "discord_webhook": args.discord_webhook or cfg.get("discord_webhook"),
-        "schedule": args.schedule,
-    }
-
-    return (
-        args.web_run,
-        args.interactive,
-        key,
-        vanity,
-        hltb,
-        output_dir,
-        discount,
-        genres,
-        no_cache,
-        family_json,
-        itad_key,
-        filters,
+    if _get_config_impl is None:
+        raise RuntimeError("Config module is not available")
+    return _get_config_impl(
+        script_path=Path(__file__).resolve(),
+        load_user_config_fn=load_user_config,
+        save_user_config_fn=save_user_config,
+        handle_watchlist_command_fn=handle_watchlist_command,
+        input_fn=input,
+        stdin=sys.stdin,
+        exit_fn=sys.exit,
     )
 
 
@@ -551,293 +461,138 @@ def get_config():
 # ─────────────────────────────────────────────
 
 
-def resolve_steam_id(api_key: str | None, vanity: str) -> str:
-    """Convierte vanity URL, link de perfil, o Steam ID numérico a Steam ID."""
-    # Extraer vanity/ID de URLs de perfil
-    m = re.match(r"https?://steamcommunity\.com/profiles/(\d+)", vanity)
-    if m:
-        return m.group(1)
-    m = re.match(r"https?://steamcommunity\.com/id/([^/]+)", vanity)
-    if m:
-        vanity = m.group(1)
 
-    if vanity.isdigit() and len(vanity) == 17:
-        return vanity
-
-    # Con API key: usar endpoint oficial
-    if api_key:
-        url = f"https://api.steampowered.com/ISteamUser/ResolveVanityURL/v1/?key={api_key}&vanityurl={vanity}"
-        data = _get_json(url)
-        if data["response"]["success"] != 1:
-            raise ValueError(f"No se pudo resolver el vanity URL: {vanity}")
-        return data["response"]["steamid"]
-
-    # Sin key: endpoint público XML
+def _fetch_public_profile_xml(vanity: str) -> str:
     url = f"https://steamcommunity.com/id/{vanity}/?xml=1"
     req = urllib.request.Request(url, headers={"User-Agent": "Mozilla/5.0"})
-    with urllib.request.urlopen(req, timeout=15) as r:
-        text = r.read().decode("utf-8")
-    m = re.search(r"<steamID64>(\d+)</steamID64>", text)
-    if not m:
-        raise ValueError(f"No se pudo resolver el perfil: {vanity}")
-    return m.group(1)
+    with urllib.request.urlopen(req, timeout=15) as response:
+        return response.read().decode("utf-8")
+
+def resolve_steam_id(api_key: str | None, vanity: str) -> str:
+    """Convierte vanity URL, link de perfil, o Steam ID numérico a Steam ID."""
+    if _resolve_steam_id_impl is None:
+        raise RuntimeError("Steam adapter module is not available")
+    return _resolve_steam_id_impl(
+        api_key,
+        vanity,
+        get_json=_get_json,
+        fetch_public_profile_xml=_fetch_public_profile_xml,
+    )
 
 
 def get_wishlist(
     api_key: str | None, steam_id: str
 ) -> tuple[list[str], dict[str, int]]:
     """Devuelve (lista de appids, dict appid→priority). Funciona con o sin API key."""
-    url = f"https://api.steampowered.com/IWishlistService/GetWishlist/v1/?steamid={steam_id}"
-    if api_key:
-        url += f"&key={api_key}"
-    try:
-        data = _get_json(url)
-    except urllib.error.HTTPError as exc:
-        if exc.code in (401, 403):
-            raise ValueError(
-                f"No se pudo acceder a la wishlist (HTTP {exc.code}). ¿Es privada?"
-            ) from exc
-        raise
-    items = data.get("response", {}).get("items", [])
-    appids = [str(item["appid"]) for item in items]
-    priorities = {str(item["appid"]): item.get("priority", 0) for item in items}
-    return appids, priorities
+    if _get_wishlist_impl is None:
+        raise RuntimeError("Steam adapter module is not available")
+    return _get_wishlist_impl(api_key, steam_id, get_json=_get_json)
 
 
 def get_owned_games(api_key: str, steam_id: str) -> dict[str, str]:
     """Devuelve dict appid → nombre de juegos propios en Steam."""
-    url = (
-        f"https://api.steampowered.com/IPlayerService/GetOwnedGames/v1/"
-        f"?key={api_key}&steamid={steam_id}&include_appinfo=1&include_played_free_games=1"
-    )
-    data = _get_json(url)
-    return {
-        str(g["appid"]): g["name"] for g in data.get("response", {}).get("games", [])
-    }
+    if _get_owned_games_impl is None:
+        raise RuntimeError("Steam adapter module is not available")
+    return _get_owned_games_impl(api_key, steam_id, get_json=_get_json)
 
 
 def compare_wishlists(api_key, steam_id_1, vanity_2):
     """Compare two wishlists. Returns overlap, unique to each, friend info."""
-    friend_id = resolve_steam_id(api_key, vanity_2)
-    friend_appids, friend_priorities = get_wishlist(api_key, friend_id)
-    my_appids_set = set()  # will be filled by caller
-    friend_set = set(friend_appids)
-    return {
-        "friend_id": friend_id,
-        "friend_vanity": vanity_2,
-        "friend_appids": friend_appids,
-        "friend_priorities": friend_priorities,
-        "friend_set": friend_set,
-    }
+    if _compare_wishlists_impl is None:
+        raise RuntimeError("Steam adapter module is not available")
+    return _compare_wishlists_impl(
+        api_key,
+        steam_id_1,
+        vanity_2,
+        resolve_steam_id_fn=resolve_steam_id,
+        get_wishlist_fn=get_wishlist,
+    )
 
 
 def build_gift_ideas(friend_set, deals, owned):
     """Find deals that the friend wants but you don't own."""
-    owned_set = set(owned.keys())
-    ideas = []
-    for d in deals:
-        if d["appid"] in friend_set and d["appid"] not in owned_set:
-            ideas.append(d)
-    ideas.sort(key=lambda x: -x["discount"])
-    return ideas
+    if _build_gift_ideas_impl is None:
+        raise RuntimeError("Recommendations module is not available")
+    return _build_gift_ideas_impl(friend_set, deals, owned)
 
 
 def load_family_games(json_path: Path) -> set[str]:
     """Carga un JSON de biblioteca familiar → set de appids."""
-    raw = json.loads(json_path.read_text(encoding="utf-8"))
-    if isinstance(raw, dict):
-        return {str(k) for k in raw}
-    if isinstance(raw, list):
-        return {str(a) for a in raw}
-    raise ValueError(f"Formato de family JSON no reconocido: {type(raw)}")
+    if _load_family_games_impl is None:
+        raise RuntimeError("Steam adapter module is not available")
+    return _load_family_games_impl(json_path)
 
 
 def get_active_sale() -> str:
     """Detecta la oferta/evento activo en Steam via marketing messages API."""
-    try:
-        url = "https://api.steampowered.com/IMarketingMessagesService/GetActiveMarketingMessages/v1/"
-        data = _get_json(url)
-        messages = data.get("response", {}).get("messages", [])
-        for msg in messages:
-            if msg.get("type") == 1:
-                title = msg.get("title", "").strip()
-                if title:
-                    return title
-        for msg in messages:
-            if msg.get("type") == 11:
-                title = msg.get("title", "").strip()
-                if title:
-                    return title
-        for msg in messages:
-            title = msg.get("title", "").strip()
-            if title:
-                return title
-    except Exception:
-        pass
-    return ""
+    if _get_active_sale_impl is None:
+        raise RuntimeError("Steam adapter module is not available")
+    return _get_active_sale_impl(get_json=_get_json)
 
 
 # ─────────────────────────────────────────────
 # IsThereAnyDeal API (mínimo histórico)
 # ─────────────────────────────────────────────
 
-ITAD_BATCH = 50
-
-
 def itad_lookup_games(appids: list[str], itad_key: str) -> dict[str, str]:
     """Resuelve Steam appids → ITAD game IDs. Devuelve {appid: itad_id}."""
-    result = {}
-    for i in range(0, len(appids), ITAD_BATCH):
-        batch = appids[i : i + ITAD_BATCH]
-        body = [{"type": "steam", "id": f"app/{a}"} for a in batch]
-        try:
-            data = _post_json(
-                f"https://api.isthereanydeal.com/games/lookup/v1?key={itad_key}",
-                body,
-            )
-            if isinstance(data, list):
-                for item, appid in zip(data, batch):
-                    if item and isinstance(item, dict) and item.get("found"):
-                        result[appid] = item["game"]["id"]
-        except Exception as exc:
-            print(f"\n  {_warn(f'ITAD lookup error: {exc}')}", flush=True)
-        time.sleep(0.5)
-    return result
+    if _itad_lookup_games_impl is None:
+        raise RuntimeError("ITAD module is not available")
+    return _itad_lookup_games_impl(
+        appids,
+        itad_key,
+        post_json=_post_json,
+        sleep_fn=time.sleep,
+        on_error=lambda message: print(f"\n  {_warn(message)}", flush=True),
+    )
 
 
 def itad_get_store_lows(
     itad_ids: dict[str, str], itad_key: str, country: str = "MX"
 ) -> dict[str, dict]:
     """Obtiene mínimo histórico en Steam. Devuelve {appid: {price, cut, date}}."""
-    # Invertir: itad_id → appid
-    id_to_appid = {v: k for k, v in itad_ids.items()}
-    all_ids = list(itad_ids.values())
-    result = {}
-
-    for i in range(0, len(all_ids), ITAD_BATCH):
-        batch = all_ids[i : i + ITAD_BATCH]
-        try:
-            data = _post_json(
-                f"https://api.isthereanydeal.com/games/storelow/v2?key={itad_key}&country={country}&shops=61",
-                batch,
-            )
-            if isinstance(data, list):
-                for item in data:
-                    itad_id = item.get("id", "")
-                    appid = id_to_appid.get(itad_id)
-                    lows = item.get("lows", [])
-                    if appid and lows:
-                        low = lows[0]
-                        price_obj = low.get("price", {})
-                        result[appid] = {
-                            "price": price_obj.get("amount", 0),
-                            "currency": price_obj.get("currency", ""),
-                            "cut": low.get("cut", 0),
-                            "date": (low.get("timestamp") or "")[:10],
-                        }
-        except Exception as exc:
-            print(f"\n  {_warn(f'ITAD storelow error: {exc}')}", flush=True)
-        time.sleep(0.5)
-
-    return result
+    if _itad_get_store_lows_impl is None:
+        raise RuntimeError("ITAD module is not available")
+    return _itad_get_store_lows_impl(
+        itad_ids,
+        itad_key,
+        country=country,
+        post_json=_post_json,
+        sleep_fn=time.sleep,
+        on_error=lambda message: print(f"\n  {_warn(message)}", flush=True),
+    )
 
 
 def itad_get_current_prices(
     itad_ids: dict[str, str], itad_key: str, country: str = "MX"
 ) -> dict[str, dict]:
     """Current best prices across stores. Returns {appid: {store, price, url}} only when another store beats Steam."""
-    id_to_appid = {v: k for k, v in itad_ids.items()}
-    all_ids = list(itad_ids.values())
-    result = {}
-
-    for i in range(0, len(all_ids), ITAD_BATCH):
-        batch = all_ids[i : i + ITAD_BATCH]
-        try:
-            data = _post_json(
-                f"https://api.isthereanydeal.com/games/prices/v3?key={itad_key}&country={country}",
-                batch,
-            )
-            if isinstance(data, list):
-                for item in data:
-                    itad_id = item.get("id", "")
-                    appid = id_to_appid.get(itad_id)
-                    if not appid:
-                        continue
-                    price_deals = item.get("deals", [])
-                    steam_price = None
-                    best_other = None
-                    for pd in price_deals:
-                        shop = pd.get("shop", {})
-                        shop_id = shop.get("id", 0)
-                        price_obj = pd.get("price", {})
-                        price_amt = price_obj.get("amount", 0)
-                        if shop_id == 61:  # Steam
-                            steam_price = price_amt
-                        elif best_other is None or price_amt < best_other["price"]:
-                            best_other = {
-                                "store": shop.get("name", "?"),
-                                "price": price_amt,
-                                "url": pd.get("url", ""),
-                            }
-                    if (
-                        best_other
-                        and steam_price is not None
-                        and best_other["price"] < steam_price
-                    ):
-                        result[appid] = best_other
-        except Exception as exc:
-            print(f"\n  {_warn(f'ITAD prices error: {exc}')}", flush=True)
-        time.sleep(0.5)
-
-    return result
+    if _itad_get_current_prices_impl is None:
+        raise RuntimeError("ITAD module is not available")
+    return _itad_get_current_prices_impl(
+        itad_ids,
+        itad_key,
+        country=country,
+        post_json=_post_json,
+        sleep_fn=time.sleep,
+        on_error=lambda message: print(f"\n  {_warn(message)}", flush=True),
+    )
 
 
 def itad_get_active_bundles(
     itad_ids: dict[str, str], itad_key: str, country: str = "US"
 ) -> dict[str, list[dict]]:
     """Active bundles containing deal games. Returns {appid: [{title, store, price, currency, url}]}."""
-    id_to_appid = {v: k for k, v in itad_ids.items()}
-    all_ids = list(itad_ids.values())
-    result: dict[str, list[dict]] = {}
-
-    for i in range(0, len(all_ids), ITAD_BATCH):
-        batch = all_ids[i : i + ITAD_BATCH]
-        try:
-            data = _post_json(
-                f"https://api.isthereanydeal.com/games/overview/v2?key={itad_key}&country={country}",
-                batch,
-            )
-            bundles = data.get("bundles", []) if isinstance(data, dict) else []
-            for bundle in bundles:
-                title = bundle.get("title", "")
-                page = bundle.get("page", {})
-                store = page.get("name", "")
-                url = bundle.get("url", "")
-                for tier in bundle.get("tiers", []):
-                    price_obj = tier.get("price") or {}
-                    tier_price = price_obj.get("amount", 0)
-                    tier_currency = price_obj.get("currency", "USD")
-                    for game in tier.get("games", []):
-                        game_id = game.get("id", "")
-                        appid = id_to_appid.get(game_id)
-                        if not appid:
-                            continue
-                        entry = {
-                            "title": title,
-                            "store": store,
-                            "price": tier_price,
-                            "currency": tier_currency,
-                            "url": url,
-                        }
-                        if appid not in result:
-                            result[appid] = []
-                        if not any(b["title"] == title for b in result[appid]):
-                            result[appid].append(entry)
-        except Exception as exc:
-            print(f"\n  {_warn(f'ITAD bundles error: {exc}')}", flush=True)
-        time.sleep(0.5)
-
-    return result
+    if _itad_get_active_bundles_impl is None:
+        raise RuntimeError("ITAD module is not available")
+    return _itad_get_active_bundles_impl(
+        itad_ids,
+        itad_key,
+        country=country,
+        post_json=_post_json,
+        sleep_fn=time.sleep,
+        on_error=lambda message: print(f"\n  {_warn(message)}", flush=True),
+    )
 
 
 # ─────────────────────────────────────────────
@@ -847,22 +602,9 @@ def itad_get_active_bundles(
 
 def load_previous_deal_appids(output_dir: Path, current_filename: str) -> set[str]:
     """Busca el MD anterior más reciente y extrae los appids de deals."""
-    md_files = sorted(
-        output_dir.glob("Steam Deals*.md"),
-        key=lambda f: f.stat().st_mtime,
-        reverse=True,
-    )
-    for f in md_files:
-        if f.name == current_filename:
-            continue
-        try:
-            text = f.read_text(encoding="utf-8")
-            appids = set(re.findall(r"store\.steampowered\.com/app/(\d+)/", text))
-            if appids:
-                return appids
-        except OSError:
-            continue
-    return set()
+    if _load_previous_deal_appids_impl is None:
+        raise RuntimeError("History module is not available")
+    return _load_previous_deal_appids_impl(output_dir, current_filename)
 
 
 # ─────────────────────────────────────────────
@@ -874,72 +616,31 @@ def save_run_history(
     steam_id: str, vanity: str, sale_name: str, min_discount: int, deals: list[dict]
 ) -> Path:
     """Guarda snapshot del run actual en historial JSON."""
-    HISTORY_DIR.mkdir(parents=True, exist_ok=True)
-    ts = datetime.now()
-    filename = f"run_{ts.strftime('%Y-%m-%d_%H%M%S')}.json"
-    entry = {
-        "steam_id": steam_id,
-        "vanity": vanity,
-        "date": date.today().isoformat(),
-        "timestamp": ts.isoformat(),
-        "sale_name": sale_name,
-        "min_discount": min_discount,
-        "deals": {
-            d["appid"]: {
-                "name": d["name"],
-                "discount": d["discount"],
-                "price_final": d["price_final"],
-                "price_raw": d.get("price_raw", 0),
-            }
-            for d in deals
-        },
-    }
-    path = HISTORY_DIR / filename
-    path.write_text(json.dumps(entry, ensure_ascii=False), encoding="utf-8")
-    _prune_history()
-    return path
+    if _save_run_history_impl is None:
+        raise RuntimeError("History module is not available")
+    return _save_run_history_impl(
+        steam_id,
+        vanity,
+        sale_name,
+        min_discount,
+        deals,
+        history_dir=HISTORY_DIR,
+        history_max_files=HISTORY_MAX_FILES,
+    )
 
 
 def load_previous_run(steam_id: str) -> dict | None:
     """Carga el run anterior más reciente del historial."""
-    if not HISTORY_DIR.exists():
-        return None
-    files = sorted(HISTORY_DIR.glob("run_*.json"), reverse=True)
-    for f in files:
-        try:
-            data = json.loads(f.read_text(encoding="utf-8"))
-            if data.get("steam_id") == steam_id:
-                return data
-        except (json.JSONDecodeError, OSError):
-            continue
-    return None
+    if _load_previous_run_impl is None:
+        raise RuntimeError("History module is not available")
+    return _load_previous_run_impl(steam_id, history_dir=HISTORY_DIR)
 
 
 def load_run_history(steam_id: str, max_runs: int = 30) -> list[dict]:
     """Carga los últimos N runs para deal streak tracking."""
-    if not HISTORY_DIR.exists():
-        return []
-    files = sorted(HISTORY_DIR.glob("run_*.json"), reverse=True)
-    runs = []
-    for f in files:
-        if len(runs) >= max_runs:
-            break
-        try:
-            data = json.loads(f.read_text(encoding="utf-8"))
-            if data.get("steam_id") == steam_id:
-                runs.append(data)
-        except (json.JSONDecodeError, OSError):
-            continue
-    return runs
-
-
-def _prune_history():
-    """Elimina archivos de historial más allá del máximo."""
-    files = sorted(HISTORY_DIR.glob("run_*.json"))
-    excess = len(files) - HISTORY_MAX_FILES
-    if excess > 0:
-        for f in files[:excess]:
-            f.unlink(missing_ok=True)
+    if _load_run_history_impl is None:
+        raise RuntimeError("History module is not available")
+    return _load_run_history_impl(steam_id, history_dir=HISTORY_DIR, max_runs=max_runs)
 
 
 def compute_deal_comparison(
@@ -948,67 +649,9 @@ def compute_deal_comparison(
     run_history: list[dict],
 ) -> dict:
     """Compara deals actuales con run anterior y historial."""
-    result = {
-        "price_changes": {},
-        "new_deals": set(),
-        "disappeared": [],
-        "deal_streak": {},
-    }
-    if not previous_run:
-        return result
-
-    prev_deals = previous_run.get("deals", {})
-    current_appids = {d["appid"] for d in current_deals}
-    prev_appids = set(prev_deals.keys())
-
-    result["new_deals"] = current_appids - prev_appids
-
-    # Price changes
-    for deal in current_deals:
-        appid = deal["appid"]
-        if appid not in prev_deals:
-            continue
-        prev = prev_deals[appid]
-        curr_raw = deal.get("price_raw", 0)
-        prev_raw = prev.get("price_raw", 0)
-        if curr_raw and prev_raw and curr_raw != prev_raw:
-            delta = curr_raw - prev_raw
-            delta_pesos = abs(delta) / 100
-            result["price_changes"][appid] = {
-                "delta_raw": delta,
-                "delta_str": f"${delta_pesos:.0f}"
-                if delta_pesos >= 1
-                else f"${delta_pesos:.2f}",
-                "prev_price": prev.get("price_final", "?"),
-                "direction": "down" if delta < 0 else "up",
-            }
-
-    # Disappeared deals
-    prev_date = previous_run.get("date", "?")
-    for appid in sorted(prev_appids - current_appids):
-        info = prev_deals[appid]
-        result["disappeared"].append(
-            {
-                "appid": appid,
-                "name": info.get("name", "?"),
-                "discount": info.get("discount", 0),
-                "price_final": info.get("price_final", "?"),
-                "last_seen": prev_date,
-            }
-        )
-
-    # Deal streak
-    for deal in current_deals:
-        appid = deal["appid"]
-        streak = 1
-        for past_run in run_history:
-            if appid in past_run.get("deals", {}):
-                streak += 1
-            else:
-                break
-        result["deal_streak"][appid] = streak
-
-    return result
+    if _compute_deal_comparison_impl is None:
+        raise RuntimeError("History module is not available")
+    return _compute_deal_comparison_impl(current_deals, previous_run, run_history)
 
 
 # ─────────────────────────────────────────────
@@ -1016,94 +659,81 @@ def compute_deal_comparison(
 # ─────────────────────────────────────────────
 
 
-def _fmt_mxn(centavos: int) -> str:
-    pesos = centavos / 100
-    return f"${int(pesos)}" if pesos == int(pesos) else f"${pesos:.2f}"
-
-
 def load_price_history(steam_id: str) -> dict:
-    data = load_json_file(PRICE_HISTORY_FILE, None)
-    if not isinstance(data, dict):
-        return {"version": 1, "steam_id": steam_id, "games": {}}
-    if data.get("steam_id") != steam_id:
-        return {"version": 1, "steam_id": steam_id, "games": {}}
-    return data
+    if _load_price_history_impl is None:
+        raise RuntimeError("History module is not available")
+    return _load_price_history_impl(
+        steam_id,
+        price_history_file=PRICE_HISTORY_FILE,
+        load_json_file=load_json_file,
+    )
 
 
 def save_price_history(history: dict) -> None:
-    write_json_file(PRICE_HISTORY_FILE, history, ensure_ascii=False, indent=None)
+    if _save_price_history_impl is None:
+        raise RuntimeError("History module is not available")
+    _save_price_history_impl(
+        history,
+        price_history_file=PRICE_HISTORY_FILE,
+        write_json_file=write_json_file,
+    )
 
 
 def log_price_snapshot(history: dict, deals: list[dict]) -> None:
     """Register current run's prices into the history."""
-    today_str = date.today().isoformat()
-    games = history.setdefault("games", {})
-    for deal in deals:
-        appid = deal["appid"]
-        price_raw = deal.get("price_raw", 0)
-        if not price_raw:
-            continue
-        game_entry = games.setdefault(appid, {"name": deal["name"], "snapshots": []})
-        game_entry["name"] = deal["name"]
-        # Replace same-day snapshot
-        snaps = game_entry["snapshots"]
-        snaps[:] = [s for s in snaps if s["date"] != today_str]
-        snaps.append(
-            {"date": today_str, "discount": deal["discount"], "price_raw": price_raw}
-        )
-        # Keep max 60 snapshots per game
-        if len(snaps) > 60:
-            snaps[:] = snaps[-60:]
+    if _log_price_snapshot_impl is None:
+        raise RuntimeError("History module is not available")
+    _log_price_snapshot_impl(history, deals)
 
 
 def analyze_trends(history: dict, deals: list[dict]) -> dict[str, dict]:
     """Analyze price trends for current deals. Returns {appid: trend_info}."""
-    games = history.get("games", {})
-    result = {}
-    today_str = date.today().isoformat()
-
-    for deal in deals:
-        appid = deal["appid"]
-        price_raw = deal.get("price_raw", 0)
-        game_entry = games.get(appid)
-        if not game_entry or not price_raw:
-            result[appid] = {"times_on_sale": 1, "is_first_time": True}
-            continue
-
-        snaps = game_entry.get("snapshots", [])
-        prev_snaps = [s for s in snaps if s["date"] != today_str]
-
-        if not prev_snaps:
-            result[appid] = {"times_on_sale": 1, "is_first_time": True}
-            continue
-
-        times = len(prev_snaps) + 1
-        prices = [s["price_raw"] for s in prev_snaps]
-        lowest = min(prices)
-        avg = round(sum(prices) / len(prices))
-
-        result[appid] = {
-            "times_on_sale": times,
-            "is_first_time": False,
-            "is_best_local": price_raw <= lowest,
-            "is_first_at_price": price_raw not in prices,
-            "lowest_fmt": _fmt_mxn(lowest),
-            "avg_fmt": _fmt_mxn(avg),
-            "avg_raw": avg,
-        }
-    return result
+    if _analyze_trends_impl is None:
+        raise RuntimeError("History module is not available")
+    return _analyze_trends_impl(history, deals)
 
 
 def format_trend(trend: dict) -> str:
-    if trend.get("is_first_time"):
-        return "🆕 1ra vez"
-    if trend.get("is_best_local") and trend.get("times_on_sale", 0) > 1:
-        return "🔥 Mín. local"
-    if trend.get("is_first_at_price"):
-        return f"💰 1ra vez a este precio"
-    times = trend.get("times_on_sale", 0)
-    avg = trend.get("avg_fmt", "?")
-    return f"📊 {times}x · prom {avg}"
+    if _format_trend_impl is None:
+        raise RuntimeError("History module is not available")
+    return _format_trend_impl(trend)
+
+
+def build_output_md_path(output_dir: str | Path, sale_name: str, *, today_obj: date | None = None) -> Path:
+    if _run_output_module is None:
+        raise RuntimeError("Run-output module is not available")
+    return _run_output_module.build_output_md_path(output_dir, sale_name, today_obj=today_obj)
+
+
+def resolve_previous_context(output_dir: str | Path, current_filename: str, steam_id: str) -> dict:
+    if _run_output_module is None:
+        raise RuntimeError("Run-output module is not available")
+    return _run_output_module.resolve_previous_context(
+        output_dir,
+        current_filename,
+        steam_id,
+        load_previous_run_fn=load_previous_run,
+        load_run_history_fn=load_run_history,
+        load_previous_deal_appids_fn=load_previous_deal_appids,
+    )
+
+
+def build_share_output_path(output_dir: str | Path, *, today_obj: date | None = None) -> Path:
+    if _run_output_module is None:
+        raise RuntimeError("Run-output module is not available")
+    return _run_output_module.build_share_output_path(output_dir, today_obj=today_obj)
+
+
+def write_artifact(path: Path, content: str) -> Path:
+    if _run_output_module is None:
+        raise RuntimeError("Run-output module is not available")
+    return _run_output_module.write_artifact(path, content, emit_event_fn=emit_event)
+
+
+def build_final_summary(elapsed: float, deals: list[dict], backlog_on_sale: list[dict], previous_appids: set[str], top_picks: list[dict] | None, output_md: Path) -> tuple[int, str]:
+    if _run_output_module is None:
+        raise RuntimeError("Run-output module is not available")
+    return _run_output_module.build_final_summary(elapsed, deals, backlog_on_sale, previous_appids, top_picks, output_md)
 
 
 # ─────────────────────────────────────────────
@@ -1129,24 +759,15 @@ ACHIEVEMENTS_CACHE_TTL = 720  # 30 days in hours
 
 
 def load_price_cache(steam_id: str) -> tuple[dict, float]:
-    return load_timestamped_cache(
-        CACHE_FILE,
-        "fetched",
-        identity_key="steam_id",
-        identity_value=steam_id,
-    )
+    if _prices_module is None:
+        raise RuntimeError("Prices module is not available")
+    return _prices_module.load_price_cache(CACHE_FILE, steam_id)
 
 
 def save_price_cache(steam_id: str, fetched: dict) -> None:
-    save_timestamped_cache(
-        CACHE_FILE,
-        "fetched",
-        fetched,
-        identity_key="steam_id",
-        identity_value=steam_id,
-        ensure_ascii=False,
-        indent=2,
-    )
+    if _prices_module is None:
+        raise RuntimeError("Prices module is not available")
+    _prices_module.save_price_cache(CACHE_FILE, steam_id, fetched)
 
 
 # ─────────────────────────────────────────────
@@ -1158,56 +779,23 @@ BATCH_SIZE = 20
 
 def _fetch_single(appid: str, country: str, delay: float) -> dict | None:
     """Fallback: fetch individual de un appid."""
-    url = (
-        f"https://store.steampowered.com/api/appdetails"
-        f"?appids={appid}&cc={country}&filters=price_overview,basic,genres,platforms,release_date,metacritic,categories"
-    )
-    try:
-        data = _get_json(url, headers={"User-Agent": "Mozilla/5.0"})
-        time.sleep(delay)
-        return data
-    except Exception:
-        time.sleep(delay)
-        return None
+    if _prices_module is None:
+        raise RuntimeError("Prices module is not available")
+    return _prices_module.fetch_single(appid, country, delay, get_json=_get_json, sleep_fn=time.sleep)
 
 
 def _parse_release_year(date_str: str) -> int | None:
     """Extrae el año de una fecha de Steam (ej. 'Mar 25, 2019' → 2019)."""
-    if not date_str:
-        return None
-    m = re.search(r"((?:19|20)\d{2})", date_str)
-    return int(m.group(1)) if m else None
+    if _prices_module is None:
+        raise RuntimeError("Prices module is not available")
+    return _prices_module.parse_release_year(date_str)
 
 
 def _process_app_entry(appid: str, data: dict) -> dict | None:
     """Extrae info de precio de la respuesta de appdetails para un appid."""
-    app_entry = data.get(appid)
-    if not app_entry or not isinstance(app_entry, dict) or not app_entry.get("success"):
-        return None
-    info = app_entry.get("data", {})
-    price_info = info.get("price_overview")
-    if not price_info:
-        return None
-    rd = info.get("release_date", {})
-    release_str = rd.get("date", "") if not rd.get("coming_soon") else ""
-    # Strip HTML from short_description
-    raw_desc = info.get("short_description", "")
-    clean_desc = re.sub(r"<[^>]+>", "", raw_desc).strip()[:120] if raw_desc else ""
-    return {
-        "name": info.get("name", ""),
-        "type": info.get("type", "game"),
-        "discount_percent": price_info.get("discount_percent", 0),
-        "price_final": price_info.get("final_formatted", ""),
-        "price_original": price_info.get("initial_formatted", ""),
-        "price_final_raw": price_info.get("final", 0),
-        "genres": [g["description"].lower() for g in info.get("genres", [])],
-        "release_year": _parse_release_year(release_str),
-        "description": clean_desc,
-        "linux_native": info.get("platforms", {}).get("linux", False),
-        "metacritic_score": info.get("metacritic", {}).get("score"),
-        "metacritic_url": info.get("metacritic", {}).get("url", ""),
-        "categories": [c["id"] for c in info.get("categories", [])],
-    }
+    if _prices_module is None:
+        raise RuntimeError("Prices module is not available")
+    return _prices_module.process_app_entry(appid, data, parse_release_year_fn=_parse_release_year)
 
 
 def get_deals_from_wishlist(
@@ -1218,296 +806,75 @@ def get_deals_from_wishlist(
     min_discount: int = 50,
     rate_limit: float = 1.5,
 ) -> tuple[list[dict], int]:
-    to_fetch = [a for a in appids if a not in fetched_cache]
-    total = len(to_fetch)
-    BAR_W = 25
-    delay = rate_limit
-
-    if total > 0:
-        batches = [to_fetch[i : i + BATCH_SIZE] for i in range(0, total, BATCH_SIZE)]
-        n_batches = len(batches)
-        start = time.monotonic()
-        eta_str = f"~{n_batches * delay / 60:.1f} min"
-        print(
-            f"  Fetching {total:,} juegos en {n_batches} batches ({eta_str})...",
-            flush=True,
-        )
-
-        fetched_count = 0
-        for bi, batch in enumerate(batches):
-            pct = fetched_count / total
-            filled = int(pct * BAR_W)
-            bar = f"{C.GRN}{BAR_FILL * filled}{C.DIM}{BAR_EMPTY * (BAR_W - filled)}{C.RST}"
-            if fetched_count > 0:
-                eta_sec = (
-                    (time.monotonic() - start) / fetched_count * (total - fetched_count)
-                )
-                eta_str = f"{eta_sec / 60:.1f}m"
-            print(
-                f"\r  {bar} {fetched_count:,}/{total:,} ETA {eta_str}  ",
-                end="",
-                flush=True,
-            )
-
-            ids_str = ",".join(batch)
-            url = (
-                f"https://store.steampowered.com/api/appdetails"
-                f"?appids={ids_str}&cc={country}&filters=price_overview,basic,genres,platforms,release_date,metacritic,categories"
-            )
-
-            backoff = 30
-            data = None
-            for attempt in range(4):
-                try:
-                    data = _get_json(url, headers={"User-Agent": "Mozilla/5.0"})
-                    break
-                except urllib.error.HTTPError as e:
-                    if e.code == 429:
-                        print(
-                            f"\n  {_warn(f'Rate limit — esperando {backoff}s (intento {attempt + 1}/4)')}",
-                            flush=True,
-                        )
-                        time.sleep(backoff)
-                        backoff = min(backoff * 2, 120)
-                        delay = min(delay * 1.5, 5.0)
-                        print(
-                            f"  {_dim(f'Delay ajustado a {delay:.1f}s entre batches')}",
-                            flush=True,
-                        )
-                    else:
-                        print(
-                            f"\n  {_warn(f'HTTP {e.code} en batch {bi + 1}, saltando')}",
-                            flush=True,
-                        )
-                        time.sleep(delay)
-                        break
-                except Exception as exc:
-                    print(f"\n  {_warn(f'Error en batch {bi + 1}: {exc}')}", flush=True)
-                    time.sleep(delay * 3)
-                    break
-
-            if data is None:
-                # Fallback: intentar individualmente
-                print(
-                    f"\n  {_dim('Batch falló, intentando individualmente...')}",
-                    flush=True,
-                )
-                for appid in batch:
-                    single = _fetch_single(appid, country, delay)
-                    if single:
-                        result = _process_app_entry(appid, single)
-                        fetched_cache[appid] = result
-                    else:
-                        fetched_cache[appid] = None
-                fetched_count += len(batch)
-                continue
-
-            # Verificar si el batch devolvió todo null (Steam a veces rechaza batches)
-            null_count = sum(
-                1 for a in batch if not data.get(a) or not isinstance(data.get(a), dict)
-            )
-            if null_count == len(batch) and len(batch) > 1:
-                print(
-                    f"\n  {_dim('Batch devolvió todo null, reintentando individualmente...')}",
-                    flush=True,
-                )
-                for appid in batch:
-                    single = _fetch_single(appid, country, delay)
-                    if single:
-                        result = _process_app_entry(appid, single)
-                        fetched_cache[appid] = result
-                    else:
-                        fetched_cache[appid] = None
-                fetched_count += len(batch)
-                continue
-
-            for appid in batch:
-                result = _process_app_entry(appid, data)
-                fetched_cache[appid] = result
-
-            fetched_count += len(batch)
-
-            if bi > 0 and bi % 10 == 0:
-                save_price_cache(steam_id, fetched_cache)
-
-            time.sleep(delay)
-
-        print(f"\r  {'':70}\r", end="", flush=True)
-
-    deals = [
-        {
-            "appid": appid,
-            "name": info["name"],
-            "type": info.get("type", "game"),
-            "discount": info["discount_percent"],
-            "price_final": info["price_final"],
-            "price_original": info["price_original"],
-            "price_raw": info.get("price_final_raw", 0),
-            "genres": info["genres"],
-            "release_year": info.get("release_year"),
-            "description": info.get("description", ""),
-            "linux_native": info.get("linux_native", False),
-            "metacritic_score": info.get("metacritic_score"),
-            "metacritic_url": info.get("metacritic_url", ""),
-            "categories": info.get("categories", []),
-        }
-        for appid in appids
-        if (info := fetched_cache.get(appid))
-        and info
-        and info.get("discount_percent", 0) >= min_discount
-    ]
-    deals.sort(key=lambda x: -x["discount"])
-    return deals, total
+    if _prices_module is None:
+        raise RuntimeError("Prices module is not available")
+    return _prices_module.get_deals_from_wishlist(
+        appids,
+        fetched_cache,
+        steam_id,
+        country=country,
+        min_discount=min_discount,
+        rate_limit=rate_limit,
+        get_json=_get_json,
+        sleep_fn=time.sleep,
+        monotonic_fn=time.monotonic,
+        save_price_cache_fn=save_price_cache,
+        fetch_single_fn=_fetch_single,
+        process_app_entry_fn=_process_app_entry,
+        emit=print,
+        warn=_warn,
+        dim=_dim,
+        bar_fill=BAR_FILL,
+        bar_empty=BAR_EMPTY,
+        color_green=C.GRN,
+        color_dim=C.DIM,
+        color_reset=C.RST,
+        batch_size=BATCH_SIZE,
+    )
 
 
 # ─────────────────────────────────────────────
 # PARSEAR HLTB CSV
 # ─────────────────────────────────────────────
 
-
-def _parse_hltb_hours(val: str) -> float | None:
-    """Convierte 'HH:MM:SS' o '--' a horas decimales."""
-    if not val or val.strip() == "--":
-        return None
-    parts = val.strip().split(":")
-    try:
-        h = int(parts[0])
-        m = int(parts[1]) if len(parts) > 1 else 0
-        s = int(parts[2]) if len(parts) > 2 else 0
-        return h + m / 60 + s / 3600
-    except (ValueError, IndexError):
-        return None
-
-
 def parse_hltb(csv_path: Path) -> dict[str, list[dict]]:
-    result = {"backlog": [], "completed": [], "playing": [], "retired": []}
-    with open(csv_path, encoding="utf-8") as f:
-        for row in csv.DictReader(f):
-            title = row["Title"].strip()
-            # Tomar Main + Extras si existe, sino Main Story
-            hours = _parse_hltb_hours(row.get("Main + Extras", ""))
-            if hours is None:
-                hours = _parse_hltb_hours(row.get("Main Story", ""))
-            entry = {
-                "title": title,
-                "storefront": row.get("Storefront", "").strip(),
-                "hours": hours,
-            }
-            if row.get("Backlog", "").strip() == "X":
-                result["backlog"].append(entry)
-            elif row.get("Completed", "").strip() == "X":
-                result["completed"].append(entry)
-            elif row.get("Playing", "").strip() == "X":
-                result["playing"].append(entry)
-            elif row.get("Retired", "").strip() == "X":
-                result["retired"].append(entry)
-    return result
+    if _parse_hltb_impl is None:
+        raise RuntimeError("HLTB module is not available")
+    return _parse_hltb_impl(csv_path)
 
 
 # ─────────────────────────────────────────────
 # FUZZY MATCHING HLTB × DEALS
 # ─────────────────────────────────────────────
 
-EDITION_WORDS = {
-    "definitive",
-    "remastered",
-    "complete",
-    "deluxe",
-    "hd",
-    "edition",
-    "goty",
-    "collection",
-    "director",
-    "cut",
-    "enhanced",
-    "anniversary",
-    "intergrade",
-    "gold",
-    "platinum",
-    "ultimate",
-}
-ROMAN = {
-    "i": "1",
-    "ii": "2",
-    "iii": "3",
-    "iv": "4",
-    "v": "5",
-    "vi": "6",
-    "vii": "7",
-    "viii": "8",
-    "ix": "9",
-    "x": "10",
-    "xi": "11",
-    "xii": "12",
-    "xiii": "13",
-    "xiv": "14",
-    "xv": "15",
-}
-
-
 def normalize(s: str) -> str:
-    s = re.sub(r"[®™©]", "", s.lower())
-    s = re.sub(r"[^a-z0-9 ]", " ", s)
-    return " ".join(ROMAN.get(w, w) for w in re.sub(r"\s+", " ", s).strip().split())
+    if _normalize_impl is None:
+        raise RuntimeError("HLTB module is not available")
+    return _normalize_impl(s)
 
 
 def extract_numbers(s: str) -> set[str]:
-    return set(re.findall(r"\b\d+\b", normalize(s)))
+    if _extract_numbers_impl is None:
+        raise RuntimeError("HLTB module is not available")
+    return _extract_numbers_impl(s)
 
 
 def significant_words(s: str) -> set[str]:
-    stop = {
-        "the",
-        "a",
-        "an",
-        "of",
-        "in",
-        "and",
-        "or",
-        "to",
-        "is",
-        "it",
-        "at",
-        "on",
-        "for",
-    }
-    return set(normalize(s).split()) - stop
+    if _significant_words_impl is None:
+        raise RuntimeError("HLTB module is not available")
+    return _significant_words_impl(s)
 
 
 def is_same_game(a: str, b: str) -> bool:
-    na, nb = extract_numbers(a), extract_numbers(b)
-    if na and nb and na != nb:
-        return False
-    if bool(na) != bool(nb):
-        return False
-    wa, wb = significant_words(a), significant_words(b)
-    only_a = (wa - wb) - EDITION_WORDS
-    only_b = (wb - wa) - EDITION_WORDS
-    if only_a and only_b:
-        return False
-    shared = wa & wb
-    if not shared:
-        return False
-    shorter = wa if len(wa) <= len(wb) else wb
-    return len(shared) / len(shorter) >= 0.7
+    if _is_same_game_impl is None:
+        raise RuntimeError("HLTB module is not available")
+    return _is_same_game_impl(a, b)
 
 
 def find_best_match(hltb_title: str, deals: list[dict], threshold: float = 0.75):
-    hn = normalize(hltb_title)
-    best_score, best_deal = 0.0, None
-    for deal in deals:
-        if deal.get("type", "game") != "game":
-            continue
-        score = SequenceMatcher(None, hn, normalize(deal["name"])).ratio()
-        if score > best_score:
-            best_score, best_deal = score, deal
-    if (
-        best_score >= threshold
-        and best_deal
-        and is_same_game(hltb_title, best_deal["name"])
-    ):
-        return best_score, best_deal
-    return 0.0, None
+    if _find_best_match_impl is None:
+        raise RuntimeError("HLTB module is not available")
+    return _find_best_match_impl(hltb_title, deals, threshold=threshold)
 
 
 def cross_hltb_with_deals(
@@ -1516,47 +883,14 @@ def cross_hltb_with_deals(
     threshold: float = 0.75,
     family_appids: set[str] | None = None,
 ) -> tuple[list[dict], list[dict]]:
-    used_names = set()
-    backlog_on_sale = []
-    have_on_sale = []
-    family_appids = family_appids or set()
-
-    for status, games in [
-        ("backlog", hltb["backlog"]),
-        ("completed", hltb["completed"]),
-        ("playing", hltb["playing"]),
-        ("retired", hltb["retired"]),
-    ]:
-        for game in games:
-            score, deal = find_best_match(game["title"], deals, threshold)
-            if deal and deal["name"] not in used_names:
-                # Precio/hora
-                hours = game.get("hours")
-                price_raw = deal.get("price_raw", 0)
-                price_per_hour = None
-                if hours and hours > 0 and price_raw > 0:
-                    price_per_hour = (price_raw / 100) / hours
-
-                entry = {
-                    "appid": deal["appid"],
-                    "hltb_title": game["title"],
-                    "steam_name": deal["name"],
-                    "storefront": game["storefront"],
-                    "discount": deal["discount"],
-                    "price": deal["price_final"],
-                    "price_original": deal["price_original"],
-                    "score": round(score, 2),
-                    "status": status,
-                    "in_family": deal["appid"] in family_appids,
-                    "hours": hours,
-                    "price_per_hour": price_per_hour,
-                }
-                (backlog_on_sale if status == "backlog" else have_on_sale).append(entry)
-                used_names.add(deal["name"])
-
-    backlog_on_sale.sort(key=lambda x: -x["discount"])
-    have_on_sale.sort(key=lambda x: -x["discount"])
-    return backlog_on_sale, have_on_sale
+    if _cross_hltb_with_deals_impl is None:
+        raise RuntimeError("HLTB module is not available")
+    return _cross_hltb_with_deals_impl(
+        hltb,
+        deals,
+        threshold=threshold,
+        family_appids=family_appids,
+    )
 
 
 # ─────────────────────────────────────────────
@@ -1565,13 +899,9 @@ def cross_hltb_with_deals(
 
 
 def filter_by_genres(deals: list[dict], genres: list[str]) -> list[dict]:
-    if not genres:
-        return []
-    matched = [
-        d for d in deals if any(g in dg for g in genres for dg in d.get("genres", []))
-    ]
-    matched.sort(key=lambda x: -x["discount"])
-    return matched
+    if _filter_by_genres_impl is None:
+        raise RuntimeError("Filters module is not available")
+    return _filter_by_genres_impl(deals, genres)
 
 
 def apply_filters(
@@ -1584,50 +914,17 @@ def apply_filters(
     comparison: dict | None = None,
 ) -> list[dict]:
     """Aplica filtros CLI avanzados sobre la lista de deals."""
-    filtered = list(deals)
-    comp = comparison or {}
-
-    if filters.get("max_price") is not None:
-        limit = filters["max_price"] * 100
-        filtered = [d for d in filtered if d.get("price_raw", 0) <= limit]
-
-    if filters.get("deck_verified"):
-        filtered = [d for d in filtered if deck_compat.get(d["appid"], 0) == 3]
-    elif filters.get("deck_only"):
-        filtered = [d for d in filtered if deck_compat.get(d["appid"], 0) >= 2]
-
-    if filters.get("min_reviews") is not None:
-        filtered = [
-            d
-            for d in filtered
-            if (r := reviews.get(d["appid"]))
-            and r.get("pct", 0) >= filters["min_reviews"]
-        ]
-
-    if filters.get("min_review_count") is not None:
-        filtered = [
-            d
-            for d in filtered
-            if (r := reviews.get(d["appid"]))
-            and r.get("total", 0) >= filters["min_review_count"]
-        ]
-
-    if filters.get("max_hours") is not None:
-        filtered = [
-            d
-            for d in filtered
-            if (h := hltb_hours.get(d["appid"])) is not None
-            and h <= filters["max_hours"]
-        ]
-
-    if filters.get("new_only"):
-        new_set = comp.get("new_deals", set())
-        if new_set:
-            filtered = [d for d in filtered if d["appid"] in new_set]
-        elif previous_appids:
-            filtered = [d for d in filtered if d["appid"] not in previous_appids]
-
-    return filtered
+    if _apply_filters_impl is None:
+        raise RuntimeError("Filters module is not available")
+    return _apply_filters_impl(
+        deals,
+        filters,
+        reviews,
+        deck_compat,
+        hltb_hours,
+        previous_appids,
+        comparison=comparison,
+    )
 
 
 # ─────────────────────────────────────────────
@@ -1638,89 +935,39 @@ MAX_WORKERS = 8
 RATE_LIMIT_INTERVAL = 0.15
 
 
-def _fetch_parallel(
-    items: list[str],
-    fetch_fn,
-    label: str,
-    rate_limit: float = RATE_LIMIT_INTERVAL,
-    max_workers: int = MAX_WORKERS,
-) -> dict:
+def _enrichment_bar(completed: int, total: int, width: int = 25) -> str:
+    filled = int((completed / total) * width) if total > 0 else 0
+    return f"{C.GRN}{BAR_FILL * filled}{C.DIM}{BAR_EMPTY * (width - filled)}{C.RST}"
+
+
+def _fetch_parallel(items: list[str], fetch_fn, label: str,
+                    rate_limit: float = RATE_LIMIT_INTERVAL, max_workers: int = MAX_WORKERS) -> dict:
     """Execute fetch_fn(appid) in parallel with global rate limiting."""
-    total = len(items)
-    if total == 0:
-        return {}
-    results = {}
-    BAR_W = 25
-    start = time.monotonic()
-    completed = [0]
-    lock = threading.Lock()
-    last_req = [0.0]
-    throttle = threading.Lock()
-
-    def throttled(appid):
-        with throttle:
-            now = time.monotonic()
-            wait = rate_limit - (now - last_req[0])
-            if wait > 0:
-                time.sleep(wait)
-            last_req[0] = time.monotonic()
-        return appid, fetch_fn(appid)
-
-    eta_str = f"~{total * rate_limit / max_workers / 60:.1f} min"
-    print(f"  Fetching {label} de {total} juegos ({eta_str})...", flush=True)
-
-    with ThreadPoolExecutor(max_workers=max_workers) as executor:
-        futures = {executor.submit(throttled, aid): aid for aid in items}
-        for future in as_completed(futures):
-            completed[0] += 1
-            pct = completed[0] / total
-            filled = int(pct * BAR_W)
-            bar = f"{C.GRN}{BAR_FILL * filled}{C.DIM}{BAR_EMPTY * (BAR_W - filled)}{C.RST}"
-            elapsed = time.monotonic() - start
-            if completed[0] > 1:
-                eta_sec = elapsed / completed[0] * (total - completed[0])
-                eta_str = f"{eta_sec / 60:.1f}m"
-            print(
-                f"\r  {bar} {completed[0]}/{total} ETA {eta_str}  ", end="", flush=True
-            )
-            try:
-                appid, result = future.result()
-                if result is not None:
-                    with lock:
-                        results[appid] = result
-            except Exception:
-                pass
-
-    print(f"\r  {'':70}\r", end="", flush=True)
-    return results
+    if _enrichment_module is None:
+        raise RuntimeError("Enrichment module is not available")
+    return _enrichment_module.fetch_parallel(
+        items,
+        fetch_fn,
+        label,
+        rate_limit=rate_limit,
+        max_workers=max_workers,
+        monotonic_fn=time.monotonic,
+        sleep_fn=time.sleep,
+        emit_progress=print,
+        build_bar=_enrichment_bar,
+    )
 
 
 def _fetch_single_review(appid: str) -> dict | None:
-    url = f"https://store.steampowered.com/appreviews/{appid}?json=1&num_per_page=0&language=all"
-    try:
-        data = _get_json(url, headers={"User-Agent": "Mozilla/5.0"})
-        qs = data.get("query_summary", {})
-        total_reviews = qs.get("total_reviews", 0)
-        if total_reviews > 0:
-            pos = qs.get("total_positive", 0)
-            return {
-                "desc": qs.get("review_score_desc", ""),
-                "pct": round(pos / total_reviews * 100),
-                "total": total_reviews,
-            }
-    except Exception:
-        pass
-    return None
+    if _enrichment_module is None:
+        raise RuntimeError("Enrichment module is not available")
+    return _enrichment_module.fetch_single_review(appid, get_json=_get_json)
 
 
 def _fetch_single_deck(appid: str) -> int | None:
-    url = f"https://store.steampowered.com/saleaction/ajaxgetdeckappcompatibilityreport?nAppID={appid}"
-    try:
-        data = _get_json(url, headers={"User-Agent": "Mozilla/5.0"})
-        return data.get("results", {}).get("resolved_category", 0)
-    except Exception:
-        pass
-    return None
+    if _enrichment_module is None:
+        raise RuntimeError("Enrichment module is not available")
+    return _enrichment_module.fetch_single_deck(appid, get_json=_get_json)
 
 
 # ─────────────────────────────────────────────
@@ -1729,354 +976,189 @@ def _fetch_single_deck(appid: str) -> int | None:
 
 
 def load_reviews_cache(steam_id: str) -> tuple[dict, float]:
-    return load_timestamped_cache(
-        REVIEWS_CACHE_FILE,
-        "reviews",
-        identity_key="steam_id",
-        identity_value=steam_id,
-    )
+    if _enrichment_module is None:
+        raise RuntimeError("Enrichment module is not available")
+    return _enrichment_module.load_reviews_cache(REVIEWS_CACHE_FILE, steam_id)
 
 
 def save_reviews_cache(steam_id: str, reviews: dict) -> None:
-    save_timestamped_cache(
-        REVIEWS_CACHE_FILE,
-        "reviews",
-        reviews,
-        identity_key="steam_id",
-        identity_value=steam_id,
-        ensure_ascii=False,
-        indent=2,
-    )
+    if _enrichment_module is None:
+        raise RuntimeError("Enrichment module is not available")
+    _enrichment_module.save_reviews_cache(REVIEWS_CACHE_FILE, steam_id, reviews)
 
 
 def fetch_reviews(
     appids: list[str], cached: dict, rate_limit: float = 0.15
 ) -> dict[str, dict]:
     """Fetch Steam reviews in parallel. Returns merged {appid: {desc, pct, total}}."""
-    to_fetch = [a for a in appids if a not in cached]
-    if not to_fetch:
-        return cached
-    result = dict(cached)
-    fetched = _fetch_parallel(
-        to_fetch, _fetch_single_review, "reviews", rate_limit=rate_limit
-    )
-    result.update(fetched)
-    return result
+    if _enrichment_module is None:
+        raise RuntimeError("Enrichment module is not available")
+    return _enrichment_module.fetch_reviews(appids, cached, rate_limit=rate_limit, fetch_parallel_fn=_fetch_parallel, get_json=_get_json)
 
 
 # ─────────────────────────────────────────────
 # CACHÉ Y FETCH: COMPATIBILIDAD STEAM DECK
 # ─────────────────────────────────────────────
 
-DECK_LABELS = {3: "✅ Verified", 2: "🟡 Playable", 1: "❌ Unsupported"}
-
-
 def deck_badge(category: int) -> str:
-    return DECK_LABELS.get(category, "")
+    if _deck_badge_impl is None:
+        raise RuntimeError("Presentation module is not available")
+    return _deck_badge_impl(category)
 
 
 def load_deck_cache(steam_id: str) -> tuple[dict, float]:
-    return load_timestamped_cache(
-        DECK_CACHE_FILE,
-        "deck",
-        identity_key="steam_id",
-        identity_value=steam_id,
-    )
+    if _enrichment_module is None:
+        raise RuntimeError("Enrichment module is not available")
+    return _enrichment_module.load_deck_cache(DECK_CACHE_FILE, steam_id)
 
 
 def save_deck_cache(steam_id: str, deck: dict) -> None:
-    save_timestamped_cache(
-        DECK_CACHE_FILE,
-        "deck",
-        deck,
-        identity_key="steam_id",
-        identity_value=steam_id,
-        ensure_ascii=False,
-        indent=2,
-    )
+    if _enrichment_module is None:
+        raise RuntimeError("Enrichment module is not available")
+    _enrichment_module.save_deck_cache(DECK_CACHE_FILE, steam_id, deck)
 
 
 def fetch_deck_compat(
     appids: list[str], cached: dict, rate_limit: float = 0.15
 ) -> dict[str, int]:
     """Fetch Steam Deck compatibility in parallel. Returns merged {appid: category}."""
-    to_fetch = [a for a in appids if a not in cached]
-    if not to_fetch:
-        return cached
-    result = dict(cached)
-    fetched = _fetch_parallel(
-        to_fetch, _fetch_single_deck, "Deck compat", rate_limit=rate_limit
-    )
-    result.update(fetched)
-    return result
+    if _enrichment_module is None:
+        raise RuntimeError("Enrichment module is not available")
+    return _enrichment_module.fetch_deck_compat(appids, cached, rate_limit=rate_limit, fetch_parallel_fn=_fetch_parallel, get_json=_get_json)
 
 
 # ─────────────────────────────────────────────
 # CACHÉ Y FETCH: PROTONDB
 # ─────────────────────────────────────────────
 
-PROTONDB_TIERS = {
-    "native": "🐧 Native",
-    "platinum": "💎 Platinum",
-    "gold": "🥇 Gold",
-    "silver": "🥈 Silver",
-    "bronze": "🥉 Bronze",
-    "borked": "💔 Borked",
-}
-
-
 def protondb_badge(tier: str) -> str:
-    return PROTONDB_TIERS.get(tier, "")
+    if _protondb_badge_impl is None:
+        raise RuntimeError("Presentation module is not available")
+    return _protondb_badge_impl(tier)
 
 
 def load_protondb_cache() -> tuple[dict, float]:
-    return load_timestamped_cache(PROTONDB_CACHE_FILE, "protondb")
+    if _enrichment_module is None:
+        raise RuntimeError("Enrichment module is not available")
+    return _enrichment_module.load_protondb_cache(PROTONDB_CACHE_FILE)
 
 
 def save_protondb_cache(protondb: dict) -> None:
-    save_timestamped_cache(
-        PROTONDB_CACHE_FILE, "protondb", protondb, ensure_ascii=False, indent=None
-    )
+    if _enrichment_module is None:
+        raise RuntimeError("Enrichment module is not available")
+    _enrichment_module.save_protondb_cache(PROTONDB_CACHE_FILE, protondb)
 
 
 def _fetch_single_protondb(appid: str) -> dict | None:
-    url = f"https://www.protondb.com/api/v1/reports/summaries/{appid}.json"
-    try:
-        data = _get_json(url, headers={"User-Agent": "Mozilla/5.0"})
-        tier = data.get("tier", "")
-        if tier:
-            return {
-                "tier": tier,
-                "score": data.get("score", 0),
-                "total": data.get("total", 0),
-            }
-    except Exception:
-        pass
-    return None
+    if _enrichment_module is None:
+        raise RuntimeError("Enrichment module is not available")
+    return _enrichment_module.fetch_single_protondb(appid, get_json=_get_json)
 
 
 def fetch_protondb(
     appids: list[str], cached: dict, rate_limit: float = 0.15
 ) -> dict[str, dict]:
     """Fetch ProtonDB tiers in parallel. Returns merged {appid: {tier, score, total}}."""
-    to_fetch = [a for a in appids if a not in cached]
-    if not to_fetch:
-        return cached
-    result = dict(cached)
-    fetched = _fetch_parallel(
-        to_fetch, _fetch_single_protondb, "ProtonDB", rate_limit=rate_limit
-    )
-    result.update(fetched)
-    return result
+    if _enrichment_module is None:
+        raise RuntimeError("Enrichment module is not available")
+    return _enrichment_module.fetch_protondb(appids, cached, rate_limit=rate_limit, fetch_parallel_fn=_fetch_parallel, get_json=_get_json)
 
 
 # ─────────────────────────────────────────────
 # CACHÉ Y FETCH: ARE WE ANTI-CHEAT YET
 # ─────────────────────────────────────────────
 
-ANTICHEAT_WARN = {"Denied", "Broken"}  # statuses worth warning about
-
-
 def load_anticheat_cache() -> tuple[dict, float]:
-    return load_timestamped_cache(ANTICHEAT_CACHE_FILE, "games")
+    if _enrichment_module is None:
+        raise RuntimeError("Enrichment module is not available")
+    return _enrichment_module.load_anticheat_cache(ANTICHEAT_CACHE_FILE)
 
 
 def save_anticheat_cache(games: dict) -> None:
-    save_timestamped_cache(
-        ANTICHEAT_CACHE_FILE, "games", games, ensure_ascii=False, indent=None
-    )
+    if _enrichment_module is None:
+        raise RuntimeError("Enrichment module is not available")
+    _enrichment_module.save_anticheat_cache(ANTICHEAT_CACHE_FILE, games)
 
 
 def fetch_anticheat_db() -> dict[str, dict]:
     """Download Are We Anti-Cheat Yet database. Returns {appid: {status, anticheats, native}}."""
-    url = "https://raw.githubusercontent.com/AreWeAntiCheatYet/AreWeAntiCheatYet/master/games.json"
-    try:
-        data = _get_json(url, headers={"User-Agent": "Mozilla/5.0"})
-        result = {}
-        if isinstance(data, list):
-            for game in data:
-                store_ids = game.get("storeIds", {})
-                steam_id = store_ids.get("steam")
-                if steam_id:
-                    result[str(steam_id)] = {
-                        "status": game.get("status", ""),
-                        "anticheats": game.get("anticheats", []),
-                        "native": game.get("native", False),
-                    }
-        return result
-    except Exception as exc:
-        print(f"\n  {_warn(f'Anti-cheat DB error: {exc}')}", flush=True)
-        return {}
+    if _enrichment_module is None:
+        raise RuntimeError("Enrichment module is not available")
+    return _enrichment_module.fetch_anticheat_db(
+        get_json=_get_json,
+        on_error=lambda message: print(f"\n  {_warn(message)}", flush=True),
+    )
 
 
-def linux_badge(
-    deck_cat: int,
-    protondb: dict | None,
-    anticheat: dict | None,
-    linux_native: bool = False,
-) -> str:
+def linux_badge(deck_cat: int, protondb: dict | None, anticheat: dict | None, linux_native: bool = False) -> str:
     """Build combined Deck/Linux badge string."""
-    parts = []
-    # Linux native (from Steam platforms data)
-    if linux_native:
-        parts.append("🐧 Native")
-    # Deck compat
-    dk = deck_badge(deck_cat)
-    if dk:
-        parts.append(dk)
-    # ProtonDB
-    if protondb:
-        pb = protondb_badge(protondb.get("tier", ""))
-        if pb:
-            parts.append(pb)
-    # Anti-cheat warning
-    if anticheat:
-        status = anticheat.get("status", "")
-        ac_names = ", ".join(anticheat.get("anticheats", []))
-        if status in ANTICHEAT_WARN:
-            parts.append(f"⛔ {ac_names} ({status})")
-        elif status == "Supported" and ac_names:
-            parts.append(f"✅ {ac_names}")
-    return " · ".join(parts) if parts else "—"
+    if _linux_badge_impl is None:
+        raise RuntimeError("Presentation module is not available")
+    return _linux_badge_impl(
+        deck_cat,
+        protondb,
+        anticheat,
+        linux_native=linux_native,
+        deck_badge_fn=deck_badge,
+        protondb_badge_fn=protondb_badge,
+    )
 
 
 # ─────────────────────────────────────────────
 # CACHÉ Y FETCH: STEAM TAGS (STEAMSPY)
 # ─────────────────────────────────────────────
 
-GENERIC_TAGS = {
-    "singleplayer",
-    "multiplayer",
-    "action",
-    "indie",
-    "adventure",
-    "free to play",
-    "early access",
-    "2d",
-    "3d",
-    "casual",
-    "simulation",
-    "strategy",
-    "rpg",
-    "fps",
-    "puzzle",
-    "platformer",
-}
-
-
 def load_tags_cache() -> tuple[dict, float]:
-    tags, age_hours = load_timestamped_cache(TAGS_CACHE_FILE, "tags")
-    # Migrate old format: {appid: {tag: votes}} → {appid: {tags: {...}, players: {}}}
-    for appid, val in tags.items():
-        if isinstance(val, dict) and "tags" not in val:
-            tags[appid] = {"tags": val, "players": {}}
-    return tags, age_hours
+    if _enrichment_module is None:
+        raise RuntimeError("Enrichment module is not available")
+    return _enrichment_module.load_tags_cache(TAGS_CACHE_FILE)
 
 
 def save_tags_cache(tags: dict) -> None:
-    save_timestamped_cache(
-        TAGS_CACHE_FILE, "tags", tags, ensure_ascii=False, indent=None
-    )
+    if _enrichment_module is None:
+        raise RuntimeError("Enrichment module is not available")
+    _enrichment_module.save_tags_cache(TAGS_CACHE_FILE, tags)
 
 
 def fetch_tags(
     appids: list[str], cached: dict, rate_limit: float = 1.1
 ) -> dict[str, dict]:
     """Fetch tags from SteamSpy for appids not in cache."""
-    to_fetch = [a for a in appids if a not in cached]
-    if not to_fetch:
-        return cached
-    result = dict(cached)
-    total = len(to_fetch)
-    BAR_W = 25
-    start = time.monotonic()
-    eta_str = f"~{total * rate_limit / 60:.1f} min"
-    print(f"  Fetching tags de {total} juegos via SteamSpy ({eta_str})...", flush=True)
-
-    for i, appid in enumerate(to_fetch):
-        pct = i / total
-        filled = int(pct * BAR_W)
-        bar = f"{C.GRN}{BAR_FILL * filled}{C.DIM}{BAR_EMPTY * (BAR_W - filled)}{C.RST}"
-        if i > 0:
-            eta_sec = (time.monotonic() - start) / i * (total - i)
-            eta_str = f"{eta_sec / 60:.1f}m"
-        print(f"\r  {bar} {i}/{total} ETA {eta_str}  ", end="", flush=True)
-
-        url = f"https://steamspy.com/api.php?request=appdetails&appid={appid}"
-        try:
-            data = _get_json(url, headers={"User-Agent": "Mozilla/5.0"})
-            tags = data.get("tags", {})
-            if tags and isinstance(tags, dict):
-                result[appid] = {
-                    "tags": tags,
-                    "players": {
-                        "owners": data.get("owners", ""),
-                        "ccu": data.get("ccu", 0),
-                        "players_2weeks": data.get("players_2weeks", 0),
-                    },
-                }
-        except Exception:
-            pass
-        time.sleep(rate_limit)
-
-    print(f"\r  {'':70}\r", end="", flush=True)
-    return result
+    if _enrichment_module is None:
+        raise RuntimeError("Enrichment module is not available")
+    return _enrichment_module.fetch_tags(
+        appids,
+        cached,
+        rate_limit=rate_limit,
+        get_json=_get_json,
+        sleep_fn=time.sleep,
+        monotonic_fn=time.monotonic,
+        emit_progress=print,
+        build_bar=_enrichment_bar,
+    )
 
 
 def get_top_tags(tags_data: dict, appid: str, n: int = 3) -> list[str]:
     """Get top N non-generic tags for an appid."""
-    entry = tags_data.get(appid, {})
-    app_tags = entry.get("tags", entry) if isinstance(entry, dict) else {}
-    if not app_tags or not isinstance(app_tags, dict):
-        return []
-    sorted_tags = sorted(app_tags.items(), key=lambda x: -x[1])
-    return [t for t, _ in sorted_tags if t.lower() not in GENERIC_TAGS][:n]
+    if _get_top_tags_impl is None:
+        raise RuntimeError("Presentation module is not available")
+    return _get_top_tags_impl(tags_data, appid, n=n)
 
 
 def group_deals_by_tag(
     deals: list[dict], tags_data: dict, min_count: int = 3
 ) -> list[tuple[str, list[dict]]]:
     """Group deals by their most popular tags."""
-    tag_to_deals: dict[str, list[dict]] = {}
-    for d in deals:
-        for tag in get_top_tags(tags_data, d["appid"], n=5):
-            tag_to_deals.setdefault(tag, []).append(d)
-    # Filter and sort
-    result = [(tag, ds) for tag, ds in tag_to_deals.items() if len(ds) >= min_count]
-    result.sort(key=lambda x: -len(x[1]))
-    return result[:10]
-
-
-def _parse_owners(owners_str: str) -> tuple[int, int]:
-    """Parse '200,000 .. 500,000' into (200000, 500000)."""
-    if not owners_str or ".." not in owners_str:
-        return (0, 0)
-    parts = owners_str.split("..")
-    try:
-        lo = int(parts[0].strip().replace(",", ""))
-        hi = int(parts[1].strip().replace(",", ""))
-        return (lo, hi)
-    except (ValueError, IndexError):
-        return (0, 0)
+    if _group_deals_by_tag_impl is None:
+        raise RuntimeError("Presentation module is not available")
+    return _group_deals_by_tag_impl(deals, tags_data, min_count=min_count, get_top_tags_fn=get_top_tags)
 
 
 def players_badge(tags_entry: dict) -> str:
     """Generate compact player badge from tags_data entry."""
-    players = tags_entry.get("players", {})
-    owners = players.get("owners", "")
-    _, hi = _parse_owners(owners)
-    if hi == 0:
-        return ""
-
-    def _fmt(n: int) -> str:
-        if n >= 1_000_000:
-            return f"{n / 1_000_000:.0f}M"
-        if n >= 1_000:
-            return f"{n // 1_000}K"
-        return str(n)
-
-    lo, _ = _parse_owners(owners)
-    return f"👥 {_fmt(lo)}-{_fmt(hi)}" if lo else f"👥 <{_fmt(hi)}"
+    if _players_badge_impl is None:
+        raise RuntimeError("Presentation module is not available")
+    return _players_badge_impl(tags_entry)
 
 
 # ─────────────────────────────────────────────
@@ -2085,60 +1167,37 @@ def players_badge(tags_entry: dict) -> str:
 
 
 def load_achievements_cache(steam_id: str) -> tuple[dict, float]:
-    return load_timestamped_cache(
-        ACHIEVEMENTS_CACHE_FILE,
-        "achievements",
-        identity_key="steam_id",
-        identity_value=steam_id,
-    )
+    if _enrichment_module is None:
+        raise RuntimeError("Enrichment module is not available")
+    return _enrichment_module.load_achievements_cache(ACHIEVEMENTS_CACHE_FILE, steam_id)
 
 
 def save_achievements_cache(steam_id: str, achievements: dict) -> None:
-    save_timestamped_cache(
-        ACHIEVEMENTS_CACHE_FILE,
-        "achievements",
-        achievements,
-        identity_key="steam_id",
-        identity_value=steam_id,
-        ensure_ascii=False,
-        indent=2,
-    )
+    if _enrichment_module is None:
+        raise RuntimeError("Enrichment module is not available")
+    _enrichment_module.save_achievements_cache(ACHIEVEMENTS_CACHE_FILE, steam_id, achievements)
 
 
 def _fetch_single_achievement(appid: str) -> dict | None:
-    url = f"https://api.steampowered.com/ISteamUserStats/GetGlobalAchievementPercentagesForApp/v2/?gameid={appid}"
-    try:
-        data = _get_json(url, headers={"User-Agent": "Mozilla/5.0"})
-        achs = data.get("achievementpercentages", {}).get("achievements", [])
-        if not achs:
-            return None
-        count = len(achs)
-        avg_completion = sum(a.get("percent", 0) for a in achs) / count
-        return {"count": count, "avg_completion": round(avg_completion, 1)}
-    except Exception:
-        return None
+    if _enrichment_module is None:
+        raise RuntimeError("Enrichment module is not available")
+    return _enrichment_module.fetch_single_achievement(appid, get_json=_get_json)
 
 
 def fetch_achievements(
     appids: list[str], cached: dict, rate_limit: float = 0.15
 ) -> dict[str, dict]:
     """Fetch achievement data in parallel. Returns merged {appid: {count, avg_completion}}."""
-    to_fetch = [a for a in appids if a not in cached]
-    if not to_fetch:
-        return cached
-    result = dict(cached)
-    fetched = _fetch_parallel(
-        to_fetch, _fetch_single_achievement, "achievements", rate_limit=rate_limit
-    )
-    result.update(fetched)
-    return result
+    if _enrichment_module is None:
+        raise RuntimeError("Enrichment module is not available")
+    return _enrichment_module.fetch_achievements(appids, cached, rate_limit=rate_limit, fetch_parallel_fn=_fetch_parallel, get_json=_get_json)
 
 
 def achievements_badge(ach: dict | None) -> str:
     """MD badge for achievements."""
-    if not ach:
-        return "—"
-    return f"\U0001f3c6 {ach['count']} ({ach['avg_completion']:.0f}%)"
+    if _achievements_badge_impl is None:
+        raise RuntimeError("Presentation module is not available")
+    return _achievements_badge_impl(ach)
 
 
 def _html_achievements_badge(ach: dict | None) -> str:
@@ -2162,60 +1221,16 @@ def compute_value_score(
     metacritic_score: int | None = None,
 ) -> float:
     """Compute a 0-100 value score combining multiple signals."""
-    s_discount = min(discount, 100)
-    s_reviews = review_pct if review_pct is not None else 50
-    if priority == 0:
-        s_priority = 30
-    elif priority <= 10:
-        s_priority = 100
-    elif priority <= 50:
-        s_priority = 80
-    elif priority <= 200:
-        s_priority = 60
-    elif priority <= 500:
-        s_priority = 40
-    else:
-        s_priority = 20
-    if price_per_hour is not None and price_per_hour > 0:
-        s_pph = max(0, min(100, 100 - price_per_hour * 2))
-    else:
-        s_pph = 50
-    deck_scores = {3: 100, 2: 70, 1: 0, 0: 50}
-    s_deck = deck_scores.get(deck_cat, 50)
-    # Age factor: newer games with good discounts score higher
-    if release_year is None:
-        s_age = 50
-    else:
-        age = max(0, date.today().year - release_year)
-        if age <= 1:
-            s_age = 100
-        elif age <= 3:
-            s_age = 80
-        elif age <= 5:
-            s_age = 60
-        elif age <= 8:
-            s_age = 50
-        else:
-            s_age = 35
-    # Metacritic bonus
-    if metacritic_score is None:
-        s_mc = 50
-    elif metacritic_score >= 85:
-        s_mc = 100
-    elif metacritic_score >= 75:
-        s_mc = 80
-    elif metacritic_score >= 60:
-        s_mc = 60
-    else:
-        s_mc = 30
-    return (
-        s_discount * 0.22
-        + s_reviews * 0.26
-        + s_priority * 0.18
-        + s_pph * 0.14
-        + s_deck * 0.10
-        + s_age * 0.05
-        + s_mc * 0.05
+    if _compute_value_score_impl is None:
+        raise RuntimeError("Recommendations module is not available")
+    return _compute_value_score_impl(
+        discount,
+        review_pct,
+        priority,
+        price_per_hour,
+        deck_cat,
+        release_year=release_year,
+        metacritic_score=metacritic_score,
     )
 
 
@@ -2228,102 +1243,16 @@ def rank_top_picks(
     n: int = 10,
 ) -> list[dict]:
     """Rank deals by composite value score, return top N."""
-    scored = []
-    for deal in deals:
-        appid = deal["appid"]
-        review = reviews.get(appid)
-        review_pct = review["pct"] if review else None
-        priority = priorities.get(appid, 0)
-        hours = hltb_hours.get(appid)
-        price_raw = deal.get("price_raw", 0)
-        pph = (
-            (price_raw / 100) / hours if hours and hours > 0 and price_raw > 0 else None
-        )
-        deck_cat = deck_compat.get(appid, 0)
-        mc_score = deal.get("metacritic_score")
-        score = compute_value_score(
-            deal["discount"],
-            review_pct,
-            priority,
-            pph,
-            deck_cat,
-            release_year=deal.get("release_year"),
-            metacritic_score=mc_score,
-        )
-        scored.append(
-            {
-                "appid": appid,
-                "name": deal["name"],
-                "discount": deal["discount"],
-                "price_final": deal["price_final"],
-                "score": round(score, 1),
-                "review": review,
-                "deck": deck_cat,
-                "priority": priority,
-                "release_year": deal.get("release_year"),
-                "linux_native": deal.get("linux_native", False),
-                "metacritic_score": mc_score,
-                "categories": deal.get("categories", []),
-            }
-        )
-    scored.sort(key=lambda x: -x["score"])
-    return scored[:n]
+    if _rank_top_picks_impl is None:
+        raise RuntimeError("Recommendations module is not available")
+    return _rank_top_picks_impl(deals, priorities, reviews, hltb_hours, deck_compat, n=n)
 
 
 def compute_budget_picks(deals, budget_mxn, top_picks, watchlist_alerts=None):
     """Greedy budget optimizer: pick best deals that fit within budget."""
-    pick_scores = {tp["appid"]: tp["score"] for tp in (top_picks or [])}
-    # Build efficiency list
-    candidates = []
-    for d in deals:
-        price = d.get("price_raw", 0) / 100
-        if price <= 0:
-            continue
-        score = pick_scores.get(d["appid"], 50.0)
-        candidates.append({**d, "score": score, "efficiency": score / price})
-
-    # Phase 1: watchlist hits first
-    selected = []
-    remaining = budget_mxn
-    wl_appids = set()
-    if watchlist_alerts:
-        for wa in sorted(watchlist_alerts, key=lambda x: x.get("price_raw", 0)):
-            cost = wa.get("price_raw", 0) / 100
-            if cost <= remaining and cost > 0:
-                score = pick_scores.get(wa["appid"], 50.0)
-                selected.append({**wa, "score": score})
-                remaining -= cost
-                wl_appids.add(wa["appid"])
-
-    # Phase 2: greedy by efficiency
-    for c in sorted(candidates, key=lambda x: -x["efficiency"]):
-        if c["appid"] in wl_appids:
-            continue
-        cost = c.get("price_raw", 0) / 100
-        if cost <= remaining and cost > 0:
-            selected.append(c)
-            remaining -= cost
-            if remaining <= 0:
-                break
-
-    total_spent = budget_mxn - remaining
-    # Estimate savings: original = price / (1 - discount/100)
-    total_savings = 0
-    for s in selected:
-        price = s.get("price_raw", 0) / 100
-        disc = s.get("discount", 0)
-        if disc > 0 and disc < 100:
-            original = price * 100 / (100 - disc)
-            total_savings += original - price
-
-    return {
-        "budget": budget_mxn,
-        "selected": selected,
-        "total_spent": round(total_spent, 2),
-        "total_savings": round(total_savings, 2),
-        "remaining": round(remaining, 2),
-        "games_count": len(selected),
-    }
+    if _compute_budget_picks_impl is None:
+        raise RuntimeError("Recommendations module is not available")
+    return _compute_budget_picks_impl(deals, budget_mxn, top_picks, watchlist_alerts=watchlist_alerts)
 
 
 # ─────────────────────────────────────────────
@@ -2351,14 +1280,9 @@ MESES = {
 
 
 def group_by_tier(games: list[dict]) -> list[tuple[str, list[dict]]]:
-    tiers = [
-        ("90%+", lambda d: d >= 90),
-        ("80–89%", lambda d: 80 <= d < 90),
-        ("70–79%", lambda d: 70 <= d < 80),
-        ("60–69%", lambda d: 60 <= d < 70),
-        ("50–59%", lambda d: 50 <= d < 60),
-    ]
-    return [(name, [g for g in games if fn(g["discount"])]) for name, fn in tiers]
+    if _group_by_tier_impl is None:
+        raise RuntimeError("Presentation module is not available")
+    return _group_by_tier_impl(games)
 
 
 def generate_md(
@@ -2490,17 +1414,9 @@ def _html_metacritic_badge(score: int | None) -> str:
 
 def multiplayer_badges(categories: list[int]) -> str:
     """Emoji badges for multiplayer/co-op categories (for MD)."""
-    cats = set(categories)
-    badges = []
-    if cats & {9, 38, 39}:
-        badges.append("Co-op")
-    if cats & {36, 37}:
-        badges.append("PvP")
-    if not badges and 1 in cats:
-        badges.append("Multi")
-    if not badges and 2 in cats:
-        badges.append("Single")
-    return " · ".join(badges) if badges else ""
+    if _multiplayer_badges_impl is None:
+        raise RuntimeError("Presentation module is not available")
+    return _multiplayer_badges_impl(categories)
 
 
 def _html_multiplayer_badges(categories: list[int]) -> str:
@@ -3299,16 +2215,7 @@ def generate_html(
 # GENERAR CSV
 # ─────────────────────────────────────────────
 
-
-def generate_share_html(
-    deals,
-    vanity,
-    min_discount,
-    sale_name="",
-    top_picks=None,
-    reviews=None,
-    deck_compat=None,
-):
+def generate_share_html(deals, vanity, min_discount, sale_name="", top_picks=None, reviews=None, deck_compat=None):
     """Generate a lightweight shareable HTML page with the deals list."""
     if _generate_share_html_renderer is not None:
         return _generate_share_html_renderer(
@@ -3415,124 +2322,25 @@ def generate_csv(
     local_trends=None,
     achievements_data=None,
 ) -> str:
-    if _generate_csv_renderer is not None:
-        return _generate_csv_renderer(
-            deals,
-            priorities=priorities,
-            reviews=reviews,
-            deck_compat=deck_compat,
-            protondb_data=protondb_data,
-            anticheat_data=anticheat_data,
-            tags_data=tags_data,
-            hltb_hours=hltb_hours,
-            historical_lows=historical_lows,
-            current_prices=current_prices,
-            top_picks=top_picks,
-            local_trends=local_trends,
-            achievements_data=achievements_data,
-            get_top_tags=get_top_tags,
-            multiplayer_badges=multiplayer_badges,
-            store_url_template=STORE_URL,
-        )
-
-    priorities = priorities or {}
-    reviews = reviews or {}
-    deck_compat = deck_compat or {}
-    protondb_data = protondb_data or {}
-    anticheat_data = anticheat_data or {}
-    tags_data = tags_data or {}
-    hltb_hours = hltb_hours or {}
-    historical_lows = historical_lows or {}
-    current_prices = current_prices or {}
-    local_trends = local_trends or {}
-    achievements_data = achievements_data or {}
-    pick_scores = {tp["appid"]: tp["score"] for tp in (top_picks or [])}
-
-    buf = io.StringIO()
-    buf.write("\ufeff")
-    writer = csv.writer(buf)
-    writer.writerow(
-        [
-            "AppID",
-            "Name",
-            "Discount%",
-            "Price (MXN)",
-            "Original Price",
-            "Year",
-            "Reviews",
-            "Reviews%",
-            "ReviewCount",
-            "Metacritic",
-            "Deck",
-            "ProtonDB",
-            "AntiCheat",
-            "Tags",
-            "Mode",
-            "Achievements",
-            "AvgCompletion%",
-            "HLTB Hours",
-            "Price/Hour",
-            "Priority",
-            "Score",
-            "Historical Low",
-            "Best Price",
-            "Trend",
-            "URL",
-        ]
+    if _generate_csv_renderer is None:
+        raise RuntimeError("CSV renderer module is not available")
+    return _generate_csv_renderer(
+        deals,
+        priorities=priorities,
+        reviews=reviews,
+        deck_compat=deck_compat,
+        protondb_data=protondb_data,
+        anticheat_data=anticheat_data,
+        tags_data=tags_data,
+        hltb_hours=hltb_hours,
+        historical_lows=historical_lows,
+        current_prices=current_prices,
+        top_picks=top_picks,
+        local_trends=local_trends,
+        achievements_data=achievements_data,
+        get_top_tags=get_top_tags,
+        multiplayer_badges=multiplayer_badges,
     )
-
-    for d in deals:
-        appid = d["appid"]
-        rev = reviews.get(appid)
-        pdb = protondb_data.get(appid)
-        ac = anticheat_data.get(appid)
-        low = historical_lows.get(appid)
-        bp = current_prices.get(appid)
-        trend = local_trends.get(appid)
-        hours = hltb_hours.get(appid)
-        price_raw = d.get("price_raw", 0)
-        pph = (
-            f"{(price_raw / 100) / hours:.2f}"
-            if hours and hours > 0 and price_raw > 0
-            else ""
-        )
-        prio = priorities.get(appid, 0)
-        top_tags = get_top_tags(tags_data, appid, n=5)
-
-        mc = d.get("metacritic_score", "")
-        mp = multiplayer_badges(d.get("categories", []))
-        ach = achievements_data.get(appid)
-        writer.writerow(
-            [
-                appid,
-                d["name"],
-                d["discount"],
-                d["price_final"],
-                d.get("price_original", ""),
-                d.get("release_year", ""),
-                rev["desc"] if rev else "",
-                rev["pct"] if rev else "",
-                rev["total"] if rev else "",
-                mc if mc else "",
-                CSV_DECK.get(deck_compat.get(appid, 0), ""),
-                CSV_PROTON.get(pdb["tier"], "") if pdb else "",
-                f"{', '.join(ac.get('anticheats', []))} ({ac['status']})" if ac else "",
-                "; ".join(top_tags),
-                mp,
-                ach["count"] if ach else "",
-                f"{ach['avg_completion']:.1f}" if ach else "",
-                f"{hours:.1f}" if hours else "",
-                pph,
-                prio if prio > 0 else "",
-                pick_scores.get(appid, ""),
-                f"${low['price']:.0f} ({low['date']})" if low else "",
-                f"${bp['price']:.0f} en {bp['store']}" if bp else "",
-                _csv_trend(trend) if trend else "",
-                STORE_URL.format(appid=appid),
-            ]
-        )
-
-    return buf.getvalue()
 
 
 # ─────────────────────────────────────────────
@@ -3555,149 +2363,46 @@ def _post_json(url: str, body) -> dict:
 
 def build_notification_summary(deals, comparison, top_picks, watchlist_alerts=None):
     """Build a summary dict for notifications. Returns None if nothing notable."""
-    comp = comparison or {}
-    new_count = len(comp.get("new_deals", set()))
-    price_drops = [
-        (appid, v)
-        for appid, v in comp.get("price_changes", {}).items()
-        if v["direction"] == "down"
-    ]
-    price_drops.sort(key=lambda x: x[1]["delta_raw"])  # biggest drop first
-
-    if new_count == 0 and not price_drops and not watchlist_alerts:
-        return None
-
-    deal_map = {d["appid"]: d for d in deals}
-    top3 = (top_picks or [])[:3]
-
-    return {
-        "total_deals": len(deals),
-        "new_count": new_count,
-        "top_3": [
-            {
-                "name": tp["name"],
-                "discount": tp["discount"],
-                "price": tp["price_final"],
-                "score": tp["score"],
-            }
-            for tp in top3
-        ],
-        "price_drops": [
-            {
-                "name": deal_map.get(appid, {}).get("name", appid),
-                "delta": v["delta_str"],
-                "prev": v["prev_price"],
-            }
-            for appid, v in price_drops[:5]
-        ],
-        "watchlist_hits": [
-            {
-                "name": wa["name"],
-                "price": wa["price_final"],
-                "target": wa["target_price"],
-            }
-            for wa in (watchlist_alerts or [])
-        ],
-    }
+    if _build_notification_summary_impl is None:
+        raise RuntimeError("Notifications module is not available")
+    return _build_notification_summary_impl(deals, comparison, top_picks, watchlist_alerts=watchlist_alerts)
 
 
 def send_telegram(token: str, chat_id: str, summary: dict) -> bool:
     """Send notification via Telegram Bot API."""
-    lines = [
-        f"🎮 *Steam Deals Update*",
-        f"📊 {summary['total_deals']} deals encontrados",
-    ]
-    if summary["new_count"]:
-        lines.append(f"🆕 {summary['new_count']} nuevos")
-    if summary["top_3"]:
-        lines.append("\n🏆 *Top Picks:*")
-        for i, tp in enumerate(summary["top_3"], 1):
-            lines.append(f"  {i}\\. {tp['name']} \\-{tp['discount']}% {tp['price']}")
-    if summary["price_drops"]:
-        lines.append("\n⬇️ *Bajaron de precio:*")
-        for pd in summary["price_drops"]:
-            lines.append(f"  • {pd['name']} \\-{pd['delta']}")
-    if summary["watchlist_hits"]:
-        lines.append("\n🎯 *Watchlist Alerts:*")
-        for wh in summary["watchlist_hits"]:
-            lines.append(
-                f"  • {wh['name']} a {wh['price']} \\(objetivo: ${wh['target']:.0f}\\)"
-            )
-
-    text = "\n".join(lines)
-    url = f"https://api.telegram.org/bot{token}/sendMessage"
-    try:
-        body = {"chat_id": chat_id, "text": text, "parse_mode": "MarkdownV2"}
-        data = json.dumps(body).encode("utf-8")
-        req = urllib.request.Request(
-            url, data=data, headers={"Content-Type": "application/json"}
-        )
-        with urllib.request.urlopen(req, timeout=15) as r:
-            resp = json.loads(r.read())
-        return resp.get("ok", False)
-    except Exception as e:
-        print(f"  {_warn(f'Telegram error: {e}')}")
-        return False
+    if _send_telegram_impl is None:
+        raise RuntimeError("Notifications module is not available")
+    return _send_telegram_impl(
+        token,
+        chat_id,
+        summary,
+        on_error=lambda message: print(f"  {_warn(message)}"),
+    )
 
 
 def send_discord(webhook_url: str, summary: dict) -> bool:
     """Send notification via Discord webhook."""
-    fields = [
-        {
-            "name": "📊 Deals",
-            "value": f"{summary['total_deals']} encontrados",
-            "inline": True,
-        },
-    ]
-    if summary["new_count"]:
-        fields.append(
-            {"name": "🆕 Nuevos", "value": str(summary["new_count"]), "inline": True}
-        )
-    if summary["top_3"]:
-        top_text = "\n".join(
-            f"{i}. **{tp['name']}** -{tp['discount']}% {tp['price']}"
-            for i, tp in enumerate(summary["top_3"], 1)
-        )
-        fields.append({"name": "🏆 Top Picks", "value": top_text})
-    if summary["price_drops"]:
-        drops_text = "\n".join(
-            f"• {pd['name']} -{pd['delta']}" for pd in summary["price_drops"]
-        )
-        fields.append({"name": "⬇️ Bajaron", "value": drops_text})
-    if summary["watchlist_hits"]:
-        wl_text = "\n".join(
-            f"• {wh['name']} a {wh['price']}" for wh in summary["watchlist_hits"]
-        )
-        fields.append({"name": "🎯 Watchlist", "value": wl_text})
-
-    payload = {
-        "embeds": [
-            {"title": "🎮 Steam Deals Update", "color": 0x66C0F4, "fields": fields}
-        ]
-    }
-    try:
-        data = json.dumps(payload).encode("utf-8")
-        req = urllib.request.Request(
-            webhook_url, data=data, headers={"Content-Type": "application/json"}
-        )
-        with urllib.request.urlopen(req, timeout=15) as r:
-            pass
-        return True
-    except Exception as e:
-        print(f"  {_warn(f'Discord error: {e}')}")
-        return False
+    if _send_discord_impl is None:
+        raise RuntimeError("Notifications module is not available")
+    return _send_discord_impl(
+        webhook_url,
+        summary,
+        on_error=lambda message: print(f"  {_warn(message)}"),
+    )
 
 
 def send_notifications(filters: dict, summary: dict) -> None:
     """Send notifications via configured channels."""
-    if filters.get("telegram_token") and filters.get("telegram_chat"):
-        ok = send_telegram(filters["telegram_token"], filters["telegram_chat"], summary)
-        if ok:
-            print(f"  {_ok('Notificación Telegram enviada')}")
-    if filters.get("discord_webhook"):
-        ok = send_discord(filters["discord_webhook"], summary)
-        if ok:
-            print(f"  {_ok('Notificación Discord enviada')}")
+    if _send_notifications_impl is None:
+        raise RuntimeError("Notifications module is not available")
+    _send_notifications_impl(
+        filters,
+        summary,
+        send_telegram_fn=send_telegram,
+        send_discord_fn=send_discord,
+        emit=print,
+        ok=_ok,
+    )
 
 
 # ─────────────────────────────────────────────
@@ -3754,6 +2459,18 @@ def main():
 
     def step(msg: str):
         _n[0] += 1
+        if _report_step_impl is not None:
+            _report_step_impl(
+                _n[0],
+                TOTAL,
+                msg,
+                emit=print,
+                emit_event_fn=emit_event,
+                bold_fn=_bold,
+                color_cyan=C.CYN,
+                color_reset=C.RST,
+            )
+            return
         print(f"\n{C.CYN}[{_n[0]}/{TOTAL}]{C.RST} {_bold(msg)}", flush=True)
         emit_event("progress", current=_n[0], total=TOTAL, label=msg)
 
@@ -3812,31 +2529,23 @@ def main():
 
     # Construir nombre del archivo
     today_obj = date.today()
-    date_str = today_obj.strftime("%Y-%m-%d")
-    if sale_name:
-        safe_sale = re.sub(r'[<>:"/\\|?*]', "", sale_name).strip()
-        filename = f"Steam Deals {safe_sale} {date_str}.md"
-    else:
-        filename = f"Steam Deals {date_str}.md"
-    OUTPUT_MD = Path(OUTPUT_DIR) / filename
+    OUTPUT_MD = build_output_md_path(OUTPUT_DIR, sale_name, today_obj=today_obj)
+    filename = OUTPUT_MD.name
     print(f"  {_dim(f'Archivo: {OUTPUT_MD.name}')}")
 
     # Cargar historial de runs
-    previous_run = load_previous_run(steam_id)
-    run_history = load_run_history(steam_id) if previous_run else []
+    previous_context = resolve_previous_context(Path(OUTPUT_DIR), filename, steam_id)
+    previous_run = previous_context["previous_run"]
+    run_history = previous_context["run_history"]
     if previous_run:
         prev_date = previous_run.get("date", "?")
         prev_count = len(previous_run.get("deals", {}))
         print(f"  {_dim(f'Run anterior: {prev_date} ({prev_count} deals)')}")
 
     # Fallback: cargar deals del MD anterior si no hay historial
-    previous_appids: set[str] = set()
-    if not previous_run:
-        previous_appids = load_previous_deal_appids(Path(OUTPUT_DIR), filename)
-        if previous_appids:
-            print(
-                f"  {_dim(f'MD anterior encontrado ({len(previous_appids)} deals) — fallback')}"
-            )
+    previous_appids: set[str] = previous_context["previous_appids"]
+    if previous_appids:
+        print(f"  {_dim(f'MD anterior encontrado ({len(previous_appids)} deals) — fallback')}")
 
     # [5] Precios (con smart cache + batching)
     step("Obteniendo precios de Steam...")
@@ -4210,10 +2919,8 @@ def main():
         compare_data=compare_data,
         gift_ideas=gift_ideas,
     )
-    OUTPUT_MD.parent.mkdir(parents=True, exist_ok=True)
-    OUTPUT_MD.write_text(md, encoding="utf-8")
+    write_artifact(OUTPUT_MD, md)
     print(f"  {_ok(str(OUTPUT_MD))}")
-    emit_event("file", path=str(OUTPUT_MD))
 
     # Generar HTML interactivo
     step("Generando HTML interactivo...")
@@ -4247,26 +2954,15 @@ def main():
         price_history=price_history,
     )
     OUTPUT_HTML = OUTPUT_MD.with_suffix(".html")
-    OUTPUT_HTML.write_text(html, encoding="utf-8")
+    write_artifact(OUTPUT_HTML, html)
     print(f"  {_ok(str(OUTPUT_HTML))}")
-    emit_event("file", path=str(OUTPUT_HTML))
 
     # Generar HTML compartible (lightweight)
-    share_html = generate_share_html(
-        deals,
-        VANITY,
-        MIN_DISCOUNT,
-        sale_name=sale_name,
-        top_picks=top_picks,
-        reviews=reviews_data,
-        deck_compat=deck_data,
-    )
-    OUTPUT_SHARE = (
-        OUTPUT_MD.parent / f"Steam Deals Share {date.today().strftime('%Y-%m-%d')}.html"
-    )
-    OUTPUT_SHARE.write_text(share_html, encoding="utf-8")
+    share_html = generate_share_html(deals, VANITY, MIN_DISCOUNT, sale_name=sale_name,
+                                      top_picks=top_picks, reviews=reviews_data, deck_compat=deck_data)
+    OUTPUT_SHARE = build_share_output_path(OUTPUT_MD.parent, today_obj=today_obj)
+    write_artifact(OUTPUT_SHARE, share_html)
     print(f"  {_ok(str(OUTPUT_SHARE))}")
-    emit_event("file", path=str(OUTPUT_SHARE))
 
     # Generar CSV (opcional)
     if FILTERS.get("csv"):
@@ -4287,9 +2983,8 @@ def main():
             achievements_data=achievements_data,
         )
         OUTPUT_CSV = OUTPUT_MD.with_suffix(".csv")
-        OUTPUT_CSV.write_text(csv_content, encoding="utf-8")
+        write_artifact(OUTPUT_CSV, csv_content)
         print(f"  {_ok(str(OUTPUT_CSV))}")
-        emit_event("file", path=str(OUTPUT_CSV))
 
     # Notifications (optional)
     if FILTERS.get("telegram_token") or FILTERS.get("discord_webhook"):
@@ -4304,68 +2999,29 @@ def main():
 
     # Resumen final
     elapsed = time.monotonic() - t0
-    new_count = (
-        sum(1 for d in deals if previous_appids and d["appid"] not in previous_appids)
-        if previous_appids
-        else 0
-    )
+    _new_count, summary = build_final_summary(elapsed, deals, backlog_on_sale, previous_appids, top_picks, OUTPUT_MD)
     print(f"\n{C.GRN}{'─' * 42}{C.RST}")
     print(f"  {_bold('Listo')} en {elapsed:.1f}s")
-    summary = f"  {len(deals):,} deals · {len(backlog_on_sale)} backlog"
-    if new_count:
-        summary += f" · {new_count} nuevos"
-    if top_picks:
-        summary += f" · Top pick: {top_picks[0]['name']} ({top_picks[0]['score']})"
-    summary += f" · {OUTPUT_MD.name}"
     print(summary)
     print(f"{C.GRN}{'─' * 42}{C.RST}\n")
 
 
 def run_scheduled():
     """Run main() in a loop if --schedule is set."""
-    # Peek at --schedule arg without full config parse
-    import shlex
-
-    schedule_hours = None
-    for i, arg in enumerate(sys.argv):
-        if arg == "--schedule" and i + 1 < len(sys.argv):
-            try:
-                schedule_hours = float(sys.argv[i + 1])
-            except ValueError:
-                pass
-            break
-
-    if not schedule_hours:
-        main()
-        return
-
-    print(f"{C.BOLD}=== Modo programado: cada {schedule_hours:.1f} horas ==={C.RST}")
-    print(f"  {C.DIM}Ctrl+C para detener{C.RST}\n")
-    run_count = 0
-    while True:
-        run_count += 1
-        print(f"\n{'═' * 42}")
-        print(f"  Run #{run_count} — {datetime.now().strftime('%Y-%m-%d %H:%M')}")
-        print(f"{'═' * 42}\n")
-        try:
-            main()
-        except KeyboardInterrupt:
-            print(f"\n  {C.YLW}Scheduler detenido.{C.RST}")
-            break
-        except Exception as e:
-            print(f"\n  {C.RED}Error en run #{run_count}: {e}{C.RST}")
-        next_run = datetime.now().strftime("%H:%M")
-        wait_secs = schedule_hours * 3600
-        next_time = datetime.now().timestamp() + wait_secs
-        next_str = datetime.fromtimestamp(next_time).strftime("%H:%M")
-        print(
-            f"\n  {C.DIM}Próximo run a las {next_str} (en {schedule_hours:.1f}h). Ctrl+C para salir.{C.RST}"
-        )
-        try:
-            time.sleep(wait_secs)
-        except KeyboardInterrupt:
-            print(f"\n  {C.YLW}Scheduler detenido.{C.RST}")
-            break
+    if _run_scheduled_impl is None:
+        raise RuntimeError("Scheduler module is not available")
+    _run_scheduled_impl(
+        main,
+        argv=sys.argv,
+        now_fn=datetime.now,
+        fromtimestamp_fn=datetime.fromtimestamp,
+        sleep_fn=time.sleep,
+        emit=print,
+        style_bold=lambda text: f"{C.BOLD}{text}{C.RST}",
+        style_dim=lambda text: f"{C.DIM}{text}{C.RST}",
+        style_warn=lambda text: f"{C.YLW}{text}{C.RST}",
+        style_err=lambda text: f"{C.RED}{text}{C.RST}",
+    )
 
 
 if __name__ == "__main__":

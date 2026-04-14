@@ -14,6 +14,16 @@ import urllib.parse
 import webbrowser
 from http.server import HTTPServer, BaseHTTPRequestHandler
 from pathlib import Path
+try:
+    from steam_deals_runtime_reporting import EVENT_PREFIX
+except Exception:
+    EVENT_PREFIX = "__STEAM_EVENT__"
+from steam_deals_watchlist import (
+    add_watchlist_item,
+    load_watchlist,
+    remove_watchlist_item,
+    save_watchlist,
+)
 
 from shared_web_infra import (
     load_html_with_fallback,
@@ -41,9 +51,7 @@ STEAM_DEALS_JS_FILE = WEB_DIR / "app.js"
 _running_proc = None
 _proc_lock = threading.Lock()
 
-WATCHLIST_FILE = Path.home() / ".config" / "steam_deals_watchlist.json"
 LOCAL_CACHE_DIR = SCRIPT_PATH.parent / ".cache" / "steam_deals"
-EVENT_PREFIX = "__STEAM_EVENT__"
 
 # ─── Config I/O ──────────────────────────────────
 
@@ -61,22 +69,6 @@ def save_config(cfg: dict) -> None:
     CONFIG_FILE.parent.mkdir(parents=True, exist_ok=True)
     CONFIG_FILE.write_text(
         json.dumps(cfg, ensure_ascii=False, indent=2), encoding="utf-8"
-    )
-
-
-def load_watchlist() -> list:
-    if not WATCHLIST_FILE.exists():
-        return []
-    try:
-        return json.loads(WATCHLIST_FILE.read_text(encoding="utf-8"))
-    except (json.JSONDecodeError, OSError):
-        return []
-
-
-def save_watchlist(items: list) -> None:
-    WATCHLIST_FILE.parent.mkdir(parents=True, exist_ok=True)
-    WATCHLIST_FILE.write_text(
-        json.dumps(items, ensure_ascii=False, indent=2), encoding="utf-8"
     )
 
 
@@ -1846,9 +1838,7 @@ class Handler(BaseHTTPRequestHandler):
                 status=400,
             )
             return
-        items = load_watchlist()
-        items = [w for w in items if w["appid"] != appid]
-        items.append({"appid": appid, "name": name, "target_price": target_value})
+        items = add_watchlist_item(load_watchlist(), appid, target_value, name)
         save_watchlist(items)
         self._send_json({"status": "added", "items": items})
 
@@ -1860,8 +1850,7 @@ class Handler(BaseHTTPRequestHandler):
         if not appid:
             self._send_json({"error": "appid required"}, status=400)
             return
-        items = load_watchlist()
-        items = [w for w in items if w["appid"] != appid]
+        items, _removed = remove_watchlist_item(load_watchlist(), appid)
         save_watchlist(items)
         self._send_json({"status": "deleted", "items": items})
 

@@ -2,7 +2,7 @@
 
 Session ID: 2026-04-13-generator-renderers
 Created: 2026-04-13T13:45:34-07:00
-Status: in_progress
+Status: completed
 
 ## Current Request
 Continuar con los pendientes y empezar la modularización de `steam_deals_generator.py` por dominios. El primer corte aprobado es extraer `renderers/` primero como paso inicial seguro.
@@ -40,6 +40,6 @@ None.
 - No hacer commit ni push.
 
 ## Exit Criteria
-- [ ] Existe un plan de subtareas para extraer `renderers/` desde `steam_deals_generator.py`.
-- [ ] El primer corte de ejecución puede hacerse en pasos pequeños y verificables.
-- [ ] El refactor mantiene compatibilidad con los flujos actuales de CLI/web/desktop.
+- [x] Existe un plan de subtareas para extraer `renderers/` desde `steam_deals_generator.py`.
+- [x] El primer corte de ejecución puede hacerse en pasos pequeños y verificables.
+- [x] El refactor mantiene compatibilidad con los flujos actuales de CLI/web/desktop.

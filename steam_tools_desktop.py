@@ -17,12 +17,26 @@ import urllib.request
 import webbrowser
 import runpy
 from pathlib import Path
+from urllib.parse import urlencode
 
 
 ROOT = Path(__file__).resolve().parent
 HOST = "127.0.0.1"
 PORT = 8080
 URL = f"http://{HOST}:{PORT}"
+
+FALLBACK_REASON_MESSAGES = {
+    "missing-webview": "pywebview o su backend nativo no estan disponibles. Abriendo Steam Tools en el navegador.",
+    "window-timeout": "La ventana nativa no respondio a tiempo. Abriendo Steam Tools en el navegador.",
+    "window-error": "La ventana nativa fallo al iniciar. Abriendo Steam Tools en el navegador.",
+}
+
+
+def _fallback_url(reason: str | None = None) -> str:
+    if not reason:
+        return URL
+    query = urlencode({"desktop_fallback": "1", "reason": reason})
+    return f"{URL}?{query}"
 
 
 def _wait_server(url: str, timeout: float = 15.0) -> bool:
@@ -112,6 +126,16 @@ def main() -> None:
 
     proc = None
     keep_server_alive = False
+    browser_fallback_opened = threading.Event()
+
+    def _open_browser_fallback(reason: str) -> None:
+        nonlocal keep_server_alive
+        if browser_fallback_opened.is_set():
+            return
+        browser_fallback_opened.set()
+        keep_server_alive = True
+        print(FALLBACK_REASON_MESSAGES.get(reason, FALLBACK_REASON_MESSAGES["window-error"]))
+        webbrowser.open(_fallback_url(reason))
 
     # If a local server is already alive, reuse it instead of spawning another one.
     if not _wait_server(URL, timeout=0.6):
@@ -128,10 +152,9 @@ def main() -> None:
 
         try:
             import webview  # type: ignore[import-not-found]
-        except Exception as exc:
+        except Exception:
             # If native webview is unavailable, continue in browser mode.
-            webbrowser.open(URL)
-            keep_server_alive = True
+            _open_browser_fallback("missing-webview")
             return
 
         window_started = threading.Event()
@@ -139,7 +162,7 @@ def main() -> None:
         def _browser_fallback() -> None:
             # Fallback UX: if native webview is slow/fails, open default browser.
             if not window_started.is_set():
-                webbrowser.open(URL)
+                _open_browser_fallback("window-timeout")
 
         threading.Timer(4.0, _browser_fallback).start()
 
@@ -154,8 +177,7 @@ def main() -> None:
         webview.start(debug=False)
 
     except Exception:
-        webbrowser.open(URL)
-        keep_server_alive = True
+        _open_browser_fallback("window-error")
 
     finally:
         if proc and proc.poll() is None and not keep_server_alive:

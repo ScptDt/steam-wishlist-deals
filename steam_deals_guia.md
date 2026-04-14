@@ -78,6 +78,8 @@ El nombre de la oferta se usa para:
 
 Se exporta manualmente desde la web de HLTB: **Mi perfil → Exportar CSV**.
 
+En la implementación actual, este dominio ya vive en `steam_deals_hltb.py`, mientras `steam_deals_generator.py` mantiene wrappers compatibles durante la modularización incremental.
+
 El CSV tiene columnas relevantes:
 - `Title` — nombre del juego
 - `Backlog` — "X" si está en backlog
@@ -146,6 +148,8 @@ Se usa `difflib.SequenceMatcher` con threshold de **0.75** (75%).
 1. **Números deben coincidir**: "Battlefield 1" vs "Battlefield 4" → rechazar
 2. **Word overlap ≥ 70%**: las palabras del nombre más corto deben aparecer en el largo
 3. **Palabras únicas en ambos lados** → son juegos distintos (excepto edition words como "remastered", "deluxe", etc.)
+
+La implementación de parseo HLTB, normalización, `is_same_game`, `find_best_match` y `cross_hltb_with_deals` quedó separada en `steam_deals_hltb.py` para mantener ese algoritmo aislado y testeable.
 
 ---
 
