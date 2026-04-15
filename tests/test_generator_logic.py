@@ -56,6 +56,13 @@ from steam_deals_post_processing import (
     build_runtime as module_build_post_processing_runtime,
     run_post_processing as module_run_post_processing,
 )
+from steam_deals_engagement_post_run import (
+    build_callbacks as module_build_engagement_callbacks,
+    build_engagement_contract as module_build_engagement_contract,
+    build_message_formatters as module_build_engagement_message_formatters,
+    build_runtime as module_build_engagement_runtime,
+    run_engagement_post_run as module_run_engagement_post_run,
+)
 from steam_deals_family import (
     FamilyContext as ModuleFamilyContext,
     build_family_renderer_kwargs as module_build_family_renderer_kwargs,
@@ -1094,6 +1101,65 @@ class ItadAdapterTests(unittest.TestCase):
 
 
 class WatchlistTests(unittest.TestCase):
+    def test_engagement_post_run_preserves_visible_outputs_and_notifications(self) -> None:
+        steps: list[str] = []
+        emits: list[str] = []
+        sent_notifications: list[tuple[dict, dict]] = []
+
+        contract = module_build_engagement_contract(
+            messages=module_build_engagement_message_formatters(
+                ok=lambda text: f"OK:{text}",
+                dim=lambda text: f"DIM:{text}",
+            ),
+            callbacks=module_build_engagement_callbacks(
+                step=steps.append,
+                emit=emits.append,
+            ),
+            runtime=module_build_engagement_runtime(
+                load_watchlist=lambda: [{"appid": "10", "name": "Portal 2", "target_price": 9.0}],
+                check_watchlist_alerts=lambda _deals, _watchlist: [
+                    {"appid": "10", "name": "Portal 2", "price_final": "$8", "target_price": 9.0, "price_raw": 800}
+                ],
+                compute_budget_picks=lambda _deals, budget, _top_picks, _watchlist_alerts: {
+                    "budget": budget,
+                    "games_count": 1,
+                    "total_spent": 8.0,
+                },
+                build_gift_ideas=lambda _friend_set, _deals, _owned: [{"appid": "20", "name": "Hades"}],
+                build_notification_summary=lambda _deals, _comparison, _top_picks, _watchlist_alerts: {"total_deals": 1},
+                send_notifications=lambda filters, summary: sent_notifications.append((filters, summary)),
+            ),
+        )
+
+        outputs = module_run_engagement_post_run(
+            [{"appid": "10", "name": "Portal 2", "price_final": "$8", "price_raw": 800}],
+            filters={"budget": 10.0, "telegram_token": "token"},
+            top_picks=[{"appid": "10", "score": 95.0}],
+            compare_data={"friend_set": {"20"}},
+            owned={"10": "Portal 2"},
+            comparison={"new_deals": {"10"}},
+            contract=contract,
+            sym_target="🎯",
+            sym_budget="💸",
+            sym_gift="🎁",
+        )
+
+        self.assertEqual(steps, ["Enviando notificaciones..."])
+        self.assertEqual(
+            emits,
+            [
+                "  OK:🎯 1 watchlist alerts!",
+                "    Portal 2 — $8 (objetivo: $9)",
+                "  OK:💸 Budget $10: 1 juegos, $8 gastados",
+                "  OK:🎁 1 gift ideas en oferta",
+            ],
+        )
+        self.assertEqual(outputs.watchlist_alerts[0]["appid"], "10")
+        self.assertEqual(outputs.budget_result["games_count"], 1)
+        self.assertEqual(outputs.gift_ideas[0]["appid"], "20")
+        self.assertEqual(outputs.notification_summary, {"total_deals": 1})
+        self.assertEqual(sent_notifications, [({"budget": 10.0, "telegram_token": "token"}, {"total_deals": 1})])
+
     def test_save_and_load_watchlist_roundtrip(self) -> None:
         items = [{"appid": "10", "name": "Portal 2", "target_price": 99.0}]
 

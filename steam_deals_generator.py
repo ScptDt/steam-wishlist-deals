@@ -822,6 +822,32 @@ def build_generator_engagement_contract(step_fn):
     )
 
 
+def run_engagement_post_run(
+    deals: list[dict],
+    *,
+    filters: dict,
+    top_picks: list[dict],
+    compare_data: dict | None,
+    owned: dict[str, str],
+    comparison: dict | None,
+    contract,
+):
+    if _engagement_post_run_module is None:
+        raise RuntimeError("Engagement post-run module is not available")
+    return _engagement_post_run_module.run_engagement_post_run(
+        deals,
+        filters=filters,
+        top_picks=top_picks,
+        compare_data=compare_data,
+        owned=owned,
+        comparison=comparison,
+        contract=contract,
+        sym_target=SYM_TARGET,
+        sym_budget=SYM_BUDGET,
+        sym_gift=SYM_GIFT,
+    )
+
+
 def get_active_sale() -> str:
     """Detecta la oferta/evento activo en Steam via marketing messages API."""
     if _get_active_sale_impl is None:
@@ -3268,6 +3294,7 @@ def main():
     family_renderer_kwargs = build_family_renderer_kwargs(family_context)
     itad_contract = build_generator_itad_contract(step)
     post_processing_contract = build_generator_post_processing_contract()
+    engagement_contract = build_generator_engagement_contract(step)
 
     # HLTB
     backlog_on_sale, have_on_sale = [], []
@@ -3315,33 +3342,18 @@ def main():
     deals = post_processing_outputs.deals
     top_picks = post_processing_outputs.top_picks
 
-    # Watchlist alerts
-    watchlist = load_watchlist()
-    watchlist_alerts = []
-    if watchlist:
-        watchlist_alerts = check_watchlist_alerts(deals, watchlist)
-        if watchlist_alerts:
-            print(f"  {_ok(f'{SYM_TARGET} {len(watchlist_alerts)} watchlist alerts!')}")
-            for wa in watchlist_alerts:
-                print(
-                    f"    {wa['name']} — {wa['price_final']} (objetivo: ${wa['target_price']:.0f})"
-                )
-
-    # Budget mode
-    budget_result = None
-    if FILTERS.get("budget"):
-        budget_result = compute_budget_picks(
-            deals, FILTERS["budget"], top_picks, watchlist_alerts
-        )
-        print(
-            f"  {_ok(f'{SYM_BUDGET} Budget ${FILTERS['budget']:.0f}: {budget_result['games_count']} juegos, ${budget_result['total_spent']:.0f} gastados')}"
-        )
-
-    # Gift ideas (compare wishlists)
-    if compare_data:
-        gift_ideas = build_gift_ideas(compare_data["friend_set"], deals, owned)
-        if gift_ideas:
-            print(f"  {_ok(f'{SYM_GIFT} {len(gift_ideas)} gift ideas en oferta')}")
+    engagement_outputs = run_engagement_post_run(
+        deals,
+        filters=FILTERS,
+        top_picks=top_picks,
+        compare_data=compare_data,
+        owned=owned,
+        comparison=comparison,
+        contract=engagement_contract,
+    )
+    watchlist_alerts = engagement_outputs.watchlist_alerts
+    budget_result = engagement_outputs.budget_result
+    gift_ideas = engagement_outputs.gift_ideas
 
     # Generar MD
     step("Generando Markdown...")
@@ -3448,17 +3460,6 @@ def main():
     print(f"  {_ok(str(written_artifacts['share_html']))}")
     if "csv" in written_artifacts:
         print(f"  {_ok(str(written_artifacts['csv']))}")
-
-    # Notifications (optional)
-    if FILTERS.get("telegram_token") or FILTERS.get("discord_webhook"):
-        step("Enviando notificaciones...")
-        notif_summary = build_notification_summary(
-            deals, comparison, top_picks, watchlist_alerts
-        )
-        if notif_summary:
-            send_notifications(FILTERS, notif_summary)
-        else:
-            print(f"  {_dim('Sin cambios notables — no se envió notificación')}")
 
     # Resumen final
     elapsed = time.monotonic() - t0

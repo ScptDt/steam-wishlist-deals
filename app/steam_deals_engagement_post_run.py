@@ -85,3 +85,74 @@ def empty_engagement_outputs() -> EngagementOutputs:
         gift_ideas=[],
         notification_summary=None,
     )
+
+
+def run_engagement_post_run(
+    deals: list[dict],
+    *,
+    filters: dict,
+    top_picks: list[dict],
+    compare_data: dict | None,
+    owned: dict[str, str],
+    comparison: dict | None,
+    contract: EngagementContract,
+    sym_target: str,
+    sym_budget: str,
+    sym_gift: str,
+) -> EngagementOutputs:
+    watchlist = contract.runtime.load_watchlist()
+    watchlist_alerts: list[dict] = []
+    if watchlist:
+        watchlist_alerts = contract.runtime.check_watchlist_alerts(deals, watchlist)
+        if watchlist_alerts:
+            contract.callbacks.emit(
+                f"  {contract.messages.ok(f'{sym_target} {len(watchlist_alerts)} watchlist alerts!')}"
+            )
+            for alert in watchlist_alerts:
+                contract.callbacks.emit(
+                    f"    {alert['name']} — {alert['price_final']} (objetivo: ${alert['target_price']:.0f})"
+                )
+
+    budget_result = None
+    if filters.get("budget"):
+        budget_result = contract.runtime.compute_budget_picks(
+            deals,
+            filters["budget"],
+            top_picks,
+            watchlist_alerts,
+        )
+        contract.callbacks.emit(
+            f"  {contract.messages.ok(f'{sym_budget} Budget ${filters['budget']:.0f}: {budget_result['games_count']} juegos, ${budget_result['total_spent']:.0f} gastados')}"
+        )
+
+    gift_ideas: list[dict] = []
+    if compare_data:
+        gift_ideas = contract.runtime.build_gift_ideas(compare_data["friend_set"], deals, owned)
+        if gift_ideas:
+            contract.callbacks.emit(
+                f"  {contract.messages.ok(f'{sym_gift} {len(gift_ideas)} gift ideas en oferta')}"
+            )
+
+    notification_summary = None
+    if filters.get("telegram_token") or filters.get("discord_webhook"):
+        contract.callbacks.step("Enviando notificaciones...")
+        notification_summary = contract.runtime.build_notification_summary(
+            deals,
+            comparison,
+            top_picks,
+            watchlist_alerts,
+        )
+        if notification_summary:
+            contract.runtime.send_notifications(filters, notification_summary)
+        else:
+            contract.callbacks.emit(
+                f"  {contract.messages.dim('Sin cambios notables — no se envió notificación')}"
+            )
+
+    return EngagementOutputs(
+        watchlist=watchlist,
+        watchlist_alerts=watchlist_alerts,
+        budget_result=budget_result,
+        gift_ideas=gift_ideas,
+        notification_summary=notification_summary,
+    )

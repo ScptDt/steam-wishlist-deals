@@ -45,7 +45,7 @@ No se mantienen documentos paralelos de planificacion; este archivo es la unica 
 - [x] Separar HTML/CSS/JS embebido de `steam_deals_web.py` y `payday2_web.py`.
 - [x] Extraer infraestructura compartida para web local (JSON, SSE, subprocess, server utils).
 - [x] Reutilizar la base compartida entre Steam Deals Web y PAYDAY 2 Web.
-- [ ] Modularizar `steam_deals_generator.py` por dominios (config, adapters, cache, scoring, renderers, orchestration) [en progreso: migracion estructural a `app/` en fases 1A-1D + cortes `cache policy / cache lifecycle`, `enrichment orchestration`, `family`, `output final`, `ITAD orchestration` y `post-processing` completados].
+- [ ] Modularizar `steam_deals_generator.py` por dominios (config, adapters, cache, scoring, renderers, orchestration) [en progreso: migracion estructural a `app/` en fases 1A-1D + cortes `cache policy / cache lifecycle`, `enrichment orchestration`, `family`, `output final`, `ITAD orchestration`, `post-processing` y `engagement/post-run` completados].
 - [ ] Hacer limpieza local del repo: depurar archivos, artefactos, scripts y restos de baja utilidad actual para reducir ruido y costo de mantenimiento.
 - [ ] Hacer limpieza de GitHub y documentacion: depurar README, docs y referencias/metadatos del repo para reflejar solo flujos y superficies vigentes.
 - [x] Agregar smoke tests minimos para web, desktop y PAYDAY 2.
@@ -102,7 +102,9 @@ Nota actual sobre `steam_deals_generator.py`:
 - Validacion del slice `ITAD orchestration`: tests de logica/reconfiguracion OK en `tests/test_generator_logic.py` + `tests/test_shared_cache_utils.py`.
 - Avance ya hecho adicional: slice `post-processing` extraido a `steam_deals_post_processing.py` con boundary para `hltb_hours`, filtros y `top_picks`; `steam_deals_generator.py` conserva wrappers de compatibilidad.
 - Validacion del slice `post-processing`: tests de logica/reconfiguracion OK en `tests/test_generator_logic.py` + `tests/test_shared_cache_utils.py`.
-- Siguiente accion recomendada: continuar con el siguiente corte pequeno de engagement/post-run (`watchlist`, `budget`, `gift ideas` y notificaciones) manteniendo el mismo enfoque incremental y wrappers de compatibilidad.
+- Avance ya hecho adicional: slice `engagement/post-run` extraido a `steam_deals_engagement_post_run.py` con orquestacion de `watchlist_alerts`, `budget_result`, `gift_ideas` y notificaciones; `steam_deals_generator.py` conserva wrappers de compatibilidad.
+- Validacion del slice `engagement/post-run`: tests de logica/reconfiguracion OK en `tests/test_generator_logic.py` + `tests/test_shared_cache_utils.py`.
+- Siguiente accion recomendada: reevaluar los residuos finales de orchestration en `steam_deals_generator.py` para decidir si la modularizacion ya puede cerrarse o si conviene un ultimo corte pequeno.
 - Prioridad actual acordada: el siguiente foco pendiente es `modularizar steam_deals_generator.py`.
 
 ### Nota de trabajo futuro - orden sugerido de ejecucion
@@ -303,6 +305,7 @@ Ejecutar de forma consistente en Windows, macOS y Linux.
 - 2026-04-15: Se consolida `steam_deals_run_output.py` para el slice `output final` con rutas de artifacts, fan-out de escritura y closeout final; `steam_deals_generator.py` conserva wrappers compatibles y `tests/test_generator_logic.py` + `tests/test_shared_cache_utils.py` quedan OK (73 tests).
 - 2026-04-15: Se extrae `steam_deals_itad_orchestration.py` con la coordinacion opcional de lookup, historical lows, current prices y bundles; `steam_deals_generator.py` conserva wrappers compatibles y `tests/test_generator_logic.py` + `tests/test_shared_cache_utils.py` quedan OK (74 tests).
 - 2026-04-15: Se extrae `steam_deals_post_processing.py` con la coordinacion de `hltb_hours`, filtros y `top_picks`; `steam_deals_generator.py` conserva wrappers compatibles y `tests/test_generator_logic.py` + `tests/test_shared_cache_utils.py` quedan OK (75 tests).
+- 2026-04-15: Se extrae `steam_deals_engagement_post_run.py` con la orquestacion de watchlist alerts, budget mode, gift ideas y notificaciones; `steam_deals_generator.py` conserva wrappers compatibles y `tests/test_generator_logic.py` + `tests/test_shared_cache_utils.py` quedan OK (76 tests).
 
 ## Backlog de Features (Propuestos - Planning)
 
