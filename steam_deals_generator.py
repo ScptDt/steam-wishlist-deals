@@ -203,6 +203,12 @@ except Exception:
 
 
 try:
+    import steam_deals_engagement_post_run as _engagement_post_run_module
+except Exception:
+    _engagement_post_run_module = None
+
+
+try:
     from steam_deals_notifications import (
         build_notification_summary as _build_notification_summary_impl,
         send_discord as _send_discord_impl,
@@ -740,6 +746,79 @@ def run_post_processing(
         previous_appids=previous_appids,
         comparison=comparison,
         contract=contract,
+    )
+
+
+def build_engagement_message_formatters(*, ok_fn, dim_fn):
+    if _engagement_post_run_module is None:
+        raise RuntimeError("Engagement post-run module is not available")
+    return _engagement_post_run_module.build_message_formatters(
+        ok=ok_fn,
+        dim=dim_fn,
+    )
+
+
+def build_engagement_callbacks(*, step_fn, emit_fn):
+    if _engagement_post_run_module is None:
+        raise RuntimeError("Engagement post-run module is not available")
+    return _engagement_post_run_module.build_callbacks(
+        step=step_fn,
+        emit=emit_fn,
+    )
+
+
+def build_engagement_runtime(
+    *,
+    load_watchlist_fn,
+    check_watchlist_alerts_fn,
+    compute_budget_picks_fn,
+    build_gift_ideas_fn,
+    build_notification_summary_fn,
+    send_notifications_fn,
+):
+    if _engagement_post_run_module is None:
+        raise RuntimeError("Engagement post-run module is not available")
+    return _engagement_post_run_module.build_runtime(
+        load_watchlist=load_watchlist_fn,
+        check_watchlist_alerts=check_watchlist_alerts_fn,
+        compute_budget_picks=compute_budget_picks_fn,
+        build_gift_ideas=build_gift_ideas_fn,
+        build_notification_summary=build_notification_summary_fn,
+        send_notifications=send_notifications_fn,
+    )
+
+
+def build_engagement_contract(*, messages, callbacks, runtime):
+    if _engagement_post_run_module is None:
+        raise RuntimeError("Engagement post-run module is not available")
+    return _engagement_post_run_module.build_engagement_contract(
+        messages=messages,
+        callbacks=callbacks,
+        runtime=runtime,
+    )
+
+
+def empty_engagement_outputs():
+    if _engagement_post_run_module is None:
+        raise RuntimeError("Engagement post-run module is not available")
+    return _engagement_post_run_module.empty_engagement_outputs()
+
+
+def build_generator_engagement_contract(step_fn):
+    messages = build_engagement_message_formatters(ok_fn=_ok, dim_fn=_dim)
+    callbacks = build_engagement_callbacks(step_fn=step_fn, emit_fn=print)
+    runtime = build_engagement_runtime(
+        load_watchlist_fn=load_watchlist,
+        check_watchlist_alerts_fn=check_watchlist_alerts,
+        compute_budget_picks_fn=compute_budget_picks,
+        build_gift_ideas_fn=build_gift_ideas,
+        build_notification_summary_fn=build_notification_summary,
+        send_notifications_fn=send_notifications,
+    )
+    return build_engagement_contract(
+        messages=messages,
+        callbacks=callbacks,
+        runtime=runtime,
     )
 
 
