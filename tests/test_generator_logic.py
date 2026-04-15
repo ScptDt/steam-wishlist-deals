@@ -5,6 +5,7 @@ from datetime import date
 from datetime import datetime
 from pathlib import Path
 from tempfile import TemporaryDirectory
+from types import SimpleNamespace
 import urllib.error
 
 from steam_deals_itad import (
@@ -18,11 +19,33 @@ from steam_deals_config import (
     load_user_config as module_load_user_config,
     save_user_config as module_save_user_config,
 )
+from steam_deals_cache_policy import (
+    clear_cache_files as module_clear_cache_files,
+    select_global_cache as module_select_global_cache,
+    select_scoped_cache as module_select_scoped_cache,
+)
 from steam_deals_enrichment import (
     fetch_achievements as module_fetch_achievements,
     fetch_anticheat_db as module_fetch_anticheat_db,
     fetch_reviews as module_fetch_reviews,
     load_tags_cache as module_load_tags_cache,
+)
+from steam_deals_enrichment_orchestration import (
+    build_enrichment_orchestration_contract as module_build_enrichment_orchestration_contract,
+    build_global_cache_runtime as module_build_global_cache_runtime,
+    build_message_formatters as module_build_message_formatters,
+    build_progress_callbacks as module_build_progress_callbacks,
+    build_scoped_cache_runtime as module_build_scoped_cache_runtime,
+    run_achievements_orchestration as module_run_achievements_orchestration,
+    run_deck_orchestration as module_run_deck_orchestration,
+    run_protondb_anticheat_orchestration as module_run_protondb_anticheat_orchestration,
+    run_reviews_orchestration as module_run_reviews_orchestration,
+    run_tags_orchestration as module_run_tags_orchestration,
+)
+from steam_deals_family import (
+    FamilyContext as ModuleFamilyContext,
+    build_family_renderer_kwargs as module_build_family_renderer_kwargs,
+    cross_hltb_with_family_context as module_cross_hltb_with_family_context,
 )
 from steam_deals_prices import (
     get_deals_from_wishlist as module_get_deals_from_wishlist,
@@ -222,6 +245,51 @@ class PresentationHelpersTests(unittest.TestCase):
 
 
 class EnrichmentTests(unittest.TestCase):
+    def _build_enrichment_contract(
+        self,
+        *,
+        steps: list[str],
+        emits: list[str],
+        reviews_runtime=None,
+        deck_runtime=None,
+        protondb_runtime=None,
+        anticheat_runtime=None,
+        tags_runtime=None,
+        achievements_runtime=None,
+    ):
+        def default_scoped_runtime():
+            return module_build_scoped_cache_runtime(
+                load_cache=lambda _steam_id: ({}, 0.0),
+                select_cache=lambda *_args, **_kwargs: SimpleNamespace(status="empty", cache={}, missing_ids=()),
+                fetch_data=lambda _appids, cached: dict(cached),
+                save_cache=lambda _steam_id, _data: None,
+                ttl_hours=24,
+            )
+
+        def default_global_runtime():
+            return module_build_global_cache_runtime(
+                load_cache=lambda: ({}, 0.0),
+                select_cache=lambda *_args, **_kwargs: SimpleNamespace(status="empty", cache={}),
+                fetch_data=lambda: {},
+                save_cache=lambda _data: None,
+                ttl_hours=24,
+            )
+
+        return module_build_enrichment_orchestration_contract(
+            progress=module_build_progress_callbacks(step=steps.append, emit=emits.append),
+            messages=module_build_message_formatters(
+                ok=lambda text: f"OK:{text}",
+                warn=lambda text: f"WARN:{text}",
+                dim=lambda text: f"DIM:{text}",
+            ),
+            reviews=reviews_runtime or default_scoped_runtime(),
+            deck=deck_runtime or default_scoped_runtime(),
+            protondb=protondb_runtime or default_scoped_runtime(),
+            anticheat=anticheat_runtime or default_global_runtime(),
+            tags=tags_runtime or default_scoped_runtime(),
+            achievements=achievements_runtime or default_scoped_runtime(),
+        )
+
     def test_fetch_reviews_merges_cached_and_fetched_entries(self) -> None:
         def fake_fetch_parallel(items, fetch_fn, _label, rate_limit=0.15):
             return {appid: fetch_fn(appid) for appid in items}
@@ -276,8 +344,222 @@ class EnrichmentTests(unittest.TestCase):
         self.assertEqual(result["10"]["count"], 10)
         self.assertEqual(result["20"], {"count": 2, "avg_completion": 15.0})
 
+    def test_reviews_and_deck_orchestration_preserve_step_order_and_messages(self) -> None:
+        steps: list[str] = []
+        emits: list[str] = []
+        review_saves: list[tuple[str, dict]] = []
+        deck_saves: list[tuple[str, dict]] = []
+
+        contract = self._build_enrichment_contract(
+            steps=steps,
+            emits=emits,
+            reviews_runtime=module_build_scoped_cache_runtime(
+                load_cache=lambda _steam_id: ({"10": {"pct": 90}}, 6.0),
+                select_cache=lambda *_args, **_kwargs: SimpleNamespace(
+                    status="valid",
+                    cache={"10": {"pct": 90}},
+                    missing_ids=("20",),
+                ),
+                fetch_data=lambda _appids, cached: {**cached, "20": {"pct": 80}},
+                save_cache=lambda steam_id, data: review_saves.append((steam_id, data)),
+                ttl_hours=24,
+            ),
+            deck_runtime=module_build_scoped_cache_runtime(
+                load_cache=lambda _steam_id: ({}, 30.0),
+                select_cache=lambda *_args, **_kwargs: SimpleNamespace(
+                    status="expired",
+                    cache={},
+                    missing_ids=("10", "20"),
+                ),
+                fetch_data=lambda _appids, _cached: {"10": 3, "20": 2},
+                save_cache=lambda steam_id, data: deck_saves.append((steam_id, data)),
+                ttl_hours=24,
+            ),
+        )
+
+        reviews_data = module_run_reviews_orchestration(
+            "steam-id",
+            ["10", "20"],
+            no_cache=False,
+            contract=contract,
+        )
+        deck_data = module_run_deck_orchestration(
+            "steam-id",
+            ["10", "20"],
+            no_cache=False,
+            contract=contract,
+        )
+
+        self.assertEqual(steps, [
+            "Obteniendo reviews de Steam...",
+            "Obteniendo compatibilidad Steam Deck...",
+        ])
+        self.assertEqual(
+            emits,
+            [
+                "  OK:Caché válida (6h) — 1 nuevos por fetchear",
+                "  OK:2/2 deals con reviews",
+                "  WARN:Caché expirada (30h) — re-fetching",
+                "  OK:1 Verified · 1 Playable",
+            ],
+        )
+        self.assertEqual(reviews_data, {"10": {"pct": 90}, "20": {"pct": 80}})
+        self.assertEqual(deck_data, {"10": 3, "20": 2})
+        self.assertEqual(review_saves, [("steam-id", {"10": {"pct": 90}, "20": {"pct": 80}})])
+        self.assertEqual(deck_saves, [("steam-id", {"10": 3, "20": 2})])
+
+    def test_linux_tags_and_achievements_orchestration_keep_observable_outputs(self) -> None:
+        steps: list[str] = []
+        emits: list[str] = []
+        protondb_saves: list[tuple[str, dict]] = []
+        tag_saves: list[tuple[str, dict]] = []
+        achievement_saves: list[tuple[str, dict]] = []
+        anticheat_fetch_calls: list[bool] = []
+
+        contract = self._build_enrichment_contract(
+            steps=steps,
+            emits=emits,
+            protondb_runtime=module_build_scoped_cache_runtime(
+                load_cache=lambda _steam_id: ({"10": {"tier": "platinum"}}, 5.0),
+                select_cache=lambda *_args, **_kwargs: SimpleNamespace(
+                    status="valid",
+                    cache={"10": {"tier": "platinum"}},
+                    missing_ids=("20",),
+                ),
+                fetch_data=lambda _appids, cached: {**cached, "20": {"tier": "native"}},
+                save_cache=lambda steam_id, data: protondb_saves.append((steam_id, data)),
+                ttl_hours=24,
+            ),
+            anticheat_runtime=module_build_global_cache_runtime(
+                load_cache=lambda: ({"10": {"status": "Denied"}}, 3.0),
+                select_cache=lambda *_args, **_kwargs: SimpleNamespace(
+                    status="valid",
+                    cache={"10": {"status": "Denied"}},
+                ),
+                fetch_data=lambda: anticheat_fetch_calls.append(True) or {},
+                save_cache=lambda _data: None,
+                ttl_hours=24,
+            ),
+            tags_runtime=module_build_scoped_cache_runtime(
+                load_cache=lambda _steam_id: ({}, 50.0),
+                select_cache=lambda *_args, **_kwargs: SimpleNamespace(
+                    status="expired",
+                    cache={},
+                    missing_ids=("10", "20"),
+                ),
+                fetch_data=lambda _appids, _cached: {"10": {"tags": {"Action": 100}}, "20": {}},
+                save_cache=lambda steam_id, data: tag_saves.append((steam_id, data)),
+                ttl_hours=24,
+            ),
+            achievements_runtime=module_build_scoped_cache_runtime(
+                load_cache=lambda _steam_id: ({"10": {"count": 10, "avg_completion": 12.0}}, 4.0),
+                select_cache=lambda *_args, **_kwargs: SimpleNamespace(
+                    status="valid",
+                    cache={"10": {"count": 10, "avg_completion": 12.0}},
+                    missing_ids=(),
+                ),
+                fetch_data=lambda _appids, cached: dict(cached),
+                save_cache=lambda steam_id, data: achievement_saves.append((steam_id, data)),
+                ttl_hours=24,
+            ),
+        )
+
+        protondb_data, anticheat_data = module_run_protondb_anticheat_orchestration(
+            "steam-id",
+            ["10", "20"],
+            no_cache=False,
+            contract=contract,
+        )
+        tags_data = module_run_tags_orchestration(
+            "steam-id",
+            ["10", "20"],
+            no_cache=False,
+            contract=contract,
+        )
+        achievements_data = module_run_achievements_orchestration(
+            "steam-id",
+            ["10", "20"],
+            no_cache=False,
+            contract=contract,
+        )
+
+        self.assertEqual(steps, [
+            "Obteniendo datos Linux (ProtonDB + Anti-Cheat)...",
+            "Obteniendo tags de Steam...",
+            "Obteniendo achievements...",
+        ])
+        self.assertEqual(
+            emits,
+            [
+                "  OK:ProtonDB caché válida (5h) — 1 nuevos",
+                "  OK:ProtonDB: 2/2 · 2 Platinum/Native",
+                "  OK:Anti-Cheat DB desde caché (3h)",
+                "  WARN:1 deals con problemas de anti-cheat en Linux",
+                "  WARN:Caché expirada (50h) — re-fetching",
+                "  OK:1/2 deals con tags",
+                "  OK:Caché válida (4h) — DIM:todos en caché",
+                "  OK:1/2 deals con achievements",
+            ],
+        )
+        self.assertEqual(protondb_data, {"10": {"tier": "platinum"}, "20": {"tier": "native"}})
+        self.assertEqual(anticheat_data, {"10": {"status": "Denied"}})
+        self.assertEqual(tags_data, {"10": {"tags": {"Action": 100}}, "20": {}})
+        self.assertEqual(achievements_data, {"10": {"count": 10, "avg_completion": 12.0}})
+        self.assertEqual(anticheat_fetch_calls, [])
+        self.assertEqual(protondb_saves, [("", {"10": {"tier": "platinum"}, "20": {"tier": "native"}})])
+        self.assertEqual(tag_saves, [("", {"10": {"tags": {"Action": 100}}, "20": {}})])
+        self.assertEqual(achievement_saves, [("steam-id", {"10": {"count": 10, "avg_completion": 12.0}})])
+
 
 class PriceCacheTests(unittest.TestCase):
+    def test_select_scoped_cache_reports_missing_ids_for_valid_cache(self) -> None:
+        decision = module_select_scoped_cache(
+            ["10", "20"],
+            {"10": {"discount_percent": 70}},
+            12.0,
+            no_cache=False,
+            ttl_hours=24,
+        )
+
+        self.assertEqual(decision.status, "valid")
+        self.assertEqual(decision.cache, {"10": {"discount_percent": 70}})
+        self.assertEqual(decision.missing_ids, ("20",))
+
+    def test_select_scoped_cache_clears_expired_payload(self) -> None:
+        decision = module_select_scoped_cache(
+            ["10", "20"],
+            {"10": {"discount_percent": 70}},
+            48.0,
+            no_cache=False,
+            ttl_hours=24,
+        )
+
+        self.assertEqual(decision.status, "expired")
+        self.assertEqual(decision.cache, {})
+        self.assertEqual(decision.missing_ids, ("10", "20"))
+
+    def test_select_global_cache_bypasses_when_no_cache_is_enabled(self) -> None:
+        decision = module_select_global_cache(
+            {"10": {"status": "Supported"}},
+            1.0,
+            no_cache=True,
+            ttl_hours=168,
+        )
+
+        self.assertEqual(decision.status, "bypass")
+        self.assertEqual(decision.cache, {})
+
+    def test_clear_cache_files_only_unlinks_existing_paths(self) -> None:
+        with TemporaryDirectory() as temp_dir:
+            existing = Path(temp_dir) / "reviews_cache.json"
+            existing.write_text("{}", encoding="utf-8")
+            missing = Path(temp_dir) / "deck_cache.json"
+
+            cleared = module_clear_cache_files([existing, missing])
+
+        self.assertEqual(cleared, (existing,))
+        self.assertFalse(existing.exists())
+
     def test_save_and_load_price_cache_roundtrip(self) -> None:
         fetched = {"10": {"discount_percent": 70}, "20": None}
 
@@ -737,6 +1019,33 @@ class SteamAdapterTests(unittest.TestCase):
             appids = module_load_family_games(family_path)
 
         self.assertEqual(appids, {"10", "20"})
+
+    def test_cross_hltb_with_family_context_passes_family_appids_to_matcher(self) -> None:
+        captured = {}
+
+        def fake_cross_hltb(hltb, deals, *, family_appids):
+            captured["hltb"] = hltb
+            captured["deals"] = deals
+            captured["family_appids"] = family_appids
+            return ([{"appid": "10", "in_family": True}], [])
+
+        backlog_on_sale, have_on_sale = module_cross_hltb_with_family_context(
+            {"backlog": [], "completed": [], "playing": [], "retired": []},
+            [{"appid": "10", "name": "Portal 2"}],
+            ModuleFamilyContext(family_appids={"10", "20"}),
+            cross_hltb_with_deals_fn=fake_cross_hltb,
+        )
+
+        self.assertEqual(captured["family_appids"], {"10", "20"})
+        self.assertEqual(backlog_on_sale, [{"appid": "10", "in_family": True}])
+        self.assertEqual(have_on_sale, [])
+
+    def test_build_family_renderer_kwargs_clones_family_appids(self) -> None:
+        family_context = ModuleFamilyContext(family_appids={"10", "20"})
+        kwargs = module_build_family_renderer_kwargs(family_context)
+
+        self.assertEqual(kwargs, {"family_appids": {"10", "20"}})
+        self.assertIsNot(kwargs["family_appids"], family_context.family_appids)
 
     def test_get_active_sale_prefers_primary_event_type(self) -> None:
         sale_name = module_get_active_sale(

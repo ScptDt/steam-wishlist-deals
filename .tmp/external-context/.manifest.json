@@ -1,15 +1,15 @@
 {
   "version": "1.0",
-  "last_updated": "2026-04-14T00:00:00Z",
+  "last_updated": "2026-04-15T00:00:00Z",
   "libraries": {
-    "pytest": {
+    "python": {
       "files": [
         {
-          "filename": "install-and-run-local.md",
-          "topic": "install and run locally with python -m pytest",
-          "tech_stack": "Python local environment (sin poetry)",
-          "fetched": "2026-04-14T00:00:00Z",
-          "source": "Official docs"
+          "filename": "pip-linux-recovery.md",
+          "topic": "pip missing on linux",
+          "tech_stack": "Linux / Python 3",
+          "fetched": "2026-04-15T00:00:00Z",
+          "source": "Python docs + pip docs + Python Packaging User Guide"
         }
       ]
     }

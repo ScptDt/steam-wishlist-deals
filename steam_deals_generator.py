@@ -185,6 +185,12 @@ except Exception:
 
 
 try:
+    import steam_deals_family as _family_module
+except Exception:
+    _family_module = None
+
+
+try:
     from steam_deals_notifications import (
         build_notification_summary as _build_notification_summary_impl,
         send_discord as _send_discord_impl,
@@ -250,6 +256,18 @@ try:
     import steam_deals_prices as _prices_module
 except Exception:
     _prices_module = None
+
+
+try:
+    import steam_deals_cache_policy as _cache_policy_module
+except Exception:
+    _cache_policy_module = None
+
+
+try:
+    import steam_deals_enrichment_orchestration as _enrichment_orchestration_module
+except Exception:
+    _enrichment_orchestration_module = None
 
 
 try:
@@ -523,6 +541,45 @@ def load_family_games(json_path: Path) -> set[str]:
     return _load_family_games_impl(json_path)
 
 
+def empty_family_context():
+    if _family_module is None:
+        raise RuntimeError("Family module is not available")
+    return _family_module.empty_family_context()
+
+
+def load_family_context(family_json: Path | None, *, step_fn):
+    if _family_module is None:
+        raise RuntimeError("Family module is not available")
+    return _family_module.load_family_context(
+        family_json,
+        load_family_games_fn=load_family_games,
+        step_fn=step_fn,
+        emit_fn=print,
+        ok_fn=_ok,
+    )
+
+
+def cross_hltb_with_family_context(
+    hltb: dict[str, list[dict]],
+    deals: list[dict],
+    family_context,
+):
+    if _family_module is None:
+        raise RuntimeError("Family module is not available")
+    return _family_module.cross_hltb_with_family_context(
+        hltb,
+        deals,
+        family_context,
+        cross_hltb_with_deals_fn=cross_hltb_with_deals,
+    )
+
+
+def build_family_renderer_kwargs(family_context):
+    if _family_module is None:
+        raise RuntimeError("Family module is not available")
+    return _family_module.build_family_renderer_kwargs(family_context)
+
+
 def get_active_sale() -> str:
     """Detecta la oferta/evento activo en Steam via marketing messages API."""
     if _get_active_sale_impl is None:
@@ -756,6 +813,228 @@ PROTONDB_CACHE_FILE = CACHE_DIR / "protondb_cache.json"
 ANTICHEAT_CACHE_FILE = CACHE_DIR / "anticheat_cache.json"
 ACHIEVEMENTS_CACHE_FILE = CACHE_DIR / "achievements_cache.json"
 ACHIEVEMENTS_CACHE_TTL = 720  # 30 days in hours
+
+
+def clear_cache_files(cache_files: list[Path]) -> tuple[Path, ...]:
+    if _cache_policy_module is None:
+        raise RuntimeError("Cache policy module is not available")
+    return _cache_policy_module.clear_cache_files(cache_files)
+
+
+def select_scoped_cache(
+    target_ids: list[str],
+    cached: dict,
+    cache_age: float,
+    *,
+    no_cache: bool,
+    ttl_hours: float,
+):
+    if _cache_policy_module is None:
+        raise RuntimeError("Cache policy module is not available")
+    return _cache_policy_module.select_scoped_cache(
+        target_ids,
+        cached,
+        cache_age,
+        no_cache=no_cache,
+        ttl_hours=ttl_hours,
+    )
+
+
+def select_global_cache(
+    cached: dict,
+    cache_age: float,
+    *,
+    no_cache: bool,
+    ttl_hours: float,
+):
+    if _cache_policy_module is None:
+        raise RuntimeError("Cache policy module is not available")
+    return _cache_policy_module.select_global_cache(
+        cached,
+        cache_age,
+        no_cache=no_cache,
+        ttl_hours=ttl_hours,
+    )
+
+
+def build_enrichment_message_formatters(*, ok_fn, warn_fn, dim_fn):
+    if _enrichment_orchestration_module is None:
+        raise RuntimeError("Enrichment orchestration module is not available")
+    return _enrichment_orchestration_module.build_message_formatters(
+        ok=ok_fn,
+        warn=warn_fn,
+        dim=dim_fn,
+    )
+
+
+def build_enrichment_progress_callbacks(*, step_fn, emit_fn):
+    if _enrichment_orchestration_module is None:
+        raise RuntimeError("Enrichment orchestration module is not available")
+    return _enrichment_orchestration_module.build_progress_callbacks(
+        step=step_fn,
+        emit=emit_fn,
+    )
+
+
+def build_scoped_enrichment_runtime(*, load_cache_fn, select_cache_fn, fetch_data_fn, save_cache_fn, ttl_hours: float):
+    if _enrichment_orchestration_module is None:
+        raise RuntimeError("Enrichment orchestration module is not available")
+    return _enrichment_orchestration_module.build_scoped_cache_runtime(
+        load_cache=load_cache_fn,
+        select_cache=select_cache_fn,
+        fetch_data=fetch_data_fn,
+        save_cache=save_cache_fn,
+        ttl_hours=ttl_hours,
+    )
+
+
+def build_global_enrichment_runtime(*, load_cache_fn, select_cache_fn, fetch_data_fn, save_cache_fn, ttl_hours: float):
+    if _enrichment_orchestration_module is None:
+        raise RuntimeError("Enrichment orchestration module is not available")
+    return _enrichment_orchestration_module.build_global_cache_runtime(
+        load_cache=load_cache_fn,
+        select_cache=select_cache_fn,
+        fetch_data=fetch_data_fn,
+        save_cache=save_cache_fn,
+        ttl_hours=ttl_hours,
+    )
+
+
+def build_enrichment_orchestration_contract(
+    *,
+    progress,
+    messages,
+    reviews_runtime,
+    deck_runtime,
+    protondb_runtime,
+    anticheat_runtime,
+    tags_runtime,
+    achievements_runtime,
+):
+    if _enrichment_orchestration_module is None:
+        raise RuntimeError("Enrichment orchestration module is not available")
+    return _enrichment_orchestration_module.build_enrichment_orchestration_contract(
+        progress=progress,
+        messages=messages,
+        reviews=reviews_runtime,
+        deck=deck_runtime,
+        protondb=protondb_runtime,
+        anticheat=anticheat_runtime,
+        tags=tags_runtime,
+        achievements=achievements_runtime,
+    )
+
+
+def empty_enrichment_outputs():
+    if _enrichment_orchestration_module is None:
+        raise RuntimeError("Enrichment orchestration module is not available")
+    return _enrichment_orchestration_module.empty_enrichment_outputs()
+
+
+def build_generator_enrichment_contract(step_fn):
+    progress = build_enrichment_progress_callbacks(step_fn=step_fn, emit_fn=print)
+    messages = build_enrichment_message_formatters(ok_fn=_ok, warn_fn=_warn, dim_fn=_dim)
+    return build_enrichment_orchestration_contract(
+        progress=progress,
+        messages=messages,
+        reviews_runtime=build_scoped_enrichment_runtime(
+            load_cache_fn=load_reviews_cache,
+            select_cache_fn=select_scoped_cache,
+            fetch_data_fn=fetch_reviews,
+            save_cache_fn=save_reviews_cache,
+            ttl_hours=EXTRA_CACHE_TTL,
+        ),
+        deck_runtime=build_scoped_enrichment_runtime(
+            load_cache_fn=load_deck_cache,
+            select_cache_fn=select_scoped_cache,
+            fetch_data_fn=fetch_deck_compat,
+            save_cache_fn=save_deck_cache,
+            ttl_hours=EXTRA_CACHE_TTL,
+        ),
+        protondb_runtime=build_scoped_enrichment_runtime(
+            load_cache_fn=lambda _steam_id: load_protondb_cache(),
+            select_cache_fn=select_scoped_cache,
+            fetch_data_fn=fetch_protondb,
+            save_cache_fn=lambda _steam_id, data: save_protondb_cache(data),
+            ttl_hours=EXTRA_CACHE_TTL,
+        ),
+        anticheat_runtime=build_global_enrichment_runtime(
+            load_cache_fn=load_anticheat_cache,
+            select_cache_fn=select_global_cache,
+            fetch_data_fn=fetch_anticheat_db,
+            save_cache_fn=save_anticheat_cache,
+            ttl_hours=EXTRA_CACHE_TTL,
+        ),
+        tags_runtime=build_scoped_enrichment_runtime(
+            load_cache_fn=lambda _steam_id: load_tags_cache(),
+            select_cache_fn=select_scoped_cache,
+            fetch_data_fn=fetch_tags,
+            save_cache_fn=lambda _steam_id, data: save_tags_cache(data),
+            ttl_hours=TAGS_CACHE_TTL,
+        ),
+        achievements_runtime=build_scoped_enrichment_runtime(
+            load_cache_fn=load_achievements_cache,
+            select_cache_fn=select_scoped_cache,
+            fetch_data_fn=fetch_achievements,
+            save_cache_fn=save_achievements_cache,
+            ttl_hours=ACHIEVEMENTS_CACHE_TTL,
+        ),
+    )
+
+
+def run_reviews_enrichment_orchestration(contract, steam_id: str, deal_appids: list[str], *, no_cache: bool) -> dict[str, dict]:
+    if _enrichment_orchestration_module is None:
+        raise RuntimeError("Enrichment orchestration module is not available")
+    return _enrichment_orchestration_module.run_reviews_orchestration(
+        steam_id,
+        deal_appids,
+        no_cache=no_cache,
+        contract=contract,
+    )
+
+
+def run_deck_enrichment_orchestration(contract, steam_id: str, deal_appids: list[str], *, no_cache: bool) -> dict[str, int]:
+    if _enrichment_orchestration_module is None:
+        raise RuntimeError("Enrichment orchestration module is not available")
+    return _enrichment_orchestration_module.run_deck_orchestration(
+        steam_id,
+        deal_appids,
+        no_cache=no_cache,
+        contract=contract,
+    )
+
+
+def run_protondb_anticheat_enrichment_orchestration(contract, steam_id: str, deal_appids: list[str], *, no_cache: bool) -> tuple[dict[str, dict], dict[str, dict]]:
+    if _enrichment_orchestration_module is None:
+        raise RuntimeError("Enrichment orchestration module is not available")
+    return _enrichment_orchestration_module.run_protondb_anticheat_orchestration(
+        steam_id,
+        deal_appids,
+        no_cache=no_cache,
+        contract=contract,
+    )
+
+
+def run_tags_enrichment_orchestration(contract, steam_id: str, deal_appids: list[str], *, no_cache: bool) -> dict[str, dict]:
+    if _enrichment_orchestration_module is None:
+        raise RuntimeError("Enrichment orchestration module is not available")
+    return _enrichment_orchestration_module.run_tags_orchestration(
+        steam_id,
+        deal_appids,
+        no_cache=no_cache,
+        contract=contract,
+    )
+
+
+def run_achievements_enrichment_orchestration(contract, steam_id: str, deal_appids: list[str], *, no_cache: bool) -> dict[str, dict]:
+    if _enrichment_orchestration_module is None:
+        raise RuntimeError("Enrichment orchestration module is not available")
+    return _enrichment_orchestration_module.run_achievements_orchestration(
+        steam_id,
+        deal_appids,
+        no_cache=no_cache,
+        contract=contract,
+    )
 
 
 def load_price_cache(steam_id: str) -> tuple[dict, float]:
@@ -2551,32 +2830,37 @@ def main():
     step("Obteniendo precios de Steam...")
     fetched_cache, cache_age = load_price_cache(steam_id)
 
-    if no_cache:
-        fetched_cache = {}
-        # Also clear reviews, deck, tags, protondb, anticheat caches
-        for cf in (
-            REVIEWS_CACHE_FILE,
-            DECK_CACHE_FILE,
-            TAGS_CACHE_FILE,
-            PROTONDB_CACHE_FILE,
-            ANTICHEAT_CACHE_FILE,
-            ACHIEVEMENTS_CACHE_FILE,
-        ):
-            if cf.exists():
-                cf.unlink()
+    price_cache_policy = select_scoped_cache(
+        wishlist_appids,
+        fetched_cache,
+        cache_age,
+        no_cache=no_cache,
+        ttl_hours=CACHE_MAX_HOURS,
+    )
+    fetched_cache = price_cache_policy.cache
+
+    if price_cache_policy.status == "bypass":
+        clear_cache_files(
+            [
+                REVIEWS_CACHE_FILE,
+                DECK_CACHE_FILE,
+                TAGS_CACHE_FILE,
+                PROTONDB_CACHE_FILE,
+                ANTICHEAT_CACHE_FILE,
+                ACHIEVEMENTS_CACHE_FILE,
+            ]
+        )
         print(f"  {_warn('--no-cache: ignorando caché existente')}")
-    elif fetched_cache:
-        new_appids = [a for a in wishlist_appids if a not in fetched_cache]
-        if cache_age <= CACHE_MAX_HOURS:
-            status_msg = (
-                f"{len(new_appids)} nuevos por fetchear"
-                if new_appids
-                else _dim("sin nuevos, skip fetch")
-            )
-            print(f"  {_ok(f'Caché válida ({cache_age:.1f}h)')} — {status_msg}")
-        else:
-            print(f"  {_warn(f'Caché expirada ({cache_age:.0f}h) — re-fetching todo')}")
-            fetched_cache = {}
+    elif price_cache_policy.status == "valid":
+        new_appids = price_cache_policy.missing_ids
+        status_msg = (
+            f"{len(new_appids)} nuevos por fetchear"
+            if new_appids
+            else _dim("sin nuevos, skip fetch")
+        )
+        print(f"  {_ok(f'Caché válida ({cache_age:.1f}h)')} — {status_msg}")
+    elif price_cache_policy.status == "expired":
+        print(f"  {_warn(f'Caché expirada ({cache_age:.0f}h) — re-fetching todo')}")
     else:
         print(f"  {_dim('Sin caché — fetch completo')}")
 
@@ -2639,151 +2923,52 @@ def main():
             f"  {_ok(f'{trend_count} con historial · {best_count} en mejor precio local')}"
         )
 
+    enrichment_contract = build_generator_enrichment_contract(step)
+
     # [6] Reviews de Steam (solo para deals)
-    step("Obteniendo reviews de Steam...")
     deal_appids = [d["appid"] for d in deals]
-    reviews_cache, reviews_age = load_reviews_cache(steam_id)
-    if no_cache:
-        reviews_cache = {}
-    elif reviews_cache and reviews_age <= EXTRA_CACHE_TTL:
-        missing = [a for a in deal_appids if a not in reviews_cache]
-        if missing:
-            print(
-                f"  {_ok(f'Caché válida ({reviews_age:.0f}h)')} — {len(missing)} nuevos por fetchear"
-            )
-        else:
-            print(
-                f"  {_ok(f'Caché válida ({reviews_age:.0f}h)')} — {_dim('todos en caché')}"
-            )
-    elif reviews_cache:
-        print(f"  {_warn(f'Caché expirada ({reviews_age:.0f}h) — re-fetching')}")
-        reviews_cache = {}
-    reviews_data = fetch_reviews(deal_appids, reviews_cache)
-    save_reviews_cache(steam_id, reviews_data)
-    reviewed = sum(1 for a in deal_appids if a in reviews_data)
-    print(f"  {_ok(f'{reviewed}/{len(deal_appids)} deals con reviews')}")
+    reviews_data = run_reviews_enrichment_orchestration(
+        enrichment_contract,
+        steam_id,
+        deal_appids,
+        no_cache=no_cache,
+    )
 
     # [7] Compatibilidad Steam Deck (solo para deals)
-    step("Obteniendo compatibilidad Steam Deck...")
-    deck_cache, deck_age = load_deck_cache(steam_id)
-    if no_cache:
-        deck_cache = {}
-    elif deck_cache and deck_age <= EXTRA_CACHE_TTL:
-        missing = [a for a in deal_appids if a not in deck_cache]
-        if missing:
-            print(
-                f"  {_ok(f'Caché válida ({deck_age:.0f}h)')} — {len(missing)} nuevos por fetchear"
-            )
-        else:
-            print(
-                f"  {_ok(f'Caché válida ({deck_age:.0f}h)')} — {_dim('todos en caché')}"
-            )
-    elif deck_cache:
-        print(f"  {_warn(f'Caché expirada ({deck_age:.0f}h) — re-fetching')}")
-        deck_cache = {}
-    deck_data = fetch_deck_compat(deal_appids, deck_cache)
-    save_deck_cache(steam_id, deck_data)
-    verified = sum(1 for a in deal_appids if deck_data.get(a) == 3)
-    playable = sum(1 for a in deal_appids if deck_data.get(a) == 2)
-    print(f"  {_ok(f'{verified} Verified · {playable} Playable')}")
+    deck_data = run_deck_enrichment_orchestration(
+        enrichment_contract,
+        steam_id,
+        deal_appids,
+        no_cache=no_cache,
+    )
 
     # [8] ProtonDB + Are We Anti-Cheat Yet
-    step("Obteniendo datos Linux (ProtonDB + Anti-Cheat)...")
-    protondb_cache, protondb_age = load_protondb_cache()
-    if no_cache:
-        protondb_cache = {}
-    elif protondb_cache and protondb_age <= EXTRA_CACHE_TTL:
-        missing_pdb = [a for a in deal_appids if a not in protondb_cache]
-        if missing_pdb:
-            print(
-                f"  {_ok(f'ProtonDB caché válida ({protondb_age:.0f}h)')} — {len(missing_pdb)} nuevos"
-            )
-        else:
-            print(f"  {_ok(f'ProtonDB caché válida ({protondb_age:.0f}h)')}")
-    elif protondb_cache:
-        protondb_cache = {}
-    protondb_data = fetch_protondb(deal_appids, protondb_cache)
-    save_protondb_cache(protondb_data)
-    pdb_count = sum(1 for a in deal_appids if a in protondb_data)
-    platinum = sum(
-        1
-        for a in deal_appids
-        if protondb_data.get(a, {}).get("tier") in ("platinum", "native")
+    protondb_data, anticheat_data = run_protondb_anticheat_enrichment_orchestration(
+        enrichment_contract,
+        steam_id,
+        deal_appids,
+        no_cache=no_cache,
     )
-    print(
-        f"  {_ok(f'ProtonDB: {pdb_count}/{len(deal_appids)} · {platinum} Platinum/Native')}"
-    )
-
-    # Anti-cheat DB (single download, cached)
-    anticheat_cache, anticheat_age = load_anticheat_cache()
-    if no_cache or not anticheat_cache or anticheat_age > EXTRA_CACHE_TTL:
-        anticheat_data = fetch_anticheat_db()
-        if anticheat_data:
-            save_anticheat_cache(anticheat_data)
-            print(f"  {_ok(f'Anti-Cheat DB: {len(anticheat_data)} juegos cargados')}")
-    else:
-        anticheat_data = anticheat_cache
-        print(f"  {_ok(f'Anti-Cheat DB desde caché ({anticheat_age:.0f}h)')}")
-    ac_issues = sum(
-        1
-        for a in deal_appids
-        if anticheat_data.get(a, {}).get("status") in ("Denied", "Broken")
-    )
-    if ac_issues:
-        print(f"  {_warn(f'{ac_issues} deals con problemas de anti-cheat en Linux')}")
 
     # [9] Tags de Steam (via SteamSpy, solo para deals)
-    step("Obteniendo tags de Steam...")
-    tags_cache, tags_age = load_tags_cache()
-    if no_cache:
-        tags_cache = {}
-    elif tags_cache and tags_age <= TAGS_CACHE_TTL:
-        missing_tags = [a for a in deal_appids if a not in tags_cache]
-        if missing_tags:
-            print(
-                f"  {_ok(f'Caché válida ({tags_age:.0f}h)')} — {len(missing_tags)} nuevos"
-            )
-        else:
-            print(
-                f"  {_ok(f'Caché válida ({tags_age:.0f}h)')} — {_dim('todos en caché')}"
-            )
-    elif tags_cache:
-        print(f"  {_warn(f'Caché expirada ({tags_age:.0f}h) — re-fetching')}")
-        tags_cache = {}
-    tags_data = fetch_tags(deal_appids, tags_cache)
-    save_tags_cache(tags_data)
-    tagged = sum(1 for a in deal_appids if a in tags_data and tags_data[a])
-    print(f"  {_ok(f'{tagged}/{len(deal_appids)} deals con tags')}")
+    tags_data = run_tags_enrichment_orchestration(
+        enrichment_contract,
+        steam_id,
+        deal_appids,
+        no_cache=no_cache,
+    )
 
     # [10] Achievements
-    step("Obteniendo achievements...")
-    ach_cache, ach_age = load_achievements_cache(steam_id)
-    if no_cache:
-        ach_cache = {}
-    elif ach_cache and ach_age <= ACHIEVEMENTS_CACHE_TTL:
-        missing_ach = [a for a in deal_appids if a not in ach_cache]
-        if missing_ach:
-            print(
-                f"  {_ok(f'Caché válida ({ach_age:.0f}h)')} — {len(missing_ach)} nuevos por fetchear"
-            )
-        else:
-            print(
-                f"  {_ok(f'Caché válida ({ach_age:.0f}h)')} — {_dim('todos en caché')}"
-            )
-    elif ach_cache:
-        print(f"  {_warn(f'Caché expirada ({ach_age:.0f}h) — re-fetching')}")
-        ach_cache = {}
-    achievements_data = fetch_achievements(deal_appids, ach_cache)
-    save_achievements_cache(steam_id, achievements_data)
-    ach_count = sum(1 for a in deal_appids if a in achievements_data)
-    print(f"  {_ok(f'{ach_count}/{len(deal_appids)} deals con achievements')}")
+    achievements_data = run_achievements_enrichment_orchestration(
+        enrichment_contract,
+        steam_id,
+        deal_appids,
+        no_cache=no_cache,
+    )
 
     # Biblioteca familiar (opcional)
-    family_appids: set[str] = set()
-    if FAMILY_JSON:
-        step("Cargando biblioteca familiar...")
-        family_appids = load_family_games(FAMILY_JSON)
-        print(f"  {_ok(f'{len(family_appids):,} juegos en la familia')}")
+    family_context = load_family_context(FAMILY_JSON, step_fn=step)
+    family_renderer_kwargs = build_family_renderer_kwargs(family_context)
 
     # HLTB
     backlog_on_sale, have_on_sale = [], []
@@ -2799,8 +2984,10 @@ def main():
         print(
             f"  {_dim(f'Backlog: {bl:,} | Completados: {cp} | Playing: {pl} | Retired: {rt}')}"
         )
-        backlog_on_sale, have_on_sale = cross_hltb_with_deals(
-            hltb, deals, family_appids=family_appids
+        backlog_on_sale, have_on_sale = cross_hltb_with_family_context(
+            hltb,
+            deals,
+            family_context,
         )
         print(
             f"  {_ok(f'{len(backlog_on_sale)} backlog en oferta | {len(have_on_sale)} completados/retirados')}"
@@ -2897,7 +3084,6 @@ def main():
         MIN_DISCOUNT,
         genres,
         hltb_used=HLTB_CSV is not None,
-        family_appids=family_appids,
         sale_name=sale_name,
         priorities=priorities,
         historical_lows=historical_lows,
@@ -2918,6 +3104,7 @@ def main():
         budget_result=budget_result,
         compare_data=compare_data,
         gift_ideas=gift_ideas,
+        **family_renderer_kwargs,
     )
     write_artifact(OUTPUT_MD, md)
     print(f"  {_ok(str(OUTPUT_MD))}")
@@ -2934,7 +3121,6 @@ def main():
         MIN_DISCOUNT,
         genres,
         hltb_used=HLTB_CSV is not None,
-        family_appids=family_appids,
         sale_name=sale_name,
         priorities=priorities,
         historical_lows=historical_lows,
@@ -2952,6 +3138,7 @@ def main():
         gift_ideas=gift_ideas,
         local_trends=local_trends,
         price_history=price_history,
+        **family_renderer_kwargs,
     )
     OUTPUT_HTML = OUTPUT_MD.with_suffix(".html")
     write_artifact(OUTPUT_HTML, html)

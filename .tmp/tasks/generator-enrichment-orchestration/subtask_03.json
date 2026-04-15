@@ -1,0 +1,36 @@
+{
+  "id": "generator-enrichment-orchestration-03",
+  "seq": "03",
+  "title": "Extract ProtonDB, anti-cheat, tags, and achievements orchestration",
+  "status": "pending",
+  "depends_on": [
+    "02"
+  ],
+  "parallel": false,
+  "suggested_agent": "CoderAgent",
+  "context_files": [
+    "/home/adolfo/Documents/Deals/.opencode/context/core/standards/code-quality.md",
+    "/home/adolfo/Documents/Deals/.opencode/context/core/standards/code-analysis.md",
+    "/home/adolfo/Documents/Deals/.opencode/context/core/workflows/feature-breakdown.md"
+  ],
+  "reference_files": [
+    "/home/adolfo/Documents/Deals/steam_deals_generator.py",
+    "/home/adolfo/Documents/Deals/app/steam_deals_enrichment.py",
+    "/home/adolfo/Documents/Deals/app/steam_deals_cache_policy.py",
+    "/home/adolfo/Documents/Deals/app/steam_deals_runtime_reporting.py"
+  ],
+  "acceptance_criteria": [
+    "ProtonDB, anti-cheat, tags, and achievements orchestration move into the focused module without changing the current step order.",
+    "Global-vs-scoped cache handling and warning/ok messaging remain mechanically equivalent for these steps.",
+    "protondb_data, anticheat_data, tags_data, and achievements_data keep the current downstream-compatible shapes."
+  ],
+  "deliverables": [
+    "steam_deals_enrichment_orchestration.py",
+    "app/steam_deals_enrichment_orchestration.py",
+    "steam_deals_generator.py"
+  ],
+  "agent_id": null,
+  "started_at": null,
+  "completed_at": null,
+  "completion_summary": null
+}
