@@ -49,6 +49,13 @@ from steam_deals_itad_orchestration import (
     build_progress_callbacks as module_build_itad_progress_callbacks,
     run_itad_orchestration as module_run_itad_orchestration,
 )
+from steam_deals_post_processing import (
+    build_callbacks as module_build_post_processing_callbacks,
+    build_message_formatters as module_build_post_processing_message_formatters,
+    build_post_processing_contract as module_build_post_processing_contract,
+    build_runtime as module_build_post_processing_runtime,
+    run_post_processing as module_run_post_processing,
+)
 from steam_deals_family import (
     FamilyContext as ModuleFamilyContext,
     build_family_renderer_kwargs as module_build_family_renderer_kwargs,
@@ -824,6 +831,39 @@ class RuntimeReportingTests(unittest.TestCase):
 
 
 class ApplyFiltersTests(unittest.TestCase):
+    def test_post_processing_preserves_hltb_hours_filtered_deals_and_top_picks(self) -> None:
+        emitted: list[str] = []
+        contract = module_build_post_processing_contract(
+            messages=module_build_post_processing_message_formatters(
+                ok=lambda text: f"OK:{text}"
+            ),
+            callbacks=module_build_post_processing_callbacks(emit=emitted.append),
+            runtime=module_build_post_processing_runtime(
+                apply_filters=lambda deals, *_args: deals[1:],
+                rank_top_picks=lambda deals, *_args, **_kwargs: [
+                    {"appid": deal["appid"], "score": 99.0} for deal in deals
+                ],
+            ),
+        )
+
+        outputs = module_run_post_processing(
+            [{"appid": "a"}, {"appid": "b"}, {"appid": "c"}],
+            [{"appid": "a", "hours": 10.0}],
+            [{"appid": "b", "hours": 5.5}, {"appid": "c", "hours": None}],
+            filters={"top": 5},
+            priorities={},
+            reviews_data={},
+            deck_data={},
+            previous_appids=set(),
+            comparison=None,
+            contract=contract,
+        )
+
+        self.assertEqual(outputs.hltb_hours, {"a": 10.0, "b": 5.5})
+        self.assertEqual([deal["appid"] for deal in outputs.deals], ["b", "c"])
+        self.assertEqual(outputs.top_picks, [{"appid": "b", "score": 99.0}, {"appid": "c", "score": 99.0}])
+        self.assertEqual(emitted, ["  OK:Filtros aplicados: 3 → 2 deals"])
+
     def test_filter_by_genres_returns_discount_sorted_matches(self) -> None:
         deals = [
             {"appid": "a", "discount": 40, "genres": ["roguelike", "action"]},

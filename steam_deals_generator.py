@@ -197,6 +197,12 @@ except Exception:
 
 
 try:
+    import steam_deals_post_processing as _post_processing_module
+except Exception:
+    _post_processing_module = None
+
+
+try:
     from steam_deals_notifications import (
         build_notification_summary as _build_notification_summary_impl,
         send_discord as _send_discord_impl,
@@ -653,6 +659,86 @@ def run_itad_orchestration(deal_appids: list[str], itad_key: str | None, *, cont
     return _itad_orchestration_module.run_itad_orchestration(
         deal_appids,
         itad_key,
+        contract=contract,
+    )
+
+
+def build_post_processing_message_formatters(*, ok_fn):
+    if _post_processing_module is None:
+        raise RuntimeError("Post-processing module is not available")
+    return _post_processing_module.build_message_formatters(ok=ok_fn)
+
+
+def build_post_processing_callbacks(*, emit_fn):
+    if _post_processing_module is None:
+        raise RuntimeError("Post-processing module is not available")
+    return _post_processing_module.build_callbacks(emit=emit_fn)
+
+
+def build_post_processing_runtime(*, apply_filters_fn, rank_top_picks_fn):
+    if _post_processing_module is None:
+        raise RuntimeError("Post-processing module is not available")
+    return _post_processing_module.build_runtime(
+        apply_filters=apply_filters_fn,
+        rank_top_picks=rank_top_picks_fn,
+    )
+
+
+def build_post_processing_contract(*, messages, callbacks, runtime):
+    if _post_processing_module is None:
+        raise RuntimeError("Post-processing module is not available")
+    return _post_processing_module.build_post_processing_contract(
+        messages=messages,
+        callbacks=callbacks,
+        runtime=runtime,
+    )
+
+
+def empty_post_processing_outputs():
+    if _post_processing_module is None:
+        raise RuntimeError("Post-processing module is not available")
+    return _post_processing_module.empty_post_processing_outputs()
+
+
+def build_generator_post_processing_contract():
+    messages = build_post_processing_message_formatters(ok_fn=_ok)
+    callbacks = build_post_processing_callbacks(emit_fn=print)
+    runtime = build_post_processing_runtime(
+        apply_filters_fn=apply_filters,
+        rank_top_picks_fn=rank_top_picks,
+    )
+    return build_post_processing_contract(
+        messages=messages,
+        callbacks=callbacks,
+        runtime=runtime,
+    )
+
+
+def run_post_processing(
+    deals: list[dict],
+    backlog_on_sale: list[dict],
+    have_on_sale: list[dict],
+    *,
+    filters: dict,
+    priorities: dict[str, int],
+    reviews_data: dict[str, dict],
+    deck_data: dict[str, int],
+    previous_appids: set[str],
+    comparison: dict | None,
+    contract,
+):
+    if _post_processing_module is None:
+        raise RuntimeError("Post-processing module is not available")
+    return _post_processing_module.run_post_processing(
+        deals,
+        backlog_on_sale,
+        have_on_sale,
+        filters=filters,
+        priorities=priorities,
+        reviews_data=reviews_data,
+        deck_data=deck_data,
+        previous_appids=previous_appids,
+        comparison=comparison,
         contract=contract,
     )
 
@@ -3102,6 +3188,7 @@ def main():
     family_context = load_family_context(FAMILY_JSON, step_fn=step)
     family_renderer_kwargs = build_family_renderer_kwargs(family_context)
     itad_contract = build_generator_itad_contract(step)
+    post_processing_contract = build_generator_post_processing_contract()
 
     # HLTB
     backlog_on_sale, have_on_sale = [], []
@@ -3133,24 +3220,21 @@ def main():
     active_bundles = itad_outputs.active_bundles
     itad_ids = itad_outputs.itad_ids
 
-    # Construir mapa HLTB horas para filtros y top picks
-    hltb_hours: dict[str, float] = {}
-    for entry in backlog_on_sale + have_on_sale:
-        if entry.get("hours"):
-            hltb_hours[entry["appid"]] = entry["hours"]
-
-    # Aplicar filtros CLI avanzados
-    original_count = len(deals)
-    deals = apply_filters(
-        deals, FILTERS, reviews_data, deck_data, hltb_hours, previous_appids, comparison
+    post_processing_outputs = run_post_processing(
+        deals,
+        backlog_on_sale,
+        have_on_sale,
+        filters=FILTERS,
+        priorities=priorities,
+        reviews_data=reviews_data,
+        deck_data=deck_data,
+        previous_appids=previous_appids,
+        comparison=comparison,
+        contract=post_processing_contract,
     )
-    if len(deals) < original_count:
-        print(f"  {_ok(f'Filtros aplicados: {original_count} → {len(deals)} deals')}")
-
-    # Top Picks
-    top_picks = rank_top_picks(
-        deals, priorities, reviews_data, hltb_hours, deck_data, n=FILTERS.get("top", 10)
-    )
+    hltb_hours = post_processing_outputs.hltb_hours
+    deals = post_processing_outputs.deals
+    top_picks = post_processing_outputs.top_picks
 
     # Watchlist alerts
     watchlist = load_watchlist()
