@@ -191,6 +191,12 @@ except Exception:
 
 
 try:
+    import steam_deals_itad_orchestration as _itad_orchestration_module
+except Exception:
+    _itad_orchestration_module = None
+
+
+try:
     from steam_deals_notifications import (
         build_notification_summary as _build_notification_summary_impl,
         send_discord as _send_discord_impl,
@@ -578,6 +584,77 @@ def build_family_renderer_kwargs(family_context):
     if _family_module is None:
         raise RuntimeError("Family module is not available")
     return _family_module.build_family_renderer_kwargs(family_context)
+
+
+def build_itad_message_formatters(*, ok_fn, dim_fn):
+    if _itad_orchestration_module is None:
+        raise RuntimeError("ITAD orchestration module is not available")
+    return _itad_orchestration_module.build_message_formatters(
+        ok=ok_fn,
+        dim=dim_fn,
+    )
+
+
+def build_itad_progress_callbacks(*, step_fn, emit_fn):
+    if _itad_orchestration_module is None:
+        raise RuntimeError("ITAD orchestration module is not available")
+    return _itad_orchestration_module.build_progress_callbacks(
+        step=step_fn,
+        emit=emit_fn,
+    )
+
+
+def build_itad_runtime(*, lookup_games_fn, get_store_lows_fn, get_current_prices_fn, get_active_bundles_fn):
+    if _itad_orchestration_module is None:
+        raise RuntimeError("ITAD orchestration module is not available")
+    return _itad_orchestration_module.build_itad_runtime(
+        lookup_games=lookup_games_fn,
+        get_store_lows=get_store_lows_fn,
+        get_current_prices=get_current_prices_fn,
+        get_active_bundles=get_active_bundles_fn,
+    )
+
+
+def build_itad_orchestration_contract(*, progress, messages, runtime):
+    if _itad_orchestration_module is None:
+        raise RuntimeError("ITAD orchestration module is not available")
+    return _itad_orchestration_module.build_itad_orchestration_contract(
+        progress=progress,
+        messages=messages,
+        runtime=runtime,
+    )
+
+
+def empty_itad_outputs():
+    if _itad_orchestration_module is None:
+        raise RuntimeError("ITAD orchestration module is not available")
+    return _itad_orchestration_module.empty_itad_outputs()
+
+
+def build_generator_itad_contract(step_fn):
+    progress = build_itad_progress_callbacks(step_fn=step_fn, emit_fn=print)
+    messages = build_itad_message_formatters(ok_fn=_ok, dim_fn=_dim)
+    runtime = build_itad_runtime(
+        lookup_games_fn=itad_lookup_games,
+        get_store_lows_fn=itad_get_store_lows,
+        get_current_prices_fn=itad_get_current_prices,
+        get_active_bundles_fn=itad_get_active_bundles,
+    )
+    return build_itad_orchestration_contract(
+        progress=progress,
+        messages=messages,
+        runtime=runtime,
+    )
+
+
+def run_itad_orchestration(deal_appids: list[str], itad_key: str | None, *, contract):
+    if _itad_orchestration_module is None:
+        raise RuntimeError("ITAD orchestration module is not available")
+    return _itad_orchestration_module.run_itad_orchestration(
+        deal_appids,
+        itad_key,
+        contract=contract,
+    )
 
 
 def get_active_sale() -> str:
@@ -3024,6 +3101,7 @@ def main():
     # Biblioteca familiar (opcional)
     family_context = load_family_context(FAMILY_JSON, step_fn=step)
     family_renderer_kwargs = build_family_renderer_kwargs(family_context)
+    itad_contract = build_generator_itad_contract(step)
 
     # HLTB
     backlog_on_sale, have_on_sale = [], []
@@ -3049,36 +3127,11 @@ def main():
         )
 
     # IsThereAnyDeal (mínimo histórico + precios multi-tienda + bundles, opcional)
-    historical_lows: dict[str, dict] = {}
-    current_prices: dict[str, dict] = {}
-    active_bundles: dict[str, list[dict]] = {}
-    itad_ids: dict[str, str] = {}
-    if ITAD_KEY:
-        step("Obteniendo datos de IsThereAnyDeal...")
-        itad_ids = itad_lookup_games(deal_appids, ITAD_KEY)
-        print(
-            f"  {_ok(f'{len(itad_ids):,}/{len(deal_appids):,} juegos encontrados en ITAD')}"
-        )
-        if itad_ids:
-            historical_lows = itad_get_store_lows(itad_ids, ITAD_KEY, country="MX")
-            print(f"  {_ok(f'{len(historical_lows):,} mínimos históricos obtenidos')}")
-            current_prices = itad_get_current_prices(itad_ids, ITAD_KEY, country="MX")
-            if current_prices:
-                print(
-                    f"  {_ok(f'{len(current_prices):,} juegos más baratos en otra tienda')}"
-                )
-            else:
-                print(f"  {_dim('Steam es el mejor precio en todos los deals')}")
-            active_bundles = itad_get_active_bundles(itad_ids, ITAD_KEY)
-            if active_bundles:
-                bundle_names = {
-                    b["title"] for bs in active_bundles.values() for b in bs
-                }
-                print(
-                    f"  {_ok(f'{len(active_bundles)} juegos en {len(bundle_names)} bundle(s)')}"
-                )
-            else:
-                print(f"  {_dim('Ningún juego en bundles activos')}")
+    itad_outputs = run_itad_orchestration(deal_appids, ITAD_KEY, contract=itad_contract)
+    historical_lows = itad_outputs.historical_lows
+    current_prices = itad_outputs.current_prices
+    active_bundles = itad_outputs.active_bundles
+    itad_ids = itad_outputs.itad_ids
 
     # Construir mapa HLTB horas para filtros y top picks
     hltb_hours: dict[str, float] = {}

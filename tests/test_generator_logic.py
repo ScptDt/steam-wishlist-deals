@@ -42,6 +42,13 @@ from steam_deals_enrichment_orchestration import (
     run_reviews_orchestration as module_run_reviews_orchestration,
     run_tags_orchestration as module_run_tags_orchestration,
 )
+from steam_deals_itad_orchestration import (
+    build_itad_orchestration_contract as module_build_itad_orchestration_contract,
+    build_itad_runtime as module_build_itad_runtime,
+    build_message_formatters as module_build_itad_message_formatters,
+    build_progress_callbacks as module_build_itad_progress_callbacks,
+    run_itad_orchestration as module_run_itad_orchestration,
+)
 from steam_deals_family import (
     FamilyContext as ModuleFamilyContext,
     build_family_renderer_kwargs as module_build_family_renderer_kwargs,
@@ -920,6 +927,44 @@ class HistoryAndTrendTests(unittest.TestCase):
 
 
 class ItadAdapterTests(unittest.TestCase):
+    def test_itad_orchestration_preserves_visible_messages_and_outputs(self) -> None:
+        steps: list[str] = []
+        emits: list[str] = []
+
+        contract = module_build_itad_orchestration_contract(
+            progress=module_build_itad_progress_callbacks(step=steps.append, emit=emits.append),
+            messages=module_build_itad_message_formatters(
+                ok=lambda text: f"OK:{text}",
+                dim=lambda text: f"DIM:{text}",
+            ),
+            runtime=module_build_itad_runtime(
+                lookup_games=lambda _appids, _key: {"10": "itad-10", "20": "itad-20"},
+                get_store_lows=lambda _ids, _key, country="MX": {"10": {"price": 100}},
+                get_current_prices=lambda _ids, _key, country="MX": {"20": {"store": "Fanatical", "price": 80}},
+                get_active_bundles=lambda _ids, _key, country="US": {
+                    "10": [{"title": "Bundle A"}],
+                    "20": [{"title": "Bundle B"}],
+                },
+            ),
+        )
+
+        outputs = module_run_itad_orchestration(["10", "20", "30"], "itad-key", contract=contract)
+
+        self.assertEqual(steps, ["Obteniendo datos de IsThereAnyDeal..."])
+        self.assertEqual(
+            emits,
+            [
+                "  OK:2/3 juegos encontrados en ITAD",
+                "  OK:1 mínimos históricos obtenidos",
+                "  OK:1 juegos más baratos en otra tienda",
+                "  OK:2 juegos en 2 bundle(s)",
+            ],
+        )
+        self.assertEqual(outputs.itad_ids, {"10": "itad-10", "20": "itad-20"})
+        self.assertEqual(outputs.historical_lows, {"10": {"price": 100}})
+        self.assertEqual(outputs.current_prices, {"20": {"store": "Fanatical", "price": 80}})
+        self.assertEqual(outputs.active_bundles["10"][0]["title"], "Bundle A")
+
     def test_itad_lookup_games_maps_found_entries_by_appid(self) -> None:
         def fake_post_json(_url, _body):
             return [
