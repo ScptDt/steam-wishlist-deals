@@ -1,7 +1,6 @@
 # Pendientes (Fuente Unica)
 
-Ultima actualizacion: 2026-04-14
-Ultima actualizacion: 2026-04-14
+Ultima actualizacion: 2026-04-15
 
 ## Regla de Oro
 
@@ -46,7 +45,7 @@ No se mantienen documentos paralelos de planificacion; este archivo es la unica 
 - [x] Separar HTML/CSS/JS embebido de `steam_deals_web.py` y `payday2_web.py`.
 - [x] Extraer infraestructura compartida para web local (JSON, SSE, subprocess, server utils).
 - [x] Reutilizar la base compartida entre Steam Deals Web y PAYDAY 2 Web.
-- [ ] Modularizar `steam_deals_generator.py` por dominios (config, adapters, cache, scoring, renderers, orchestration).
+- [ ] Modularizar `steam_deals_generator.py` por dominios (config, adapters, cache, scoring, renderers, orchestration) [en progreso: migracion estructural a `app/` en fases 1A-1D completada].
 - [ ] Hacer limpieza local del repo: depurar archivos, artefactos, scripts y restos de baja utilidad actual para reducir ruido y costo de mantenimiento.
 - [ ] Hacer limpieza de GitHub y documentacion: depurar README, docs y referencias/metadatos del repo para reflejar solo flujos y superficies vigentes.
 - [x] Agregar smoke tests minimos para web, desktop y PAYDAY 2.
@@ -287,6 +286,7 @@ Ejecutar de forma consistente en Windows, macOS y Linux.
 - 2026-04-14: Se extrae `steam_deals_prices.py` con cache de precios, fetch batch con fallback individual y normalizacion de `deals`; `steam_deals_generator.py` conserva wrappers compatibles y `tests/test_generator_logic.py` queda OK (51 tests).
 - 2026-04-14: Se extrae `steam_deals_run_output.py` con nombre de archivos, fallback al MD anterior, escritura de artefactos y resumen final; `steam_deals_generator.py` conserva wrappers compatibles y `tests/test_generator_logic.py` queda OK (55 tests).
 - 2026-04-14: Se extrae `steam_deals_runtime_reporting.py` con symbols Unicode-safe, estilos ANSI, contrato de eventos y step/progress reporting; `steam_deals_generator.py` conserva wrappers compatibles, `steam_deals_web.py` reutiliza el mismo `EVENT_PREFIX` y `tests/test_generator_logic.py` queda OK (58 tests).
+- 2026-04-15: Se completa migracion estructural incremental a `app/` con wrappers de compatibilidad en raiz (fases 1A-1D): `steam_deals_filters.py`, `steam_deals_hltb.py`, `steam_deals_recommendations.py`, `steam_deals_runtime_reporting.py`, `steam_deals_scheduler.py`, `steam_deals_run_output.py`, `steam_deals_notifications.py`, `steam_deals_presentation.py`, `steam_deals_watchlist.py`, `steam_deals_history.py`, `steam_deals_config.py`, `steam_deals_itad.py`, `steam_deals_enrichment.py`, `steam_deals_prices.py`, `steam_deals_steam_api.py`; validacion OK con `python -m py_compile` y `python -m pytest tests/test_generator_logic.py tests/test_shared_cache_utils.py` (62 passed).
 
 ## Backlog de Features (Propuestos - Planning)
 

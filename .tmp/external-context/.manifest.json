@@ -1,22 +1,15 @@
 {
   "version": "1.0",
-  "last_updated": "2026-04-12T00:00:00Z",
+  "last_updated": "2026-04-14T00:00:00Z",
   "libraries": {
-    "pywebview": {
+    "pytest": {
       "files": [
         {
-          "filename": "os-dependencies-and-install.md",
-          "topic": "native dependencies and install commands by OS",
-          "tech_stack": "pywebview desktop",
-          "fetched": "2026-04-12T00:00:00Z",
-          "source": "Context7 API + official docs"
-        },
-        {
-          "filename": "pyinstaller-and-first-run-caveats.md",
-          "topic": "PyInstaller packaging and macOS first-run/Gatekeeper caveats",
-          "tech_stack": "pywebview + PyInstaller",
-          "fetched": "2026-04-12T00:00:00Z",
-          "source": "Context7 API + official docs"
+          "filename": "install-and-run-local.md",
+          "topic": "install and run locally with python -m pytest",
+          "tech_stack": "Python local environment (sin poetry)",
+          "fetched": "2026-04-14T00:00:00Z",
+          "source": "Official docs"
         }
       ]
     }

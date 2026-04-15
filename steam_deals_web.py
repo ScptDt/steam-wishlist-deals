@@ -14,6 +14,7 @@ import urllib.parse
 import webbrowser
 from http.server import HTTPServer, BaseHTTPRequestHandler
 from pathlib import Path
+
 try:
     from steam_deals_runtime_reporting import EVENT_PREFIX
 except Exception:
@@ -26,14 +27,15 @@ from steam_deals_watchlist import (
 )
 
 from shared_web_infra import (
+    CSS_CONTENT_TYPE,
+    JS_CONTENT_TYPE,
     load_html_with_fallback,
-    load_text_asset,
     ProcessStreamUnavailable,
     read_json_body,
     send_html,
     send_json,
     send_sse_event,
-    send_text,
+    serve_text_asset,
     start_text_subprocess,
     stop_process,
     stream_process_as_sse,
@@ -143,10 +145,6 @@ def load_steam_deals_html() -> str:
         [STEAM_DEALS_CSS_FILE, STEAM_DEALS_JS_FILE],
         PAGE_HTML,
     )
-
-
-def load_steam_deals_asset(asset_file: Path) -> str | None:
-    return load_text_asset(asset_file)
 
 
 def normalize_steam_profile_value(raw: str | None) -> str:
@@ -1668,9 +1666,6 @@ class Handler(BaseHTTPRequestHandler):
     def _send_html(self, html, status=200):
         send_html(self, html, status=status)
 
-    def _send_text(self, text: str, content_type: str, status=200):
-        send_text(self, text, content_type, status=status)
-
     def _read_json_body(self) -> dict | None:
         return read_json_body(self, max_json_body_bytes=self.max_json_body_bytes)
 
@@ -1681,17 +1676,9 @@ class Handler(BaseHTTPRequestHandler):
         if path == "/":
             self._send_html(load_steam_deals_html())
         elif path == "/app.css":
-            css = load_steam_deals_asset(STEAM_DEALS_CSS_FILE)
-            if css is None:
-                self.send_error(404)
-                return
-            self._send_text(css, "text/css; charset=utf-8")
+            serve_text_asset(self, STEAM_DEALS_CSS_FILE, CSS_CONTENT_TYPE)
         elif path == "/app.js":
-            script = load_steam_deals_asset(STEAM_DEALS_JS_FILE)
-            if script is None:
-                self.send_error(404)
-                return
-            self._send_text(script, "application/javascript; charset=utf-8")
+            serve_text_asset(self, STEAM_DEALS_JS_FILE, JS_CONTENT_TYPE)
         elif path == "/api/config":
             self._send_json(load_config())
         elif path == "/api/ui-state":
