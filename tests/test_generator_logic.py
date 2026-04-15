@@ -77,10 +77,15 @@ from steam_deals_presentation import (
     players_badge as module_players_badge,
 )
 from steam_deals_run_output import (
+    OutputArtifactPaths as ModuleOutputArtifactPaths,
+    OutputArtifactPayloads as ModuleOutputArtifactPayloads,
+    build_output_artifact_paths as module_build_output_artifact_paths,
+    emit_final_closeout as module_emit_final_closeout,
     build_final_summary as module_build_final_summary,
     build_output_md_path as module_build_output_md_path,
     build_share_output_path as module_build_share_output_path,
     resolve_previous_context as module_resolve_previous_context,
+    write_output_artifacts as module_write_output_artifacts,
     write_artifact as module_write_artifact,
 )
 from steam_deals_runtime_reporting import (
@@ -656,6 +661,18 @@ class RunOutputTests(unittest.TestCase):
 
         self.assertEqual(output, Path("/tmp/out/Steam Deals Steam Sale 2026-04-14.md"))
 
+    def test_build_output_artifact_paths_keeps_output_contract(self) -> None:
+        artifacts = module_build_output_artifact_paths(
+            Path("/tmp/out/Steam Deals 2026-04-14.md"),
+            today_obj=date(2026, 4, 14),
+            include_csv=True,
+        )
+
+        self.assertEqual(artifacts.output_md, Path("/tmp/out/Steam Deals 2026-04-14.md"))
+        self.assertEqual(artifacts.output_html, Path("/tmp/out/Steam Deals 2026-04-14.html"))
+        self.assertEqual(artifacts.output_share, Path("/tmp/out/Steam Deals Share 2026-04-14.html"))
+        self.assertEqual(artifacts.output_csv, Path("/tmp/out/Steam Deals 2026-04-14.csv"))
+
     def test_resolve_previous_context_uses_markdown_fallback_only_without_previous_run(self) -> None:
         result = module_resolve_previous_context(
             "/tmp/out",
@@ -686,6 +703,41 @@ class RunOutputTests(unittest.TestCase):
         self.assertTrue(emitted[0][1]["path"].endswith("Steam Deals 2026-04-14.md"))
         self.assertTrue(emitted[1][1]["path"].endswith("Steam Deals Share 2026-04-14.html"))
 
+    def test_write_output_artifacts_writes_all_enabled_outputs(self) -> None:
+        written = []
+
+        def fake_write_artifact(path: Path, content: str) -> Path:
+            written.append((path, content))
+            return path
+
+        result = module_write_output_artifacts(
+            ModuleOutputArtifactPaths(
+                output_md=Path("/tmp/out/Steam Deals 2026-04-14.md"),
+                output_html=Path("/tmp/out/Steam Deals 2026-04-14.html"),
+                output_share=Path("/tmp/out/Steam Deals Share 2026-04-14.html"),
+                output_csv=Path("/tmp/out/Steam Deals 2026-04-14.csv"),
+            ),
+            ModuleOutputArtifactPayloads(
+                markdown="md",
+                html="html",
+                share_html="share",
+                csv_content="csv",
+            ),
+            write_artifact_fn=fake_write_artifact,
+        )
+
+        self.assertEqual(
+            written,
+            [
+                (Path("/tmp/out/Steam Deals 2026-04-14.md"), "md"),
+                (Path("/tmp/out/Steam Deals 2026-04-14.html"), "html"),
+                (Path("/tmp/out/Steam Deals Share 2026-04-14.html"), "share"),
+                (Path("/tmp/out/Steam Deals 2026-04-14.csv"), "csv"),
+            ],
+        )
+        self.assertEqual(result["markdown"], Path("/tmp/out/Steam Deals 2026-04-14.md"))
+        self.assertEqual(result["csv"], Path("/tmp/out/Steam Deals 2026-04-14.csv"))
+
     def test_build_final_summary_preserves_current_fields(self) -> None:
         new_count, summary = module_build_final_summary(
             12.3,
@@ -698,6 +750,35 @@ class RunOutputTests(unittest.TestCase):
 
         self.assertEqual(new_count, 1)
         self.assertEqual(summary, "  2 deals · 1 backlog · 1 nuevos · Top pick: Portal 2 (95.4) · Steam Deals 2026-04-14.md")
+
+    def test_emit_final_closeout_preserves_visible_summary_output(self) -> None:
+        emitted = []
+
+        new_count, summary = module_emit_final_closeout(
+            12.3,
+            [{"appid": "10"}, {"appid": "20"}],
+            [{"appid": "10"}],
+            {"10"},
+            [{"name": "Portal 2", "score": 95.4}],
+            Path("/tmp/Steam Deals 2026-04-14.md"),
+            build_final_summary_fn=module_build_final_summary,
+            emit_fn=emitted.append,
+            bold_fn=lambda text: f"**{text}**",
+            color_green="<g>",
+            color_reset="</g>",
+        )
+
+        self.assertEqual(new_count, 1)
+        self.assertEqual(summary, "  2 deals · 1 backlog · 1 nuevos · Top pick: Portal 2 (95.4) · Steam Deals 2026-04-14.md")
+        self.assertEqual(
+            emitted,
+            [
+                "\n<g>──────────────────────────────────────────</g>",
+                "  **Listo** en 12.3s",
+                "  2 deals · 1 backlog · 1 nuevos · Top pick: Portal 2 (95.4) · Steam Deals 2026-04-14.md",
+                "<g>──────────────────────────────────────────</g>\n",
+            ],
+        )
 
 
 class RuntimeReportingTests(unittest.TestCase):

@@ -45,7 +45,7 @@ No se mantienen documentos paralelos de planificacion; este archivo es la unica 
 - [x] Separar HTML/CSS/JS embebido de `steam_deals_web.py` y `payday2_web.py`.
 - [x] Extraer infraestructura compartida para web local (JSON, SSE, subprocess, server utils).
 - [x] Reutilizar la base compartida entre Steam Deals Web y PAYDAY 2 Web.
-- [ ] Modularizar `steam_deals_generator.py` por dominios (config, adapters, cache, scoring, renderers, orchestration) [en progreso: migracion estructural a `app/` en fases 1A-1D + cortes `cache policy / cache lifecycle`, `enrichment orchestration` y `family` completados].
+- [ ] Modularizar `steam_deals_generator.py` por dominios (config, adapters, cache, scoring, renderers, orchestration) [en progreso: migracion estructural a `app/` en fases 1A-1D + cortes `cache policy / cache lifecycle`, `enrichment orchestration`, `family` y `output final` completados].
 - [ ] Hacer limpieza local del repo: depurar archivos, artefactos, scripts y restos de baja utilidad actual para reducir ruido y costo de mantenimiento.
 - [ ] Hacer limpieza de GitHub y documentacion: depurar README, docs y referencias/metadatos del repo para reflejar solo flujos y superficies vigentes.
 - [x] Agregar smoke tests minimos para web, desktop y PAYDAY 2.
@@ -96,7 +96,9 @@ Nota actual sobre `steam_deals_generator.py`:
 - Validacion del slice `enrichment orchestration`: tests de logica/reconfiguracion OK en `tests/test_generator_logic.py` + `tests/test_shared_cache_utils.py`.
 - Avance ya hecho adicional: slice `family` extraido a `steam_deals_family.py` con boundary para carga de `family_appids`, passthrough hacia HLTB y kwargs para renderers; `steam_deals_generator.py` conserva wrappers de compatibilidad.
 - Validacion del slice `family`: tests de logica/reconfiguracion OK en `tests/test_generator_logic.py` + `tests/test_shared_cache_utils.py`.
-- Siguiente accion recomendada: identificar el siguiente corte pequeno del cierre/orchestration restante (preferentemente `output final`) manteniendo el mismo enfoque incremental y wrappers de compatibilidad.
+- Avance ya hecho adicional: slice `output final` consolidado en `steam_deals_run_output.py` con boundary para rutas de artifacts, fan-out de escritura y closeout final; `steam_deals_generator.py` conserva wrappers de compatibilidad.
+- Validacion del slice `output final`: tests de logica/reconfiguracion OK en `tests/test_generator_logic.py` + `tests/test_shared_cache_utils.py`.
+- Siguiente accion recomendada: reevaluar el siguiente corte pequeno restante de orchestration/post-processing en `steam_deals_generator.py` manteniendo el mismo enfoque incremental y wrappers de compatibilidad.
 - Prioridad actual acordada: el siguiente foco pendiente es `modularizar steam_deals_generator.py`.
 
 ### Nota de trabajo futuro - orden sugerido de ejecucion
@@ -294,6 +296,7 @@ Ejecutar de forma consistente en Windows, macOS y Linux.
 - 2026-04-15: Se extrae `steam_deals_cache_policy.py` con decisiones de TTL, bypass `--no-cache`, refresh parcial/full y limpieza de archivos de cache; `steam_deals_generator.py` conserva wrappers compatibles y `tests/test_generator_logic.py` + `tests/test_shared_cache_utils.py` quedan OK (66 tests).
 - 2026-04-15: Se extrae `steam_deals_enrichment_orchestration.py` con la coordinacion de reviews, Steam Deck, ProtonDB, anti-cheat, tags y achievements; `steam_deals_generator.py` conserva wrappers compatibles y `tests/test_generator_logic.py` + `tests/test_shared_cache_utils.py` quedan OK (68 tests).
 - 2026-04-15: Se extrae `steam_deals_family.py` con la carga de `family_appids`, su boundary hacia HLTB y kwargs para renderers; `steam_deals_generator.py` conserva wrappers compatibles y `tests/test_generator_logic.py` + `tests/test_shared_cache_utils.py` quedan OK (70 tests).
+- 2026-04-15: Se consolida `steam_deals_run_output.py` para el slice `output final` con rutas de artifacts, fan-out de escritura y closeout final; `steam_deals_generator.py` conserva wrappers compatibles y `tests/test_generator_logic.py` + `tests/test_shared_cache_utils.py` quedan OK (73 tests).
 
 ## Backlog de Features (Propuestos - Planning)
 

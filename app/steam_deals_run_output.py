@@ -1,8 +1,25 @@
 from __future__ import annotations
 
 import re
+from dataclasses import dataclass
 from datetime import date
 from pathlib import Path
+
+
+@dataclass(frozen=True)
+class OutputArtifactPaths:
+    output_md: Path
+    output_html: Path
+    output_share: Path
+    output_csv: Path | None = None
+
+
+@dataclass(frozen=True)
+class OutputArtifactPayloads:
+    markdown: str
+    html: str
+    share_html: str
+    csv_content: str | None = None
 
 
 def _sanitize_sale_name(sale_name: str) -> str:
@@ -45,12 +62,42 @@ def build_share_output_path(output_dir: str | Path, *, today_obj: date | None = 
     return Path(output_dir) / f"Steam Deals Share {today.strftime('%Y-%m-%d')}.html"
 
 
+def build_output_artifact_paths(
+    output_md: Path,
+    *,
+    today_obj: date | None = None,
+    include_csv: bool = False,
+) -> OutputArtifactPaths:
+    return OutputArtifactPaths(
+        output_md=output_md,
+        output_html=output_md.with_suffix(".html"),
+        output_share=build_share_output_path(output_md.parent, today_obj=today_obj),
+        output_csv=output_md.with_suffix(".csv") if include_csv else None,
+    )
+
+
 def write_artifact(path: Path, content: str, *, emit_event_fn=None, encoding: str = "utf-8") -> Path:
     path.parent.mkdir(parents=True, exist_ok=True)
     path.write_text(content, encoding=encoding)
     if emit_event_fn is not None:
         emit_event_fn("file", path=str(path))
     return path
+
+
+def write_output_artifacts(
+    paths: OutputArtifactPaths,
+    payloads: OutputArtifactPayloads,
+    *,
+    write_artifact_fn,
+) -> dict[str, Path]:
+    written = {
+        "markdown": write_artifact_fn(paths.output_md, payloads.markdown),
+        "html": write_artifact_fn(paths.output_html, payloads.html),
+        "share_html": write_artifact_fn(paths.output_share, payloads.share_html),
+    }
+    if payloads.csv_content is not None and paths.output_csv is not None:
+        written["csv"] = write_artifact_fn(paths.output_csv, payloads.csv_content)
+    return written
 
 
 def build_final_summary(
@@ -68,4 +115,35 @@ def build_final_summary(
     if top_picks:
         summary += f" · Top pick: {top_picks[0]['name']} ({top_picks[0]['score']})"
     summary += f" · {output_md.name}"
+    return new_count, summary
+
+
+def emit_final_closeout(
+    elapsed: float,
+    deals: list[dict],
+    backlog_on_sale: list[dict],
+    previous_appids: set[str],
+    top_picks: list[dict] | None,
+    output_md: Path,
+    *,
+    build_final_summary_fn,
+    emit_fn,
+    bold_fn,
+    color_green: str,
+    color_reset: str,
+    divider_width: int = 42,
+) -> tuple[int, str]:
+    new_count, summary = build_final_summary_fn(
+        elapsed,
+        deals,
+        backlog_on_sale,
+        previous_appids,
+        top_picks,
+        output_md,
+    )
+    divider = f"{color_green}{'─' * divider_width}{color_reset}"
+    emit_fn(f"\n{divider}")
+    emit_fn(f"  {bold_fn('Listo')} en {elapsed:.1f}s")
+    emit_fn(summary)
+    emit_fn(f"{divider}\n")
     return new_count, summary

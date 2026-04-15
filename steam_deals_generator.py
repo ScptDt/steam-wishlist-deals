@@ -781,16 +781,66 @@ def build_share_output_path(output_dir: str | Path, *, today_obj: date | None = 
     return _run_output_module.build_share_output_path(output_dir, today_obj=today_obj)
 
 
+def build_output_artifact_paths(
+    output_md: Path,
+    *,
+    today_obj: date | None = None,
+    include_csv: bool = False,
+):
+    if _run_output_module is None:
+        raise RuntimeError("Run-output module is not available")
+    return _run_output_module.build_output_artifact_paths(
+        output_md,
+        today_obj=today_obj,
+        include_csv=include_csv,
+    )
+
+
 def write_artifact(path: Path, content: str) -> Path:
     if _run_output_module is None:
         raise RuntimeError("Run-output module is not available")
     return _run_output_module.write_artifact(path, content, emit_event_fn=emit_event)
 
 
+def write_output_artifacts(paths, payloads):
+    if _run_output_module is None:
+        raise RuntimeError("Run-output module is not available")
+    return _run_output_module.write_output_artifacts(
+        paths,
+        payloads,
+        write_artifact_fn=write_artifact,
+    )
+
+
 def build_final_summary(elapsed: float, deals: list[dict], backlog_on_sale: list[dict], previous_appids: set[str], top_picks: list[dict] | None, output_md: Path) -> tuple[int, str]:
     if _run_output_module is None:
         raise RuntimeError("Run-output module is not available")
     return _run_output_module.build_final_summary(elapsed, deals, backlog_on_sale, previous_appids, top_picks, output_md)
+
+
+def emit_final_closeout(
+    elapsed: float,
+    deals: list[dict],
+    backlog_on_sale: list[dict],
+    previous_appids: set[str],
+    top_picks: list[dict] | None,
+    output_md: Path,
+):
+    if _run_output_module is None:
+        raise RuntimeError("Run-output module is not available")
+    return _run_output_module.emit_final_closeout(
+        elapsed,
+        deals,
+        backlog_on_sale,
+        previous_appids,
+        top_picks,
+        output_md,
+        build_final_summary_fn=build_final_summary,
+        emit_fn=print,
+        bold_fn=_bold,
+        color_green=C.GRN,
+        color_reset=C.RST,
+    )
 
 
 # ─────────────────────────────────────────────
@@ -2809,6 +2859,11 @@ def main():
     # Construir nombre del archivo
     today_obj = date.today()
     OUTPUT_MD = build_output_md_path(OUTPUT_DIR, sale_name, today_obj=today_obj)
+    output_artifacts = build_output_artifact_paths(
+        OUTPUT_MD,
+        today_obj=today_obj,
+        include_csv=bool(FILTERS.get("csv")),
+    )
     filename = OUTPUT_MD.name
     print(f"  {_dim(f'Archivo: {OUTPUT_MD.name}')}")
 
@@ -3106,8 +3161,6 @@ def main():
         gift_ideas=gift_ideas,
         **family_renderer_kwargs,
     )
-    write_artifact(OUTPUT_MD, md)
-    print(f"  {_ok(str(OUTPUT_MD))}")
 
     # Generar HTML interactivo
     step("Generando HTML interactivo...")
@@ -3140,18 +3193,13 @@ def main():
         price_history=price_history,
         **family_renderer_kwargs,
     )
-    OUTPUT_HTML = OUTPUT_MD.with_suffix(".html")
-    write_artifact(OUTPUT_HTML, html)
-    print(f"  {_ok(str(OUTPUT_HTML))}")
 
     # Generar HTML compartible (lightweight)
     share_html = generate_share_html(deals, VANITY, MIN_DISCOUNT, sale_name=sale_name,
                                       top_picks=top_picks, reviews=reviews_data, deck_compat=deck_data)
-    OUTPUT_SHARE = build_share_output_path(OUTPUT_MD.parent, today_obj=today_obj)
-    write_artifact(OUTPUT_SHARE, share_html)
-    print(f"  {_ok(str(OUTPUT_SHARE))}")
 
     # Generar CSV (opcional)
+    csv_content = None
     if FILTERS.get("csv"):
         step("Generando CSV...")
         csv_content = generate_csv(
@@ -3169,9 +3217,21 @@ def main():
             local_trends=local_trends,
             achievements_data=achievements_data,
         )
-        OUTPUT_CSV = OUTPUT_MD.with_suffix(".csv")
-        write_artifact(OUTPUT_CSV, csv_content)
-        print(f"  {_ok(str(OUTPUT_CSV))}")
+
+    written_artifacts = write_output_artifacts(
+        output_artifacts,
+        _run_output_module.OutputArtifactPayloads(
+            markdown=md,
+            html=html,
+            share_html=share_html,
+            csv_content=csv_content,
+        ),
+    )
+    print(f"  {_ok(str(written_artifacts['markdown']))}")
+    print(f"  {_ok(str(written_artifacts['html']))}")
+    print(f"  {_ok(str(written_artifacts['share_html']))}")
+    if "csv" in written_artifacts:
+        print(f"  {_ok(str(written_artifacts['csv']))}")
 
     # Notifications (optional)
     if FILTERS.get("telegram_token") or FILTERS.get("discord_webhook"):
@@ -3186,11 +3246,14 @@ def main():
 
     # Resumen final
     elapsed = time.monotonic() - t0
-    _new_count, summary = build_final_summary(elapsed, deals, backlog_on_sale, previous_appids, top_picks, OUTPUT_MD)
-    print(f"\n{C.GRN}{'─' * 42}{C.RST}")
-    print(f"  {_bold('Listo')} en {elapsed:.1f}s")
-    print(summary)
-    print(f"{C.GRN}{'─' * 42}{C.RST}\n")
+    _new_count, summary = emit_final_closeout(
+        elapsed,
+        deals,
+        backlog_on_sale,
+        previous_appids,
+        top_picks,
+        OUTPUT_MD,
+    )
 
 
 def run_scheduled():
