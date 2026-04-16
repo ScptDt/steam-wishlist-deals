@@ -25,7 +25,12 @@ import time
 import urllib.request
 from datetime import date, datetime
 from pathlib import Path
-from shared.io_utils import http_get_json, http_post_json, load_json_file, write_json_file
+from shared.io_utils import (
+    http_get_json,
+    http_post_json,
+    load_json_file,
+    write_json_file,
+)
 
 try:
     from renderers.common import html_escape as _renderer_html_escape
@@ -326,18 +331,21 @@ except Exception:
 
 
 class C:
-    RST  = _RuntimeAnsiColors.RST if _RuntimeAnsiColors else "\033[0m"
+    RST = _RuntimeAnsiColors.RST if _RuntimeAnsiColors else "\033[0m"
     BOLD = _RuntimeAnsiColors.BOLD if _RuntimeAnsiColors else "\033[1m"
-    DIM  = _RuntimeAnsiColors.DIM if _RuntimeAnsiColors else "\033[2m"
-    GRN  = _RuntimeAnsiColors.GRN if _RuntimeAnsiColors else "\033[32m"
-    YLW  = _RuntimeAnsiColors.YLW if _RuntimeAnsiColors else "\033[33m"
-    RED  = _RuntimeAnsiColors.RED if _RuntimeAnsiColors else "\033[31m"
-    CYN  = _RuntimeAnsiColors.CYN if _RuntimeAnsiColors else "\033[36m"
+    DIM = _RuntimeAnsiColors.DIM if _RuntimeAnsiColors else "\033[2m"
+    GRN = _RuntimeAnsiColors.GRN if _RuntimeAnsiColors else "\033[32m"
+    YLW = _RuntimeAnsiColors.YLW if _RuntimeAnsiColors else "\033[33m"
+    RED = _RuntimeAnsiColors.RED if _RuntimeAnsiColors else "\033[31m"
+    CYN = _RuntimeAnsiColors.CYN if _RuntimeAnsiColors else "\033[36m"
+
 
 def _safe_symbol(unicode_symbol: str, fallback: str) -> str:
     if _safe_symbol_impl is not None:
-        return _safe_symbol_impl(unicode_symbol, fallback, stdout_encoding=(sys.stdout.encoding or "utf-8"))
-    enc = (sys.stdout.encoding or "utf-8")
+        return _safe_symbol_impl(
+            unicode_symbol, fallback, stdout_encoding=(sys.stdout.encoding or "utf-8")
+        )
+    enc = sys.stdout.encoding or "utf-8"
     try:
         unicode_symbol.encode(enc)
         return unicode_symbol
@@ -356,6 +364,7 @@ BAR_FILL = _safe_symbol("█", "#")
 BAR_EMPTY = _safe_symbol("░", "-")
 EVENT_PREFIX = _RUNTIME_EVENT_PREFIX
 WEB_EVENT_MODE = False
+
 
 def _ok(msg):
     if _ok_text_impl is not None:
@@ -389,7 +398,13 @@ def _bold(msg):
 
 def emit_event(event_type: str, **payload) -> None:
     if _emit_event_impl is not None:
-        _emit_event_impl(event_type, web_event_mode=WEB_EVENT_MODE, emit=print, event_prefix=EVENT_PREFIX, **payload)
+        _emit_event_impl(
+            event_type,
+            web_event_mode=WEB_EVENT_MODE,
+            emit=print,
+            event_prefix=EVENT_PREFIX,
+            **payload,
+        )
         return
     if not WEB_EVENT_MODE:
         return
@@ -497,12 +512,12 @@ def get_config():
 # ─────────────────────────────────────────────
 
 
-
 def _fetch_public_profile_xml(vanity: str) -> str:
     url = f"https://steamcommunity.com/id/{vanity}/?xml=1"
     req = urllib.request.Request(url, headers={"User-Agent": "Mozilla/5.0"})
     with urllib.request.urlopen(req, timeout=15) as response:
         return response.read().decode("utf-8")
+
 
 def resolve_steam_id(api_key: str | None, vanity: str) -> str:
     """Convierte vanity URL, link de perfil, o Steam ID numérico a Steam ID."""
@@ -616,7 +631,9 @@ def build_itad_progress_callbacks(*, step_fn, emit_fn):
     )
 
 
-def build_itad_runtime(*, lookup_games_fn, get_store_lows_fn, get_current_prices_fn, get_active_bundles_fn):
+def build_itad_runtime(
+    *, lookup_games_fn, get_store_lows_fn, get_current_prices_fn, get_active_bundles_fn
+):
     if _itad_orchestration_module is None:
         raise RuntimeError("ITAD orchestration module is not available")
     return _itad_orchestration_module.build_itad_runtime(
@@ -635,12 +652,6 @@ def build_itad_orchestration_contract(*, progress, messages, runtime):
         messages=messages,
         runtime=runtime,
     )
-
-
-def empty_itad_outputs():
-    if _itad_orchestration_module is None:
-        raise RuntimeError("ITAD orchestration module is not available")
-    return _itad_orchestration_module.empty_itad_outputs()
 
 
 def build_generator_itad_contract(step_fn):
@@ -698,12 +709,6 @@ def build_post_processing_contract(*, messages, callbacks, runtime):
         callbacks=callbacks,
         runtime=runtime,
     )
-
-
-def empty_post_processing_outputs():
-    if _post_processing_module is None:
-        raise RuntimeError("Post-processing module is not available")
-    return _post_processing_module.empty_post_processing_outputs()
 
 
 def build_generator_post_processing_contract():
@@ -798,12 +803,6 @@ def build_engagement_contract(*, messages, callbacks, runtime):
     )
 
 
-def empty_engagement_outputs():
-    if _engagement_post_run_module is None:
-        raise RuntimeError("Engagement post-run module is not available")
-    return _engagement_post_run_module.empty_engagement_outputs()
-
-
 def build_generator_engagement_contract(step_fn):
     messages = build_engagement_message_formatters(ok_fn=_ok, dim_fn=_dim)
     callbacks = build_engagement_callbacks(step_fn=step_fn, emit_fn=print)
@@ -858,6 +857,7 @@ def get_active_sale() -> str:
 # ─────────────────────────────────────────────
 # IsThereAnyDeal API (mínimo histórico)
 # ─────────────────────────────────────────────
+
 
 def itad_lookup_games(appids: list[str], itad_key: str) -> dict[str, str]:
     """Resuelve Steam appids → ITAD game IDs. Devuelve {appid: itad_id}."""
@@ -1024,13 +1024,19 @@ def format_trend(trend: dict) -> str:
     return _format_trend_impl(trend)
 
 
-def build_output_md_path(output_dir: str | Path, sale_name: str, *, today_obj: date | None = None) -> Path:
+def build_output_md_path(
+    output_dir: str | Path, sale_name: str, *, today_obj: date | None = None
+) -> Path:
     if _run_output_module is None:
         raise RuntimeError("Run-output module is not available")
-    return _run_output_module.build_output_md_path(output_dir, sale_name, today_obj=today_obj)
+    return _run_output_module.build_output_md_path(
+        output_dir, sale_name, today_obj=today_obj
+    )
 
 
-def resolve_previous_context(output_dir: str | Path, current_filename: str, steam_id: str) -> dict:
+def resolve_previous_context(
+    output_dir: str | Path, current_filename: str, steam_id: str
+) -> dict:
     if _run_output_module is None:
         raise RuntimeError("Run-output module is not available")
     return _run_output_module.resolve_previous_context(
@@ -1043,7 +1049,9 @@ def resolve_previous_context(output_dir: str | Path, current_filename: str, stea
     )
 
 
-def build_share_output_path(output_dir: str | Path, *, today_obj: date | None = None) -> Path:
+def build_share_output_path(
+    output_dir: str | Path, *, today_obj: date | None = None
+) -> Path:
     if _run_output_module is None:
         raise RuntimeError("Run-output module is not available")
     return _run_output_module.build_share_output_path(output_dir, today_obj=today_obj)
@@ -1080,10 +1088,19 @@ def write_output_artifacts(paths, payloads):
     )
 
 
-def build_final_summary(elapsed: float, deals: list[dict], backlog_on_sale: list[dict], previous_appids: set[str], top_picks: list[dict] | None, output_md: Path) -> tuple[int, str]:
+def build_final_summary(
+    elapsed: float,
+    deals: list[dict],
+    backlog_on_sale: list[dict],
+    previous_appids: set[str],
+    top_picks: list[dict] | None,
+    output_md: Path,
+) -> tuple[int, str]:
     if _run_output_module is None:
         raise RuntimeError("Run-output module is not available")
-    return _run_output_module.build_final_summary(elapsed, deals, backlog_on_sale, previous_appids, top_picks, output_md)
+    return _run_output_module.build_final_summary(
+        elapsed, deals, backlog_on_sale, previous_appids, top_picks, output_md
+    )
 
 
 def emit_final_closeout(
@@ -1194,7 +1211,9 @@ def build_enrichment_progress_callbacks(*, step_fn, emit_fn):
     )
 
 
-def build_scoped_enrichment_runtime(*, load_cache_fn, select_cache_fn, fetch_data_fn, save_cache_fn, ttl_hours: float):
+def build_scoped_enrichment_runtime(
+    *, load_cache_fn, select_cache_fn, fetch_data_fn, save_cache_fn, ttl_hours: float
+):
     if _enrichment_orchestration_module is None:
         raise RuntimeError("Enrichment orchestration module is not available")
     return _enrichment_orchestration_module.build_scoped_cache_runtime(
@@ -1206,7 +1225,9 @@ def build_scoped_enrichment_runtime(*, load_cache_fn, select_cache_fn, fetch_dat
     )
 
 
-def build_global_enrichment_runtime(*, load_cache_fn, select_cache_fn, fetch_data_fn, save_cache_fn, ttl_hours: float):
+def build_global_enrichment_runtime(
+    *, load_cache_fn, select_cache_fn, fetch_data_fn, save_cache_fn, ttl_hours: float
+):
     if _enrichment_orchestration_module is None:
         raise RuntimeError("Enrichment orchestration module is not available")
     return _enrichment_orchestration_module.build_global_cache_runtime(
@@ -1243,15 +1264,11 @@ def build_enrichment_orchestration_contract(
     )
 
 
-def empty_enrichment_outputs():
-    if _enrichment_orchestration_module is None:
-        raise RuntimeError("Enrichment orchestration module is not available")
-    return _enrichment_orchestration_module.empty_enrichment_outputs()
-
-
 def build_generator_enrichment_contract(step_fn):
     progress = build_enrichment_progress_callbacks(step_fn=step_fn, emit_fn=print)
-    messages = build_enrichment_message_formatters(ok_fn=_ok, warn_fn=_warn, dim_fn=_dim)
+    messages = build_enrichment_message_formatters(
+        ok_fn=_ok, warn_fn=_warn, dim_fn=_dim
+    )
     return build_enrichment_orchestration_contract(
         progress=progress,
         messages=messages,
@@ -1300,7 +1317,9 @@ def build_generator_enrichment_contract(step_fn):
     )
 
 
-def run_reviews_enrichment_orchestration(contract, steam_id: str, deal_appids: list[str], *, no_cache: bool) -> dict[str, dict]:
+def run_reviews_enrichment_orchestration(
+    contract, steam_id: str, deal_appids: list[str], *, no_cache: bool
+) -> dict[str, dict]:
     if _enrichment_orchestration_module is None:
         raise RuntimeError("Enrichment orchestration module is not available")
     return _enrichment_orchestration_module.run_reviews_orchestration(
@@ -1311,7 +1330,9 @@ def run_reviews_enrichment_orchestration(contract, steam_id: str, deal_appids: l
     )
 
 
-def run_deck_enrichment_orchestration(contract, steam_id: str, deal_appids: list[str], *, no_cache: bool) -> dict[str, int]:
+def run_deck_enrichment_orchestration(
+    contract, steam_id: str, deal_appids: list[str], *, no_cache: bool
+) -> dict[str, int]:
     if _enrichment_orchestration_module is None:
         raise RuntimeError("Enrichment orchestration module is not available")
     return _enrichment_orchestration_module.run_deck_orchestration(
@@ -1322,7 +1343,9 @@ def run_deck_enrichment_orchestration(contract, steam_id: str, deal_appids: list
     )
 
 
-def run_protondb_anticheat_enrichment_orchestration(contract, steam_id: str, deal_appids: list[str], *, no_cache: bool) -> tuple[dict[str, dict], dict[str, dict]]:
+def run_protondb_anticheat_enrichment_orchestration(
+    contract, steam_id: str, deal_appids: list[str], *, no_cache: bool
+) -> tuple[dict[str, dict], dict[str, dict]]:
     if _enrichment_orchestration_module is None:
         raise RuntimeError("Enrichment orchestration module is not available")
     return _enrichment_orchestration_module.run_protondb_anticheat_orchestration(
@@ -1333,7 +1356,9 @@ def run_protondb_anticheat_enrichment_orchestration(contract, steam_id: str, dea
     )
 
 
-def run_tags_enrichment_orchestration(contract, steam_id: str, deal_appids: list[str], *, no_cache: bool) -> dict[str, dict]:
+def run_tags_enrichment_orchestration(
+    contract, steam_id: str, deal_appids: list[str], *, no_cache: bool
+) -> dict[str, dict]:
     if _enrichment_orchestration_module is None:
         raise RuntimeError("Enrichment orchestration module is not available")
     return _enrichment_orchestration_module.run_tags_orchestration(
@@ -1344,7 +1369,9 @@ def run_tags_enrichment_orchestration(contract, steam_id: str, deal_appids: list
     )
 
 
-def run_achievements_enrichment_orchestration(contract, steam_id: str, deal_appids: list[str], *, no_cache: bool) -> dict[str, dict]:
+def run_achievements_enrichment_orchestration(
+    contract, steam_id: str, deal_appids: list[str], *, no_cache: bool
+) -> dict[str, dict]:
     if _enrichment_orchestration_module is None:
         raise RuntimeError("Enrichment orchestration module is not available")
     return _enrichment_orchestration_module.run_achievements_orchestration(
@@ -1378,7 +1405,9 @@ def _fetch_single(appid: str, country: str, delay: float) -> dict | None:
     """Fallback: fetch individual de un appid."""
     if _prices_module is None:
         raise RuntimeError("Prices module is not available")
-    return _prices_module.fetch_single(appid, country, delay, get_json=_get_json, sleep_fn=time.sleep)
+    return _prices_module.fetch_single(
+        appid, country, delay, get_json=_get_json, sleep_fn=time.sleep
+    )
 
 
 def _parse_release_year(date_str: str) -> int | None:
@@ -1392,7 +1421,9 @@ def _process_app_entry(appid: str, data: dict) -> dict | None:
     """Extrae info de precio de la respuesta de appdetails para un appid."""
     if _prices_module is None:
         raise RuntimeError("Prices module is not available")
-    return _prices_module.process_app_entry(appid, data, parse_release_year_fn=_parse_release_year)
+    return _prices_module.process_app_entry(
+        appid, data, parse_release_year_fn=_parse_release_year
+    )
 
 
 def get_deals_from_wishlist(
@@ -1434,6 +1465,7 @@ def get_deals_from_wishlist(
 # PARSEAR HLTB CSV
 # ─────────────────────────────────────────────
 
+
 def parse_hltb(csv_path: Path) -> dict[str, list[dict]]:
     if _parse_hltb_impl is None:
         raise RuntimeError("HLTB module is not available")
@@ -1443,6 +1475,7 @@ def parse_hltb(csv_path: Path) -> dict[str, list[dict]]:
 # ─────────────────────────────────────────────
 # FUZZY MATCHING HLTB × DEALS
 # ─────────────────────────────────────────────
+
 
 def normalize(s: str) -> str:
     if _normalize_impl is None:
@@ -1537,8 +1570,13 @@ def _enrichment_bar(completed: int, total: int, width: int = 25) -> str:
     return f"{C.GRN}{BAR_FILL * filled}{C.DIM}{BAR_EMPTY * (width - filled)}{C.RST}"
 
 
-def _fetch_parallel(items: list[str], fetch_fn, label: str,
-                    rate_limit: float = RATE_LIMIT_INTERVAL, max_workers: int = MAX_WORKERS) -> dict:
+def _fetch_parallel(
+    items: list[str],
+    fetch_fn,
+    label: str,
+    rate_limit: float = RATE_LIMIT_INTERVAL,
+    max_workers: int = MAX_WORKERS,
+) -> dict:
     """Execute fetch_fn(appid) in parallel with global rate limiting."""
     if _enrichment_module is None:
         raise RuntimeError("Enrichment module is not available")
@@ -1590,12 +1628,19 @@ def fetch_reviews(
     """Fetch Steam reviews in parallel. Returns merged {appid: {desc, pct, total}}."""
     if _enrichment_module is None:
         raise RuntimeError("Enrichment module is not available")
-    return _enrichment_module.fetch_reviews(appids, cached, rate_limit=rate_limit, fetch_parallel_fn=_fetch_parallel, get_json=_get_json)
+    return _enrichment_module.fetch_reviews(
+        appids,
+        cached,
+        rate_limit=rate_limit,
+        fetch_parallel_fn=_fetch_parallel,
+        get_json=_get_json,
+    )
 
 
 # ─────────────────────────────────────────────
 # CACHÉ Y FETCH: COMPATIBILIDAD STEAM DECK
 # ─────────────────────────────────────────────
+
 
 def deck_badge(category: int) -> str:
     if _deck_badge_impl is None:
@@ -1621,12 +1666,19 @@ def fetch_deck_compat(
     """Fetch Steam Deck compatibility in parallel. Returns merged {appid: category}."""
     if _enrichment_module is None:
         raise RuntimeError("Enrichment module is not available")
-    return _enrichment_module.fetch_deck_compat(appids, cached, rate_limit=rate_limit, fetch_parallel_fn=_fetch_parallel, get_json=_get_json)
+    return _enrichment_module.fetch_deck_compat(
+        appids,
+        cached,
+        rate_limit=rate_limit,
+        fetch_parallel_fn=_fetch_parallel,
+        get_json=_get_json,
+    )
 
 
 # ─────────────────────────────────────────────
 # CACHÉ Y FETCH: PROTONDB
 # ─────────────────────────────────────────────
+
 
 def protondb_badge(tier: str) -> str:
     if _protondb_badge_impl is None:
@@ -1658,12 +1710,19 @@ def fetch_protondb(
     """Fetch ProtonDB tiers in parallel. Returns merged {appid: {tier, score, total}}."""
     if _enrichment_module is None:
         raise RuntimeError("Enrichment module is not available")
-    return _enrichment_module.fetch_protondb(appids, cached, rate_limit=rate_limit, fetch_parallel_fn=_fetch_parallel, get_json=_get_json)
+    return _enrichment_module.fetch_protondb(
+        appids,
+        cached,
+        rate_limit=rate_limit,
+        fetch_parallel_fn=_fetch_parallel,
+        get_json=_get_json,
+    )
 
 
 # ─────────────────────────────────────────────
 # CACHÉ Y FETCH: ARE WE ANTI-CHEAT YET
 # ─────────────────────────────────────────────
+
 
 def load_anticheat_cache() -> tuple[dict, float]:
     if _enrichment_module is None:
@@ -1687,7 +1746,12 @@ def fetch_anticheat_db() -> dict[str, dict]:
     )
 
 
-def linux_badge(deck_cat: int, protondb: dict | None, anticheat: dict | None, linux_native: bool = False) -> str:
+def linux_badge(
+    deck_cat: int,
+    protondb: dict | None,
+    anticheat: dict | None,
+    linux_native: bool = False,
+) -> str:
     """Build combined Deck/Linux badge string."""
     if _linux_badge_impl is None:
         raise RuntimeError("Presentation module is not available")
@@ -1704,6 +1768,7 @@ def linux_badge(deck_cat: int, protondb: dict | None, anticheat: dict | None, li
 # ─────────────────────────────────────────────
 # CACHÉ Y FETCH: STEAM TAGS (STEAMSPY)
 # ─────────────────────────────────────────────
+
 
 def load_tags_cache() -> tuple[dict, float]:
     if _enrichment_module is None:
@@ -1748,7 +1813,9 @@ def group_deals_by_tag(
     """Group deals by their most popular tags."""
     if _group_deals_by_tag_impl is None:
         raise RuntimeError("Presentation module is not available")
-    return _group_deals_by_tag_impl(deals, tags_data, min_count=min_count, get_top_tags_fn=get_top_tags)
+    return _group_deals_by_tag_impl(
+        deals, tags_data, min_count=min_count, get_top_tags_fn=get_top_tags
+    )
 
 
 def players_badge(tags_entry: dict) -> str:
@@ -1772,7 +1839,9 @@ def load_achievements_cache(steam_id: str) -> tuple[dict, float]:
 def save_achievements_cache(steam_id: str, achievements: dict) -> None:
     if _enrichment_module is None:
         raise RuntimeError("Enrichment module is not available")
-    _enrichment_module.save_achievements_cache(ACHIEVEMENTS_CACHE_FILE, steam_id, achievements)
+    _enrichment_module.save_achievements_cache(
+        ACHIEVEMENTS_CACHE_FILE, steam_id, achievements
+    )
 
 
 def _fetch_single_achievement(appid: str) -> dict | None:
@@ -1787,7 +1856,13 @@ def fetch_achievements(
     """Fetch achievement data in parallel. Returns merged {appid: {count, avg_completion}}."""
     if _enrichment_module is None:
         raise RuntimeError("Enrichment module is not available")
-    return _enrichment_module.fetch_achievements(appids, cached, rate_limit=rate_limit, fetch_parallel_fn=_fetch_parallel, get_json=_get_json)
+    return _enrichment_module.fetch_achievements(
+        appids,
+        cached,
+        rate_limit=rate_limit,
+        fetch_parallel_fn=_fetch_parallel,
+        get_json=_get_json,
+    )
 
 
 def achievements_badge(ach: dict | None) -> str:
@@ -1842,14 +1917,18 @@ def rank_top_picks(
     """Rank deals by composite value score, return top N."""
     if _rank_top_picks_impl is None:
         raise RuntimeError("Recommendations module is not available")
-    return _rank_top_picks_impl(deals, priorities, reviews, hltb_hours, deck_compat, n=n)
+    return _rank_top_picks_impl(
+        deals, priorities, reviews, hltb_hours, deck_compat, n=n
+    )
 
 
 def compute_budget_picks(deals, budget_mxn, top_picks, watchlist_alerts=None):
     """Greedy budget optimizer: pick best deals that fit within budget."""
     if _compute_budget_picks_impl is None:
         raise RuntimeError("Recommendations module is not available")
-    return _compute_budget_picks_impl(deals, budget_mxn, top_picks, watchlist_alerts=watchlist_alerts)
+    return _compute_budget_picks_impl(
+        deals, budget_mxn, top_picks, watchlist_alerts=watchlist_alerts
+    )
 
 
 # ─────────────────────────────────────────────
@@ -2812,7 +2891,16 @@ def generate_html(
 # GENERAR CSV
 # ─────────────────────────────────────────────
 
-def generate_share_html(deals, vanity, min_discount, sale_name="", top_picks=None, reviews=None, deck_compat=None):
+
+def generate_share_html(
+    deals,
+    vanity,
+    min_discount,
+    sale_name="",
+    top_picks=None,
+    reviews=None,
+    deck_compat=None,
+):
     """Generate a lightweight shareable HTML page with the deals list."""
     if _generate_share_html_renderer is not None:
         return _generate_share_html_renderer(
@@ -2962,7 +3050,9 @@ def build_notification_summary(deals, comparison, top_picks, watchlist_alerts=No
     """Build a summary dict for notifications. Returns None if nothing notable."""
     if _build_notification_summary_impl is None:
         raise RuntimeError("Notifications module is not available")
-    return _build_notification_summary_impl(deals, comparison, top_picks, watchlist_alerts=watchlist_alerts)
+    return _build_notification_summary_impl(
+        deals, comparison, top_picks, watchlist_alerts=watchlist_alerts
+    )
 
 
 def send_telegram(token: str, chat_id: str, summary: dict) -> bool:
@@ -3147,7 +3237,9 @@ def main():
     # Fallback: cargar deals del MD anterior si no hay historial
     previous_appids: set[str] = previous_context["previous_appids"]
     if previous_appids:
-        print(f"  {_dim(f'MD anterior encontrado ({len(previous_appids)} deals) — fallback')}")
+        print(
+            f"  {_dim(f'MD anterior encontrado ({len(previous_appids)} deals) — fallback')}"
+        )
 
     # [5] Precios (con smart cache + batching)
     step("Obteniendo precios de Steam...")
@@ -3423,8 +3515,15 @@ def main():
     )
 
     # Generar HTML compartible (lightweight)
-    share_html = generate_share_html(deals, VANITY, MIN_DISCOUNT, sale_name=sale_name,
-                                      top_picks=top_picks, reviews=reviews_data, deck_compat=deck_data)
+    share_html = generate_share_html(
+        deals,
+        VANITY,
+        MIN_DISCOUNT,
+        sale_name=sale_name,
+        top_picks=top_picks,
+        reviews=reviews_data,
+        deck_compat=deck_data,
+    )
 
     # Generar CSV (opcional)
     csv_content = None

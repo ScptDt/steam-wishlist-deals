@@ -45,7 +45,7 @@ No se mantienen documentos paralelos de planificacion; este archivo es la unica 
 - [x] Separar HTML/CSS/JS embebido de `steam_deals_web.py` y `payday2_web.py`.
 - [x] Extraer infraestructura compartida para web local (JSON, SSE, subprocess, server utils).
 - [x] Reutilizar la base compartida entre Steam Deals Web y PAYDAY 2 Web.
-- [ ] Modularizar `steam_deals_generator.py` por dominios (config, adapters, cache, scoring, renderers, orchestration) [en progreso: migracion estructural a `app/` en fases 1A-1D + cortes `cache policy / cache lifecycle`, `enrichment orchestration`, `family`, `output final`, `ITAD orchestration`, `post-processing` y `engagement/post-run` completados].
+- [x] Modularizar `steam_deals_generator.py` por dominios (config, adapters, cache, scoring, renderers, orchestration) [cerrado: migracion estructural a `app/` en fases 1A-1D + cortes `cache policy / cache lifecycle`, `enrichment orchestration`, `family`, `output final`, `ITAD orchestration`, `post-processing` y `engagement/post-run` completados; limpieza final de residuos wrappers `empty_*` en el generador].
 - [ ] Hacer limpieza local del repo: depurar archivos, artefactos, scripts y restos de baja utilidad actual para reducir ruido y costo de mantenimiento.
 - [ ] Hacer limpieza de GitHub y documentacion: depurar README, docs y referencias/metadatos del repo para reflejar solo flujos y superficies vigentes.
 - [x] Agregar smoke tests minimos para web, desktop y PAYDAY 2.
@@ -104,8 +104,8 @@ Nota actual sobre `steam_deals_generator.py`:
 - Validacion del slice `post-processing`: tests de logica/reconfiguracion OK en `tests/test_generator_logic.py` + `tests/test_shared_cache_utils.py`.
 - Avance ya hecho adicional: slice `engagement/post-run` extraido a `steam_deals_engagement_post_run.py` con orquestacion de `watchlist_alerts`, `budget_result`, `gift_ideas` y notificaciones; `steam_deals_generator.py` conserva wrappers de compatibilidad.
 - Validacion del slice `engagement/post-run`: tests de logica/reconfiguracion OK en `tests/test_generator_logic.py` + `tests/test_shared_cache_utils.py`.
-- Siguiente accion recomendada: reevaluar los residuos finales de orchestration en `steam_deals_generator.py` para decidir si la modularizacion ya puede cerrarse o si conviene un ultimo corte pequeno.
-- Prioridad actual acordada: el siguiente foco pendiente es `modularizar steam_deals_generator.py`.
+- Cierre de modularizacion: auditoria final de residuos de orchestration completada; `steam_deals_generator.py` queda como frontera de compatibilidad con orquestacion delegada a modulos `app/*` y sin wrappers `empty_*` redundantes.
+- Validacion de cierre: `python -m pytest tests/test_generator_logic.py tests/test_shared_cache_utils.py` OK (76 tests).
 
 ### Nota de trabajo futuro - orden sugerido de ejecucion
 
