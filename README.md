@@ -242,6 +242,7 @@ Referencias oficiales:
   - Ejecuta en `ubuntu-latest` y `macos-latest`.
   - Instala `requirements-desktop.txt`, corre `python build_desktop.py`, valida `py_compile` y sube `dist/` como artifact.
   - Validación de fallback: ejecuta `python steam_deals_web.py --no-open --help` para confirmar ruta local de mitigación disponible.
+  - Evidencia inicial: run exitoso `24487556896` en `main` para Linux y macOS.
 
 Planes y pendientes unificados: `PENDIENTES.md`.
 

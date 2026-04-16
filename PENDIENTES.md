@@ -250,8 +250,8 @@ Ejecutar de forma consistente en Windows, macOS y Linux.
 
 | Fecha | Plataforma | Estado | Incidencias | Proximo paso |
 |---|---|---|---|---|
-| 2026-04-15 | Linux (Ubuntu LTS) | en progreso | Se agrega pipeline CI para build/validacion desktop en `ubuntu-latest`; falta evidenciar primer run verde y registrar incidencias reales de backend nativo. | Ejecutar workflow `desktop-cross-platform.yml`, revisar artifact `dist-ubuntu-latest` y completar bitacora por paso. |
-| 2026-04-15 | macOS | en progreso | Se agrega pipeline CI para build/validacion desktop en `macos-latest`; falta evidenciar primer run verde y registrar notas de apertura/codesign en host macOS. | Ejecutar workflow `desktop-cross-platform.yml`, revisar artifact `dist-macos-latest` y completar bitacora por paso, incluyendo quarantine/codesign cuando aplique. |
+| 2026-04-16 | Linux (Ubuntu LTS) | validado en CI (parcial) | Workflow `Desktop Cross-Platform Validation` OK en `ubuntu-latest` (run `24487556896`): install deps, build desktop, `py_compile`, check fallback local y artifact `dist-ubuntu-latest` publicado. Falta validacion manual en host Linux nativo para ventana real, preflight funcional completo y cierre sin procesos colgados. | Ejecutar checklist manual Linux en host Ubuntu LTS y registrar incidencias/workarounds de backend nativo `pywebview`. |
+| 2026-04-16 | macOS | validado en CI (parcial) | Workflow `Desktop Cross-Platform Validation` OK en `macos-latest` (run `24487556896`): install deps, build desktop, `py_compile`, check fallback local y artifact `dist-macos-latest` publicado. Falta validacion manual en host macOS para apertura de `.app`, quarantine/codesign/notarizacion segun distribucion. | Ejecutar checklist manual macOS (apertura local, quarantine, codesign) y registrar incidencias/workarounds. |
 
 ## Bitacora
 
