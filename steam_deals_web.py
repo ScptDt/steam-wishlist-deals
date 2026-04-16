@@ -25,6 +25,8 @@ from steam_deals_watchlist import (
     remove_watchlist_item,
     save_watchlist,
 )
+from steam_deals_run_output import find_latest_artifact
+from desktop_doctor import apply_desktop_doctor_fixes, build_desktop_doctor_report
 
 from shared_web_infra import (
     CSS_CONTENT_TYPE,
@@ -129,10 +131,10 @@ def extract_progress(text: str) -> tuple[int, int, str] | None:
 def detect_file_path(text: str) -> str | None:
     """Detect generated file paths from ✓ output lines."""
     stripped = text.strip()
-    m = re.search(r"(?:✓|OK)\s+(.+\.(?:md|html|csv))$", stripped, flags=re.IGNORECASE)
+    m = re.search(r"(?:✓|OK)\s+(.+\.(?:md|html|csv|json))$", stripped, flags=re.IGNORECASE)
     if m:
         return m.group(1).strip()
-    if re.search(r"\.(?:md|html|csv)$", stripped, flags=re.IGNORECASE) and (
+    if re.search(r"\.(?:md|html|csv|json)$", stripped, flags=re.IGNORECASE) and (
         "\\" in stripped or "/" in stripped
     ):
         return stripped
@@ -461,6 +463,31 @@ details .details-body { padding-top: 0.75rem; }
   font-weight: 500; transition: all 0.2s;
 }
 .file-link:hover { background: var(--accent); color: #fff; text-decoration: none; border-color: var(--accent); }
+.latest-report-empty-state {
+  margin-top: 0.75rem; padding: 0.85rem 1rem; border-radius: 8px;
+  border: 1px dashed var(--card-border); background: var(--bg2);
+  color: var(--text2); font-size: 0.85rem; display: flex; flex-direction: column; gap: 0.25rem;
+}
+.latest-report-empty-state strong { color: var(--text); font-size: 0.9rem; }
+.latest-report-card {
+  margin-top: 0.75rem; padding: 1rem; border-radius: 10px;
+  border: 1px solid var(--card-border); background: linear-gradient(180deg, var(--bg2), var(--card));
+}
+.latest-report-head { display: flex; flex-wrap: wrap; gap: 0.75rem; align-items: flex-start; justify-content: space-between; margin-bottom: 0.85rem; }
+.latest-report-title { font-size: 1rem; font-weight: 700; color: var(--text); }
+.latest-report-subtitle { margin-top: 0.2rem; color: var(--text2); font-size: 0.82rem; }
+.latest-report-badge {
+  display: inline-flex; align-items: center; padding: 0.28rem 0.6rem; border-radius: 999px;
+  background: rgba(255,255,255,0.05); border: 1px solid var(--card-border); color: var(--accent);
+  font-size: 0.75rem; font-weight: 600;
+}
+.latest-report-stats { display: grid; grid-template-columns: repeat(auto-fit, minmax(120px, 1fr)); gap: 0.6rem; }
+.latest-report-stat {
+  padding: 0.75rem 0.8rem; border-radius: 8px; background: var(--bg);
+  border: 1px solid var(--card-border); min-height: 72px;
+}
+.latest-report-stat-label { color: var(--text2); font-size: 0.78rem; margin-bottom: 0.25rem; }
+.latest-report-stat-value { color: var(--text); font-size: 1.1rem; font-weight: 700; }
 .hidden { display: none !important; }
 
 /* Wizard */
@@ -729,8 +756,9 @@ details .details-body { padding-top: 0.75rem; }
           <option value="price">Precio</option>
           <option value="reviews">Reviews</option>
           <option value="priority">Prioridad wishlist</option>
-          <option value="score">Score</option>
+          <option value="score">Score (recomendacion compuesta)</option>
         </select>
+        <div class="hint">Score combina reviews, descuento, prioridad, $/hora HLTB, Deck, Metacritic y edad.</div>
       </div>
     </div>
     <div class="field">
@@ -887,6 +915,8 @@ details .details-body { padding-top: 0.75rem; }
 
   <div class="actions" style="margin-bottom:.6rem">
     <button class="btn" id="btn-preflight" style="background:var(--bg2);color:var(--text);border:1px solid var(--card-border)">&#129514; Probar config</button>
+    <button class="btn" id="btn-desktop-doctor" style="background:var(--bg2);color:var(--text);border:1px solid var(--card-border)">&#129658; Doctor desktop</button>
+    <button class="btn" id="btn-desktop-autofix" style="background:var(--bg2);color:var(--text);border:1px solid var(--card-border)">&#128295; Autofix desktop</button>
     <button class="btn" id="btn-clear-cache" style="background:var(--bg2);color:var(--text);border:1px solid var(--card-border)">&#128465; Limpiar cache</button>
     <button class="btn" id="btn-open-last" style="background:var(--bg2);color:var(--text);border:1px solid var(--card-border)">&#128194; Abrir ultimo reporte</button>
   </div>
@@ -1183,6 +1213,8 @@ Promise.all([
 const btnRun = $('btn-run');
 const btnStop = $('btn-stop');
 const btnPreflight = $('btn-preflight');
+const btnDesktopDoctor = $('btn-desktop-doctor');
+const btnDesktopAutofix = $('btn-desktop-autofix');
 const btnClearCache = $('btn-clear-cache');
 const btnOpenLast = $('btn-open-last');
 const consoleEl = $('console');
@@ -1292,11 +1324,123 @@ async function runPreflightUI() {
   return preData;
 }
 
+function doctorLineClass(text, overall) {
+  if (!text) return 'dim';
+  if (text.startsWith('[OK]')) return 'ok';
+  if (text.startsWith('[WARN]')) return 'warn';
+  if (text.startsWith('[FAIL]')) return 'err';
+  if (text.startsWith('[fix]')) return 'step';
+  if (text.startsWith('[done]')) return 'ok';
+  if (text.startsWith('[skip]')) return 'dim';
+  if (text.startsWith('Resultado general:')) {
+    if (overall === 'READY') return 'ok';
+    if (overall === 'BLOCKED') return 'err';
+    return 'warn';
+  }
+  if (text.startsWith('===') || text.startsWith('Platform:')) return 'step';
+  if (text.trim().startsWith('-')) return 'dim';
+  return 'normal';
+}
+
+function appendDoctorReport(data, introText='Desktop Doctor ejecutado.') {
+  appendLine(introText, data.exit_code === 1 ? 'err' : data.overall === 'READY' ? 'ok' : 'warn');
+  (data.lines || []).forEach(line => {
+    if (!line) return;
+    appendLine(line, doctorLineClass(line, data.overall));
+  });
+}
+
+function renderDoctorFixPlan(fixes) {
+  if (!fixes || !fixes.length) {
+    appendLine('No hay autofixes seguros disponibles para este entorno.', 'ok');
+    return;
+  }
+  appendLine('Autofixes seguros disponibles:', 'step');
+  fixes.forEach((fix, index) => {
+    appendLine(`${index + 1}. ${fix.title} — ${fix.summary}`, 'dim');
+    (fix.commands || []).forEach(command => appendLine('  - ' + command, 'dim'));
+  });
+}
+
+async function fetchDesktopDoctorReport() {
+  const resp = await fetch('/api/desktop-doctor', {method: 'POST'});
+  const data = await resp.json();
+  if (!resp.ok) {
+    throw new Error(data.message || data.error || ('HTTP ' + resp.status));
+  }
+  return data;
+}
+
+async function runDesktopDoctorUI() {
+  const data = await fetchDesktopDoctorReport();
+  appendDoctorReport(data);
+  return data;
+}
+
+async function runDesktopDoctorAutofixUI() {
+  const report = await fetchDesktopDoctorReport();
+  appendDoctorReport(report, 'Desktop Doctor ejecutado antes del autofix.');
+  renderDoctorFixPlan(report.fixes || []);
+  if (!report.fixes || !report.fixes.length) {
+    return {status: 'noop', report};
+  }
+
+  const accepted = window.confirm('Se aplicarán solo autofixes seguros del proyecto (.venv local, deps desktop en .venv y/o build local). ¿Continuar?');
+  if (!accepted) {
+    appendLine('Autofix desktop cancelado por el usuario.', 'warn');
+    return {status: 'cancelled', report};
+  }
+
+  const resp = await fetch('/api/desktop-doctor/fix', {
+    method: 'POST',
+    headers: {'Content-Type': 'application/json'},
+    body: JSON.stringify({confirm: true}),
+  });
+  const data = await resp.json();
+  if (!resp.ok) {
+    throw new Error(data.message || data.error || ('HTTP ' + resp.status));
+  }
+
+  appendLine('Autofix desktop ejecutado.', data.status === 'failed' ? 'err' : data.status === 'applied' ? 'ok' : 'warn');
+  (data.lines || []).forEach(line => {
+    if (!line) return;
+    appendLine(line, doctorLineClass(line, data.report && data.report.overall));
+  });
+  if (data.report) {
+    appendDoctorReport(data.report, 'Doctor desktop tras autofix.');
+  }
+  return data;
+}
+
 btnPreflight.addEventListener('click', async () => {
   try {
     await runPreflightUI();
   } catch(e) {
     appendLine('No se pudo ejecutar preflight: ' + e.message, 'err');
+  }
+});
+
+btnDesktopDoctor.addEventListener('click', async () => {
+  btnDesktopDoctor.disabled = true;
+  try {
+    await runDesktopDoctorUI();
+  } catch(e) {
+    appendLine('No se pudo ejecutar Desktop Doctor: ' + e.message, 'err');
+  } finally {
+    btnDesktopDoctor.disabled = false;
+  }
+});
+
+if (btnDesktopAutofix) btnDesktopAutofix.addEventListener('click', async () => {
+  btnDesktopAutofix.disabled = true;
+  if (btnDesktopDoctor) btnDesktopDoctor.disabled = true;
+  try {
+    await runDesktopDoctorAutofixUI();
+  } catch(e) {
+    appendLine('No se pudo ejecutar Autofix desktop: ' + e.message, 'err');
+  } finally {
+    btnDesktopAutofix.disabled = false;
+    if (btnDesktopDoctor) btnDesktopDoctor.disabled = false;
   }
 });
 
@@ -1514,27 +1658,16 @@ function handleEvent(ev) {
     }
     if (ev.files && ev.files.length) {
       showFiles(ev.files);
+      appendQuickOpenButtons(ev.files);
     }
-    // Show prominent button to open interactive HTML (which has share buttons)
-    const htmlFile = ev.files ? ev.files.find(f => f.endsWith('.html')) : null;
-    if (htmlFile) {
-      const btnContainer = document.createElement('div');
-      btnContainer.style.cssText = 'margin-top:0.75rem;display:flex;gap:0.5rem;flex-wrap:wrap';
-      const openHtmlBtn = document.createElement('a');
-      openHtmlBtn.href = '/files/' + encodeURIComponent(htmlFile.split('/').pop());
-      openHtmlBtn.target = '_blank';
-      openHtmlBtn.className = 'file-link';
-      openHtmlBtn.innerHTML = '&#128202; Abrir reporte interactivo (con botones compartir)';
-      btnContainer.appendChild(openHtmlBtn);
-      fileLinks.appendChild(btnContainer);
-      fileLinks.classList.remove('hidden');
-    }
+    syncLatestReportEmptyState(ev.files);
+    syncLatestReportCard(ev.files);
   }
 }
 
 function showFiles(files) {
   fileLinks.innerHTML = '';
-  const icons = {'.html': '&#128202;', '.md': '&#128196;', '.csv': '&#128203;'};
+  const icons = {'.html': '&#128202;', '.md': '&#128196;', '.csv': '&#128203;', '.json': '&#123;&#125;'};
   files.forEach(f => {
     const name = f.split('/').pop();
     const ext = name.slice(name.lastIndexOf('.'));
@@ -1546,6 +1679,221 @@ function showFiles(files) {
     a.innerHTML = icon + ' ' + name;
     fileLinks.appendChild(a);
   });
+  fileLinks.classList.remove('hidden');
+}
+
+function latestReportUrl() {
+  return new URL('/api/latest-report', window.location.origin).href;
+}
+
+function escapeHtml(value) {
+  return String(value ?? '')
+    .replace(/&/g, '&amp;')
+    .replace(/</g, '&lt;')
+    .replace(/>/g, '&gt;')
+    .replace(/"/g, '&quot;')
+    .replace(/'/g, '&#39;');
+}
+
+function formatLatestReportTimestamp(value) {
+  if (!value) return 'Fecha desconocida';
+  const date = new Date(value);
+  if (Number.isNaN(date.getTime())) return String(value);
+  return date.toLocaleString(undefined, { dateStyle: 'medium', timeStyle: 'short' });
+}
+
+function latestReportCardEl() {
+  let el = $('latest-report-card');
+  if (el) return el;
+  const card = $('output-card');
+  if (!card) return null;
+  el = document.createElement('div');
+  el.id = 'latest-report-card';
+  el.className = 'latest-report-card hidden';
+  card.insertBefore(el, fileLinks);
+  return el;
+}
+
+function hideLatestReportCard() {
+  const el = latestReportCardEl();
+  if (!el) return;
+  el.classList.add('hidden');
+  el.innerHTML = '';
+}
+
+function renderLatestReportCard(report) {
+  const el = latestReportCardEl();
+  if (!el) return;
+  const meta = report && typeof report === 'object' ? (report.meta || {}) : {};
+  const summary = report && typeof report === 'object' ? (report.summary || {}) : {};
+  const subtitleParts = [];
+  if (meta.profile) subtitleParts.push(`Perfil: ${escapeHtml(meta.profile)}`);
+  subtitleParts.push(escapeHtml(formatLatestReportTimestamp(meta.generated_at)));
+  const saleBadge = meta.sale_name ? `<span class="latest-report-badge">${escapeHtml(meta.sale_name)}</span>` : '';
+  const stats = [
+    ['Deals', summary.deals_count ?? 0],
+    ['Top picks', summary.top_picks_count ?? 0],
+    ['Alerts', summary.watchlist_alerts_count ?? 0],
+    ['Regalos', summary.gift_ideas_count ?? 0],
+  ];
+  el.innerHTML = `
+    <div class="latest-report-head">
+      <div>
+        <div class="latest-report-title">Ultimo reporte</div>
+        <div class="latest-report-subtitle">${subtitleParts.join(' · ')}</div>
+      </div>
+      ${saleBadge}
+    </div>
+    <div class="latest-report-stats">
+      ${stats.map(([label, value]) => `
+        <div class="latest-report-stat">
+          <div class="latest-report-stat-label">${escapeHtml(label)}</div>
+          <div class="latest-report-stat-value">${escapeHtml(value)}</div>
+        </div>
+      `).join('')}
+    </div>
+  `;
+  el.classList.remove('hidden');
+}
+
+async function syncLatestReportCard(files = null) {
+  if (Array.isArray(files) && !hasJsonArtifact(files)) {
+    hideLatestReportCard();
+    return;
+  }
+  try {
+    const resp = await fetch('/api/latest-report');
+    if (!resp.ok) {
+      hideLatestReportCard();
+      return;
+    }
+    renderLatestReportCard(await resp.json());
+  } catch (e) {
+    hideLatestReportCard();
+  }
+}
+
+function latestReportEmptyStateEl() {
+  let el = $('latest-report-empty-state');
+  if (el) return el;
+  const card = $('output-card');
+  if (!card) return null;
+  el = document.createElement('div');
+  el.id = 'latest-report-empty-state';
+  el.className = 'latest-report-empty-state hidden';
+  card.appendChild(el);
+  return el;
+}
+
+function hasJsonArtifact(files) {
+  return Array.isArray(files) && files.some(file => {
+    const name = typeof file === 'string' ? file.split('/').pop() : (file && file.name) || '';
+    return /\.json$/i.test(name || '');
+  });
+}
+
+function showLatestReportEmptyState(message) {
+  const el = latestReportEmptyStateEl();
+  if (!el) return;
+  el.innerHTML = `<strong>Sin reporte JSON todavia.</strong><span>${message}</span>`;
+  el.classList.remove('hidden');
+}
+
+function hideLatestReportEmptyState() {
+  const el = latestReportEmptyStateEl();
+  if (!el) return;
+  el.classList.add('hidden');
+  el.innerHTML = '';
+}
+
+async function syncLatestReportEmptyState(files = null) {
+  if (hasJsonArtifact(files)) {
+    hideLatestReportEmptyState();
+    return;
+  }
+  if (Array.isArray(files)) {
+    showLatestReportEmptyState('Corre Steam Deals una vez en este directorio para habilitar Abrir/Copiar JSON.');
+    return;
+  }
+  try {
+    const resp = await fetch('/api/files');
+    const listedFiles = await resp.json();
+    if (hasJsonArtifact(listedFiles)) {
+      hideLatestReportEmptyState();
+      return;
+    }
+  } catch (e) {}
+  showLatestReportEmptyState('Corre Steam Deals una vez en este directorio para habilitar Abrir/Copiar JSON.');
+}
+
+function isShareHtmlFile(filePath) {
+  return /steam deals share .*\.html$/i.test((filePath || '').split('/').pop() || '');
+}
+
+function copyLatestReportUrl(btn) {
+  const url = latestReportUrl();
+  const resetLabel = btn.innerHTML;
+  const showCopied = () => {
+    btn.textContent = 'Copiado!';
+    setTimeout(() => { btn.innerHTML = resetLabel; }, 2000);
+  };
+
+  if (navigator.clipboard && typeof navigator.clipboard.writeText === 'function') {
+    navigator.clipboard.writeText(url).then(showCopied).catch(() => {
+      window.prompt('Copia esta URL:', url);
+    });
+    return;
+  }
+
+  window.prompt('Copia esta URL:', url);
+}
+
+function appendQuickOpenButtons(files) {
+  const htmlFile = files ? files.find(f => f.endsWith('.html') && !isShareHtmlFile(f)) : null;
+  const shareHtmlFile = files ? files.find(isShareHtmlFile) : null;
+  const jsonFile = files ? files.find(f => f.endsWith('.json')) : null;
+  if (!htmlFile && !shareHtmlFile && !jsonFile) return;
+
+  const btnContainer = document.createElement('div');
+  btnContainer.style.cssText = 'margin-top:0.75rem;display:flex;gap:0.5rem;flex-wrap:wrap';
+
+  if (htmlFile) {
+    const openHtmlBtn = document.createElement('a');
+    openHtmlBtn.href = '/files/' + encodeURIComponent(htmlFile.split('/').pop());
+    openHtmlBtn.target = '_blank';
+    openHtmlBtn.className = 'file-link';
+    openHtmlBtn.innerHTML = '&#128202; Abrir reporte interactivo (con botones compartir)';
+    btnContainer.appendChild(openHtmlBtn);
+  }
+
+  if (shareHtmlFile) {
+    const openShareBtn = document.createElement('a');
+    openShareBtn.href = '/files/' + encodeURIComponent(shareHtmlFile.split('/').pop());
+    openShareBtn.target = '_blank';
+    openShareBtn.className = 'file-link';
+    openShareBtn.innerHTML = '&#128279; Abrir ultimo Share HTML';
+    btnContainer.appendChild(openShareBtn);
+  }
+
+  if (jsonFile) {
+    const openJsonBtn = document.createElement('a');
+    openJsonBtn.href = '/api/latest-report';
+    openJsonBtn.target = '_blank';
+    openJsonBtn.className = 'file-link';
+    openJsonBtn.innerHTML = '&#123;&#125; Abrir ultimo JSON';
+    btnContainer.appendChild(openJsonBtn);
+
+    const copyJsonBtn = document.createElement('button');
+    copyJsonBtn.type = 'button';
+    copyJsonBtn.className = 'file-link';
+    copyJsonBtn.style.cursor = 'pointer';
+    copyJsonBtn.style.fontFamily = 'inherit';
+    copyJsonBtn.innerHTML = '&#128203; Copiar URL del ultimo JSON';
+    copyJsonBtn.addEventListener('click', () => copyLatestReportUrl(copyJsonBtn));
+    btnContainer.appendChild(copyJsonBtn);
+  }
+
+  fileLinks.appendChild(btnContainer);
   fileLinks.classList.remove('hidden');
 }
 
@@ -1645,6 +1993,8 @@ function openInSteam() {
 }
 
 loadWatchlist();
+syncLatestReportEmptyState();
+syncLatestReportCard();
 </script>
 </body>
 </html>"""
@@ -1692,6 +2042,8 @@ class Handler(BaseHTTPRequestHandler):
             self._send_json(load_watchlist())
         elif path == "/api/files":
             self._serve_files_list()
+        elif path == "/api/latest-report":
+            self._serve_latest_report()
         elif path.startswith("/files/"):
             self._serve_file(path[7:])
         else:
@@ -1707,6 +2059,10 @@ class Handler(BaseHTTPRequestHandler):
             self._serve_run_sse(pd2=True)
         elif path == "/api/preflight":
             self._serve_preflight()
+        elif path == "/api/desktop-doctor":
+            self._serve_desktop_doctor()
+        elif path == "/api/desktop-doctor/fix":
+            self._serve_desktop_doctor_fix()
         elif path == "/api/cache/clear":
             self._serve_clear_cache()
         elif path == "/api/stop":
@@ -1781,6 +2137,44 @@ class Handler(BaseHTTPRequestHandler):
             }
         )
 
+    def _serve_desktop_doctor(self):
+        try:
+            self._send_json(build_desktop_doctor_report())
+        except Exception as e:
+            self._send_json(
+                {
+                    "error": "desktop_doctor_failed",
+                    "message": f"No se pudo ejecutar Desktop Doctor: {e}",
+                },
+                status=500,
+            )
+
+    def _serve_desktop_doctor_fix(self):
+        body = self._read_json_body()
+        if body is None:
+            return
+        if not isinstance(body, dict) or body.get("confirm") is not True:
+            self._send_json(
+                {
+                    "error": "confirmation_required",
+                    "message": "Desktop autofix requiere `confirm: true`.",
+                },
+                status=400,
+            )
+            return
+        try:
+            result = apply_desktop_doctor_fixes(confirm=True, emit=lambda _line: None)
+            status_code = 500 if result.get("status") == "failed" else 200
+            self._send_json(result, status=status_code)
+        except Exception as e:
+            self._send_json(
+                {
+                    "error": "desktop_doctor_fix_failed",
+                    "message": f"No se pudo ejecutar Desktop Autofix: {e}",
+                },
+                status=500,
+            )
+
     def _serve_clear_cache(self):
         removed = 0
         if LOCAL_CACHE_DIR.exists():
@@ -1846,7 +2240,7 @@ class Handler(BaseHTTPRequestHandler):
     def _serve_files_list(self):
         out_dir = Path(Handler.output_dir)
         files = []
-        for ext in ("*.md", "*.html", "*.csv"):
+        for ext in ("*.md", "*.html", "*.csv", "*.json"):
             for f in out_dir.glob(f"Steam Deals*{ext[1:]}"):
                 files.append(
                     {
@@ -1858,6 +2252,19 @@ class Handler(BaseHTTPRequestHandler):
         files.sort(key=lambda x: -x["mtime"])
         self._send_json(files[:20])
 
+    def _serve_latest_report(self):
+        latest_report = find_latest_artifact(Handler.output_dir, "Steam Deals*.json")
+        if latest_report is None:
+            self._send_json(
+                {
+                    "error": "latest_report_not_found",
+                    "message": "No se encontró ningún reporte JSON generado.",
+                },
+                status=404,
+            )
+            return
+        self._serve_file(latest_report.name)
+
     def _serve_file(self, encoded_name: str):
         name = urllib.parse.unquote(encoded_name)
         if ".." in name or "/" in name or "\\" in name:
@@ -1867,7 +2274,7 @@ class Handler(BaseHTTPRequestHandler):
         if not fpath.exists():
             self.send_error(404)
             return
-        content_types = {".html": "text/html", ".md": "text/plain", ".csv": "text/csv"}
+        content_types = {".html": "text/html", ".md": "text/plain", ".csv": "text/csv", ".json": "application/json"}
         ct = content_types.get(fpath.suffix, "application/octet-stream")
         data = fpath.read_bytes()
         self.send_response(200)

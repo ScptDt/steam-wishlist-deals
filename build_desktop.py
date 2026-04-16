@@ -15,6 +15,23 @@ from pathlib import Path
 
 ROOT = Path(__file__).resolve().parent
 APP_NAME = "SteamToolsDesktop"
+DATA_FILES = [
+    ("steam_deals_web.py", "."),
+    ("steam_deals_generator.py", "."),
+    ("payday2_web.py", "."),
+    ("payday2_dlc_tracker.py", "."),
+    ("web/payday2/index.html", "web/payday2"),
+    ("web/payday2/app.css", "web/payday2"),
+    ("web/payday2/app.js", "web/payday2"),
+    ("web/steam_deals/index.html", "web/steam_deals"),
+    ("web/steam_deals/app.css", "web/steam_deals"),
+    ("web/steam_deals/app.js", "web/steam_deals"),
+]
+HIDDEN_IMPORTS = [
+    "steam_deals_generator",
+    "payday2_dlc_tracker",
+]
+COLLECT_SUBMODULE_PACKAGES = ["shared", "renderers", "app"]
 
 
 def run(cmd: list[str]) -> None:
@@ -26,6 +43,16 @@ def add_data_arg(src: str, dest: str = ".") -> str:
     # PyInstaller uses ';' on Windows and ':' on Unix-like systems.
     sep = ";" if os.name == "nt" else ":"
     return f"{src}{sep}{dest}"
+
+
+def append_repeated_flag(cmd: list[str], flag: str, values: list[str]) -> None:
+    for value in values:
+        cmd.extend([flag, value])
+
+
+def append_data_files(cmd: list[str]) -> None:
+    for src, dest in DATA_FILES:
+        cmd.extend(["--add-data", add_data_arg(src, dest)])
 
 
 def main() -> None:
@@ -64,28 +91,13 @@ def main() -> None:
         APP_NAME,
         "--windowed",
         mode_flag,
-        "--add-data",
-        add_data_arg("steam_deals_web.py"),
-        "--add-data",
-        add_data_arg("steam_deals_generator.py"),
-        "--add-data",
-        add_data_arg("payday2_web.py"),
-        "--add-data",
-        add_data_arg("payday2_dlc_tracker.py"),
-        "--add-data",
-        add_data_arg("web/payday2/index.html", "web/payday2"),
-        "--add-data",
-        add_data_arg("web/payday2/app.css", "web/payday2"),
-        "--add-data",
-        add_data_arg("web/payday2/app.js", "web/payday2"),
-        "--add-data",
-        add_data_arg("web/steam_deals/index.html", "web/steam_deals"),
-        "--add-data",
-        add_data_arg("web/steam_deals/app.css", "web/steam_deals"),
-        "--add-data",
-        add_data_arg("web/steam_deals/app.js", "web/steam_deals"),
+        "--paths",
+        str(ROOT),
         str(ROOT / "steam_tools_desktop.py"),
     ]
+    append_data_files(cmd)
+    append_repeated_flag(cmd, "--hidden-import", HIDDEN_IMPORTS)
+    append_repeated_flag(cmd, "--collect-submodules", COLLECT_SUBMODULE_PACKAGES)
     run(cmd)
 
     output_hint = ROOT / "dist" / APP_NAME

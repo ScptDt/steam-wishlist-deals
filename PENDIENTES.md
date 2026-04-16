@@ -33,10 +33,10 @@ No se mantienen documentos paralelos de planificacion; este archivo es la unica 
 
 ### P2 - Cross-platform
 
-- [ ] Validar build desktop en Linux (Ubuntu LTS).
+- [ ] Validar build desktop en Linux (Ubuntu LTS). [Parcial alto: build local OK, ventana nativa + server local confirmados en sesion no-root, packaging PyInstaller corregido y primer evento `progress` validado dentro del binario congelado; falta smoke funcional completo con outputs `.md/.html/.csv` y cierre limpio.]
 - [ ] Validar build desktop en macOS (app bundle + apertura local).
-- [ ] Documentar dependencias nativas por plataforma para pywebview.
-- [ ] Validar cross-platform el fallback web: si `pywebview` no es compatible o no inicia backend nativo, abrir la Web UI en el navegador por defecto con aviso visible en la interfaz.
+- [x] Documentar dependencias nativas por plataforma para pywebview.
+- [ ] Validar cross-platform el fallback web: si `pywebview` no es compatible o no inicia backend nativo, abrir la Web UI en el navegador por defecto con aviso visible en la interfaz. [Linux parcial OK: fallback confirmado en primer intento sin backend, luego ventana nativa OK con Qt/X11; falta host nativo/macOS.]
 
 ### P3 - Base tecnica y mantenibilidad
 
@@ -277,15 +277,17 @@ P2 se considera **cerrado** cuando se cumpla TODO:
 
 ## Proximo Paso Operativo
 
-- Validacion manual Linux/macOS queda **pospuesta intencionalmente** por disponibilidad de entorno nativo en esta fase.
-- El runbook para cierre de P2 ya esta documentado en `README.md` y el criterio de evidencia queda definido en este archivo.
-- Siguiente reactivacion: ejecutar checklist manual por OS, pegar evidencia en bitacora y cerrar P2.
+- Linux ya tiene evidencia local fuerte: en Debian/Ubuntu con PEP 668 se requiere `.venv`, el build desktop local genera `dist/SteamToolsDesktop`, la ventana nativa abre en sesion grafica no-root (forzando `QT_QPA_PLATFORM=xcb`) y el binario congelado ya emite el primer evento `progress` del generator tras corregir packaging PyInstaller.
+- Validacion manual macOS queda **pospuesta intencionalmente** hasta contar con host nativo disponible.
+- El runbook para cierre de P2 ya esta documentado en `README.md` y en `docs/runbooks/desktop-{linux,macos,windows}.md`; el criterio de evidencia queda definido en este archivo.
+- Siguiente reactivacion: correr el smoke funcional largo de Linux (wishlist real 2K+ juegos: preflight, run completo, outputs y cierre limpio) en una ventana amplia; luego ejecutar checklist manual macOS y despues pegar evidencia final en bitacora para cierre P2.
 
 ## Bitacora Cross-Platform por OS
 
 | Fecha | Plataforma | Estado | Incidencias | Proximo paso |
 |---|---|---|---|---|
-| 2026-04-16 | Decision operativa | pospuesto (manual) | No se ejecuta validacion manual Linux/macOS en esta iteracion por no contar con host nativo disponible en este momento. CI cross-platform permanece OK como evidencia parcial base (`24487556896`). | Reactivar cuando haya host nativo Linux/macOS; ejecutar runbook de `README.md` y registrar evidencia por paso para cierre P2. |
+| 2026-04-16 | Decision operativa | Linux muy avanzado / macOS pospuesto | Se ejecuto validacion local fuerte en Linux durante esta iteracion; macOS sigue pendiente por no contar aun con host nativo disponible. CI cross-platform permanece OK como evidencia parcial base (`24487556896`). El smoke funcional Linux queda diferido porque la wishlist real supera 2K juegos y requiere una ventana amplia. | Ejecutar smoke funcional largo Linux cuando haya ventana suficiente; luego reactivar runbook macOS para cierre P2. |
+| 2026-04-16 | Linux (entorno local) | validacion manual avanzada | `python3`/`pip` OK. `python3 -m pip install -r requirements-desktop.txt` fallo en system Python por PEP 668 (`externally-managed-environment`), por lo que se uso `.venv`. Build local OK con `dist/SteamToolsDesktop`. Primer arranque del artefacto: fallback web confirmado por falta de backend nativo (`qtpy`/`gi`). Tras instalar `pywebview[qt]` y rehacer build, se confirmo ventana nativa + server local en sesion grafica no-root usando `runuser` + `QT_QPA_PLATFORM=xcb`. El smoke funcional completo encontro un bug real de packaging (`ModuleNotFoundError: shared`) dentro del binario congelado; se corrigio `build_desktop.py`/spec agregando `--paths` + `collect_submodules(shared/renderers/app)` + hidden imports, y luego un check liviano del binario valido el primer evento `progress` (`Resolviendo Steam ID...`) del generator ya empaquetado. Warning actual a revisar: `libtiff.so.5` en empaquetado Qt. | Ejecutar run largo con wishlist real para confirmar outputs `.md/.html/.csv` y cierre limpio; decidir luego si `libtiff.so.5` requiere nota/paquete adicional. |
 | 2026-04-16 | Linux (Ubuntu LTS) | validado en CI (parcial) | Workflow `Desktop Cross-Platform Validation` OK en `ubuntu-latest` (run `24487556896`): install deps, build desktop, `py_compile`, check fallback local y artifact `dist-ubuntu-latest` publicado. Falta validacion manual en host Linux nativo para ventana real, preflight funcional completo y cierre sin procesos colgados. | Ejecutar checklist manual Linux en host Ubuntu LTS y registrar incidencias/workarounds de backend nativo `pywebview`. |
 | 2026-04-16 | macOS | validado en CI (parcial) | Workflow `Desktop Cross-Platform Validation` OK en `macos-latest` (run `24487556896`): install deps, build desktop, `py_compile`, check fallback local y artifact `dist-macos-latest` publicado. Falta validacion manual en host macOS para apertura de `.app`, quarantine/codesign/notarizacion segun distribucion. | Ejecutar checklist manual macOS (apertura local, quarantine, codesign) y registrar incidencias/workarounds. |
 
@@ -342,6 +344,16 @@ P2 se considera **cerrado** cuando se cumpla TODO:
 - 2026-04-15: Se extrae `steam_deals_itad_orchestration.py` con la coordinacion opcional de lookup, historical lows, current prices y bundles; `steam_deals_generator.py` conserva wrappers compatibles y `tests/test_generator_logic.py` + `tests/test_shared_cache_utils.py` quedan OK (74 tests).
 - 2026-04-15: Se extrae `steam_deals_post_processing.py` con la coordinacion de `hltb_hours`, filtros y `top_picks`; `steam_deals_generator.py` conserva wrappers compatibles y `tests/test_generator_logic.py` + `tests/test_shared_cache_utils.py` quedan OK (75 tests).
 - 2026-04-15: Se extrae `steam_deals_engagement_post_run.py` con la orquestacion de watchlist alerts, budget mode, gift ideas y notificaciones; `steam_deals_generator.py` conserva wrappers compatibles y `tests/test_generator_logic.py` + `tests/test_shared_cache_utils.py` quedan OK (76 tests).
+- 2026-04-16: Validacion Linux local parcial: `python3`/`pip` OK, pero `pip` global del sistema quedo bloqueado por PEP 668; se crea `.venv`, se instalan deps desktop y el build local genera `dist/SteamToolsDesktop`.
+- 2026-04-16: Primer arranque Linux del artefacto confirma fallback web por falta de backend nativo (`qtpy`/`gi`). Tras instalar `pywebview[qt]` y rehacer build, el artefacto vuelve a levantar server local sin log de fallback; luego se confirma ventana nativa real en sesion grafica no-root usando `runuser` + `QT_QPA_PLATFORM=xcb`.
+- 2026-04-16: El smoke funcional inicial del binario congelado detecta bug real de packaging PyInstaller (`ModuleNotFoundError: shared`) cuando `steam_tools_desktop.py` ejecuta `steam_deals_generator.py` via `runpy`; se corrige `build_desktop.py` para agregar `--paths` + `hidden imports` + `collect_submodules(shared/renderers/app)`.
+- 2026-04-16: Check liviano post-fix del binario congelado OK: `steam_deals_generator.py` ya emite el primer evento `progress` (`Resolviendo Steam ID...`) dentro del desktop empaquetado. El smoke funcional largo queda diferido porque la wishlist real es grande y la corrida puede tardar bastante antes de generar outputs finales.
+- 2026-04-16: Se implementa primer corte de Desktop Doctor read-only en `steam_tools_desktop.py --doctor`: valida `.venv`/PEP 668, imports criticos (`steam_deals_web.py` / `steam_deals_generator.py`), stack `pywebview`/Qt en Linux, disponibilidad de `PyInstaller`, guardrails actuales de `build_desktop.py`, presencia de artefacto y sesion grafica/root; queda pendiente extenderlo a UI/autofix y mayor cobertura por OS.
+- 2026-04-16: Desktop Doctor se expone tambien en la Web UI con boton `Doctor desktop` y endpoint local `POST /api/desktop-doctor`; reutiliza `desktop_doctor.py` sin duplicar checks y muestra el diagnostico en la consola existente.
+- 2026-04-16: Desktop Doctor suma checks read-only adicionales por OS sin tocar la UX: Linux ahora revisa tooling host de PyInstaller (`ldd`/`objdump`/`objcopy`) y heuristicas Wayland/X11 cuando hay señal suficiente; macOS revisa PyObjC/tooling local; Windows revisa WebView2 y sesion interactiva cuando corre en ese OS.
+- 2026-04-16: Desktop Doctor suma primer corte de autofix liviano y opt-in: CLI `--doctor-fix` (con `--yes`) y endpoint `POST /api/desktop-doctor/fix` / boton `Autofix desktop`. Solo crea `.venv`, instala `requirements-desktop.txt` dentro del entorno local y/o lanza build local; no toca paquetes del sistema ni configuracion persistente.
+- 2026-04-16: Desktop Doctor mejora guidance por OS sin cambiar la UX base: cada `WARN/FAIL` ahora explica mejor que revisar manualmente, como separar deps Python vs nativas, cuando validar Wayland/X11 o WebView2, y como revalidar el desktop por plataforma sin convertir el doctor en instalador.
+- 2026-04-16: Se agregan runbooks manuales por plataforma en `docs/runbooks/desktop-linux.md`, `docs/runbooks/desktop-macos.md` y `docs/runbooks/desktop-windows.md`; consolidan precondiciones, doctor, build, smoke, fallback y evidencia reproducible sin convertir el flujo en instalador.
 
 ## Backlog de Features (Propuestos - Planning)
 
@@ -349,7 +361,7 @@ P2 se considera **cerrado** cuando se cumpla TODO:
 
 - [ ] Exportar a Obsidian/Notion (markdown con frontmatter YAML para importacion directa)
 - [ ] Dashboard HTML historico con graficos de precios, comparativa entre runs y navegacion de historial
-- [ ] Exportar a JSON / API local para integracion con otras herramientas y automatizaciones
+- [x] Exportar a JSON / API local para integracion con otras herramientas y automatizaciones. [Incluye artifact `.json`, endpoint local `GET /api/latest-report`, quick links UI para abrir/copiar el ultimo JSON, empty state cuando aun no existe reporte y tarjeta-resumen del ultimo run.]
 
 ### Social/Community
 
@@ -362,13 +374,13 @@ P2 se considera **cerrado** cuando se cumpla TODO:
 - [ ] Sugerir juegos similares segun los ultimos juegos jugados del usuario (por generos o por relaciones marcadas por el usuario: "me gusta" / "similar a")
 - [ ] Sugerir regalos para amigos de Steam segun sus juegos mas jugados, recientes y titulos similares
 - [ ] Analisis de biblioteca: tiempo total (HLTB), distribucion por genero, precio promedio
-- [ ] Explicar score y recomendacion de compra (por que esta arriba, comprar ahora vs esperar)
+- [x] Explicar score y recomendacion de compra (por que esta arriba, comprar ahora vs esperar). [Top Picks y Budget Mode ya muestran recomendacion corta + razones visibles en HTML/Markdown; `README.md` actualizado con export JSON, endpoint local y ejemplos mini de automatizacion.]
 - [ ] Explicar recomendaciones sociales/regalos con contexto breve ("juega mucho X", "jugo Y recientemente", "se parece a Z")
 
 ### Producto / Plataforma
 
 - [ ] Unificar Steam Deals, Watchlist, Compare y PAYDAY 2 bajo una UX de suite con modulos claros
-- [ ] Doctor / instalador desktop por plataforma para validar dependencias nativas, setup y readiness
+- [ ] Doctor / instalador desktop por plataforma para validar dependencias nativas, setup y readiness. [Parcial: ya existe en CLI (`steam_tools_desktop.py --doctor` / `--doctor-fix`) y Web UI (`Doctor desktop` / `Autofix desktop`), con cobertura base Linux/macOS/Windows, autofix liviano local, guidance mas accionable por OS y runbooks externos por plataforma; falta instalador/autofix real de nivel sistema.]
 
 ### Alertas inteligentes
 

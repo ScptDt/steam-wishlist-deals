@@ -15,11 +15,11 @@ Analiza tu wishlist de Steam y genera reportes detallados con deals, comparacion
 - **ITAD (IsThereAnyDeal)** — Mínimo histórico, precios multi-tienda, bundles activos
 - **HLTB (HowLongToBeat)** — Cruce con tu backlog exportado de HLTB
 - **Historial de precios** — Tendencias locales con sparklines SVG en el HTML
-- **Top Picks** — Ranking por value score (reviews, descuento, prioridad, $/hora, Deck, Metacritic, edad)
+- **Top Picks** — Ranking por value score (reviews, descuento, prioridad, $/hora, Deck, Metacritic, edad) con recomendación rápida y razones visibles
 
 ### Herramientas
 - **Watchlist Personal** — Alertas cuando un juego baja de tu precio objetivo
-- **Budget Mode** — "Tengo $500, ¿qué compro?" — optimizador greedy por eficiencia
+- **Budget Mode** — "Tengo $500, ¿qué compro?" — optimizador greedy por eficiencia con contexto de recomendación en los picks sugeridos
 - **Comparar Wishlists** — Overlap con amigos + gift ideas
 - **Notificaciones** — Telegram y Discord webhook con resumen de cambios
 - **Scheduler** — Ejecución automática cada N horas
@@ -29,6 +29,7 @@ Analiza tu wishlist de Steam y genera reportes detallados con deals, comparacion
 - **Markdown** — Reporte completo con tablas, secciones, y badges
 - **HTML interactivo** — Dashboard con gráficas, filtros en vivo, thumbnails con hover zoom, sparklines de precio
 - **HTML compartible** — Versión ligera para enviar a amigos
+- **JSON** — Export estructurado para automatización local (`meta`, `inputs`, `summary`, `top_picks`, `deals`, `budget_result`, etc.)
 - **CSV** — Exportación para Excel/Google Sheets (+ botón "Copiar para Sheets" en el HTML)
 
 ## Requisitos
@@ -79,11 +80,15 @@ python3 --version
 ### Desktop (con deps extra)
 
 ```bash
-pip install -r requirements-desktop.txt
+python3 -m venv .venv
+source .venv/bin/activate
+python -m pip install -r requirements-desktop.txt
 python steam_tools_desktop.py
 ```
 
 Desktop agrega dependencias solo para la ventana nativa / empaquetado. El flujo funcional sigue siendo el mismo server/UI local.
+
+> En Debian/Ubuntu y otros entornos con Python marcado como `externally-managed` (PEP 668), usa `.venv` para instalar `requirements-desktop.txt` en vez de `pip` global del sistema.
 
 ## Uso rápido
 
@@ -114,12 +119,71 @@ Interfaz visual para configurar y ejecutar el script sin usar la terminal.
 
 > Para el módulo PAYDAY 2 usa `python3 payday2_web.py` (puerto 8081).
 
+## Export JSON y API local
+
+Cada corrida de Steam Deals genera artefactos `.md`, `.html`, `.json` y, si lo activas, `.csv`.
+
+El JSON está pensado para scripting y automatización local. Incluye, entre otros:
+
+- `meta` / `inputs` / `summary`
+- `top_picks` con `recommendation` y `score_reasons`
+- `deals`, `watchlist_alerts`, `budget_result`, `compare_data`
+
+La Web UI también expone un endpoint local útil:
+
+### `GET /api/latest-report`
+
+Devuelve el último `Steam Deals*.json` generado en el directorio de salida actual.
+
+```bash
+curl http://127.0.0.1:8080/api/latest-report
+```
+
+Casos útiles:
+
+- alimentar scripts locales
+- inspeccionar el último run sin buscar archivos manualmente
+- integrar Steam Deals con otras herramientas personales
+
+Si todavía no existe un reporte JSON, responde `404`.
+
+### Ejemplos mini de automatización
+
+**Ver solo el resumen del último run**
+
+```bash
+curl -s http://127.0.0.1:8080/api/latest-report | jq '.summary'
+```
+
+**Sacar solo los nombres de los top picks**
+
+```bash
+curl -s http://127.0.0.1:8080/api/latest-report | jq -r '.top_picks[].name'
+```
+
+**Leer el endpoint desde Python (stdlib)**
+
+```python
+import json
+import urllib.request
+
+with urllib.request.urlopen("http://127.0.0.1:8080/api/latest-report") as response:
+    report = json.load(response)
+
+print("Deals:", report["summary"]["deals_count"])
+print("Top picks:", report["summary"]["top_picks_count"])
+```
+
+**Tip:** si usas otro puerto para la Web UI, reemplaza `8080` por el puerto real.
+
 ## Desktop (pywebview)
 
 Baseline inicial para ejecutable de escritorio:
 
 ```bash
-pip install -r requirements-desktop.txt
+python3 -m venv .venv
+source .venv/bin/activate
+python -m pip install -r requirements-desktop.txt
 python steam_tools_desktop.py
 ```
 
@@ -128,6 +192,50 @@ Build unificado (todas las plataformas):
 ```bash
 python build_desktop.py
 ```
+
+### Doctor desktop + autofix seguro
+
+```bash
+python3 -m venv .venv
+source .venv/bin/activate
+python steam_tools_desktop.py --doctor
+python steam_tools_desktop.py --doctor-fix
+```
+
+El doctor reporta `OK / WARN / FAIL` para checks utiles de readiness desktop, incluyendo:
+
+- `.venv` / PEP 668 en Linux
+- disponibilidad de `pywebview` y backend Qt esperado en Linux
+- herramientas host de PyInstaller en Linux (`ldd`, `objdump`, `objcopy`) y heuristicas Wayland/X11 cuando aplica
+- disponibilidad de `PyInstaller`
+- guardrails de packaging conocidos del repo
+- checks especificos por OS para macOS (PyObjC / tooling local) y Windows (WebView2 / sesion)
+- presencia del artefacto desktop y warnings conocidos del ultimo build
+
+Ademas, cuando encuentra `WARN`/`FAIL`, ahora agrega guidance mas profundo por plataforma, por ejemplo:
+
+- **Linux**: separa deps Python vs deps nativas del sistema, orienta sobre Wayland/X11 y `QT_QPA_PLATFORM=xcb`, y recuerda validar el artefacto desde una sesion grafica normal.
+- **macOS**: explica que backend/runtime espera PyObjC/Cocoa/WebKit, cuando conviene revisar `xcode-select` / `codesign` / `xattr`, y que la validacion final de la `.app` debe hacerse en una sesion local.
+- **Windows**: explica el rol de WebView2, como validar manualmente el runtime y por que la validacion final del `.exe` debe ser en Console/RDP interactivo.
+
+Tambien puedes ejecutarlo desde la Web UI con los botones **Doctor desktop** y **Autofix desktop**; reutilizan la misma logica y muestran el diagnostico en la consola local.
+
+Autofix seguro (opt-in):
+
+- crea `.venv` local si hace falta
+- instala `requirements-desktop.txt` dentro de `.venv`
+- puede lanzar `build_desktop.py --skip-install` cuando el artefacto falta
+
+Limites actuales del autofix:
+
+- no instala paquetes del sistema (`apt`, `brew`, `winget`, etc.)
+- no toca shell profiles, registro de Windows ni variables persistentes
+- no modifica archivos del repo para “arreglar” packaging
+- requiere confirmacion explicita (`--yes` en CLI o confirmacion en Web UI)
+
+Exit code:
+- `0` = sin bloqueos reales (`FAIL`)
+- `1` = hay al menos un bloqueo real a corregir antes de seguir
 
 Para generar un `.exe` en Windows (wrapper):
 
@@ -149,8 +257,12 @@ Esto abre la misma app web dentro de una ventana nativa. Si `pywebview` o el bac
 `pywebview` usa backend nativo distinto por OS. En este repo, la base sigue siendo:
 
 ```bash
-pip install -r requirements-desktop.txt
+python3 -m venv .venv
+source .venv/bin/activate
+python -m pip install -r requirements-desktop.txt
 ```
+
+En Linux, `requirements-desktop.txt` instala `pywebview[qt]` automaticamente dentro del entorno Python del proyecto. Eso cubre `QtPy` + `PyQt6` + `PyQt6-WebEngine`, pero no reemplaza dependencias/librerias nativas del sistema cuando el backend Qt o GTK/WebKit las requiera.
 
 Dependencias/requisitos por plataforma:
 
@@ -160,8 +272,9 @@ Dependencias/requisitos por plataforma:
   - Si no hay backend nativo disponible, el launcher mantiene fallback al navegador (`steam_deals_web.py`) y la UI indica que estas en modo web.
 
 - **Linux (Ubuntu LTS)**
-  - Instalar deps del sistema para backend Qt o GTK/WebKit2.
-  - Comandos de referencia (Ubuntu):
+  - Hallazgo practico validado en este repo: instalar solo `pywebview` no alcanza siempre para levantar backend nativo; en Linux usa `requirements-desktop.txt` dentro de `.venv`.
+  - Si el backend Qt del wheel no levanta o faltan librerias/plugins del sistema, instalar deps distro para Qt o GTK/WebKit2.
+  - Comandos de referencia (Ubuntu, cuando hagan falta deps nativas adicionales):
 
 ```bash
 sudo apt install python3-pyqt5 python3-pyqt5.qtwebengine python3-pyqt5.qtwebchannel libqt5webkit5-dev
@@ -185,24 +298,33 @@ Referencias oficiales:
 
 > Nota: desde entorno Windows no se puede validar backend nativo Linux/macOS de forma concluyente. Ejecutar en host nativo o runner CI del OS objetivo.
 
+Runbooks detallados por plataforma:
+
+- Linux: `docs/runbooks/desktop-linux.md`
+- macOS: `docs/runbooks/desktop-macos.md`
+- Windows: `docs/runbooks/desktop-windows.md`
+
 #### Linux (Ubuntu LTS)
 
 1. Preparar entorno:
    - `python3 --version && python3 -m pip --version`
    - Esperado: Python/pip disponibles y funcionales.
-2. Instalar dependencias desktop:
-   - `python3 -m pip install -r requirements-desktop.txt`
-   - Esperado: instalación sin errores; `pywebview` instalado.
-3. Build desktop:
-   - `python3 build_desktop.py`
+2. Crear/activar entorno virtual local (recomendado; necesario en Debian/Ubuntu con PEP 668):
+   - `python3 -m venv .venv && source .venv/bin/activate`
+   - Esperado: shell usando el Python del proyecto.
+3. Instalar dependencias desktop:
+   - `python -m pip install -r requirements-desktop.txt`
+   - Esperado: instalación sin errores; `pywebview[qt]` resuelto para Linux.
+4. Build desktop:
+   - `python build_desktop.py`
    - Esperado: artefacto generado en `dist/SteamToolsDesktop` (o `dist/SteamToolsDesktop/` según modo de build).
-4. Ejecutar artefacto nativo:
+5. Ejecutar artefacto nativo:
    - `./dist/SteamToolsDesktop`
    - Esperado: ventana nativa abre y la UI responde.
-5. Verificación funcional mínima:
+6. Verificación funcional mínima:
    - Ejecutar preflight, correr run de prueba, generar MD/HTML/CSV y cerrar app.
    - Esperado: sin crash, outputs presentes, sin procesos colgados.
-6. Fallback mitigación (si la ventana nativa no abre):
+7. Fallback mitigación (si la ventana nativa no abre):
    - `python3 steam_deals_web.py --no-open --port 8080`
    - Esperado: servidor arriba en `http://127.0.0.1:8080`.
 
@@ -246,9 +368,13 @@ Referencias oficiales:
 
 ### Runbook rápido (manual) para cerrar P2
 
+> Si necesitas el flujo completo paso a paso por plataforma, usa primero los runbooks en `docs/runbooks/`.
+
 Usa esta secuencia en host nativo Linux y macOS. Copia/pega los resultados en `PENDIENTES.md` (Bitácora Cross-Platform por OS).
 
 > Estado actual: este runbook queda **preparado para ejecución posterior**. En la iteración actual no se ejecutó validación manual en host nativo Linux/macOS; la evidencia disponible es CI parcial (run `24487556896`).
+
+> Nota de capacidad: si tu wishlist real es muy grande (por ejemplo 2K+ juegos), el smoke funcional Linux no debe tratarse como prueba corta; conviene reservar una ventana amplia antes de ejecutarlo.
 
 #### Linux (Ubuntu LTS)
 

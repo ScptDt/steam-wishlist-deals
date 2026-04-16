@@ -83,14 +83,27 @@ def main() -> None:
     if any(arg in ("-h", "--help") for arg in sys.argv[1:]):
         print(
             "Uso: python steam_tools_desktop.py [--share=BASE64] "
-            "[--internal-web] [--run-script <script> [args...]]"
+            "[--internal-web] [--doctor] [--doctor-fix] [--yes] [--run-script <script> [args...]]"
         )
         print("\nOpciones:")
         print("  -h, --help            Muestra esta ayuda y sale")
         print("  --share=BASE64        Abre/parsea un deal compartido")
         print("  --internal-web        Ejecuta el servidor web embebido")
+        print("  --doctor              Ejecuta checks read-only de readiness desktop")
+        print("  --doctor-fix          Aplica autofixes seguros (con confirmacion)")
+        print("  --yes                 Omite prompt interactivo para --doctor-fix")
         print("  --run-script FILE ... Ejecuta script embebido con argumentos")
         return
+
+    if "--doctor" in sys.argv[1:]:
+        from desktop_doctor import run_desktop_doctor
+
+        raise SystemExit(run_desktop_doctor())
+
+    if "--doctor-fix" in sys.argv[1:]:
+        from desktop_doctor import run_desktop_doctor_autofix
+
+        raise SystemExit(run_desktop_doctor_autofix(assume_yes="--yes" in sys.argv[1:]))
 
     # Handle share URL scheme
     for arg in sys.argv[1:]:
