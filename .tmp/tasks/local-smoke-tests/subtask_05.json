@@ -2,7 +2,7 @@
   "id": "local-smoke-tests-05",
   "seq": "05",
   "title": "Add simple local runner and usage docs for smoke targets",
-  "status": "pending",
+  "status": "completed",
   "depends_on": ["02", "03", "04"],
   "parallel": false,
   "suggested_agent": "TestEngineer",
@@ -28,7 +28,7 @@
     ".tmp/local-smoke-tests/README.md"
   ],
   "agent_id": null,
-  "started_at": null,
-  "completed_at": null,
-  "completion_summary": null
+  "started_at": "2026-04-13T20:15:00Z",
+  "completed_at": "2026-04-13T23:59:59Z",
+  "completion_summary": "Se agrego runner local y docs de uso para ejecutar smoke targets reproducibles."
 }

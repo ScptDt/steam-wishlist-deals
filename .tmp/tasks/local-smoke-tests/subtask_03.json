@@ -2,7 +2,7 @@
   "id": "local-smoke-tests-03",
   "seq": "03",
   "title": "Add PAYDAY 2 Web localhost smoke test",
-  "status": "pending",
+  "status": "completed",
   "depends_on": ["01"],
   "parallel": true,
   "suggested_agent": "TestEngineer",
@@ -27,7 +27,7 @@
     ".tmp/local-smoke-tests/payday2_web_smoke.py"
   ],
   "agent_id": null,
-  "started_at": null,
-  "completed_at": null,
-  "completion_summary": null
+  "started_at": "2026-04-13T20:15:00Z",
+  "completed_at": "2026-04-13T23:59:59Z",
+  "completion_summary": "Se agrego smoke local de PAYDAY 2 Web con checks localhost y teardown robusto."
 }

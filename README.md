@@ -238,6 +238,10 @@ Referencias oficiales:
 - Linux: ejecutar checklist de Linux en host nativo o runner `ubuntu-latest`.
 - macOS: ejecutar checklist de macOS en host nativo o runner `macos-latest`.
 - Registrar por plataforma: resultado por paso, error textual y workaround aplicado.
+- Workflow incluido: `.github/workflows/desktop-cross-platform.yml`.
+  - Ejecuta en `ubuntu-latest` y `macos-latest`.
+  - Instala `requirements-desktop.txt`, corre `python build_desktop.py`, valida `py_compile` y sube `dist/` como artifact.
+  - Validación de fallback: ejecuta `python steam_deals_web.py --no-open --help` para confirmar ruta local de mitigación disponible.
 
 Planes y pendientes unificados: `PENDIENTES.md`.
 

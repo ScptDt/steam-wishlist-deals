@@ -2,7 +2,7 @@
   "id": "local-smoke-tests-04",
   "seq": "04",
   "title": "Add desktop launcher smoke test with clean shutdown",
-  "status": "pending",
+  "status": "completed",
   "depends_on": ["01"],
   "parallel": true,
   "suggested_agent": "TestEngineer",
@@ -27,7 +27,7 @@
     ".tmp/local-smoke-tests/desktop_smoke.py"
   ],
   "agent_id": null,
-  "started_at": null,
-  "completed_at": null,
-  "completion_summary": null
+  "started_at": "2026-04-13T20:15:00Z",
+  "completed_at": "2026-04-13T23:59:59Z",
+  "completion_summary": "Se agrego smoke desktop seguro (ruta local/internal-web) con shutdown limpio en exito/error."
 }

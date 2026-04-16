@@ -2,7 +2,7 @@
   "id": "shared-web-infra-02",
   "seq": "02",
   "title": "Refactor Steam Deals handler to use shared response and asset helpers",
-  "status": "pending",
+  "status": "completed",
   "depends_on": [
     "01"
   ],
@@ -29,7 +29,7 @@
     "steam_deals_web.py"
   ],
   "agent_id": null,
-  "started_at": null,
-  "completed_at": null,
-  "completion_summary": null
+  "started_at": "2026-04-13T18:00:52Z",
+  "completed_at": "2026-04-13T23:59:59Z",
+  "completion_summary": "steam_deals_web.py reutiliza helpers compartidos para assets/respuestas y config local."
 }

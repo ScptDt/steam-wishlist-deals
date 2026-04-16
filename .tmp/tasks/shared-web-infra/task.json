@@ -1,7 +1,7 @@
 {
   "id": "shared-web-infra",
   "name": "Shared Web Infrastructure Refactor",
-  "status": "active",
+  "status": "completed",
   "objective": "Extract reusable local-web handler infrastructure for Steam Deals and PAYDAY 2 without changing behavior or pywebview compatibility.",
   "context_files": [
     "/home/adolfo/Documents/Deals/.opencode/context/core/standards/code-quality.md",
@@ -30,7 +30,7 @@
     "Smokes locales enfocados con `--no-open` siguen cubriendo `/`, `/app.css`, `/app.js` y una ruta JSON/SSE principal en 127.0.0.1."
   ],
   "subtask_count": 5,
-  "completed_count": 0,
+  "completed_count": 5,
   "created_at": "2026-04-13T18:00:52Z",
-  "completed_at": null
+  "completed_at": "2026-04-13T23:59:59Z"
 }

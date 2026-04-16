@@ -250,8 +250,8 @@ Ejecutar de forma consistente en Windows, macOS y Linux.
 
 | Fecha | Plataforma | Estado | Incidencias | Proximo paso |
 |---|---|---|---|---|
-| 2026-04-14 | Linux (Ubuntu LTS) | en progreso | Sin ejecucion nativa aun en este entorno Windows. | Correr checklist en `ubuntu-latest`/host Ubuntu y registrar resultados por paso. |
-| 2026-04-14 | macOS | en progreso | Sin ejecucion nativa aun en este entorno Windows. | Correr checklist en `macos-latest`/host macOS y registrar resultados por paso, incluyendo quarantine/codesign. |
+| 2026-04-15 | Linux (Ubuntu LTS) | en progreso | Se agrega pipeline CI para build/validacion desktop en `ubuntu-latest`; falta evidenciar primer run verde y registrar incidencias reales de backend nativo. | Ejecutar workflow `desktop-cross-platform.yml`, revisar artifact `dist-ubuntu-latest` y completar bitacora por paso. |
+| 2026-04-15 | macOS | en progreso | Se agrega pipeline CI para build/validacion desktop en `macos-latest`; falta evidenciar primer run verde y registrar notas de apertura/codesign en host macOS. | Ejecutar workflow `desktop-cross-platform.yml`, revisar artifact `dist-macos-latest` y completar bitacora por paso, incluyendo quarantine/codesign cuando aplique. |
 
 ## Bitacora
 

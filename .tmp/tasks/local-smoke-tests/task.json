@@ -1,7 +1,7 @@
 {
   "id": "local-smoke-tests",
   "name": "Local Smoke Tests",
-  "status": "active",
+  "status": "completed",
   "objective": "Add reproducible local-only smoke tests for Steam Deals Web, PAYDAY 2 Web, and desktop launcher with bounded localhost checks and clean shutdown.",
   "context_files": [
     "/home/adolfo/Documents/Deals/.opencode/context/core/standards/code-quality.md",
@@ -31,7 +31,7 @@
     "A simple local runner or documented commands make the smoke tests reproducible and easy to execute."
   ],
   "subtask_count": 5,
-  "completed_count": 0,
+  "completed_count": 5,
   "created_at": "2026-04-13T20:15:00Z",
-  "completed_at": null
+  "completed_at": "2026-04-13T23:59:59Z"
 }

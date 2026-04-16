@@ -2,7 +2,7 @@
   "id": "shared-web-infra-04",
   "seq": "04",
   "title": "Extract reusable subprocess and SSE streaming helpers",
-  "status": "pending",
+  "status": "completed",
   "depends_on": [
     "02"
   ],
@@ -28,7 +28,7 @@
     "steam_deals_web.py"
   ],
   "agent_id": null,
-  "started_at": null,
-  "completed_at": null,
-  "completion_summary": null
+  "started_at": "2026-04-13T18:00:52Z",
+  "completed_at": "2026-04-13T23:59:59Z",
+  "completion_summary": "Se extrajeron helpers reutilizables de subprocess/SSE y se aplicaron en Steam Deals Web."
 }

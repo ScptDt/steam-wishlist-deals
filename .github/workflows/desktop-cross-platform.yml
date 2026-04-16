@@ -1,0 +1,46 @@
+name: Desktop Cross-Platform Validation
+
+on:
+  workflow_dispatch:
+  push:
+    branches:
+      - main
+  pull_request:
+
+jobs:
+  desktop-validation:
+    name: Desktop validation (${{ matrix.os }})
+    runs-on: ${{ matrix.os }}
+    strategy:
+      fail-fast: false
+      matrix:
+        os: [ubuntu-latest, macos-latest]
+
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Setup Python
+        uses: actions/setup-python@v5
+        with:
+          python-version: "3.11"
+
+      - name: Install desktop dependencies
+        run: python -m pip install -r requirements-desktop.txt
+
+      - name: Build desktop artifact
+        run: python build_desktop.py
+
+      - name: Validate desktop and web scripts compile
+        run: python -m py_compile steam_tools_desktop.py steam_deals_web.py build_desktop.py
+
+      - name: Validate local fallback web readiness mode
+        run: python steam_deals_web.py --no-open --help
+
+      - name: Upload dist artifacts
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: dist-${{ matrix.os }}
+          path: dist/
+          if-no-files-found: warn
