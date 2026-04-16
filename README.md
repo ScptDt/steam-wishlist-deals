@@ -244,6 +244,54 @@ Referencias oficiales:
   - Validación de fallback: ejecuta `python steam_deals_web.py --no-open --help` para confirmar ruta local de mitigación disponible.
   - Evidencia inicial: run exitoso `24487556896` en `main` para Linux y macOS.
 
+### Runbook rápido (manual) para cerrar P2
+
+Usa esta secuencia en host nativo Linux y macOS. Copia/pega los resultados en `PENDIENTES.md` (Bitácora Cross-Platform por OS).
+
+> Estado actual: este runbook queda **preparado para ejecución posterior**. En la iteración actual no se ejecutó validación manual en host nativo Linux/macOS; la evidencia disponible es CI parcial (run `24487556896`).
+
+#### Linux (Ubuntu LTS)
+
+```bash
+python3 --version && python3 -m pip --version
+python3 -m pip install -r requirements-desktop.txt
+python3 build_desktop.py
+./dist/SteamToolsDesktop
+python3 steam_deals_web.py --no-open --port 8080
+```
+
+Checklist de salida (esperado):
+- build OK con artefacto en `dist/`
+- ventana nativa abre
+- preflight + run de prueba + generación de `.md/.html/.csv`
+- cierre limpio (sin procesos colgados)
+- fallback web accesible en `http://127.0.0.1:8080`
+
+#### macOS
+
+```bash
+python3 --version && python3 -m pip --version
+python3 -m pip install -r requirements-desktop.txt
+python3 build_desktop.py
+open dist/SteamToolsDesktop.app
+python3 steam_deals_web.py --no-open --port 8080
+```
+
+Comandos de soporte (si aplica):
+
+```bash
+xattr -dr com.apple.quarantine dist/SteamToolsDesktop.app
+codesign --verify --deep --strict --verbose=2 dist/SteamToolsDesktop.app
+```
+
+Checklist de salida (esperado):
+- build OK con `.app` en `dist/`
+- app abre localmente
+- preflight + run de prueba + generación de `.md/.html/.csv`
+- cierre limpio (sin procesos colgados)
+- fallback web accesible en `http://127.0.0.1:8080`
+- notas de quarantine/codesign registradas cuando apliquen
+
 Planes y pendientes unificados: `PENDIENTES.md`.
 
 ## Mapa de módulos y entrypoints

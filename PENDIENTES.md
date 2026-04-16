@@ -16,7 +16,7 @@ No se mantienen documentos paralelos de planificacion; este archivo es la unica 
 
 - Objetivo: llevar Steam Tools a una experiencia ultra user friendly y preparada para ejecutable desktop.
 - Fase actual: P2 en validacion cross-platform.
-- Item activo: validacion build desktop en Linux/macOS.
+- Item activo: documentar estado P2 y dejar runbook manual listo para ejecucion posterior en Linux/macOS.
 
 ## Pendientes Priorizados
 
@@ -242,14 +242,50 @@ Ejecutar de forma consistente en Windows, macOS y Linux.
 - macOS: `macos-latest` (runner nativo para validar app bundle/apertura local).
 - Guardar bitacora por OS: resultado por paso, error textual y workaround aplicado.
 
+### Formato minimo de evidencia por OS (para cierre reproducible)
+
+Registrar por plataforma (Linux/macOS) en la bitacora:
+
+1. **Build**
+   - Comando ejecutado
+   - Resultado (OK/FAIL)
+   - Ruta de artefacto generado en `dist/`
+2. **Apertura nativa**
+   - Comando de apertura/ejecucion (`./dist/SteamToolsDesktop` o `open dist/SteamToolsDesktop.app`)
+   - Resultado (ventana abre/no abre)
+   - Error textual exacto si falla
+3. **Smoke funcional minimo**
+   - Preflight
+   - Run de prueba
+   - Outputs generados (`.md`, `.html`, `.csv`)
+   - Cierre limpio (sin procesos colgados)
+4. **Fallback web (mitigacion)**
+   - Comando: `python3 steam_deals_web.py --no-open --port 8080`
+   - Resultado (server arriba + acceso local)
+5. **Notas de plataforma**
+   - Linux: backend nativo/deps usadas (`Qt` o `GTK/WebKit`)
+   - macOS: quarantine/codesign/notarizacion (si aplica distribucion)
+
+### Criterio de cierre P2 (Done)
+
+P2 se considera **cerrado** cuando se cumpla TODO:
+
+- [ ] Linux validado en host nativo: build, apertura nativa, smoke funcional, cierre limpio y fallback documentado.
+- [ ] macOS validado en host nativo: build, apertura `.app`, smoke funcional, cierre limpio y fallback documentado.
+- [ ] Bitacora Cross-Platform actualizada con evidencia por paso (comando, resultado y workaround si aplica).
+- [ ] README y/o notas operativas alineadas con incidencias reales encontradas en validacion manual.
+
 ## Proximo Paso Operativo
 
-- Ejecutar validacion Linux en host nativo/runner `ubuntu-latest` y validacion macOS en host nativo/runner `macos-latest`, con bitacora por paso (build, apertura app/binario, preflight, run de prueba, outputs, cierre, quarantine/codesign cuando aplique) y documentar incidencias/workarounds.
+- Validacion manual Linux/macOS queda **pospuesta intencionalmente** por disponibilidad de entorno nativo en esta fase.
+- El runbook para cierre de P2 ya esta documentado en `README.md` y el criterio de evidencia queda definido en este archivo.
+- Siguiente reactivacion: ejecutar checklist manual por OS, pegar evidencia en bitacora y cerrar P2.
 
 ## Bitacora Cross-Platform por OS
 
 | Fecha | Plataforma | Estado | Incidencias | Proximo paso |
 |---|---|---|---|---|
+| 2026-04-16 | Decision operativa | pospuesto (manual) | No se ejecuta validacion manual Linux/macOS en esta iteracion por no contar con host nativo disponible en este momento. CI cross-platform permanece OK como evidencia parcial base (`24487556896`). | Reactivar cuando haya host nativo Linux/macOS; ejecutar runbook de `README.md` y registrar evidencia por paso para cierre P2. |
 | 2026-04-16 | Linux (Ubuntu LTS) | validado en CI (parcial) | Workflow `Desktop Cross-Platform Validation` OK en `ubuntu-latest` (run `24487556896`): install deps, build desktop, `py_compile`, check fallback local y artifact `dist-ubuntu-latest` publicado. Falta validacion manual en host Linux nativo para ventana real, preflight funcional completo y cierre sin procesos colgados. | Ejecutar checklist manual Linux en host Ubuntu LTS y registrar incidencias/workarounds de backend nativo `pywebview`. |
 | 2026-04-16 | macOS | validado en CI (parcial) | Workflow `Desktop Cross-Platform Validation` OK en `macos-latest` (run `24487556896`): install deps, build desktop, `py_compile`, check fallback local y artifact `dist-macos-latest` publicado. Falta validacion manual en host macOS para apertura de `.app`, quarantine/codesign/notarizacion segun distribucion. | Ejecutar checklist manual macOS (apertura local, quarantine, codesign) y registrar incidencias/workarounds. |
 
