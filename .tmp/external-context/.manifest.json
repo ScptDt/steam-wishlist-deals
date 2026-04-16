@@ -1,0 +1,17 @@
+{
+  "version": "1.0",
+  "last_updated": "2026-04-16T00:00:00Z",
+  "libraries": {
+    "pywebview": {
+      "files": [
+        {
+          "filename": "linux-macos-deps-packaging-fallback.md",
+          "topic": "linux macos dependencies backend packaging browser fallback",
+          "tech_stack": "local web UI + desktop wrapper",
+          "fetched": "2026-04-16T00:00:00Z",
+          "source": "Context7 API + official docs"
+        }
+      ]
+    }
+  }
+}

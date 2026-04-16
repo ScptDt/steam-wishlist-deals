@@ -1,0 +1,13 @@
+{
+  "version": "1.0",
+  "last_updated": "2026-04-16T00:00:00Z",
+  "files": [
+    {
+      "filename": "debian-ubuntu-pep-668-local-dev.md",
+      "topic": "Debian/Ubuntu PEP 668 local development installs",
+      "tech_stack": "Python/pip on Debian/Ubuntu for local repo builds",
+      "fetched": "2026-04-16T00:00:00Z",
+      "source": "Context7 API + Official docs"
+    }
+  ]
+}
