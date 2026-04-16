@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import json
 import unittest
 from datetime import date
 from datetime import datetime
@@ -105,6 +106,7 @@ from steam_deals_run_output import (
     build_final_summary as module_build_final_summary,
     build_output_md_path as module_build_output_md_path,
     build_share_output_path as module_build_share_output_path,
+    find_latest_artifact as module_find_latest_artifact,
     resolve_previous_context as module_resolve_previous_context,
     write_output_artifacts as module_write_output_artifacts,
     write_artifact as module_write_artifact,
@@ -134,6 +136,9 @@ from steam_deals_generator import (
     cross_hltb_with_deals,
     filter_by_genres,
     format_trend,
+    generate_html,
+    generate_json,
+    generate_md,
     is_same_game,
     load_previous_deal_appids,
     parse_hltb,
@@ -692,6 +697,7 @@ class RunOutputTests(unittest.TestCase):
         self.assertEqual(artifacts.output_md, Path("/tmp/out/Steam Deals 2026-04-14.md"))
         self.assertEqual(artifacts.output_html, Path("/tmp/out/Steam Deals 2026-04-14.html"))
         self.assertEqual(artifacts.output_share, Path("/tmp/out/Steam Deals Share 2026-04-14.html"))
+        self.assertEqual(artifacts.output_json, Path("/tmp/out/Steam Deals 2026-04-14.json"))
         self.assertEqual(artifacts.output_csv, Path("/tmp/out/Steam Deals 2026-04-14.csv"))
 
     def test_resolve_previous_context_uses_markdown_fallback_only_without_previous_run(self) -> None:
@@ -724,6 +730,20 @@ class RunOutputTests(unittest.TestCase):
         self.assertTrue(emitted[0][1]["path"].endswith("Steam Deals 2026-04-14.md"))
         self.assertTrue(emitted[1][1]["path"].endswith("Steam Deals Share 2026-04-14.html"))
 
+    def test_find_latest_artifact_returns_newest_matching_file(self) -> None:
+        with TemporaryDirectory() as temp_dir:
+            out_dir = Path(temp_dir)
+            older = out_dir / "Steam Deals 2026-04-14.json"
+            newer = out_dir / "Steam Deals 2026-04-15.json"
+            older.write_text("{}", encoding="utf-8")
+            newer.write_text("{}", encoding="utf-8")
+            older.touch()
+            newer.touch()
+
+            latest = module_find_latest_artifact(out_dir, "Steam Deals*.json")
+
+        self.assertEqual(latest, newer)
+
     def test_write_output_artifacts_writes_all_enabled_outputs(self) -> None:
         written = []
 
@@ -736,12 +756,14 @@ class RunOutputTests(unittest.TestCase):
                 output_md=Path("/tmp/out/Steam Deals 2026-04-14.md"),
                 output_html=Path("/tmp/out/Steam Deals 2026-04-14.html"),
                 output_share=Path("/tmp/out/Steam Deals Share 2026-04-14.html"),
+                output_json=Path("/tmp/out/Steam Deals 2026-04-14.json"),
                 output_csv=Path("/tmp/out/Steam Deals 2026-04-14.csv"),
             ),
             ModuleOutputArtifactPayloads(
                 markdown="md",
                 html="html",
                 share_html="share",
+                json_content="json",
                 csv_content="csv",
             ),
             write_artifact_fn=fake_write_artifact,
@@ -753,11 +775,38 @@ class RunOutputTests(unittest.TestCase):
                 (Path("/tmp/out/Steam Deals 2026-04-14.md"), "md"),
                 (Path("/tmp/out/Steam Deals 2026-04-14.html"), "html"),
                 (Path("/tmp/out/Steam Deals Share 2026-04-14.html"), "share"),
+                (Path("/tmp/out/Steam Deals 2026-04-14.json"), "json"),
                 (Path("/tmp/out/Steam Deals 2026-04-14.csv"), "csv"),
             ],
         )
         self.assertEqual(result["markdown"], Path("/tmp/out/Steam Deals 2026-04-14.md"))
+        self.assertEqual(result["json"], Path("/tmp/out/Steam Deals 2026-04-14.json"))
         self.assertEqual(result["csv"], Path("/tmp/out/Steam Deals 2026-04-14.csv"))
+
+    def test_generate_json_serializes_summary_and_set_based_comparison(self) -> None:
+        payload = generate_json(
+            deals=[{"appid": "10", "name": "Portal 2", "discount": 80, "price_final": "$8"}],
+            backlog_on_sale=[],
+            have_on_sale=[],
+            vanity="BG00G",
+            owned={"20": "Half-Life"},
+            wishlist_appids=["10", "20"],
+            min_discount=50,
+            genres=["puzzle"],
+            sale_name="Steam Sale",
+            previous_appids={"20"},
+            top_picks=[{"appid": "10", "name": "Portal 2", "score": 95.4}],
+            comparison={"new_deals": {"10"}, "disappeared": [{"appid": "20"}]},
+        )
+
+        data = json.loads(payload)
+
+        self.assertEqual(data["meta"]["profile"], "BG00G")
+        self.assertEqual(data["summary"]["deals_count"], 1)
+        self.assertEqual(data["summary"]["new_deals_count"], 1)
+        self.assertEqual(data["inputs"]["wishlist_count"], 2)
+        self.assertEqual(data["comparison"]["new_deals"], ["10"])
+        self.assertEqual(data["top_picks"][0]["score"], 95.4)
 
     def test_build_final_summary_preserves_current_fields(self) -> None:
         new_count, summary = module_build_final_summary(
@@ -1506,6 +1555,8 @@ class BudgetPickTests(unittest.TestCase):
         self.assertEqual(result["total_spent"], 15.0)
         self.assertEqual(result["remaining"], 0.0)
         self.assertEqual(result["total_savings"], 15.0)
+        self.assertEqual(result["selected"][0]["recommendation"], "Solo si ya lo traías en radar")
+        self.assertEqual(result["selected"][1]["recommendation"], "Comprar ahora")
 
 
 class RankTopPicksTests(unittest.TestCase):
@@ -1544,6 +1595,166 @@ class RankTopPicksTests(unittest.TestCase):
 
         self.assertEqual([deal["appid"] for deal in ranked], ["a"])
         self.assertEqual(ranked[0]["score"], 95.4)
+
+    def test_top_pick_includes_recommendation_and_score_reasons(self) -> None:
+        ranked = rank_top_picks(
+            deals=[
+                {
+                    "appid": "a",
+                    "name": "Alpha",
+                    "discount": 90,
+                    "price_final": "$10",
+                    "price_raw": 1000,
+                    "release_year": date.today().year,
+                    "metacritic_score": 90,
+                    "categories": [2],
+                }
+            ],
+            priorities={"a": 5},
+            reviews={"a": {"pct": 92, "desc": "Very Positive", "total": 100}},
+            hltb_hours={"a": 10.0},
+            deck_compat={"a": 3},
+            n=1,
+        )
+
+        self.assertEqual(ranked[0]["recommendation"], "Comprar ahora")
+        self.assertIn("reviews muy positivas", ranked[0]["score_reasons"])
+
+    def test_generate_md_includes_score_explanation_for_top_picks(self) -> None:
+        md = generate_md(
+            deals=[],
+            backlog_on_sale=[],
+            have_on_sale=[],
+            vanity="BG00G",
+            owned={},
+            wishlist_appids=["a"],
+            min_discount=50,
+            genres=[],
+            top_picks=[
+                {
+                    "appid": "a",
+                    "name": "Alpha",
+                    "discount": 90,
+                    "price_final": "$10",
+                    "score": 95.4,
+                    "review": {"pct": 92, "desc": "Very Positive", "total": 100},
+                    "deck": 3,
+                    "priority": 5,
+                    "release_year": date.today().year,
+                    "linux_native": False,
+                    "metacritic_score": 90,
+                    "categories": [2],
+                    "recommendation": "Comprar ahora",
+                    "score_reasons": ["reviews muy positivas", "descuento muy raro de ver"],
+                }
+            ],
+        )
+
+        self.assertIn("¿Por qué salió arriba?", md)
+        self.assertIn("Comprar ahora", md)
+        self.assertIn("reviews muy positivas", md)
+
+    def test_generate_html_includes_score_explanation_for_top_picks(self) -> None:
+        html = generate_html(
+            deals=[],
+            backlog_on_sale=[],
+            have_on_sale=[],
+            vanity="BG00G",
+            owned={},
+            wishlist_appids=["a"],
+            min_discount=50,
+            genres=[],
+            top_picks=[
+                {
+                    "appid": "a",
+                    "name": "Alpha",
+                    "discount": 90,
+                    "price_final": "$10",
+                    "score": 95.4,
+                    "review": {"pct": 92, "desc": "Very Positive", "total": 100},
+                    "deck": 3,
+                    "priority": 5,
+                    "release_year": date.today().year,
+                    "linux_native": False,
+                    "metacritic_score": 90,
+                    "categories": [2],
+                    "recommendation": "Comprar ahora",
+                    "score_reasons": ["reviews muy positivas", "descuento muy raro de ver"],
+                }
+            ],
+        )
+
+        self.assertIn("pick-recommendation", html)
+        self.assertIn("Comprar ahora", html)
+        self.assertIn("reviews muy positivas", html)
+
+    def test_generate_md_includes_budget_recommendation_context(self) -> None:
+        md = generate_md(
+            deals=[],
+            backlog_on_sale=[],
+            have_on_sale=[],
+            vanity="BG00G",
+            owned={},
+            wishlist_appids=["a"],
+            min_discount=50,
+            genres=[],
+            budget_result={
+                "budget": 500,
+                "selected": [
+                    {
+                        "appid": "a",
+                        "name": "Alpha",
+                        "discount": 90,
+                        "price_final": "$10",
+                        "score": 95.4,
+                        "recommendation": "Comprar ahora",
+                        "score_reasons": ["reviews muy positivas", "descuento muy raro de ver"],
+                    }
+                ],
+                "total_spent": 10,
+                "total_savings": 90,
+                "remaining": 490,
+                "games_count": 1,
+            },
+        )
+
+        self.assertIn("Budget Mode", md)
+        self.assertIn("Comprar ahora", md)
+        self.assertIn("descuento muy raro de ver", md)
+
+    def test_generate_html_includes_budget_recommendation_context(self) -> None:
+        html = generate_html(
+            deals=[],
+            backlog_on_sale=[],
+            have_on_sale=[],
+            vanity="BG00G",
+            owned={},
+            wishlist_appids=["a"],
+            min_discount=50,
+            genres=[],
+            budget_result={
+                "budget": 500,
+                "selected": [
+                    {
+                        "appid": "a",
+                        "name": "Alpha",
+                        "discount": 90,
+                        "price_final": "$10",
+                        "score": 95.4,
+                        "recommendation": "Comprar ahora",
+                        "score_reasons": ["reviews muy positivas", "descuento muy raro de ver"],
+                    }
+                ],
+                "total_spent": 10,
+                "total_savings": 90,
+                "remaining": 490,
+                "games_count": 1,
+            },
+        )
+
+        self.assertIn("Budget Mode", html)
+        self.assertIn("Comprar ahora", html)
+        self.assertIn("reviews muy positivas", html)
 
 
 if __name__ == "__main__":

@@ -165,6 +165,17 @@ def generate_md(
             name_col = f"{_link(tp['name'], tp['appid'])}{prio}"
             yr = tp.get("release_year") or "—"
             lines.append(f"| {idx} | {tp['score']} | -{tp['discount']}% | {tp['price_final']} | {yr} | {rev_str} | {mc_str} | {dk_str} | {mp_str} | {name_col} |")
+        if any(tp.get("recommendation") or tp.get("score_reasons") for tp in top_picks):
+            lines += ["", "### ¿Por qué salió arriba?", ""]
+            for idx, tp in enumerate(top_picks, 1):
+                recommendation = tp.get("recommendation")
+                reasons = " · ".join(_md_esc(reason) for reason in tp.get("score_reasons", []))
+                bullet = f"- {idx}. {_link(tp['name'], tp['appid'])}"
+                if recommendation:
+                    bullet += f" — **{_md_esc(recommendation)}**"
+                if reasons:
+                    bullet += f" · {reasons}"
+                lines.append(bullet)
         lines += ["", "---", ""]
 
     if watchlist_alerts:
@@ -194,7 +205,14 @@ def generate_md(
             "|---|-------|---|--------|-------|",
         ]
         for idx, pick in enumerate(b["selected"], 1):
-            lines.append(f"| {idx} | {pick.get('score', '—')} | -{pick['discount']}% | {pick['price_final']} | {_link(pick['name'], pick['appid'])} |")
+            label = _link(pick['name'], pick['appid'])
+            recommendation = pick.get("recommendation")
+            reasons = " · ".join(_md_esc(reason) for reason in pick.get("score_reasons", []))
+            if recommendation:
+                label += f"<br>**{_md_esc(recommendation)}**"
+            if reasons:
+                label += f"<br>{reasons}"
+            lines.append(f"| {idx} | {pick.get('score', '—')} | -{pick['discount']}% | {pick['price_final']} | {label} |")
         lines += ["", "---", ""]
 
     if compare_data:

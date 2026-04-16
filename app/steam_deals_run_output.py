@@ -11,6 +11,7 @@ class OutputArtifactPaths:
     output_md: Path
     output_html: Path
     output_share: Path
+    output_json: Path
     output_csv: Path | None = None
 
 
@@ -19,6 +20,7 @@ class OutputArtifactPayloads:
     markdown: str
     html: str
     share_html: str
+    json_content: str
     csv_content: str | None = None
 
 
@@ -72,8 +74,19 @@ def build_output_artifact_paths(
         output_md=output_md,
         output_html=output_md.with_suffix(".html"),
         output_share=build_share_output_path(output_md.parent, today_obj=today_obj),
+        output_json=output_md.with_suffix(".json"),
         output_csv=output_md.with_suffix(".csv") if include_csv else None,
     )
+
+
+def find_latest_artifact(output_dir: str | Path, pattern: str) -> Path | None:
+    try:
+        candidates = [path for path in Path(output_dir).glob(pattern) if path.is_file()]
+    except OSError:
+        return None
+    if not candidates:
+        return None
+    return max(candidates, key=lambda path: path.stat().st_mtime)
 
 
 def write_artifact(path: Path, content: str, *, emit_event_fn=None, encoding: str = "utf-8") -> Path:
@@ -94,6 +107,7 @@ def write_output_artifacts(
         "markdown": write_artifact_fn(paths.output_md, payloads.markdown),
         "html": write_artifact_fn(paths.output_html, payloads.html),
         "share_html": write_artifact_fn(paths.output_share, payloads.share_html),
+        "json": write_artifact_fn(paths.output_json, payloads.json_content),
     }
     if payloads.csv_content is not None and paths.output_csv is not None:
         written["csv"] = write_artifact_fn(paths.output_csv, payloads.csv_content)

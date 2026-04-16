@@ -74,6 +74,12 @@ except Exception:
 
 
 try:
+    from renderers.json_renderer import generate_json as _generate_json_renderer
+except Exception:
+    _generate_json_renderer = None
+
+
+try:
     from steam_deals_recommendations import (
         build_gift_ideas as _build_gift_ideas_impl,
         compute_budget_picks as _compute_budget_picks_impl,
@@ -3028,6 +3034,74 @@ def generate_csv(
     )
 
 
+def generate_json(
+    deals,
+    backlog_on_sale,
+    have_on_sale,
+    vanity,
+    owned,
+    wishlist_appids,
+    min_discount,
+    genres,
+    hltb_used=False,
+    family_appids=None,
+    sale_name="",
+    priorities=None,
+    historical_lows=None,
+    previous_appids=None,
+    reviews=None,
+    deck_compat=None,
+    current_prices=None,
+    top_picks=None,
+    comparison=None,
+    sort_field="discount",
+    tags_data=None,
+    local_trends=None,
+    active_bundles=None,
+    protondb_data=None,
+    anticheat_data=None,
+    achievements_data=None,
+    watchlist_alerts=None,
+    budget_result=None,
+    compare_data=None,
+    gift_ideas=None,
+) -> str:
+    if _generate_json_renderer is None:
+        raise RuntimeError("JSON renderer module is not available")
+    return _generate_json_renderer(
+        deals,
+        backlog_on_sale,
+        have_on_sale,
+        vanity,
+        owned,
+        wishlist_appids,
+        min_discount,
+        genres,
+        hltb_used=hltb_used,
+        family_appids=family_appids,
+        sale_name=sale_name,
+        priorities=priorities,
+        historical_lows=historical_lows,
+        previous_appids=previous_appids,
+        reviews=reviews,
+        deck_compat=deck_compat,
+        current_prices=current_prices,
+        top_picks=top_picks,
+        comparison=comparison,
+        sort_field=sort_field,
+        tags_data=tags_data,
+        local_trends=local_trends,
+        active_bundles=active_bundles,
+        protondb_data=protondb_data,
+        anticheat_data=anticheat_data,
+        achievements_data=achievements_data,
+        watchlist_alerts=watchlist_alerts,
+        budget_result=budget_result,
+        compare_data=compare_data,
+        gift_ideas=gift_ideas,
+    )
+
+
 # ─────────────────────────────────────────────
 # HELPERS
 # ─────────────────────────────────────────────
@@ -3525,6 +3599,40 @@ def main():
         deck_compat=deck_data,
     )
 
+    step("Generando JSON...")
+    json_content = generate_json(
+        deals,
+        backlog_on_sale,
+        have_on_sale,
+        VANITY,
+        owned,
+        wishlist_appids,
+        MIN_DISCOUNT,
+        genres,
+        hltb_used=HLTB_CSV is not None,
+        sale_name=sale_name,
+        priorities=priorities,
+        historical_lows=historical_lows,
+        previous_appids=previous_appids,
+        reviews=reviews_data,
+        deck_compat=deck_data,
+        current_prices=current_prices,
+        top_picks=top_picks,
+        comparison=comparison,
+        sort_field=FILTERS.get("sort", "discount"),
+        tags_data=tags_data,
+        local_trends=local_trends,
+        active_bundles=active_bundles,
+        protondb_data=protondb_data,
+        anticheat_data=anticheat_data,
+        achievements_data=achievements_data,
+        watchlist_alerts=watchlist_alerts,
+        budget_result=budget_result,
+        compare_data=compare_data,
+        gift_ideas=gift_ideas,
+        **family_renderer_kwargs,
+    )
+
     # Generar CSV (opcional)
     csv_content = None
     if FILTERS.get("csv"):
@@ -3551,12 +3659,14 @@ def main():
             markdown=md,
             html=html,
             share_html=share_html,
+            json_content=json_content,
             csv_content=csv_content,
         ),
     )
     print(f"  {_ok(str(written_artifacts['markdown']))}")
     print(f"  {_ok(str(written_artifacts['html']))}")
     print(f"  {_ok(str(written_artifacts['share_html']))}")
+    print(f"  {_ok(str(written_artifacts['json']))}")
     if "csv" in written_artifacts:
         print(f"  {_ok(str(written_artifacts['csv']))}")
 

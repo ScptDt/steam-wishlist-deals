@@ -141,6 +141,8 @@ a.pick-card:hover { border-color: var(--accent-blue); transform: translateY(-2px
 .pick-discount { color: var(--accent-green); font-weight: bold; margin-right: .5rem; }
 .pick-price { color: var(--text-secondary); }
 .pick-meta { font-size: .75rem; color: var(--text-secondary); margin-top: .3rem; }
+.pick-recommendation { margin-top: .45rem; font-size: .72rem; font-weight: 700; color: var(--accent-green); text-transform: uppercase; letter-spacing: .03em; }
+.pick-why { margin-top: .25rem; font-size: .73rem; color: var(--text-secondary); line-height: 1.35; }
 .filter-panel { background: var(--bg-secondary); border-radius: 8px; padding: .8rem 1.2rem; margin-bottom: 1.5rem; }
 .filter-panel summary { cursor: pointer; font-weight: bold; font-size: 1rem; }
 .filter-grid { display: grid; grid-template-columns: repeat(3, 1fr); gap: .8rem; margin-top: .8rem; }
@@ -543,6 +545,9 @@ def generate_html(
             store_url = STORE_URL.format(appid=tp["appid"])
             min_hist = historical_lows.get(tp["appid"])
             min_hist_str = f"${min_hist['price']:.0f}" if min_hist else ""
+            recommendation = _html_esc(tp.get("recommendation", ""))
+            why_text = _html_esc(" · ".join(tp.get("score_reasons", [])))
+            why_html = f'<div class="pick-recommendation">{recommendation}</div><div class="pick-why">{why_text}</div>' if recommendation or why_text else ""
             tp_data = f'{{"name":"{_html_esc(tp["name"])}","appid":"{tp["appid"]}","price":"{_html_esc(tp["price_final"])}","price_original":"{_html_esc(tp.get("price_original", ""))}","discount":{tp["discount"]},"min_hist":"{min_hist_str}"}}'
             cards.append(f'''<div class="pick-card {rank_cls}">
   <a href="{store_url}" target="_blank" style="display:block">
@@ -553,6 +558,7 @@ def generate_html(
       <div class="pick-name">{_html_esc(tp['name'])}{prio_html}</div>
       <div class="pick-details"><span class="pick-discount">-{tp['discount']}%</span><span class="pick-price">{_html_esc(tp['price_final'])}</span></div>
       <div class="pick-meta">{rev_html} &middot; {mc_html} &middot; {dk_html} &middot; {mp_html}</div>
+      {why_html}
     </div>
   </a>
   <button class="share-btn-mini" onclick="openShareModal({tp_data})" title="Compartir">&#128279;</button>
@@ -589,10 +595,15 @@ def generate_html(
         budget_rows = ""
         for idx, pick in enumerate(budget_data["selected"], 1):
             capsule = CAPSULE_URL.format(appid=pick["appid"])
+            recommendation = _html_esc(pick.get("recommendation", ""))
+            reasons = _html_esc(" · ".join(pick.get("score_reasons", [])))
+            pick_context = ""
+            if recommendation or reasons:
+                pick_context = f'<div class="pick-recommendation" style="margin-top:.25rem">{recommendation}</div><div class="pick-why">{reasons}</div>'
             budget_rows += f'''<tr>
   <td>{idx}</td><td>{pick.get("score", "—")}</td><td>-{pick["discount"]}%</td>
   <td>{_html_esc(pick["price_final"])}</td>
-  <td><div class="game-cell"><img class="game-thumb" src="{capsule}" alt="" loading="lazy" onerror="this.style.display='none'"><span>{_html_link(pick["name"], pick["appid"])}</span></div></td>
+  <td><div class="game-cell"><img class="game-thumb" src="{capsule}" alt="" loading="lazy" onerror="this.style.display='none'"><span>{_html_link(pick["name"], pick["appid"])}{pick_context}</span></div></td>
 </tr>'''
         parts.append(f'''<section style="margin-bottom:1.5rem">
   <h2>&#128176; Budget Mode &mdash; ${budget_data["budget"]:.0f} MXN</h2>

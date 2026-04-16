@@ -199,6 +199,31 @@ details .details-body { padding-top: 0.75rem; }
   font-weight: 500; transition: all 0.2s;
 }
 .file-link:hover { background: var(--accent); color: #fff; text-decoration: none; border-color: var(--accent); }
+.latest-report-empty-state {
+  margin-top: 0.75rem; padding: 0.85rem 1rem; border-radius: 8px;
+  border: 1px dashed var(--card-border); background: var(--bg2);
+  color: var(--text2); font-size: 0.85rem; display: flex; flex-direction: column; gap: 0.25rem;
+}
+.latest-report-empty-state strong { color: var(--text); font-size: 0.9rem; }
+.latest-report-card {
+  margin-top: 0.75rem; padding: 1rem; border-radius: 10px;
+  border: 1px solid var(--card-border); background: linear-gradient(180deg, var(--bg2), var(--card));
+}
+.latest-report-head { display: flex; flex-wrap: wrap; gap: 0.75rem; align-items: flex-start; justify-content: space-between; margin-bottom: 0.85rem; }
+.latest-report-title { font-size: 1rem; font-weight: 700; color: var(--text); }
+.latest-report-subtitle { margin-top: 0.2rem; color: var(--text2); font-size: 0.82rem; }
+.latest-report-badge {
+  display: inline-flex; align-items: center; padding: 0.28rem 0.6rem; border-radius: 999px;
+  background: rgba(255,255,255,0.05); border: 1px solid var(--card-border); color: var(--accent);
+  font-size: 0.75rem; font-weight: 600;
+}
+.latest-report-stats { display: grid; grid-template-columns: repeat(auto-fit, minmax(120px, 1fr)); gap: 0.6rem; }
+.latest-report-stat {
+  padding: 0.75rem 0.8rem; border-radius: 8px; background: var(--bg);
+  border: 1px solid var(--card-border); min-height: 72px;
+}
+.latest-report-stat-label { color: var(--text2); font-size: 0.78rem; margin-bottom: 0.25rem; }
+.latest-report-stat-value { color: var(--text); font-size: 1.1rem; font-weight: 700; }
 .hidden { display: none !important; }
 
 /* Wizard */

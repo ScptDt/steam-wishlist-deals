@@ -354,6 +354,8 @@ P2 se considera **cerrado** cuando se cumpla TODO:
 - 2026-04-16: Desktop Doctor suma primer corte de autofix liviano y opt-in: CLI `--doctor-fix` (con `--yes`) y endpoint `POST /api/desktop-doctor/fix` / boton `Autofix desktop`. Solo crea `.venv`, instala `requirements-desktop.txt` dentro del entorno local y/o lanza build local; no toca paquetes del sistema ni configuracion persistente.
 - 2026-04-16: Desktop Doctor mejora guidance por OS sin cambiar la UX base: cada `WARN/FAIL` ahora explica mejor que revisar manualmente, como separar deps Python vs nativas, cuando validar Wayland/X11 o WebView2, y como revalidar el desktop por plataforma sin convertir el doctor en instalador.
 - 2026-04-16: Se agregan runbooks manuales por plataforma en `docs/runbooks/desktop-linux.md`, `docs/runbooks/desktop-macos.md` y `docs/runbooks/desktop-windows.md`; consolidan precondiciones, doctor, build, smoke, fallback y evidencia reproducible sin convertir el flujo en instalador.
+- 2026-04-16: Quick wins de salida/automatizacion completados en Steam Deals: nuevo artifact `.json`, endpoint local `GET /api/latest-report`, helper para localizar el ultimo artifact en `steam_deals_run_output.py` y soporte en Web UI/fallback para abrir/copiar el ultimo JSON, abrir el ultimo Share HTML, empty state sin JSON y tarjeta-resumen del ultimo run.
+- 2026-04-16: Quick wins de recomendacion/documentacion completados: Top Picks y Budget Mode ahora muestran `recommendation` + `score_reasons`; `README.md` documenta export JSON, endpoint local y ejemplos mini de automatizacion (`curl`, `jq`, Python stdlib).
 
 ## Backlog de Features (Propuestos - Planning)
 
