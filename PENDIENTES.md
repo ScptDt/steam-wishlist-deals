@@ -47,7 +47,7 @@ No se mantienen documentos paralelos de planificacion; este archivo es la unica 
 - [x] Reutilizar la base compartida entre Steam Deals Web y PAYDAY 2 Web.
 - [x] Modularizar `steam_deals_generator.py` por dominios (config, adapters, cache, scoring, renderers, orchestration) [cerrado: migracion estructural a `app/` en fases 1A-1D + cortes `cache policy / cache lifecycle`, `enrichment orchestration`, `family`, `output final`, `ITAD orchestration`, `post-processing` y `engagement/post-run` completados; limpieza final de residuos wrappers `empty_*` en el generador].
 - [x] Hacer limpieza local del repo: depurar archivos, artefactos, scripts y restos de baja utilidad actual para reducir ruido y costo de mantenimiento.
-- [ ] Hacer limpieza de GitHub y documentacion: depurar README, docs y referencias/metadatos del repo para reflejar solo flujos y superficies vigentes.
+- [x] Hacer limpieza de GitHub y documentacion: depurar README, docs y referencias/metadatos del repo para reflejar solo flujos y superficies vigentes.
 - [x] Agregar smoke tests minimos para web, desktop y PAYDAY 2.
 - [x] Agregar tests para logica pura critica (score, filtros, compare, budget, recomendaciones).
 - [x] Crear capa shared entre Steam Deals y PAYDAY 2 para config/cache/helpers reutilizables.

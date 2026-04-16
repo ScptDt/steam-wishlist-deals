@@ -114,7 +114,7 @@ Interfaz visual para configurar y ejecutar el script sin usar la terminal.
 
 > Para el módulo PAYDAY 2 usa `python3 payday2_web.py` (puerto 8081).
 
-## Desktop (Opción B: pywebview)
+## Desktop (pywebview)
 
 Baseline inicial para ejecutable de escritorio:
 
