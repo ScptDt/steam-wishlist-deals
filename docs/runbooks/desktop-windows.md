@@ -97,6 +97,18 @@ python .\steam_deals_web.py --no-open --port 8080
 - cierre limpio
 - notas de WebView2 o fallback browser
 
+## 9. Siguiente ejecucion prioritaria (si estas solo en Windows)
+
+Cuando no hay host nativo Linux/macOS disponible, usa este runbook para mantener avance sin bloqueo:
+
+1. Ejecutar `--doctor` y guardar resultado.
+2. Correr build desktop y confirmar `dist\\SteamToolsDesktop.exe`.
+3. Ejecutar `smoke_test_windows.ps1` y guardar `SMOKE_OK`/`SMOKE_FAIL`.
+4. Hacer smoke funcional minimo manual en UI (preflight + run + outputs + cierre limpio).
+5. Registrar evidencia en `PENDIENTES.md` (Bitacora) con fecha, resultado y siguiente paso.
+
+Esto mantiene el proyecto en movimiento mientras la validacion manual Linux/macOS queda en espera de host nativo.
+
 ## Problemas comunes
 
 ### Falta WebView2

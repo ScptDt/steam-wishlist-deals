@@ -1405,6 +1405,7 @@ def save_price_cache(steam_id: str, fetched: dict) -> None:
 # ─────────────────────────────────────────────
 
 BATCH_SIZE = 20
+ENTRY_REFRESH_TTL_HOURS = 24
 
 
 def _fetch_single(appid: str, country: str, delay: float) -> dict | None:
@@ -1464,6 +1465,8 @@ def get_deals_from_wishlist(
         color_dim=C.DIM,
         color_reset=C.RST,
         batch_size=BATCH_SIZE,
+        entry_ttl_hours=ENTRY_REFRESH_TTL_HOURS,
+        current_time_fn=time.time,
     )
 
 

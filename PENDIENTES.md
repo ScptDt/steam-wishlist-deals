@@ -15,8 +15,8 @@ No se mantienen documentos paralelos de planificacion; este archivo es la unica 
 ## Estado General
 
 - Objetivo: llevar Steam Tools a una experiencia ultra user friendly y preparada para ejecutable desktop.
-- Fase actual: P2 en validacion cross-platform.
-- Item activo: documentar estado P2 y dejar runbook manual listo para ejecucion posterior en Linux/macOS.
+- Fase actual: P2 en validacion cross-platform (cierre manual pendiente por host nativo).
+- Item activo: avanzar con pendientes no bloqueados desde Windows mientras Linux/macOS quedan en espera de host nativo.
 
 ## Pendientes Priorizados
 
@@ -282,6 +282,25 @@ P2 se considera **cerrado** cuando se cumpla TODO:
 - El runbook para cierre de P2 ya esta documentado en `README.md` y en `docs/runbooks/desktop-{linux,macos,windows}.md`; el criterio de evidencia queda definido en este archivo.
 - Siguiente reactivacion: correr el smoke funcional largo de Linux (wishlist real 2K+ juegos: preflight, run completo, outputs y cierre limpio) en una ventana amplia; luego ejecutar checklist manual macOS y despues pegar evidencia final en bitacora para cierre P2.
 
+## Plan inmediato (Windows / No bloqueado)
+
+Mientras no haya host nativo Linux/macOS disponible para cierre manual de P2, la ejecucion recomendada es:
+
+1. **Consolidar evidencia Windows desktop (runbook + smoke funcional manual)**
+   - Repetir build + apertura local + smoke rapido + smoke funcional minimo y actualizar bitacora.
+2. **Optimizacion de velocidad (P0) para wishlists grandes**
+   - Cache mas agresivo (24h), mayor concurrencia de fetch y estrategia incremental por timestamps. [Parcial: cache policy ajustada para expirar en el borde del TTL (`>= 24h`) y refresh incremental por entrada con `_fetched_at`; validado con tests. Pendiente: subir concurrencia de fetch.]
+3. **Output/Export de valor inmediato**
+   - Export a Obsidian/Notion con frontmatter YAML.
+4. **Dashboard historico HTML**
+   - Navegacion entre runs + comparativa visual de precios.
+5. **Alertas inteligentes**
+   - Minimo historico / bundles activos / cambios relevantes entre runs.
+
+Notas:
+- Este plan no bloquea el cierre futuro de P2; solo evita tiempo muerto mientras falta host nativo.
+- El cierre formal de P2 sigue condicionado a evidencia manual Linux + macOS segun criterio de Done.
+
 ## Bitacora Cross-Platform por OS
 
 | Fecha | Plataforma | Estado | Incidencias | Proximo paso |
@@ -356,6 +375,8 @@ P2 se considera **cerrado** cuando se cumpla TODO:
 - 2026-04-16: Se agregan runbooks manuales por plataforma en `docs/runbooks/desktop-linux.md`, `docs/runbooks/desktop-macos.md` y `docs/runbooks/desktop-windows.md`; consolidan precondiciones, doctor, build, smoke, fallback y evidencia reproducible sin convertir el flujo en instalador.
 - 2026-04-16: Quick wins de salida/automatizacion completados en Steam Deals: nuevo artifact `.json`, endpoint local `GET /api/latest-report`, helper para localizar el ultimo artifact en `steam_deals_run_output.py` y soporte en Web UI/fallback para abrir/copiar el ultimo JSON, abrir el ultimo Share HTML, empty state sin JSON y tarjeta-resumen del ultimo run.
 - 2026-04-16: Quick wins de recomendacion/documentacion completados: Top Picks y Budget Mode ahora muestran `recommendation` + `score_reasons`; `README.md` documenta export JSON, endpoint local y ejemplos mini de automatizacion (`curl`, `jq`, Python stdlib).
+- 2026-04-16: Decision operativa actualizada: sin host nativo Linux/macOS disponible en esta iteracion, P2 queda en estado parcial documentado y se prioriza avance Windows/no bloqueado (documentacion + backlog ejecutable).
+- 2026-04-16: Avance Windows/no bloqueado en optimizacion de velocidad: cache de precios ahora expira exactamente al TTL (24h) y se habilita refresh incremental por entrada via timestamp `_fetched_at` (solo re-fetch de appids stale o faltantes). Se robustecio fallback individual cuando un batch devuelve null (incluyendo batch unitario). Validacion OK con pruebas dirigidas (`4 passed`, `3 passed`) y barrido ampliado de cache/enrichment (`17 passed`).
 
 ## Backlog de Features (Propuestos - Planning)
 
@@ -397,7 +418,7 @@ P2 se considera **cerrado** cuando se cumpla TODO:
 
 ### Optimizacion (Velocidad - P0)
 
-- [ ] Cache mas agresivo para wishlists grandes (24h stale time)
+- [ ] Cache mas agresivo para wishlists grandes (24h stale time). [Parcial implementado: expiracion exacta al borde TTL y cobertura de tests.]
 - [ ] Aumentar parallel fetching (de 5-10 a 50 concurrentes)
 - [ ] Usar batch API de Steam para multiples juegos (reducir requests)
-- [ ] Fetch inteligente: solo actualizar precios que cambiaron (comparar timestamps)
+- [ ] Fetch inteligente: solo actualizar precios que cambiaron (comparar timestamps). [Parcial implementado: timestamp por entrada `_fetched_at` para decidir stale/missing y refrescar selectivamente.]

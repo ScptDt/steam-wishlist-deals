@@ -372,7 +372,7 @@ Runbooks detallados por plataforma:
 
 Usa esta secuencia en host nativo Linux y macOS. Copia/pega los resultados en `PENDIENTES.md` (Bitácora Cross-Platform por OS).
 
-> Estado actual: este runbook queda **preparado para ejecución posterior**. En la iteración actual no se ejecutó validación manual en host nativo Linux/macOS; la evidencia disponible es CI parcial (run `24487556896`).
+> Estado actual: este runbook queda **preparado para ejecución posterior**. En la iteración actual no se ejecutó validación manual en host nativo Linux/macOS por no contar con ese host; la evidencia disponible es CI parcial (run `24487556896`) y validación avanzada Linux en entorno local documentada en `PENDIENTES.md`.
 
 > Nota de capacidad: si tu wishlist real es muy grande (por ejemplo 2K+ juegos), el smoke funcional Linux no debe tratarse como prueba corta; conviene reservar una ventana amplia antes de ejecutarlo.
 

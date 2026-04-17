@@ -70,6 +70,7 @@ from steam_deals_family import (
     cross_hltb_with_family_context as module_cross_hltb_with_family_context,
 )
 from steam_deals_prices import (
+    count_refresh_candidates as module_count_refresh_candidates,
     get_deals_from_wishlist as module_get_deals_from_wishlist,
     load_price_cache as module_load_price_cache,
     parse_release_year as module_parse_release_year,
@@ -199,12 +200,19 @@ class ConfigTests(unittest.TestCase):
             stdin=FakeStdin(),
             exit_fn=lambda _code: None,
             argv=[
-                "--vanity", "BG00G",
-                "--output", "/tmp/out",
-                "--discount", "30",
-                "--genre", "indie", "roguelike",
-                "--top", "5",
-                "--schedule", "6",
+                "--vanity",
+                "BG00G",
+                "--output",
+                "/tmp/out",
+                "--discount",
+                "30",
+                "--genre",
+                "indie",
+                "roguelike",
+                "--top",
+                "5",
+                "--schedule",
+                "6",
             ],
         )
 
@@ -263,7 +271,9 @@ class PresentationHelpersTests(unittest.TestCase):
         grouped = module_group_by_tier(deals)
 
         self.assertEqual(top_tags, ["Roguelike", "Deckbuilder"])
-        self.assertEqual([name for name, games in grouped if games], ["90%+", "80–89%", "50–59%"])
+        self.assertEqual(
+            [name for name, games in grouped if games], ["90%+", "80–89%", "50–59%"]
+        )
 
     def test_players_multiplayer_and_achievements_badges_keep_format(self) -> None:
         players = module_players_badge({"players": {"owners": "200,000 .. 500,000"}})
@@ -291,7 +301,9 @@ class EnrichmentTests(unittest.TestCase):
         def default_scoped_runtime():
             return module_build_scoped_cache_runtime(
                 load_cache=lambda _steam_id: ({}, 0.0),
-                select_cache=lambda *_args, **_kwargs: SimpleNamespace(status="empty", cache={}, missing_ids=()),
+                select_cache=lambda *_args, **_kwargs: SimpleNamespace(
+                    status="empty", cache={}, missing_ids=()
+                ),
                 fetch_data=lambda _appids, cached: dict(cached),
                 save_cache=lambda _steam_id, _data: None,
                 ttl_hours=24,
@@ -300,14 +312,18 @@ class EnrichmentTests(unittest.TestCase):
         def default_global_runtime():
             return module_build_global_cache_runtime(
                 load_cache=lambda: ({}, 0.0),
-                select_cache=lambda *_args, **_kwargs: SimpleNamespace(status="empty", cache={}),
+                select_cache=lambda *_args, **_kwargs: SimpleNamespace(
+                    status="empty", cache={}
+                ),
                 fetch_data=lambda: {},
                 save_cache=lambda _data: None,
                 ttl_hours=24,
             )
 
         return module_build_enrichment_orchestration_contract(
-            progress=module_build_progress_callbacks(step=steps.append, emit=emits.append),
+            progress=module_build_progress_callbacks(
+                step=steps.append, emit=emits.append
+            ),
             messages=module_build_message_formatters(
                 ok=lambda text: f"OK:{text}",
                 warn=lambda text: f"WARN:{text}",
@@ -329,7 +345,13 @@ class EnrichmentTests(unittest.TestCase):
             ["10", "20"],
             {"10": {"desc": "Very Positive", "pct": 90, "total": 100}},
             fetch_parallel_fn=fake_fetch_parallel,
-            get_json=lambda _url, headers=None: {"query_summary": {"review_score_desc": "Positive", "total_positive": 40, "total_reviews": 50}},
+            get_json=lambda _url, headers=None: {
+                "query_summary": {
+                    "review_score_desc": "Positive",
+                    "total_positive": 40,
+                    "total_reviews": 50,
+                }
+            },
         )
 
         self.assertEqual(result["10"]["pct"], 90)
@@ -337,18 +359,29 @@ class EnrichmentTests(unittest.TestCase):
 
     def test_fetch_anticheat_db_parses_awacy_rows(self) -> None:
         data = [
-            {"storeIds": {"steam": 10}, "status": "Supported", "anticheats": ["EAC"], "native": False},
+            {
+                "storeIds": {"steam": 10},
+                "status": "Supported",
+                "anticheats": ["EAC"],
+                "native": False,
+            },
             {"storeIds": {}, "status": "Broken"},
         ]
 
         result = module_fetch_anticheat_db(get_json=lambda _url, headers=None: data)
 
-        self.assertEqual(result, {"10": {"status": "Supported", "anticheats": ["EAC"], "native": False}})
+        self.assertEqual(
+            result,
+            {"10": {"status": "Supported", "anticheats": ["EAC"], "native": False}},
+        )
 
     def test_load_tags_cache_migrates_old_flat_format(self) -> None:
         tags, age = module_load_tags_cache(
             Path("/tmp/unused.json"),
-            load_timestamped_cache=lambda _file, _key: ({"10": {"Roguelike": 100}}, 12.0),
+            load_timestamped_cache=lambda _file, _key: (
+                {"10": {"Roguelike": 100}},
+                12.0,
+            ),
         )
 
         self.assertEqual(age, 12.0)
@@ -375,7 +408,9 @@ class EnrichmentTests(unittest.TestCase):
         self.assertEqual(result["10"]["count"], 10)
         self.assertEqual(result["20"], {"count": 2, "avg_completion": 15.0})
 
-    def test_reviews_and_deck_orchestration_preserve_step_order_and_messages(self) -> None:
+    def test_reviews_and_deck_orchestration_preserve_step_order_and_messages(
+        self,
+    ) -> None:
         steps: list[str] = []
         emits: list[str] = []
         review_saves: list[tuple[str, dict]] = []
@@ -421,10 +456,13 @@ class EnrichmentTests(unittest.TestCase):
             contract=contract,
         )
 
-        self.assertEqual(steps, [
-            "Obteniendo reviews de Steam...",
-            "Obteniendo compatibilidad Steam Deck...",
-        ])
+        self.assertEqual(
+            steps,
+            [
+                "Obteniendo reviews de Steam...",
+                "Obteniendo compatibilidad Steam Deck...",
+            ],
+        )
         self.assertEqual(
             emits,
             [
@@ -436,10 +474,14 @@ class EnrichmentTests(unittest.TestCase):
         )
         self.assertEqual(reviews_data, {"10": {"pct": 90}, "20": {"pct": 80}})
         self.assertEqual(deck_data, {"10": 3, "20": 2})
-        self.assertEqual(review_saves, [("steam-id", {"10": {"pct": 90}, "20": {"pct": 80}})])
+        self.assertEqual(
+            review_saves, [("steam-id", {"10": {"pct": 90}, "20": {"pct": 80}})]
+        )
         self.assertEqual(deck_saves, [("steam-id", {"10": 3, "20": 2})])
 
-    def test_linux_tags_and_achievements_orchestration_keep_observable_outputs(self) -> None:
+    def test_linux_tags_and_achievements_orchestration_keep_observable_outputs(
+        self,
+    ) -> None:
         steps: list[str] = []
         emits: list[str] = []
         protondb_saves: list[tuple[str, dict]] = []
@@ -458,7 +500,9 @@ class EnrichmentTests(unittest.TestCase):
                     missing_ids=("20",),
                 ),
                 fetch_data=lambda _appids, cached: {**cached, "20": {"tier": "native"}},
-                save_cache=lambda steam_id, data: protondb_saves.append((steam_id, data)),
+                save_cache=lambda steam_id, data: protondb_saves.append(
+                    (steam_id, data)
+                ),
                 ttl_hours=24,
             ),
             anticheat_runtime=module_build_global_cache_runtime(
@@ -478,19 +522,27 @@ class EnrichmentTests(unittest.TestCase):
                     cache={},
                     missing_ids=("10", "20"),
                 ),
-                fetch_data=lambda _appids, _cached: {"10": {"tags": {"Action": 100}}, "20": {}},
+                fetch_data=lambda _appids, _cached: {
+                    "10": {"tags": {"Action": 100}},
+                    "20": {},
+                },
                 save_cache=lambda steam_id, data: tag_saves.append((steam_id, data)),
                 ttl_hours=24,
             ),
             achievements_runtime=module_build_scoped_cache_runtime(
-                load_cache=lambda _steam_id: ({"10": {"count": 10, "avg_completion": 12.0}}, 4.0),
+                load_cache=lambda _steam_id: (
+                    {"10": {"count": 10, "avg_completion": 12.0}},
+                    4.0,
+                ),
                 select_cache=lambda *_args, **_kwargs: SimpleNamespace(
                     status="valid",
                     cache={"10": {"count": 10, "avg_completion": 12.0}},
                     missing_ids=(),
                 ),
                 fetch_data=lambda _appids, cached: dict(cached),
-                save_cache=lambda steam_id, data: achievement_saves.append((steam_id, data)),
+                save_cache=lambda steam_id, data: achievement_saves.append(
+                    (steam_id, data)
+                ),
                 ttl_hours=24,
             ),
         )
@@ -514,11 +566,14 @@ class EnrichmentTests(unittest.TestCase):
             contract=contract,
         )
 
-        self.assertEqual(steps, [
-            "Obteniendo datos Linux (ProtonDB + Anti-Cheat)...",
-            "Obteniendo tags de Steam...",
-            "Obteniendo achievements...",
-        ])
+        self.assertEqual(
+            steps,
+            [
+                "Obteniendo datos Linux (ProtonDB + Anti-Cheat)...",
+                "Obteniendo tags de Steam...",
+                "Obteniendo achievements...",
+            ],
+        )
         self.assertEqual(
             emits,
             [
@@ -532,14 +587,24 @@ class EnrichmentTests(unittest.TestCase):
                 "  OK:1/2 deals con achievements",
             ],
         )
-        self.assertEqual(protondb_data, {"10": {"tier": "platinum"}, "20": {"tier": "native"}})
+        self.assertEqual(
+            protondb_data, {"10": {"tier": "platinum"}, "20": {"tier": "native"}}
+        )
         self.assertEqual(anticheat_data, {"10": {"status": "Denied"}})
         self.assertEqual(tags_data, {"10": {"tags": {"Action": 100}}, "20": {}})
-        self.assertEqual(achievements_data, {"10": {"count": 10, "avg_completion": 12.0}})
+        self.assertEqual(
+            achievements_data, {"10": {"count": 10, "avg_completion": 12.0}}
+        )
         self.assertEqual(anticheat_fetch_calls, [])
-        self.assertEqual(protondb_saves, [("", {"10": {"tier": "platinum"}, "20": {"tier": "native"}})])
+        self.assertEqual(
+            protondb_saves,
+            [("", {"10": {"tier": "platinum"}, "20": {"tier": "native"}})],
+        )
         self.assertEqual(tag_saves, [("", {"10": {"tags": {"Action": 100}}, "20": {}})])
-        self.assertEqual(achievement_saves, [("steam-id", {"10": {"count": 10, "avg_completion": 12.0}})])
+        self.assertEqual(
+            achievement_saves,
+            [("steam-id", {"10": {"count": 10, "avg_completion": 12.0}})],
+        )
 
 
 class PriceCacheTests(unittest.TestCase):
@@ -569,6 +634,19 @@ class PriceCacheTests(unittest.TestCase):
         self.assertEqual(decision.cache, {})
         self.assertEqual(decision.missing_ids, ("10", "20"))
 
+    def test_select_scoped_cache_expires_exactly_at_ttl_boundary(self) -> None:
+        decision = module_select_scoped_cache(
+            ["10", "20"],
+            {"10": {"discount_percent": 70}},
+            24.0,
+            no_cache=False,
+            ttl_hours=24,
+        )
+
+        self.assertEqual(decision.status, "expired")
+        self.assertEqual(decision.cache, {})
+        self.assertEqual(decision.missing_ids, ("10", "20"))
+
     def test_select_global_cache_bypasses_when_no_cache_is_enabled(self) -> None:
         decision = module_select_global_cache(
             {"10": {"status": "Supported"}},
@@ -578,6 +656,17 @@ class PriceCacheTests(unittest.TestCase):
         )
 
         self.assertEqual(decision.status, "bypass")
+        self.assertEqual(decision.cache, {})
+
+    def test_select_global_cache_expires_exactly_at_ttl_boundary(self) -> None:
+        decision = module_select_global_cache(
+            {"10": {"status": "Supported"}},
+            168.0,
+            no_cache=False,
+            ttl_hours=168,
+        )
+
+        self.assertEqual(decision.status, "expired")
         self.assertEqual(decision.cache, {})
 
     def test_clear_cache_files_only_unlinks_existing_paths(self) -> None:
@@ -625,13 +714,17 @@ class PriceCacheTests(unittest.TestCase):
             }
         }
 
-        result = module_process_app_entry("10", data, parse_release_year_fn=module_parse_release_year)
+        result = module_process_app_entry(
+            "10", data, parse_release_year_fn=module_parse_release_year
+        )
 
         self.assertEqual(result["release_year"], 2011)
         self.assertEqual(result["description"], "Test description")
         self.assertEqual(result["linux_native"], True)
 
-    def test_get_deals_from_wishlist_falls_back_to_individual_fetch_and_preserves_deal_shape(self) -> None:
+    def test_get_deals_from_wishlist_falls_back_to_individual_fetch_and_preserves_deal_shape(
+        self,
+    ) -> None:
         fetched_cache = {}
 
         def fake_batch_get_json(_url, headers=None):
@@ -670,7 +763,9 @@ class PriceCacheTests(unittest.TestCase):
             monotonic_fn=lambda: 0.0,
             save_price_cache_fn=lambda _steam_id, _cache: None,
             fetch_single_fn=fake_fetch_single,
-            process_app_entry_fn=lambda appid, data: module_process_app_entry(appid, data, parse_release_year_fn=module_parse_release_year),
+            process_app_entry_fn=lambda appid, data: module_process_app_entry(
+                appid, data, parse_release_year_fn=module_parse_release_year
+            ),
             emit=lambda *_args, **_kwargs: None,
             warn=lambda text: text,
             dim=lambda text: text,
@@ -680,10 +775,122 @@ class PriceCacheTests(unittest.TestCase):
         self.assertEqual([deal["appid"] for deal in deals], ["10"])
         self.assertEqual(deals[0]["price_raw"], 600)
 
+    def test_count_refresh_candidates_reports_missing_and_stale_entries(self) -> None:
+        now_ts = 200000.0
+        cache = {
+            "10": {"discount_percent": 70, "_fetched_at": now_ts - (2 * 3600)},
+            "20": {"discount_percent": 60, "_fetched_at": now_ts - (30 * 3600)},
+            "30": {"discount_percent": 50},
+        }
+
+        missing, stale = module_count_refresh_candidates(
+            ["10", "20", "30", "40"],
+            cache,
+            now_ts=now_ts,
+            entry_ttl_hours=24,
+        )
+
+        self.assertEqual(missing, 1)
+        self.assertEqual(stale, 2)
+
+    def test_get_deals_from_wishlist_refetches_stale_entries_and_stamps_timestamp(
+        self,
+    ) -> None:
+        now_ts = 200000.0
+        stale_ts = now_ts - (30 * 3600)
+        fresh_ts = now_ts - (2 * 3600)
+        fetched_cache = {
+            "10": {
+                "name": "Game 10",
+                "type": "game",
+                "discount_percent": 60,
+                "price_final": "$6",
+                "price_original": "$15",
+                "price_final_raw": 600,
+                "genres": ["action"],
+                "release_year": 2020,
+                "description": "desc",
+                "linux_native": False,
+                "metacritic_score": 80,
+                "metacritic_url": "meta",
+                "categories": [1],
+                "_fetched_at": stale_ts,
+            },
+            "20": {
+                "name": "Game 20",
+                "type": "game",
+                "discount_percent": 60,
+                "price_final": "$6",
+                "price_original": "$15",
+                "price_final_raw": 600,
+                "genres": ["action"],
+                "release_year": 2020,
+                "description": "desc",
+                "linux_native": False,
+                "metacritic_score": 80,
+                "metacritic_url": "meta",
+                "categories": [1],
+                "_fetched_at": fresh_ts,
+            },
+        }
+
+        fetched_ids: list[str] = []
+
+        def fake_fetch_single(appid, _country, _delay):
+            fetched_ids.append(appid)
+            return {
+                appid: {
+                    "success": True,
+                    "data": {
+                        "name": f"Game {appid}",
+                        "type": "game",
+                        "price_overview": {
+                            "discount_percent": 70,
+                            "final_formatted": "$7",
+                            "initial_formatted": "$20",
+                            "final": 700,
+                        },
+                        "genres": [{"description": "Action"}],
+                        "release_date": {"coming_soon": False, "date": "2020"},
+                        "short_description": "desc",
+                        "platforms": {"linux": False},
+                        "metacritic": {"score": 81, "url": "meta"},
+                        "categories": [{"id": 1}],
+                    },
+                }
+            }
+
+        deals, total = module_get_deals_from_wishlist(
+            ["10", "20"],
+            fetched_cache,
+            "steam-id",
+            min_discount=50,
+            get_json=lambda _url, headers=None: {},
+            sleep_fn=lambda _seconds: None,
+            monotonic_fn=lambda: 0.0,
+            current_time_fn=lambda: now_ts,
+            save_price_cache_fn=lambda _steam_id, _cache: None,
+            fetch_single_fn=fake_fetch_single,
+            process_app_entry_fn=lambda appid, data: module_process_app_entry(
+                appid, data, parse_release_year_fn=module_parse_release_year
+            ),
+            emit=lambda *_args, **_kwargs: None,
+            warn=lambda text: text,
+            dim=lambda text: text,
+        )
+
+        self.assertEqual(total, 1)
+        self.assertEqual(fetched_ids, ["10"])
+        self.assertEqual([deal["appid"] for deal in deals], ["10", "20"])
+        self.assertEqual(fetched_cache["10"].get("_fetched_at"), now_ts)
+        self.assertEqual(fetched_cache["20"].get("_fetched_at"), fresh_ts)
+
 
 class RunOutputTests(unittest.TestCase):
     def test_build_output_md_path_sanitizes_sale_name(self) -> None:
-        output = module_build_output_md_path("/tmp/out", 'Steam: Sale/?*', today_obj=date(2026, 4, 14))
+        output = module_build_output_md_path(
+            "/tmp/out", "Steam: Sale/?*", today_obj=date(2026, 4, 14)
+        )
 
         self.assertEqual(output, Path("/tmp/out/Steam Deals Steam Sale 2026-04-14.md"))
 
@@ -694,13 +901,25 @@ class RunOutputTests(unittest.TestCase):
             include_csv=True,
         )
 
-        self.assertEqual(artifacts.output_md, Path("/tmp/out/Steam Deals 2026-04-14.md"))
-        self.assertEqual(artifacts.output_html, Path("/tmp/out/Steam Deals 2026-04-14.html"))
-        self.assertEqual(artifacts.output_share, Path("/tmp/out/Steam Deals Share 2026-04-14.html"))
-        self.assertEqual(artifacts.output_json, Path("/tmp/out/Steam Deals 2026-04-14.json"))
-        self.assertEqual(artifacts.output_csv, Path("/tmp/out/Steam Deals 2026-04-14.csv"))
+        self.assertEqual(
+            artifacts.output_md, Path("/tmp/out/Steam Deals 2026-04-14.md")
+        )
+        self.assertEqual(
+            artifacts.output_html, Path("/tmp/out/Steam Deals 2026-04-14.html")
+        )
+        self.assertEqual(
+            artifacts.output_share, Path("/tmp/out/Steam Deals Share 2026-04-14.html")
+        )
+        self.assertEqual(
+            artifacts.output_json, Path("/tmp/out/Steam Deals 2026-04-14.json")
+        )
+        self.assertEqual(
+            artifacts.output_csv, Path("/tmp/out/Steam Deals 2026-04-14.csv")
+        )
 
-    def test_resolve_previous_context_uses_markdown_fallback_only_without_previous_run(self) -> None:
+    def test_resolve_previous_context_uses_markdown_fallback_only_without_previous_run(
+        self,
+    ) -> None:
         result = module_resolve_previous_context(
             "/tmp/out",
             "Steam Deals 2026-04-14.md",
@@ -719,16 +938,32 @@ class RunOutputTests(unittest.TestCase):
 
         with TemporaryDirectory() as temp_dir:
             output_md = Path(temp_dir) / "Steam Deals 2026-04-14.md"
-            share_path = module_build_share_output_path(temp_dir, today_obj=date(2026, 4, 14))
-            module_write_artifact(output_md, "md", emit_event_fn=lambda event_type, **payload: emitted.append((event_type, payload)))
-            module_write_artifact(share_path, "share", emit_event_fn=lambda event_type, **payload: emitted.append((event_type, payload)))
+            share_path = module_build_share_output_path(
+                temp_dir, today_obj=date(2026, 4, 14)
+            )
+            module_write_artifact(
+                output_md,
+                "md",
+                emit_event_fn=lambda event_type, **payload: emitted.append(
+                    (event_type, payload)
+                ),
+            )
+            module_write_artifact(
+                share_path,
+                "share",
+                emit_event_fn=lambda event_type, **payload: emitted.append(
+                    (event_type, payload)
+                ),
+            )
 
             self.assertEqual(output_md.read_text(encoding="utf-8"), "md")
             self.assertEqual(share_path.read_text(encoding="utf-8"), "share")
 
         self.assertEqual(emitted[0][0], "file")
         self.assertTrue(emitted[0][1]["path"].endswith("Steam Deals 2026-04-14.md"))
-        self.assertTrue(emitted[1][1]["path"].endswith("Steam Deals Share 2026-04-14.html"))
+        self.assertTrue(
+            emitted[1][1]["path"].endswith("Steam Deals Share 2026-04-14.html")
+        )
 
     def test_find_latest_artifact_returns_newest_matching_file(self) -> None:
         with TemporaryDirectory() as temp_dir:
@@ -785,7 +1020,9 @@ class RunOutputTests(unittest.TestCase):
 
     def test_generate_json_serializes_summary_and_set_based_comparison(self) -> None:
         payload = generate_json(
-            deals=[{"appid": "10", "name": "Portal 2", "discount": 80, "price_final": "$8"}],
+            deals=[
+                {"appid": "10", "name": "Portal 2", "discount": 80, "price_final": "$8"}
+            ],
             backlog_on_sale=[],
             have_on_sale=[],
             vanity="BG00G",
@@ -819,7 +1056,10 @@ class RunOutputTests(unittest.TestCase):
         )
 
         self.assertEqual(new_count, 1)
-        self.assertEqual(summary, "  2 deals · 1 backlog · 1 nuevos · Top pick: Portal 2 (95.4) · Steam Deals 2026-04-14.md")
+        self.assertEqual(
+            summary,
+            "  2 deals · 1 backlog · 1 nuevos · Top pick: Portal 2 (95.4) · Steam Deals 2026-04-14.md",
+        )
 
     def test_emit_final_closeout_preserves_visible_summary_output(self) -> None:
         emitted = []
@@ -839,7 +1079,10 @@ class RunOutputTests(unittest.TestCase):
         )
 
         self.assertEqual(new_count, 1)
-        self.assertEqual(summary, "  2 deals · 1 backlog · 1 nuevos · Top pick: Portal 2 (95.4) · Steam Deals 2026-04-14.md")
+        self.assertEqual(
+            summary,
+            "  2 deals · 1 backlog · 1 nuevos · Top pick: Portal 2 (95.4) · Steam Deals 2026-04-14.md",
+        )
         self.assertEqual(
             emitted,
             [
@@ -860,8 +1103,22 @@ class RuntimeReportingTests(unittest.TestCase):
     def test_emit_event_prints_prefixed_json_only_in_web_mode(self) -> None:
         emitted = []
 
-        module_emit_event("progress", web_event_mode=True, emit=lambda text, **_kwargs: emitted.append(text), current=1, total=2, label="Paso")
-        module_emit_event("progress", web_event_mode=False, emit=lambda text, **_kwargs: emitted.append(text), current=2, total=2, label="Nope")
+        module_emit_event(
+            "progress",
+            web_event_mode=True,
+            emit=lambda text, **_kwargs: emitted.append(text),
+            current=1,
+            total=2,
+            label="Paso",
+        )
+        module_emit_event(
+            "progress",
+            web_event_mode=False,
+            emit=lambda text, **_kwargs: emitted.append(text),
+            current=2,
+            total=2,
+            label="Nope",
+        )
 
         self.assertEqual(len(emitted), 1)
         self.assertTrue(emitted[0].startswith("__STEAM_EVENT__"))
@@ -876,18 +1133,32 @@ class RuntimeReportingTests(unittest.TestCase):
             5,
             "Obteniendo wishlist...",
             emit=lambda text, **_kwargs: emitted.append(text),
-            emit_event_fn=lambda event_type, **payload: events.append((event_type, payload)),
+            emit_event_fn=lambda event_type, **payload: events.append(
+                (event_type, payload)
+            ),
             bold_fn=lambda text: f"<b>{text}</b>",
             color_cyan="[CYAN]",
             color_reset="[/CYAN]",
         )
 
-        self.assertEqual(emitted, ["\n[CYAN][2/5][/CYAN] <b>Obteniendo wishlist...</b>"])
-        self.assertEqual(events, [("progress", {"current": 2, "total": 5, "label": "Obteniendo wishlist..."})])
+        self.assertEqual(
+            emitted, ["\n[CYAN][2/5][/CYAN] <b>Obteniendo wishlist...</b>"]
+        )
+        self.assertEqual(
+            events,
+            [
+                (
+                    "progress",
+                    {"current": 2, "total": 5, "label": "Obteniendo wishlist..."},
+                )
+            ],
+        )
 
 
 class ApplyFiltersTests(unittest.TestCase):
-    def test_post_processing_preserves_hltb_hours_filtered_deals_and_top_picks(self) -> None:
+    def test_post_processing_preserves_hltb_hours_filtered_deals_and_top_picks(
+        self,
+    ) -> None:
         emitted: list[str] = []
         contract = module_build_post_processing_contract(
             messages=module_build_post_processing_message_formatters(
@@ -917,7 +1188,10 @@ class ApplyFiltersTests(unittest.TestCase):
 
         self.assertEqual(outputs.hltb_hours, {"a": 10.0, "b": 5.5})
         self.assertEqual([deal["appid"] for deal in outputs.deals], ["b", "c"])
-        self.assertEqual(outputs.top_picks, [{"appid": "b", "score": 99.0}, {"appid": "c", "score": 99.0}])
+        self.assertEqual(
+            outputs.top_picks,
+            [{"appid": "b", "score": 99.0}, {"appid": "c", "score": 99.0}],
+        )
         self.assertEqual(emitted, ["  OK:Filtros aplicados: 3 → 2 deals"])
 
     def test_filter_by_genres_returns_discount_sorted_matches(self) -> None:
@@ -974,13 +1248,19 @@ class HistoryAndTrendTests(unittest.TestCase):
                 "https://store.steampowered.com/app/10/\nhttps://store.steampowered.com/app/20/\n",
                 encoding="utf-8",
             )
-            (output_dir / "Steam Deals 2026-04-14.md").write_text("current", encoding="utf-8")
+            (output_dir / "Steam Deals 2026-04-14.md").write_text(
+                "current", encoding="utf-8"
+            )
 
-            previous_appids = load_previous_deal_appids(output_dir, "Steam Deals 2026-04-14.md")
+            previous_appids = load_previous_deal_appids(
+                output_dir, "Steam Deals 2026-04-14.md"
+            )
 
         self.assertEqual(previous_appids, {"10", "20"})
 
-    def test_compute_deal_comparison_tracks_new_changes_disappeared_and_streak(self) -> None:
+    def test_compute_deal_comparison_tracks_new_changes_disappeared_and_streak(
+        self,
+    ) -> None:
         current_deals = [
             {"appid": "a", "price_raw": 500, "price_final": "$5", "discount": 50},
             {"appid": "b", "price_raw": 900, "price_final": "$9", "discount": 60},
@@ -988,8 +1268,18 @@ class HistoryAndTrendTests(unittest.TestCase):
         previous_run = {
             "date": "2026-04-13",
             "deals": {
-                "a": {"name": "Alpha", "discount": 40, "price_final": "$6", "price_raw": 600},
-                "c": {"name": "Charlie", "discount": 30, "price_final": "$7", "price_raw": 700},
+                "a": {
+                    "name": "Alpha",
+                    "discount": 40,
+                    "price_final": "$6",
+                    "price_raw": 600,
+                },
+                "c": {
+                    "name": "Charlie",
+                    "discount": 30,
+                    "price_final": "$7",
+                    "price_raw": 700,
+                },
             },
         }
         run_history = [{"deals": {"a": {}, "b": {}}}, {"deals": {"a": {}}}]
@@ -1028,7 +1318,9 @@ class ItadAdapterTests(unittest.TestCase):
         emits: list[str] = []
 
         contract = module_build_itad_orchestration_contract(
-            progress=module_build_itad_progress_callbacks(step=steps.append, emit=emits.append),
+            progress=module_build_itad_progress_callbacks(
+                step=steps.append, emit=emits.append
+            ),
             messages=module_build_itad_message_formatters(
                 ok=lambda text: f"OK:{text}",
                 dim=lambda text: f"DIM:{text}",
@@ -1036,7 +1328,9 @@ class ItadAdapterTests(unittest.TestCase):
             runtime=module_build_itad_runtime(
                 lookup_games=lambda _appids, _key: {"10": "itad-10", "20": "itad-20"},
                 get_store_lows=lambda _ids, _key, country="MX": {"10": {"price": 100}},
-                get_current_prices=lambda _ids, _key, country="MX": {"20": {"store": "Fanatical", "price": 80}},
+                get_current_prices=lambda _ids, _key, country="MX": {
+                    "20": {"store": "Fanatical", "price": 80}
+                },
                 get_active_bundles=lambda _ids, _key, country="US": {
                     "10": [{"title": "Bundle A"}],
                     "20": [{"title": "Bundle B"}],
@@ -1044,7 +1338,9 @@ class ItadAdapterTests(unittest.TestCase):
             ),
         )
 
-        outputs = module_run_itad_orchestration(["10", "20", "30"], "itad-key", contract=contract)
+        outputs = module_run_itad_orchestration(
+            ["10", "20", "30"], "itad-key", contract=contract
+        )
 
         self.assertEqual(steps, ["Obteniendo datos de IsThereAnyDeal..."])
         self.assertEqual(
@@ -1058,7 +1354,9 @@ class ItadAdapterTests(unittest.TestCase):
         )
         self.assertEqual(outputs.itad_ids, {"10": "itad-10", "20": "itad-20"})
         self.assertEqual(outputs.historical_lows, {"10": {"price": 100}})
-        self.assertEqual(outputs.current_prices, {"20": {"store": "Fanatical", "price": 80}})
+        self.assertEqual(
+            outputs.current_prices, {"20": {"store": "Fanatical", "price": 80}}
+        )
         self.assertEqual(outputs.active_bundles["10"][0]["title"], "Bundle A")
 
     def test_itad_lookup_games_maps_found_entries_by_appid(self) -> None:
@@ -1068,7 +1366,12 @@ class ItadAdapterTests(unittest.TestCase):
                 {"found": False},
             ]
 
-        result = module_itad_lookup_games(["10", "20"], "key", post_json=fake_post_json, sleep_fn=lambda _seconds: None)
+        result = module_itad_lookup_games(
+            ["10", "20"],
+            "key",
+            post_json=fake_post_json,
+            sleep_fn=lambda _seconds: None,
+        )
 
         self.assertEqual(result, {"10": "itad-10"})
 
@@ -1087,7 +1390,12 @@ class ItadAdapterTests(unittest.TestCase):
                 }
             ]
 
-        result = module_itad_get_store_lows({"10": "itad-10"}, "key", post_json=fake_post_json, sleep_fn=lambda _seconds: None)
+        result = module_itad_get_store_lows(
+            {"10": "itad-10"},
+            "key",
+            post_json=fake_post_json,
+            sleep_fn=lambda _seconds: None,
+        )
 
         self.assertEqual(result["10"]["price"], 99)
         self.assertEqual(result["10"]["currency"], "MXN")
@@ -1099,13 +1407,26 @@ class ItadAdapterTests(unittest.TestCase):
                 {
                     "id": "itad-10",
                     "deals": [
-                        {"shop": {"id": 61, "name": "Steam"}, "price": {"amount": 100}, "url": "steam"},
-                        {"shop": {"id": 2, "name": "Fanatical"}, "price": {"amount": 80}, "url": "fan"},
+                        {
+                            "shop": {"id": 61, "name": "Steam"},
+                            "price": {"amount": 100},
+                            "url": "steam",
+                        },
+                        {
+                            "shop": {"id": 2, "name": "Fanatical"},
+                            "price": {"amount": 80},
+                            "url": "fan",
+                        },
                     ],
                 }
             ]
 
-        result = module_itad_get_current_prices({"10": "itad-10"}, "key", post_json=fake_post_json, sleep_fn=lambda _seconds: None)
+        result = module_itad_get_current_prices(
+            {"10": "itad-10"},
+            "key",
+            post_json=fake_post_json,
+            sleep_fn=lambda _seconds: None,
+        )
 
         self.assertEqual(result["10"]["store"], "Fanatical")
         self.assertEqual(result["10"]["price"], 80)
@@ -1128,12 +1449,19 @@ class ItadAdapterTests(unittest.TestCase):
                 ]
             }
 
-        result = module_itad_get_active_bundles({"10": "itad-10"}, "key", post_json=fake_post_json, sleep_fn=lambda _seconds: None)
+        result = module_itad_get_active_bundles(
+            {"10": "itad-10"},
+            "key",
+            post_json=fake_post_json,
+            sleep_fn=lambda _seconds: None,
+        )
 
         self.assertEqual(len(result["10"]), 1)
         self.assertEqual(result["10"][0]["title"], "Bundle A")
 
-    def test_new_only_falls_back_to_previous_appids_when_comparison_is_empty(self) -> None:
+    def test_new_only_falls_back_to_previous_appids_when_comparison_is_empty(
+        self,
+    ) -> None:
         deals = [{"appid": "a"}, {"appid": "b"}, {"appid": "c"}]
 
         filtered = apply_filters(
@@ -1150,7 +1478,9 @@ class ItadAdapterTests(unittest.TestCase):
 
 
 class WatchlistTests(unittest.TestCase):
-    def test_engagement_post_run_preserves_visible_outputs_and_notifications(self) -> None:
+    def test_engagement_post_run_preserves_visible_outputs_and_notifications(
+        self,
+    ) -> None:
         steps: list[str] = []
         emits: list[str] = []
         sent_notifications: list[tuple[dict, dict]] = []
@@ -1165,23 +1495,44 @@ class WatchlistTests(unittest.TestCase):
                 emit=emits.append,
             ),
             runtime=module_build_engagement_runtime(
-                load_watchlist=lambda: [{"appid": "10", "name": "Portal 2", "target_price": 9.0}],
+                load_watchlist=lambda: [
+                    {"appid": "10", "name": "Portal 2", "target_price": 9.0}
+                ],
                 check_watchlist_alerts=lambda _deals, _watchlist: [
-                    {"appid": "10", "name": "Portal 2", "price_final": "$8", "target_price": 9.0, "price_raw": 800}
+                    {
+                        "appid": "10",
+                        "name": "Portal 2",
+                        "price_final": "$8",
+                        "target_price": 9.0,
+                        "price_raw": 800,
+                    }
                 ],
                 compute_budget_picks=lambda _deals, budget, _top_picks, _watchlist_alerts: {
                     "budget": budget,
                     "games_count": 1,
                     "total_spent": 8.0,
                 },
-                build_gift_ideas=lambda _friend_set, _deals, _owned: [{"appid": "20", "name": "Hades"}],
-                build_notification_summary=lambda _deals, _comparison, _top_picks, _watchlist_alerts: {"total_deals": 1},
-                send_notifications=lambda filters, summary: sent_notifications.append((filters, summary)),
+                build_gift_ideas=lambda _friend_set, _deals, _owned: [
+                    {"appid": "20", "name": "Hades"}
+                ],
+                build_notification_summary=lambda _deals, _comparison, _top_picks, _watchlist_alerts: {
+                    "total_deals": 1
+                },
+                send_notifications=lambda filters, summary: sent_notifications.append(
+                    (filters, summary)
+                ),
             ),
         )
 
         outputs = module_run_engagement_post_run(
-            [{"appid": "10", "name": "Portal 2", "price_final": "$8", "price_raw": 800}],
+            [
+                {
+                    "appid": "10",
+                    "name": "Portal 2",
+                    "price_final": "$8",
+                    "price_raw": 800,
+                }
+            ],
             filters={"budget": 10.0, "telegram_token": "token"},
             top_picks=[{"appid": "10", "score": 95.0}],
             compare_data={"friend_set": {"20"}},
@@ -1207,7 +1558,10 @@ class WatchlistTests(unittest.TestCase):
         self.assertEqual(outputs.budget_result["games_count"], 1)
         self.assertEqual(outputs.gift_ideas[0]["appid"], "20")
         self.assertEqual(outputs.notification_summary, {"total_deals": 1})
-        self.assertEqual(sent_notifications, [({"budget": 10.0, "telegram_token": "token"}, {"total_deals": 1})])
+        self.assertEqual(
+            sent_notifications,
+            [({"budget": 10.0, "telegram_token": "token"}, {"total_deals": 1})],
+        )
 
     def test_save_and_load_watchlist_roundtrip(self) -> None:
         items = [{"appid": "10", "name": "Portal 2", "target_price": 99.0}]
@@ -1235,7 +1589,9 @@ class WatchlistTests(unittest.TestCase):
         self.assertEqual(handled, True)
         self.assertEqual(loaded[0]["name"], "Portal 2")
 
-    def test_check_watchlist_alerts_returns_matching_deals_with_target_price(self) -> None:
+    def test_check_watchlist_alerts_returns_matching_deals_with_target_price(
+        self,
+    ) -> None:
         deals = [{"appid": "10", "price_raw": 800, "discount": 50, "name": "Portal 2"}]
         watchlist = [{"appid": "10", "name": "Portal 2", "target_price": 9.0}]
 
@@ -1251,7 +1607,9 @@ class SteamAdapterTests(unittest.TestCase):
             None,
             "bg00g",
             get_json=lambda _url: {},
-            fetch_public_profile_xml=lambda _vanity: "<steamID64>76561198000000000</steamID64>",
+            fetch_public_profile_xml=lambda _vanity: (
+                "<steamID64>76561198000000000</steamID64>"
+            ),
         )
 
         self.assertEqual(steam_id, "76561198000000000")
@@ -1295,13 +1653,17 @@ class SteamAdapterTests(unittest.TestCase):
     def test_load_family_games_supports_dict_shape(self) -> None:
         with TemporaryDirectory() as temp_dir:
             family_path = Path(temp_dir) / "family.json"
-            family_path.write_text('{"10": "Portal 2", "20": "Hades"}', encoding="utf-8")
+            family_path.write_text(
+                '{"10": "Portal 2", "20": "Hades"}', encoding="utf-8"
+            )
 
             appids = module_load_family_games(family_path)
 
         self.assertEqual(appids, {"10", "20"})
 
-    def test_cross_hltb_with_family_context_passes_family_appids_to_matcher(self) -> None:
+    def test_cross_hltb_with_family_context_passes_family_appids_to_matcher(
+        self,
+    ) -> None:
         captured = {}
 
         def fake_cross_hltb(hltb, deals, *, family_appids):
@@ -1349,16 +1711,31 @@ class NotificationsTests(unittest.TestCase):
 
         self.assertEqual(summary, None)
 
-    def test_build_notification_summary_surfaces_top_picks_drops_and_watchlist(self) -> None:
+    def test_build_notification_summary_surfaces_top_picks_drops_and_watchlist(
+        self,
+    ) -> None:
         deals = [{"appid": "10", "name": "Portal 2"}]
         comparison = {
             "new_deals": {"10"},
-            "price_changes": {"10": {"direction": "down", "delta_raw": -200, "delta_str": "$2", "prev_price": "$10"}},
+            "price_changes": {
+                "10": {
+                    "direction": "down",
+                    "delta_raw": -200,
+                    "delta_str": "$2",
+                    "prev_price": "$10",
+                }
+            },
         }
-        top_picks = [{"name": "Portal 2", "discount": 80, "price_final": "$8", "score": 90.0}]
-        watchlist_alerts = [{"name": "Portal 2", "price_final": "$8", "target_price": 9.0}]
+        top_picks = [
+            {"name": "Portal 2", "discount": 80, "price_final": "$8", "score": 90.0}
+        ]
+        watchlist_alerts = [
+            {"name": "Portal 2", "price_final": "$8", "target_price": 9.0}
+        ]
 
-        summary = module_build_notification_summary(deals, comparison, top_picks, watchlist_alerts=watchlist_alerts)
+        summary = module_build_notification_summary(
+            deals, comparison, top_picks, watchlist_alerts=watchlist_alerts
+        )
 
         self.assertEqual(summary["new_count"], 1)
         self.assertEqual(summary["top_3"][0]["name"], "Portal 2")
@@ -1368,8 +1745,16 @@ class NotificationsTests(unittest.TestCase):
         ok = module_send_telegram(
             "token",
             "chat",
-            {"total_deals": 1, "new_count": 0, "top_3": [], "price_drops": [], "watchlist_hits": []},
-            post_json_request=lambda _url, _body, timeout=15: (_ for _ in ()).throw(RuntimeError("boom")),
+            {
+                "total_deals": 1,
+                "new_count": 0,
+                "top_3": [],
+                "price_drops": [],
+                "watchlist_hits": [],
+            },
+            post_json_request=lambda _url, _body, timeout=15: (_ for _ in ()).throw(
+                RuntimeError("boom")
+            ),
         )
 
         self.assertEqual(ok, False)
@@ -1377,18 +1762,36 @@ class NotificationsTests(unittest.TestCase):
     def test_send_discord_returns_true_when_request_succeeds(self) -> None:
         ok = module_send_discord(
             "https://discord.invalid/webhook",
-            {"total_deals": 1, "new_count": 0, "top_3": [], "price_drops": [], "watchlist_hits": []},
+            {
+                "total_deals": 1,
+                "new_count": 0,
+                "top_3": [],
+                "price_drops": [],
+                "watchlist_hits": [],
+            },
             post_json_request=lambda _url, _body, timeout=15: {},
         )
 
         self.assertEqual(ok, True)
 
-    def test_send_notifications_emits_success_messages_for_configured_channels(self) -> None:
+    def test_send_notifications_emits_success_messages_for_configured_channels(
+        self,
+    ) -> None:
         emitted = []
 
         module_send_notifications(
-            {"telegram_token": "token", "telegram_chat": "chat", "discord_webhook": "hook"},
-            {"total_deals": 1, "new_count": 0, "top_3": [], "price_drops": [], "watchlist_hits": []},
+            {
+                "telegram_token": "token",
+                "telegram_chat": "chat",
+                "discord_webhook": "hook",
+            },
+            {
+                "total_deals": 1,
+                "new_count": 0,
+                "top_3": [],
+                "price_drops": [],
+                "watchlist_hits": [],
+            },
             send_telegram_fn=lambda _token, _chat, _summary: True,
             send_discord_fn=lambda _webhook, _summary: True,
             emit=emitted.append,
@@ -1398,9 +1801,13 @@ class NotificationsTests(unittest.TestCase):
 
 
 class SchedulerTests(unittest.TestCase):
-    def test_parse_schedule_hours_returns_none_for_missing_or_invalid_values(self) -> None:
+    def test_parse_schedule_hours_returns_none_for_missing_or_invalid_values(
+        self,
+    ) -> None:
         self.assertEqual(module_parse_schedule_hours(["prog"]), None)
-        self.assertEqual(module_parse_schedule_hours(["prog", "--schedule", "oops"]), None)
+        self.assertEqual(
+            module_parse_schedule_hours(["prog", "--schedule", "oops"]), None
+        )
 
     def test_run_scheduled_runs_once_without_schedule(self) -> None:
         calls = []
@@ -1412,7 +1819,9 @@ class SchedulerTests(unittest.TestCase):
     def test_run_scheduled_runs_once_for_zero_schedule(self) -> None:
         calls = []
 
-        module_run_scheduled(lambda: calls.append("main"), argv=["prog", "--schedule", "0"])
+        module_run_scheduled(
+            lambda: calls.append("main"), argv=["prog", "--schedule", "0"]
+        )
 
         self.assertEqual(calls, ["main"])
 
@@ -1473,7 +1882,9 @@ class MatchingAndRecommendationTests(unittest.TestCase):
             {"appid": "3", "discount": 50, "name": "Mid"},
         ]
 
-        ideas = build_gift_ideas(friend_set={"1", "2", "3"}, deals=deals, owned={"2": "Owned"})
+        ideas = build_gift_ideas(
+            friend_set={"1", "2", "3"}, deals=deals, owned={"2": "Owned"}
+        )
 
         self.assertEqual([deal["appid"] for deal in ideas], ["3", "1"])
 
@@ -1496,7 +1907,9 @@ class MatchingAndRecommendationTests(unittest.TestCase):
     def test_cross_hltb_with_deals_preserves_expected_output_shape(self) -> None:
         hltb = {
             "backlog": [{"title": "Portal 2", "storefront": "Steam", "hours": 12.0}],
-            "completed": [{"title": "Half-Life 2", "storefront": "Steam", "hours": 15.0}],
+            "completed": [
+                {"title": "Half-Life 2", "storefront": "Steam", "hours": 15.0}
+            ],
             "playing": [],
             "retired": [],
         }
@@ -1521,7 +1934,9 @@ class MatchingAndRecommendationTests(unittest.TestCase):
             },
         ]
 
-        backlog_on_sale, have_on_sale = cross_hltb_with_deals(hltb, deals, family_appids={"1"})
+        backlog_on_sale, have_on_sale = cross_hltb_with_deals(
+            hltb, deals, family_appids={"1"}
+        )
 
         self.assertEqual(backlog_on_sale[0]["appid"], "1")
         self.assertEqual(backlog_on_sale[0]["in_family"], True)
@@ -1530,7 +1945,9 @@ class MatchingAndRecommendationTests(unittest.TestCase):
 
 
 class BudgetPickTests(unittest.TestCase):
-    def test_prioritizes_watchlist_hits_then_fills_remaining_budget_by_efficiency(self) -> None:
+    def test_prioritizes_watchlist_hits_then_fills_remaining_budget_by_efficiency(
+        self,
+    ) -> None:
         deals = [
             {"appid": "a", "price_raw": 1000, "discount": 50, "name": "Alpha"},
             {"appid": "b", "price_raw": 500, "discount": 50, "name": "Bravo"},
@@ -1541,7 +1958,9 @@ class BudgetPickTests(unittest.TestCase):
             {"appid": "b", "score": 10.0},
             {"appid": "c", "score": 95.0},
         ]
-        watchlist_alerts = [{"appid": "b", "price_raw": 500, "discount": 50, "name": "Bravo"}]
+        watchlist_alerts = [
+            {"appid": "b", "price_raw": 500, "discount": 50, "name": "Bravo"}
+        ]
 
         result = compute_budget_picks(
             deals=deals,
@@ -1555,7 +1974,9 @@ class BudgetPickTests(unittest.TestCase):
         self.assertEqual(result["total_spent"], 15.0)
         self.assertEqual(result["remaining"], 0.0)
         self.assertEqual(result["total_savings"], 15.0)
-        self.assertEqual(result["selected"][0]["recommendation"], "Solo si ya lo traías en radar")
+        self.assertEqual(
+            result["selected"][0]["recommendation"], "Solo si ya lo traías en radar"
+        )
         self.assertEqual(result["selected"][1]["recommendation"], "Comprar ahora")
 
 
@@ -1645,7 +2066,10 @@ class RankTopPicksTests(unittest.TestCase):
                     "metacritic_score": 90,
                     "categories": [2],
                     "recommendation": "Comprar ahora",
-                    "score_reasons": ["reviews muy positivas", "descuento muy raro de ver"],
+                    "score_reasons": [
+                        "reviews muy positivas",
+                        "descuento muy raro de ver",
+                    ],
                 }
             ],
         )
@@ -1679,7 +2103,10 @@ class RankTopPicksTests(unittest.TestCase):
                     "metacritic_score": 90,
                     "categories": [2],
                     "recommendation": "Comprar ahora",
-                    "score_reasons": ["reviews muy positivas", "descuento muy raro de ver"],
+                    "score_reasons": [
+                        "reviews muy positivas",
+                        "descuento muy raro de ver",
+                    ],
                 }
             ],
         )
@@ -1708,7 +2135,10 @@ class RankTopPicksTests(unittest.TestCase):
                         "price_final": "$10",
                         "score": 95.4,
                         "recommendation": "Comprar ahora",
-                        "score_reasons": ["reviews muy positivas", "descuento muy raro de ver"],
+                        "score_reasons": [
+                            "reviews muy positivas",
+                            "descuento muy raro de ver",
+                        ],
                     }
                 ],
                 "total_spent": 10,
@@ -1742,7 +2172,10 @@ class RankTopPicksTests(unittest.TestCase):
                         "price_final": "$10",
                         "score": 95.4,
                         "recommendation": "Comprar ahora",
-                        "score_reasons": ["reviews muy positivas", "descuento muy raro de ver"],
+                        "score_reasons": [
+                            "reviews muy positivas",
+                            "descuento muy raro de ver",
+                        ],
                     }
                 ],
                 "total_spent": 10,

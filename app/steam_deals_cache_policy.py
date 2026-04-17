@@ -36,7 +36,7 @@ def select_scoped_cache(
     if not normalized_cache:
         return CacheDecision("empty", {}, tuple(target_ids))
 
-    if cache_age > ttl_hours:
+    if cache_age >= ttl_hours:
         return CacheDecision("expired", {}, tuple(target_ids))
 
     return CacheDecision(
@@ -60,7 +60,7 @@ def select_global_cache(
     if not normalized_cache:
         return CacheDecision("empty", {})
 
-    if cache_age > ttl_hours:
+    if cache_age >= ttl_hours:
         return CacheDecision("expired", {})
 
     return CacheDecision("valid", normalized_cache)
