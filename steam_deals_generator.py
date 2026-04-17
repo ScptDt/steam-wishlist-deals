@@ -1570,8 +1570,16 @@ def apply_filters(
 # FETCH PARALELO (ThreadPoolExecutor)
 # ─────────────────────────────────────────────
 
-MAX_WORKERS = 8
+MAX_WORKERS = 12
 RATE_LIMIT_INTERVAL = 0.15
+
+
+def _resolve_max_workers(raw_value, default_value: int) -> int:
+    try:
+        value = int(raw_value)
+    except (TypeError, ValueError):
+        return default_value
+    return value if value >= 1 else default_value
 
 
 def _enrichment_bar(completed: int, total: int, width: int = 25) -> str:
@@ -3194,6 +3202,8 @@ def main():
         ITAD_KEY,
         FILTERS,
     ) = get_config()
+    global MAX_WORKERS
+    MAX_WORKERS = _resolve_max_workers(FILTERS.get("max_workers"), MAX_WORKERS)
     WEB_EVENT_MODE = bool(WEB_RUN)
     if not WEB_RUN and not INTERACTIVE:
         print(

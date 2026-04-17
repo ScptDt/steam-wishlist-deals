@@ -377,6 +377,7 @@ Notas:
 - 2026-04-16: Quick wins de recomendacion/documentacion completados: Top Picks y Budget Mode ahora muestran `recommendation` + `score_reasons`; `README.md` documenta export JSON, endpoint local y ejemplos mini de automatizacion (`curl`, `jq`, Python stdlib).
 - 2026-04-16: Decision operativa actualizada: sin host nativo Linux/macOS disponible en esta iteracion, P2 queda en estado parcial documentado y se prioriza avance Windows/no bloqueado (documentacion + backlog ejecutable).
 - 2026-04-16: Avance Windows/no bloqueado en optimizacion de velocidad: cache de precios ahora expira exactamente al TTL (24h) y se habilita refresh incremental por entrada via timestamp `_fetched_at` (solo re-fetch de appids stale o faltantes). Se robustecio fallback individual cuando un batch devuelve null (incluyendo batch unitario). Validacion OK con pruebas dirigidas (`4 passed`, `3 passed`) y barrido ampliado de cache/enrichment (`17 passed`).
+- 2026-04-16: Ajuste conservador de parallel fetching en enrichment: `MAX_WORKERS` sube de `8` a `12` (sin cambiar `rate_limit`, backoff ni fallback). Validacion de regresion OK en `tests/test_generator_logic.py -k "EnrichmentTests or PriceCacheTests"` (`17 passed`).
 
 ## Backlog de Features (Propuestos - Planning)
 
@@ -420,5 +421,6 @@ Notas:
 
 - [ ] Cache mas agresivo para wishlists grandes (24h stale time). [Parcial implementado: expiracion exacta al borde TTL y cobertura de tests.]
 - [ ] Aumentar parallel fetching (de 5-10 a 50 concurrentes)
+- [ ] Aumentar parallel fetching (de 5-10 a 50 concurrentes). [Parcial implementado: enrichment subio de `MAX_WORKERS 8 -> 12` en modo conservador y con regresion de tests OK.]
 - [ ] Usar batch API de Steam para multiples juegos (reducir requests)
 - [ ] Fetch inteligente: solo actualizar precios que cambiaron (comparar timestamps). [Parcial implementado: timestamp por entrada `_fetched_at` para decidir stale/missing y refrescar selectivamente.]

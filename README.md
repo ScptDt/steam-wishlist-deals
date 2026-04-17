@@ -106,7 +106,12 @@ python3 steam_deals_generator.py --vanity TU_VANITY_URL --itad-key TU_ITAD_KEY
 
 # Filtros
 python3 steam_deals_generator.py --vanity TU_VANITY_URL --discount 60 --max-price 300 --deck-only --sort score
+
+# Wishlist grande (ajuste conservador de paralelismo en enrichment)
+python3 steam_deals_generator.py --vanity TU_VANITY_URL --max-workers 16
 ```
+
+`--max-workers` controla el paralelismo de fetch en enrichment. Recomendación práctica: empezar en `12` (default), probar `16` si tu red/API responde bien y evitar valores muy altos para reducir riesgo de rate limit.
 
 ## Web UI
 
@@ -591,6 +596,7 @@ python3 steam_deals_generator.py --vanity TU_VANITY_URL \
 | `--discord-webhook` | URL del webhook de Discord |
 | `--schedule` | Ejecutar cada N horas |
 | `--family-json` | JSON de biblioteca familiar |
+| `--max-workers` | Workers de fetch paralelo para enrichment (default: 12; recomendado 12-16) |
 
 ## PAYDAY 2 DLC Tracker (detalle)
 

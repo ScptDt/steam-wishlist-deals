@@ -213,6 +213,8 @@ class ConfigTests(unittest.TestCase):
                 "5",
                 "--schedule",
                 "6",
+                "--max-workers",
+                "16",
             ],
         )
 
@@ -222,6 +224,7 @@ class ConfigTests(unittest.TestCase):
         self.assertEqual(result[7], ["indie", "roguelike"])
         self.assertEqual(result[11]["top"], 5)
         self.assertEqual(result[11]["schedule"], 6.0)
+        self.assertEqual(result[11]["max_workers"], 16)
 
     def test_get_config_handles_watchlist_and_exits_early(self) -> None:
         calls = []
