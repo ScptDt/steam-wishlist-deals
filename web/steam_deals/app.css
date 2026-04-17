@@ -257,6 +257,32 @@ details .details-body { padding-top: 0.75rem; }
 .history-summary-item { font-size: 0.82rem; color: var(--text2); }
 .history-summary-item strong { color: var(--text); font-size: 0.95rem; }
 
+.history-selection-summary {
+  margin-top: 0.75rem;
+  padding: 0.75rem 0.85rem;
+  border-radius: 8px;
+  border: 1px solid var(--card-border);
+  background: linear-gradient(180deg, var(--bg2), var(--bg));
+}
+
+.history-selection-summary-title {
+  font-size: 0.8rem;
+  color: var(--accent);
+  font-weight: 700;
+  margin-bottom: 0.35rem;
+}
+
+.history-selection-summary-lines {
+  display: grid;
+  gap: 0.25rem;
+  font-size: 0.8rem;
+  color: var(--text2);
+}
+
+.history-selection-summary-lines strong {
+  color: var(--text);
+}
+
 .history-status-chart {
   margin-top: 0.75rem;
   padding: 0.75rem 0.85rem;

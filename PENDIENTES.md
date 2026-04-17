@@ -290,11 +290,11 @@ Mientras no haya host nativo Linux/macOS disponible para cierre manual de P2, la
 1. **Consolidar evidencia Windows desktop (runbook + smoke funcional manual)**
    - Repetir build + apertura local + smoke rapido + smoke funcional minimo y actualizar bitacora.
 2. **Optimizacion de velocidad (P0) para wishlists grandes**
-   - Cache mas agresivo (24h), mayor concurrencia de fetch y estrategia incremental por timestamps. [Parcial: cache policy ajustada para expirar en el borde del TTL (`>= 24h`) y refresh incremental por entrada con `_fetched_at`; validado con tests. Pendiente: subir concurrencia de fetch.]
+   - Cache mas agresivo (24h), mayor concurrencia de fetch y estrategia incremental por timestamps. [Parcial: cache policy ajustada para expirar en el borde del TTL (`>= 24h`), refresh incremental por entrada con `_fetched_at`, fallos/null ya no quedan marcados como frescos y la UI compartida expone `max_workers` (incluyendo presets `rapido=12`, `completo=16`, `ahorro=8`); validado con tests/syntax checks. Pendiente: subir concurrencia por default/global.]
 3. **Output/Export de valor inmediato**
    - Export a Obsidian/Notion con frontmatter YAML. [Parcial avanzado: `--md-frontmatter` + guia de perfiles/checklist ya documentados en README; pendiente validacion manual final de importacion extremo a extremo en host real de Obsidian/Notion.]
 4. **Dashboard historico HTML**
-   - Navegacion entre runs + comparativa visual de precios. [Parcial implementado (MVP+3): selector Run A/Run B con paginado simple, busqueda de runs, quick compare de ultimos 2 runs, filtros por estado, orden por delta, persistencia local (`localStorage`), resumen por estado, Top Deltas (bajadas/subidas) y tendencia temporal simple (deals por run, ultimos 20 runs).]
+   - Navegacion entre runs + comparativa visual de precios. [Parcial implementado (MVP+3): selector Run A/Run B con paginado simple, busqueda de runs, quick compare de ultimos 2 runs, filtros por estado, orden por delta, persistencia local (`localStorage`), reset rapido de filtros, resumen visible de los runs autoseleccionados en quick compare, resumen por estado, Top Deltas (bajadas/subidas) y tendencia temporal simple (deals por run, ultimos 20 runs).]
 5. **Alertas inteligentes (v2)**
    - Implementacion base v2 completada (minimo historico global, bundles activos, subidas vs run anterior, nueva mejor oferta local y umbrales configurables).
    - **Pendiente por tiempo**: calibracion fina de umbrales y ejecucion/validacion manual completa en corrida larga real.
@@ -316,6 +316,9 @@ Notas:
 
 ## Bitacora
 
+- 2026-04-17: Se blindó el refresh incremental por `_fetched_at`: si un fetch de precios falla o devuelve `null`, esa entrada ya no queda marcada como fresca por 24h. El siguiente run la vuelve a tratar como retryable.
+- 2026-04-17: La UI compartida ahora expone `max_workers` en Filtros avanzados y los presets de Steam Deals tambien ajustan workers sugeridos (`rapido=12`, `completo=16`, `ahorro=8`) sin cambiar todavia el default global.
+- 2026-04-17: El dashboard historico gano un boton para restablecer filtros y un resumen visible de Run A / Run B al usar quick compare, para que la comparacion de los ultimos 2 runs sea mas clara.
 - 2026-04-17: El smoke largo Linux del desktop detecto un bug real de closeout final: `steam_deals_run_output.py` ya pasaba `smart_alerts` al resumen corto pero el wrapper compatible en `steam_deals_generator.py` no aceptaba ese argumento. Se corrigio el boundary, quedaron tests dirigidos en verde y la proxima corrida larga debe validar el cierre E2E sin crash.
 - 2026-04-17: La UI compartida Steam Deals ahora permite copiar y descargar el log visible de ejecucion; se hizo para no perder tracebacks largos durante validacion manual desktop/web.
 - 2026-04-17: El cache del desktop ya no se pierde en `_MEI`: se movio a ruta persistente de usuario en modo frozen y se agrego `--warm-cache` headless para precalentar `prices_cache.json` sin abrir UI. La v2 del warm-cache guarda logs automaticamente en carpeta `logs/` (o `<cache>/logs` cuando se usa ruta persistente/override).
@@ -436,8 +439,8 @@ Notas:
 
 ### Optimizacion (Velocidad - P0)
 
-- [ ] Cache mas agresivo para wishlists grandes (24h stale time). [Parcial implementado: expiracion exacta al borde TTL y cobertura de tests.]
+- [ ] Cache mas agresivo para wishlists grandes (24h stale time). [Parcial implementado: expiracion exacta al borde TTL, cobertura de tests y fallos/null ya no se congelan como fresh por `_fetched_at`.]
 - [ ] Aumentar parallel fetching (de 5-10 a 50 concurrentes)
-- [ ] Aumentar parallel fetching (de 5-10 a 50 concurrentes). [Parcial implementado: enrichment subio de `MAX_WORKERS 8 -> 12` en modo conservador y con regresion de tests OK.]
+- [ ] Aumentar parallel fetching (de 5-10 a 50 concurrentes). [Parcial implementado: enrichment subio de `MAX_WORKERS 8 -> 12` en modo conservador, la UI compartida ya expone `max_workers` y los presets aplican valores recomendados (`12/16/8`) con validacion OK.]
 - [ ] Usar batch API de Steam para multiples juegos (reducir requests)
 - [ ] Fetch inteligente: solo actualizar precios que cambiaron (comparar timestamps). [Parcial implementado: timestamp por entrada `_fetched_at` para decidir stale/missing y refrescar selectivamente.]

@@ -316,6 +316,7 @@ const btnHistoryPrevPage = $('btn-history-prev-page');
 const btnHistoryNextPage = $('btn-history-next-page');
 const historyPageInfo = $('history-page-info');
 const historySummary = $('history-summary');
+const historySelectionSummary = $('history-selection-summary');
 const historyStatusChart = $('history-status-chart');
 const historyTopDeltas = $('history-top-deltas');
 const historyTrend = $('history-trend');
@@ -334,6 +335,11 @@ let latestFilteredRuns = [];
 let executionLogEntries = [];
 let historyPage = 1;
 const HISTORY_PAGE_SIZE = 20;
+const PRESET_MAX_WORKERS = Object.freeze({
+  rapido: 12,
+  completo: 16,
+  ahorro: 8,
+});
 
 const HISTORY_FILTERS_STORAGE_KEY = 'steam_deals_history_filters_v1';
 const HISTORY_DEFAULT_FILTERS = Object.freeze({
@@ -412,6 +418,23 @@ function formatHistoryRunLabel(run) {
   const dealCount = Number(run.deal_count || 0);
   const saleName = run.sale_name ? String(run.sale_name) : 'Steam Deals';
   return `${datePart} · ${saleName} · ${dealCount} deals`;
+}
+
+function findHistoryRunById(runId) {
+  if (!runId) return null;
+  return (latestHistoryRuns || []).find(run => run && run.id === runId) || null;
+}
+
+function renderHistorySelectionSummary(leftRun, rightRun, {quick = false} = {}) {
+  if (!historySelectionSummary) return;
+  historySelectionSummary.innerHTML = `
+    <div class="history-selection-summary-title">${quick ? 'Quick compare activo' : 'Comparacion activa'}</div>
+    <div class="history-selection-summary-lines">
+      <div><strong>Run A:</strong> ${escapeHtml(formatHistoryRunLabel(leftRun))}</div>
+      <div><strong>Run B:</strong> ${escapeHtml(formatHistoryRunLabel(rightRun))}</div>
+    </div>
+  `;
+  historySelectionSummary.classList.remove('hidden');
 }
 
 function normalizeSearchValue(value) {
@@ -597,6 +620,10 @@ function renderHistoryStatusChart(summary) {
 }
 
 function clearHistoryComparison() {
+  if (historySelectionSummary) {
+    historySelectionSummary.innerHTML = '';
+    historySelectionSummary.classList.add('hidden');
+  }
   if (historySummary) {
     historySummary.innerHTML = '';
     historySummary.classList.add('hidden');
@@ -766,7 +793,7 @@ async function loadHistoryRuns() {
   refreshRunSelectorsFromState();
 }
 
-async function compareHistoryRuns() {
+async function compareHistoryRuns(options = {}) {
   if (!historyLeft || !historyRight) return;
   const left = historyLeft.value;
   const right = historyRight.value;
@@ -778,6 +805,9 @@ async function compareHistoryRuns() {
     appendLine('Selecciona runs distintos para la comparacion.', 'warn');
     return;
   }
+
+  const leftRun = findHistoryRunById(left);
+  const rightRun = findHistoryRunById(right);
 
   const includeSame = historyIncludeSame && historyIncludeSame.checked;
   const statusFilter = historyStatusFilter ? historyStatusFilter.value : 'all';
@@ -799,6 +829,7 @@ async function compareHistoryRuns() {
   if (summary.same == null && payload && payload.rows && Array.isArray(payload.rows)) {
     summary.same = payload.rows.filter(row => row && row.status === 'same').length;
   }
+  renderHistorySelectionSummary(leftRun, rightRun, {quick: !!options.quick});
   renderHistorySummary(summary);
   renderHistoryStatusChart(summary);
   renderHistoryRows(payload.rows || []);
@@ -840,6 +871,14 @@ function setActivePreset(name) {
   });
 }
 
+function applyPresetMaxWorkers(name) {
+  const input = $('max_workers');
+  const value = PRESET_MAX_WORKERS[name];
+  if (!input || !value) return null;
+  input.value = String(value);
+  return value;
+}
+
 function switchTab(name) {
   const dealsTab = $('tab-deals');
   const pd2Tab = $('tab-pd2');
@@ -862,6 +901,7 @@ function switchTab(name) {
 }
 
 function applyPreset(name) {
+  const maxWorkers = applyPresetMaxWorkers(name);
   if (name === 'rapido') {
     $('top').value = 10;
     $('discount').value = 60;
@@ -890,7 +930,10 @@ function applyPreset(name) {
     if (!$('max_price').value) $('max_price').value = '250';
   }
   setActivePreset(name);
-  appendLine('Preset aplicado: ' + name + '.', 'step');
+  appendLine(
+    'Preset aplicado: ' + name + (maxWorkers ? ` · workers ${maxWorkers}.` : '.'),
+    'step'
+  );
 }
 
 function detectErrorCategory(text) {
@@ -1752,7 +1795,7 @@ if (btnHistoryQuickCompare) {
       historyRight.value = source[0].id || '';
     }
     try {
-      await compareHistoryRuns();
+      await compareHistoryRuns({quick: true});
       appendLine('Quick compare: ultimos 2 runs.', 'ok');
     } catch (e) {
       appendLine('No se pudo ejecutar quick compare: ' + e.message, 'err');

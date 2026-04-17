@@ -23,7 +23,7 @@ Analiza tu wishlist de Steam y genera reportes detallados con deals, comparacion
 - **Comparar Wishlists** — Overlap con amigos + gift ideas
 - **Notificaciones** — Telegram y Discord webhook con resumen de cambios
 - **Scheduler** — Ejecución automática cada N horas
-- **Comparación entre runs** — Detecta deals nuevos, terminados, y bajadas de precio
+- **Comparación entre runs** — Detecta deals nuevos, terminados, y bajadas de precio; incluye quick compare de los últimos 2 runs y controles rápidos para restablecer filtros
 - **Alertas inteligentes v2** — Umbrales configurables por subida (`--alert-rise-pct`), margen sobre mínimo global (`--alert-global-margin-pct`) y priorización por score mínimo (`--alert-score-min`)
 
 ### Salida
@@ -119,7 +119,7 @@ python3 steam_deals_generator.py --vanity TU_VANITY_URL --warm-cache
 python3 steam_deals_generator.py --vanity TU_VANITY_URL --md-frontmatter
 ```
 
-`--max-workers` controla el paralelismo de fetch en enrichment. Recomendación práctica: empezar en `12` (default), probar `16` si tu red/API responde bien y evitar valores muy altos para reducir riesgo de rate limit. Este ajuste ya está expuesto también en **Filtros avanzados** de la UI compartida (web + desktop).
+`--max-workers` controla el paralelismo de fetch en enrichment. Recomendación práctica: empezar en `12` (default), probar `16` si tu red/API responde bien y evitar valores muy altos para reducir riesgo de rate limit. Este ajuste ya está expuesto también en **Filtros avanzados** de la UI compartida (web + desktop), y los presets ahora sugieren valores rápidos (`rapido=12`, `completo=16`, `ahorro=8`).
 
 ### Warm cache headless
 
