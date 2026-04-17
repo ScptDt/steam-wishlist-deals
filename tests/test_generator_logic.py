@@ -215,6 +215,7 @@ class ConfigTests(unittest.TestCase):
                 "6",
                 "--max-workers",
                 "16",
+                "--md-frontmatter",
             ],
         )
 
@@ -225,6 +226,7 @@ class ConfigTests(unittest.TestCase):
         self.assertEqual(result[11]["top"], 5)
         self.assertEqual(result[11]["schedule"], 6.0)
         self.assertEqual(result[11]["max_workers"], 16)
+        self.assertEqual(result[11]["md_frontmatter"], True)
 
     def test_get_config_handles_watchlist_and_exits_early(self) -> None:
         calls = []
@@ -1064,6 +1066,28 @@ class RunOutputTests(unittest.TestCase):
             "  2 deals · 1 backlog · 1 nuevos · Top pick: Portal 2 (95.4) · Steam Deals 2026-04-14.md",
         )
 
+    def test_build_final_summary_appends_smart_alerts_when_present(self) -> None:
+        new_count, summary = module_build_final_summary(
+            12.3,
+            [{"appid": "10"}, {"appid": "20"}],
+            [{"appid": "10"}],
+            {"10"},
+            [{"name": "Portal 2", "score": 95.4}],
+            Path("/tmp/Steam Deals 2026-04-14.md"),
+            {
+                "best_local_count": 2,
+                "price_up_count": 1,
+                "global_historical_low_count": 3,
+                "active_bundles_count": 2,
+            },
+        )
+
+        self.assertEqual(new_count, 1)
+        self.assertEqual(
+            summary,
+            "  2 deals · 1 backlog · 1 nuevos · Top pick: Portal 2 (95.4) · 2 mejor local · 1 subieron · 3 mín. global · 2 bundles activos · Steam Deals 2026-04-14.md",
+        )
+
     def test_emit_final_closeout_preserves_visible_summary_output(self) -> None:
         emitted = []
 
@@ -1092,6 +1116,44 @@ class RunOutputTests(unittest.TestCase):
                 "\n<g>──────────────────────────────────────────</g>",
                 "  **Listo** en 12.3s",
                 "  2 deals · 1 backlog · 1 nuevos · Top pick: Portal 2 (95.4) · Steam Deals 2026-04-14.md",
+                "<g>──────────────────────────────────────────</g>\n",
+            ],
+        )
+
+    def test_emit_final_closeout_includes_smart_alerts_in_visible_summary(self) -> None:
+        emitted = []
+
+        new_count, summary = module_emit_final_closeout(
+            12.3,
+            [{"appid": "10"}, {"appid": "20"}],
+            [{"appid": "10"}],
+            {"10"},
+            [{"name": "Portal 2", "score": 95.4}],
+            Path("/tmp/Steam Deals 2026-04-14.md"),
+            smart_alerts={
+                "best_local_count": 2,
+                "price_up_count": 1,
+                "global_historical_low_count": 3,
+                "active_bundles_count": 2,
+            },
+            build_final_summary_fn=module_build_final_summary,
+            emit_fn=emitted.append,
+            bold_fn=lambda text: f"**{text}**",
+            color_green="<g>",
+            color_reset="</g>",
+        )
+
+        self.assertEqual(new_count, 1)
+        self.assertEqual(
+            summary,
+            "  2 deals · 1 backlog · 1 nuevos · Top pick: Portal 2 (95.4) · 2 mejor local · 1 subieron · 3 mín. global · 2 bundles activos · Steam Deals 2026-04-14.md",
+        )
+        self.assertEqual(
+            emitted,
+            [
+                "\n<g>──────────────────────────────────────────</g>",
+                "  **Listo** en 12.3s",
+                "  2 deals · 1 backlog · 1 nuevos · Top pick: Portal 2 (95.4) · 2 mejor local · 1 subieron · 3 mín. global · 2 bundles activos · Steam Deals 2026-04-14.md",
                 "<g>──────────────────────────────────────────</g>\n",
             ],
         )
@@ -2080,6 +2142,44 @@ class RankTopPicksTests(unittest.TestCase):
         self.assertIn("¿Por qué salió arriba?", md)
         self.assertIn("Comprar ahora", md)
         self.assertIn("reviews muy positivas", md)
+
+    def test_generate_md_can_include_obsidian_notion_frontmatter(self) -> None:
+        md = generate_md(
+            deals=[],
+            backlog_on_sale=[],
+            have_on_sale=[],
+            vanity="BG00G",
+            owned={},
+            wishlist_appids=["a", "b"],
+            min_discount=50,
+            genres=[],
+            sale_name="Steam Sale",
+            top_picks=[
+                {
+                    "appid": "a",
+                    "name": "Alpha",
+                    "score": 95.4,
+                    "discount": 90,
+                    "price_final": "$10",
+                    "review": {"pct": 92, "desc": "Very Positive", "total": 100},
+                    "deck": 3,
+                    "priority": 5,
+                    "release_year": date.today().year,
+                    "linux_native": False,
+                    "metacritic_score": 90,
+                    "categories": [2],
+                }
+            ],
+            include_frontmatter=True,
+        )
+
+        self.assertTrue(md.startswith("---\n"))
+        self.assertIn('title: "Steam Wishlist Deals — BG00G"', md)
+        self.assertIn('profile: "BG00G"', md)
+        self.assertIn('sale_name: "Steam Sale"', md)
+        self.assertIn("wishlist_count: 2", md)
+        self.assertIn("top_picks_count: 1", md)
+        self.assertIn("# Steam Wishlist Deals — BG00G", md)
 
     def test_generate_html_includes_score_explanation_for_top_picks(self) -> None:
         html = generate_html(

@@ -25,10 +25,12 @@ class OutputArtifactPayloads:
 
 
 def _sanitize_sale_name(sale_name: str) -> str:
-    return re.sub(r'[<>:"/\\|?*]', '', sale_name).strip()
+    return re.sub(r'[<>:"/\\|?*]', "", sale_name).strip()
 
 
-def build_output_md_path(output_dir: str | Path, sale_name: str, *, today_obj: date | None = None) -> Path:
+def build_output_md_path(
+    output_dir: str | Path, sale_name: str, *, today_obj: date | None = None
+) -> Path:
     today = today_obj or date.today()
     date_str = today.strftime("%Y-%m-%d")
     if sale_name:
@@ -51,7 +53,9 @@ def resolve_previous_context(
     run_history = load_run_history_fn(steam_id) if previous_run else []
     previous_appids: set[str] = set()
     if not previous_run:
-        previous_appids = load_previous_deal_appids_fn(Path(output_dir), current_filename)
+        previous_appids = load_previous_deal_appids_fn(
+            Path(output_dir), current_filename
+        )
     return {
         "previous_run": previous_run,
         "run_history": run_history,
@@ -59,7 +63,9 @@ def resolve_previous_context(
     }
 
 
-def build_share_output_path(output_dir: str | Path, *, today_obj: date | None = None) -> Path:
+def build_share_output_path(
+    output_dir: str | Path, *, today_obj: date | None = None
+) -> Path:
     today = today_obj or date.today()
     return Path(output_dir) / f"Steam Deals Share {today.strftime('%Y-%m-%d')}.html"
 
@@ -89,7 +95,9 @@ def find_latest_artifact(output_dir: str | Path, pattern: str) -> Path | None:
     return max(candidates, key=lambda path: path.stat().st_mtime)
 
 
-def write_artifact(path: Path, content: str, *, emit_event_fn=None, encoding: str = "utf-8") -> Path:
+def write_artifact(
+    path: Path, content: str, *, emit_event_fn=None, encoding: str = "utf-8"
+) -> Path:
     path.parent.mkdir(parents=True, exist_ok=True)
     path.write_text(content, encoding=encoding)
     if emit_event_fn is not None:
@@ -121,13 +129,35 @@ def build_final_summary(
     previous_appids: set[str],
     top_picks: list[dict] | None,
     output_md: Path,
+    smart_alerts: dict[str, int] | None = None,
 ) -> tuple[int, str]:
-    new_count = sum(1 for deal in deals if previous_appids and deal["appid"] not in previous_appids) if previous_appids else 0
+    new_count = (
+        sum(
+            1
+            for deal in deals
+            if previous_appids and deal["appid"] not in previous_appids
+        )
+        if previous_appids
+        else 0
+    )
     summary = f"  {len(deals):,} deals · {len(backlog_on_sale)} backlog"
     if new_count:
         summary += f" · {new_count} nuevos"
     if top_picks:
         summary += f" · Top pick: {top_picks[0]['name']} ({top_picks[0]['score']})"
+    alerts = smart_alerts or {}
+    best_local_count = int(alerts.get("best_local_count", 0) or 0)
+    price_up_count = int(alerts.get("price_up_count", 0) or 0)
+    global_historical_low_count = int(alerts.get("global_historical_low_count", 0) or 0)
+    active_bundles_count = int(alerts.get("active_bundles_count", 0) or 0)
+    if best_local_count:
+        summary += f" · {best_local_count} mejor local"
+    if price_up_count:
+        summary += f" · {price_up_count} subieron"
+    if global_historical_low_count:
+        summary += f" · {global_historical_low_count} mín. global"
+    if active_bundles_count:
+        summary += f" · {active_bundles_count} bundles activos"
     summary += f" · {output_md.name}"
     return new_count, summary
 
@@ -146,6 +176,7 @@ def emit_final_closeout(
     color_green: str,
     color_reset: str,
     divider_width: int = 42,
+    smart_alerts: dict[str, int] | None = None,
 ) -> tuple[int, str]:
     new_count, summary = build_final_summary_fn(
         elapsed,
@@ -154,6 +185,7 @@ def emit_final_closeout(
         previous_appids,
         top_picks,
         output_md,
+        smart_alerts,
     )
     divider = f"{color_green}{'─' * divider_width}{color_reset}"
     emit_fn(f"\n{divider}")

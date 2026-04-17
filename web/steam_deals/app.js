@@ -292,12 +292,470 @@ const btnDesktopAutofix = $('btn-desktop-autofix');
 const btnClearCache = $('btn-clear-cache');
 const btnOpenLast = $('btn-open-last');
 const btnRunPd2 = $('btn-run-pd2');
+const historyLeft = $('history-left');
+const historyRight = $('history-right');
+const historyIncludeSame = $('history-include-same');
+const historyStatusFilter = $('history-status-filter');
+const historySortDelta = $('history-sort-delta');
+const historySearch = $('history-search');
+const btnHistoryCompare = $('btn-history-compare');
+const btnHistoryRefresh = $('btn-history-refresh');
+const btnHistoryQuickCompare = $('btn-history-quick-compare');
+const btnHistoryPrevPage = $('btn-history-prev-page');
+const btnHistoryNextPage = $('btn-history-next-page');
+const historyPageInfo = $('history-page-info');
+const historySummary = $('history-summary');
+const historyStatusChart = $('history-status-chart');
+const historyTopDeltas = $('history-top-deltas');
+const historyTrend = $('history-trend');
+const historyTableWrap = $('history-table-wrap');
+const historyTableBody = $('history-table-body');
 const consoleEl = $('console');
 const progressBar = $('progress-bar');
 const progressText = $('progress-text');
 const fileLinks = $('file-links');
 let abortCtrl = null;
 let shownErrorHints = new Set();
+let latestHistoryRuns = [];
+let latestFilteredRuns = [];
+let historyPage = 1;
+const HISTORY_PAGE_SIZE = 20;
+
+const HISTORY_FILTERS_STORAGE_KEY = 'steam_deals_history_filters_v1';
+
+function saveHistoryFilters() {
+  try {
+    const payload = {
+      include_same: !!(historyIncludeSame && historyIncludeSame.checked),
+      status: historyStatusFilter ? historyStatusFilter.value : 'all',
+      sort_delta: historySortDelta ? historySortDelta.value : 'default',
+    };
+    window.localStorage.setItem(HISTORY_FILTERS_STORAGE_KEY, JSON.stringify(payload));
+  } catch (e) {}
+}
+
+function loadHistoryFilters() {
+  try {
+    const raw = window.localStorage.getItem(HISTORY_FILTERS_STORAGE_KEY);
+    if (!raw) return;
+    const parsed = JSON.parse(raw);
+    const includeSame = !!(parsed && parsed.include_same);
+    const status = parsed && typeof parsed.status === 'string' ? parsed.status : 'all';
+    const sortDelta = parsed && typeof parsed.sort_delta === 'string' ? parsed.sort_delta : 'default';
+
+    const validStatus = new Set(['all', 'changed', 'new', 'removed', 'same']);
+    const validSort = new Set(['default', 'delta_desc', 'delta_asc', 'abs_desc']);
+
+    if (historyIncludeSame) {
+      historyIncludeSame.checked = includeSame;
+    }
+    if (historyStatusFilter) {
+      historyStatusFilter.value = validStatus.has(status) ? status : 'all';
+    }
+    if (historySortDelta) {
+      historySortDelta.value = validSort.has(sortDelta) ? sortDelta : 'default';
+    }
+  } catch (e) {}
+}
+
+function formatHistoryRunLabel(run) {
+  if (!run) return 'Run desconocido';
+  const datePart = run.timestamp || run.date || run.id;
+  const dealCount = Number(run.deal_count || 0);
+  const saleName = run.sale_name ? String(run.sale_name) : 'Steam Deals';
+  return `${datePart} · ${saleName} · ${dealCount} deals`;
+}
+
+function normalizeSearchValue(value) {
+  return String(value || '').toLowerCase().trim();
+}
+
+function filterHistoryRuns(runs, query) {
+  const list = Array.isArray(runs) ? runs : [];
+  const q = normalizeSearchValue(query);
+  if (!q) return list;
+  return list.filter(run => {
+    const haystack = [
+      run && run.id,
+      run && run.timestamp,
+      run && run.date,
+      run && run.sale_name,
+      run && run.steam_id,
+      run && run.vanity,
+    ]
+      .map(normalizeSearchValue)
+      .join(' ');
+    return haystack.includes(q);
+  });
+}
+
+function setRunSelectorsFromList(runs) {
+  if (!historyLeft || !historyRight) return;
+  const list = Array.isArray(runs) ? runs : [];
+  if (list.length < 2) {
+    const message = list.length === 0 ? 'No hay runs para este filtro' : 'Se requieren 2 runs';
+    historyLeft.innerHTML = `<option value="">${message}</option>`;
+    historyRight.innerHTML = `<option value="">${message}</option>`;
+    return;
+  }
+
+  const optionsHtml = list.map(run => {
+    const value = escapeHtml(run.id || '');
+    const label = escapeHtml(formatHistoryRunLabel(run));
+    return `<option value="${value}">${label}</option>`;
+  }).join('');
+  historyLeft.innerHTML = optionsHtml;
+  historyRight.innerHTML = optionsHtml;
+  historyLeft.selectedIndex = 1;
+  historyRight.selectedIndex = 0;
+}
+
+function getHistoryPageSlice(runs) {
+  const list = Array.isArray(runs) ? runs : [];
+  const totalPages = Math.max(1, Math.ceil(list.length / HISTORY_PAGE_SIZE));
+  if (historyPage > totalPages) historyPage = totalPages;
+  if (historyPage < 1) historyPage = 1;
+  const start = (historyPage - 1) * HISTORY_PAGE_SIZE;
+  return {
+    totalPages,
+    pageItems: list.slice(start, start + HISTORY_PAGE_SIZE),
+  };
+}
+
+function updateHistoryPaginationUi(totalItems, totalPages) {
+  if (historyPageInfo) {
+    historyPageInfo.textContent = `Pagina ${historyPage} de ${totalPages} · ${totalItems} runs`;
+  }
+  if (btnHistoryPrevPage) btnHistoryPrevPage.disabled = historyPage <= 1;
+  if (btnHistoryNextPage) btnHistoryNextPage.disabled = historyPage >= totalPages;
+}
+
+function refreshRunSelectorsFromState() {
+  const list = Array.isArray(latestFilteredRuns) ? latestFilteredRuns : [];
+  const { totalPages, pageItems } = getHistoryPageSlice(list);
+  setRunSelectorsFromList(pageItems);
+  updateHistoryPaginationUi(list.length, totalPages);
+}
+
+function applyHistoryRunSearch() {
+  latestFilteredRuns = filterHistoryRuns(latestHistoryRuns, historySearch ? historySearch.value : '');
+  historyPage = 1;
+  refreshRunSelectorsFromState();
+  if (!latestFilteredRuns.length) {
+    appendLine('Busqueda de runs sin resultados.', 'warn');
+  }
+}
+
+function formatCurrencyFromRaw(cents) {
+  const value = Number(cents || 0);
+  if (!Number.isFinite(value) || value === 0) return '?';
+  const pesos = value / 100;
+  return Number.isInteger(pesos) ? `$${pesos}` : `$${pesos.toFixed(2)}`;
+}
+
+function formatDelta(row) {
+  if (row.delta_raw == null) return '—';
+  const delta = Number(row.delta_raw || 0);
+  if (delta === 0) return '$0';
+  const sign = delta > 0 ? '+' : '-';
+  const amount = formatCurrencyFromRaw(Math.abs(delta));
+  return `${sign}${amount}`;
+}
+
+function renderHistoryRows(rows) {
+  if (!historyTableBody || !historyTableWrap) return;
+  if (!Array.isArray(rows) || rows.length === 0) {
+    historyTableBody.innerHTML = '<tr><td colspan="5" style="color:var(--text2)">Sin cambios para mostrar con los filtros actuales.</td></tr>';
+    historyTableWrap.classList.remove('hidden');
+    return;
+  }
+
+  historyTableBody.innerHTML = rows.map(row => {
+    const statusClass = `history-status history-status-${row.status || 'same'}`;
+    const deltaClass = row.direction === 'down'
+      ? 'history-delta-down'
+      : row.direction === 'up'
+      ? 'history-delta-up'
+      : 'history-delta-same';
+    const statusText = row.status === 'new'
+      ? 'Nuevo'
+      : row.status === 'removed'
+      ? 'Salio'
+      : row.status === 'changed'
+      ? 'Cambio'
+      : 'Igual';
+    return `
+      <tr>
+        <td title="AppID ${escapeHtml(row.appid)}">${escapeHtml(row.name || row.appid)}</td>
+        <td><span class="${statusClass}">${statusText}</span></td>
+        <td>${escapeHtml(row.left_price || '?')}</td>
+        <td>${escapeHtml(row.right_price || '?')}</td>
+        <td class="${deltaClass}">${escapeHtml(formatDelta(row))}</td>
+      </tr>
+    `;
+  }).join('');
+  historyTableWrap.classList.remove('hidden');
+}
+
+function renderHistorySummary(summary) {
+  if (!historySummary) return;
+  const safe = summary || {};
+  historySummary.innerHTML = [
+    ['Run A', safe.left_total ?? 0],
+    ['Run B', safe.right_total ?? 0],
+    ['Cambios', safe.changed ?? 0],
+    ['Nuevos', safe.new ?? 0],
+    ['Salieron', safe.removed ?? 0],
+  ].map(([label, value]) => `
+    <div class="history-summary-item">${escapeHtml(label)}<br><strong>${escapeHtml(value)}</strong></div>
+  `).join('');
+  historySummary.classList.remove('hidden');
+}
+
+function renderHistoryStatusChart(summary) {
+  if (!historyStatusChart) return;
+  const safe = summary || {};
+  const items = [
+    { key: 'changed', label: 'Cambios', value: Number(safe.changed || 0), className: 'changed' },
+    { key: 'new', label: 'Nuevos', value: Number(safe.new || 0), className: 'new' },
+    { key: 'removed', label: 'Salieron', value: Number(safe.removed || 0), className: 'removed' },
+    { key: 'same', label: 'Iguales', value: Number(safe.same || 0), className: 'same' },
+  ];
+  const maxValue = items.reduce((max, item) => Math.max(max, item.value), 0);
+  const includeSameActive = !!(historyIncludeSame && historyIncludeSame.checked);
+
+  historyStatusChart.innerHTML = `
+    <div class="history-status-chart-title">Resumen visual por estado</div>
+    <div class="history-status-bars">
+      ${items.map(item => {
+        const pct = maxValue > 0 ? Math.max(6, Math.round((item.value / maxValue) * 100)) : 0;
+        const width = item.value > 0 ? `${pct}%` : '0%';
+        return `
+          <div class="history-status-bar-row">
+            <div class="history-status-bar-label">${escapeHtml(item.label)}</div>
+            <div class="history-status-bar-track">
+              <div class="history-status-bar-fill history-status-bar-fill-${item.className}" style="width:${width}"></div>
+            </div>
+            <div class="history-status-bar-value">${escapeHtml(item.value)}</div>
+          </div>
+        `;
+      }).join('')}
+    </div>
+    <div class="history-status-chart-note">
+      ${includeSameActive ? 'Incluye estado "Iguales" (include_same activo).' : '"Iguales" depende de activar include_same.'}
+    </div>
+  `;
+  historyStatusChart.classList.remove('hidden');
+}
+
+function clearHistoryComparison() {
+  if (historySummary) {
+    historySummary.innerHTML = '';
+    historySummary.classList.add('hidden');
+  }
+  if (historyTableBody) historyTableBody.innerHTML = '';
+  if (historyTableWrap) historyTableWrap.classList.add('hidden');
+  if (historyStatusChart) {
+    historyStatusChart.innerHTML = '';
+    historyStatusChart.classList.add('hidden');
+  }
+  if (historyTopDeltas) {
+    historyTopDeltas.innerHTML = '';
+    historyTopDeltas.classList.add('hidden');
+  }
+  if (historyTrend) {
+    historyTrend.innerHTML = '';
+    historyTrend.classList.add('hidden');
+  }
+}
+
+function parseHistoryRunTimestamp(run) {
+  const raw = (run && (run.timestamp || run.date)) || '';
+  const parsed = Date.parse(raw);
+  if (!Number.isNaN(parsed)) return parsed;
+  return 0;
+}
+
+function renderHistoryTrend(runs) {
+  if (!historyTrend) return;
+  const source = Array.isArray(runs) ? runs : [];
+  if (source.length < 2) {
+    historyTrend.innerHTML = '<div class="history-trend-title">Tendencia temporal (deals por run)</div><div class="history-trend-empty">Se necesitan al menos 2 runs para mostrar tendencia.</div>';
+    historyTrend.classList.remove('hidden');
+    return;
+  }
+
+  const normalized = source
+    .map((run, index) => ({
+      run,
+      index,
+      dealCount: Number((run && run.deal_count) || 0),
+      ts: parseHistoryRunTimestamp(run),
+    }))
+    .sort((a, b) => {
+      if (a.ts !== b.ts) return a.ts - b.ts;
+      return a.index - b.index;
+    })
+    .slice(-20);
+
+  const values = normalized.map(item => item.dealCount);
+  const minValue = Math.min(...values);
+  const maxValue = Math.max(...values);
+  const span = Math.max(1, maxValue - minValue);
+
+  const width = 720;
+  const height = 120;
+  const padX = 18;
+  const padY = 14;
+  const innerW = width - (padX * 2);
+  const innerH = height - (padY * 2);
+  const step = normalized.length > 1 ? innerW / (normalized.length - 1) : innerW;
+
+  const points = normalized.map((item, idx) => {
+    const x = padX + (idx * step);
+    const y = padY + innerH - (((item.dealCount - minValue) / span) * innerH);
+    return { x, y, value: item.dealCount };
+  });
+
+  const polyline = points.map(p => `${p.x.toFixed(1)},${p.y.toFixed(1)}`).join(' ');
+  const dots = points.map((p, idx) => {
+    const title = `Run ${idx + 1}: ${p.value} deals`;
+    return `<circle cx="${p.x.toFixed(1)}" cy="${p.y.toFixed(1)}" r="2.8" fill="var(--accent)"><title>${escapeHtml(title)}</title></circle>`;
+  }).join('');
+
+  const firstValue = values[0];
+  const lastValue = values[values.length - 1];
+  const trendDelta = lastValue - firstValue;
+  const trendLabel = trendDelta === 0
+    ? 'sin cambio neto'
+    : trendDelta > 0
+    ? `+${trendDelta} vs primer run`
+    : `${trendDelta} vs primer run`;
+
+  historyTrend.innerHTML = `
+    <div class="history-trend-title">Tendencia temporal (deals por run · ultimos ${normalized.length})</div>
+    <svg class="history-trend-svg" viewBox="0 0 ${width} ${height}" preserveAspectRatio="none" role="img" aria-label="Tendencia temporal de deals por run">
+      <line x1="${padX}" y1="${height - padY}" x2="${width - padX}" y2="${height - padY}" stroke="var(--card-border)" stroke-width="1" />
+      <line x1="${padX}" y1="${padY}" x2="${padX}" y2="${height - padY}" stroke="var(--card-border)" stroke-width="1" />
+      <polyline fill="none" stroke="var(--accent)" stroke-width="2" points="${polyline}" />
+      ${dots}
+    </svg>
+    <div class="history-trend-meta">
+      <span>Min: ${escapeHtml(minValue)} · Max: ${escapeHtml(maxValue)}</span>
+      <span>Tendencia: ${escapeHtml(trendLabel)}</span>
+    </div>
+  `;
+  historyTrend.classList.remove('hidden');
+}
+
+function renderHistoryTopDeltas(rows) {
+  if (!historyTopDeltas) return;
+  const sourceRows = Array.isArray(rows) ? rows : [];
+  const candidates = sourceRows.filter(row => {
+    if (!row || typeof row !== 'object') return false;
+    const delta = Number(row.delta_raw);
+    return Number.isFinite(delta) && delta !== 0;
+  });
+
+  const topDown = candidates
+    .filter(row => row.direction === 'down')
+    .sort((a, b) => Number(a.delta_raw) - Number(b.delta_raw))
+    .slice(0, 5);
+  const topUp = candidates
+    .filter(row => row.direction === 'up')
+    .sort((a, b) => Number(b.delta_raw) - Number(a.delta_raw))
+    .slice(0, 5);
+
+  const renderColumn = (title, list, isDown) => {
+    if (!list.length) {
+      return `
+        <div>
+          <div class="history-top-deltas-col-title">${escapeHtml(title)}</div>
+          <div class="history-top-deltas-empty">Sin cambios en esta categoria.</div>
+        </div>
+      `;
+    }
+    return `
+      <div>
+        <div class="history-top-deltas-col-title">${escapeHtml(title)}</div>
+        ${list.map(row => `
+          <div class="history-delta-item" title="AppID ${escapeHtml(row.appid)}">
+            <div class="history-delta-label">${escapeHtml(row.name || row.appid)}</div>
+            <div class="history-delta-value ${isDown ? 'history-delta-value-down' : 'history-delta-value-up'}">${escapeHtml(formatDelta(row))}</div>
+          </div>
+        `).join('')}
+      </div>
+    `;
+  };
+
+  historyTopDeltas.innerHTML = `
+    <div class="history-top-deltas-title">Top cambios de precio (runs comparados)</div>
+    <div class="history-top-deltas-grid">
+      ${renderColumn('Mayores bajadas', topDown, true)}
+      ${renderColumn('Mayores subidas', topUp, false)}
+    </div>
+  `;
+  historyTopDeltas.classList.remove('hidden');
+}
+
+async function loadHistoryRuns() {
+  if (!historyLeft || !historyRight) return;
+  const response = await fetch('/api/history/runs?limit=50');
+  if (!response.ok) {
+    throw new Error('No se pudo cargar el historico de runs.');
+  }
+  const payload = await response.json();
+  const runs = Array.isArray(payload.runs) ? payload.runs : [];
+  latestHistoryRuns = runs;
+  renderHistoryTrend(latestHistoryRuns);
+  latestFilteredRuns = filterHistoryRuns(runs, historySearch ? historySearch.value : '');
+  historyPage = 1;
+  if (latestFilteredRuns.length < 2) {
+    refreshRunSelectorsFromState();
+    clearHistoryComparison();
+    return;
+  }
+  refreshRunSelectorsFromState();
+}
+
+async function compareHistoryRuns() {
+  if (!historyLeft || !historyRight) return;
+  const left = historyLeft.value;
+  const right = historyRight.value;
+  if (!left || !right) {
+    appendLine('Selecciona dos runs validos para comparar.', 'warn');
+    return;
+  }
+  if (left === right) {
+    appendLine('Selecciona runs distintos para la comparacion.', 'warn');
+    return;
+  }
+
+  const includeSame = historyIncludeSame && historyIncludeSame.checked;
+  const statusFilter = historyStatusFilter ? historyStatusFilter.value : 'all';
+  const sortDelta = historySortDelta ? historySortDelta.value : 'default';
+  const query = new URLSearchParams({
+    left,
+    right,
+    include_same: includeSame ? 'true' : 'false',
+    status: statusFilter,
+    sort_delta: sortDelta,
+  });
+
+  const response = await fetch('/api/history/compare?' + query.toString());
+  if (!response.ok) {
+    throw new Error('No se pudo comparar los runs seleccionados.');
+  }
+  const payload = await response.json();
+  const summary = payload.summary || {};
+  if (summary.same == null && payload && payload.rows && Array.isArray(payload.rows)) {
+    summary.same = payload.rows.filter(row => row && row.status === 'same').length;
+  }
+  renderHistorySummary(summary);
+  renderHistoryStatusChart(summary);
+  renderHistoryRows(payload.rows || []);
+  renderHistoryTopDeltas(payload.rows || []);
+}
 
 function setModeBanner(hasCache, hasConfig) {
   const banner = $('mode-banner');
@@ -1102,3 +1560,88 @@ function openInSteam() {
 loadWatchlist();
 syncLatestReportEmptyState();
 syncLatestReportCard();
+loadHistoryFilters();
+
+if (historyIncludeSame) {
+  historyIncludeSame.addEventListener('change', saveHistoryFilters);
+}
+if (historyStatusFilter) {
+  historyStatusFilter.addEventListener('change', saveHistoryFilters);
+}
+if (historySortDelta) {
+  historySortDelta.addEventListener('change', saveHistoryFilters);
+}
+
+if (btnHistoryRefresh) {
+  btnHistoryRefresh.addEventListener('click', async () => {
+    btnHistoryRefresh.disabled = true;
+    try {
+      await loadHistoryRuns();
+      appendLine('Historico recargado.', 'ok');
+    } catch (e) {
+      appendLine('No se pudo recargar historico: ' + e.message, 'err');
+    } finally {
+      btnHistoryRefresh.disabled = false;
+    }
+  });
+}
+
+if (btnHistoryCompare) {
+  btnHistoryCompare.addEventListener('click', async () => {
+    btnHistoryCompare.disabled = true;
+    try {
+      await compareHistoryRuns();
+      appendLine('Comparacion de runs completada.', 'ok');
+    } catch (e) {
+      appendLine('No se pudo comparar runs: ' + e.message, 'err');
+    } finally {
+      btnHistoryCompare.disabled = false;
+    }
+  });
+}
+
+if (historySearch) {
+  historySearch.addEventListener('input', () => {
+    applyHistoryRunSearch();
+  });
+}
+
+if (btnHistoryQuickCompare) {
+  btnHistoryQuickCompare.addEventListener('click', async () => {
+    const source = latestFilteredRuns.length >= 2 ? latestFilteredRuns : latestHistoryRuns;
+    if (!source || source.length < 2) {
+      appendLine('No hay suficientes runs para quick compare.', 'warn');
+      return;
+    }
+    historyPage = 1;
+    refreshRunSelectorsFromState();
+    if (historyLeft && historyRight) {
+      historyLeft.value = source[1].id || '';
+      historyRight.value = source[0].id || '';
+    }
+    try {
+      await compareHistoryRuns();
+      appendLine('Quick compare: ultimos 2 runs.', 'ok');
+    } catch (e) {
+      appendLine('No se pudo ejecutar quick compare: ' + e.message, 'err');
+    }
+  });
+}
+
+if (btnHistoryPrevPage) {
+  btnHistoryPrevPage.addEventListener('click', () => {
+    historyPage -= 1;
+    refreshRunSelectorsFromState();
+  });
+}
+
+if (btnHistoryNextPage) {
+  btnHistoryNextPage.addEventListener('click', () => {
+    historyPage += 1;
+    refreshRunSelectorsFromState();
+  });
+}
+
+loadHistoryRuns().catch(() => {
+  clearHistoryComparison();
+});

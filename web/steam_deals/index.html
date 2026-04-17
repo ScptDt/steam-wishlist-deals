@@ -348,6 +348,80 @@
     <div id="wl-list" style="margin-top:.75rem"></div>
   </div>
 
+  <div class="card" id="history-card">
+    <h2>&#128200; Historico de runs (MVP)</h2>
+    <div class="row">
+      <div class="field">
+        <label>Run A (base)</label>
+        <select id="history-left"></select>
+      </div>
+      <div class="field">
+        <label>Run B (comparar)</label>
+        <select id="history-right"></select>
+      </div>
+    </div>
+    <div class="checks" style="margin-top:0.25rem">
+      <label><input type="checkbox" id="history-include-same"> Incluir precios sin cambio</label>
+    </div>
+    <div class="row" style="margin-top:0.75rem">
+      <div class="field">
+        <label>Filtrar estado</label>
+        <select id="history-status-filter">
+          <option value="all">Todos</option>
+          <option value="changed">Solo cambios</option>
+          <option value="new">Solo nuevos</option>
+          <option value="removed">Solo salieron</option>
+          <option value="same">Solo iguales</option>
+        </select>
+      </div>
+      <div class="field">
+        <label>Orden delta</label>
+        <select id="history-sort-delta">
+          <option value="default">Default</option>
+          <option value="delta_desc">Mayor subida primero</option>
+          <option value="delta_asc">Mayor bajada primero</option>
+          <option value="abs_desc">Mayor cambio absoluto</option>
+        </select>
+      </div>
+    </div>
+    <div class="row" style="margin-top:0.75rem">
+      <div class="field">
+        <label>Buscar runs</label>
+        <input type="text" id="history-search" placeholder="fecha, sale, steam_id o vanity">
+      </div>
+      <div class="field" style="display:flex;align-items:flex-end">
+        <button class="btn" type="button" id="btn-history-quick-compare" style="width:100%;background:var(--bg2);color:var(--text);border:1px solid var(--card-border)">Comparar ultimos 2 runs</button>
+      </div>
+    </div>
+    <div class="history-pagination" id="history-pagination">
+      <button class="btn" type="button" id="btn-history-prev-page" style="background:var(--bg2);color:var(--text);border:1px solid var(--card-border)">◀ Anterior</button>
+      <span id="history-page-info">Pagina 1</span>
+      <button class="btn" type="button" id="btn-history-next-page" style="background:var(--bg2);color:var(--text);border:1px solid var(--card-border)">Siguiente ▶</button>
+    </div>
+    <div class="actions" style="margin-top:0.75rem">
+      <button class="btn btn-primary" type="button" id="btn-history-compare">Comparar runs</button>
+      <button class="btn" type="button" id="btn-history-refresh" style="background:var(--bg2);color:var(--text);border:1px solid var(--card-border)">&#128260; Recargar runs</button>
+    </div>
+    <div id="history-summary" class="history-summary hidden"></div>
+    <div id="history-status-chart" class="history-status-chart hidden"></div>
+    <div id="history-top-deltas" class="history-top-deltas hidden"></div>
+    <div id="history-trend" class="history-trend hidden"></div>
+    <div class="history-table-wrap hidden" id="history-table-wrap">
+      <table class="history-table" id="history-table">
+        <thead>
+          <tr>
+            <th>Juego</th>
+            <th>Estado</th>
+            <th>Run A</th>
+            <th>Run B</th>
+            <th>Delta</th>
+          </tr>
+        </thead>
+        <tbody id="history-table-body"></tbody>
+      </table>
+    </div>
+  </div>
+
   </div><!-- /panel-deals -->
 
   <!-- ═══ TAB: PAYDAY 2 ═══ -->

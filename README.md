@@ -31,6 +31,7 @@ Analiza tu wishlist de Steam y genera reportes detallados con deals, comparacion
 - **HTML compartible** — Versión ligera para enviar a amigos
 - **JSON** — Export estructurado para automatización local (`meta`, `inputs`, `summary`, `top_picks`, `deals`, `budget_result`, etc.)
 - **CSV** — Exportación para Excel/Google Sheets (+ botón "Copiar para Sheets" en el HTML)
+- **Resumen final inteligente** — Alertas clave por run: mejor precio local, subidas vs run anterior, mínimo histórico global y bundles activos
 
 ## Requisitos
 
@@ -109,6 +110,9 @@ python3 steam_deals_generator.py --vanity TU_VANITY_URL --discount 60 --max-pric
 
 # Wishlist grande (ajuste conservador de paralelismo en enrichment)
 python3 steam_deals_generator.py --vanity TU_VANITY_URL --max-workers 16
+
+# Export Markdown con frontmatter YAML (Obsidian/Notion)
+python3 steam_deals_generator.py --vanity TU_VANITY_URL --md-frontmatter
 ```
 
 `--max-workers` controla el paralelismo de fetch en enrichment. Recomendación práctica: empezar en `12` (default), probar `16` si tu red/API responde bien y evitar valores muy altos para reducir riesgo de rate limit.
@@ -151,6 +155,53 @@ Casos útiles:
 - integrar Steam Deals con otras herramientas personales
 
 Si todavía no existe un reporte JSON, responde `404`.
+
+### Markdown con frontmatter (Obsidian/Notion)
+
+Si quieres importar tu reporte Markdown en herramientas como Obsidian/Notion con metadatos estructurados, usa:
+
+```bash
+python3 steam_deals_generator.py --vanity TU_VANITY_URL --md-frontmatter
+```
+
+Esto agrega un bloque YAML al inicio del `.md` con campos base como `title`, `profile`, `sale_name`, `generated_date`, `wishlist_count`, `deals_count` y `top_picks_count`.
+
+#### Perfiles de frontmatter recomendados
+
+Perfil base actual (compatible con ambos):
+
+- `title`
+- `profile`
+- `sale_name`
+- `generated_date`
+- `min_discount`
+- `wishlist_count`
+- `deals_count`
+- `top_picks_count`
+- `tags`
+
+Sugerencia práctica:
+
+- **Obsidian**: usar `tags` + `generated_date` para vistas por fecha y filtros.
+- **Notion**: importar como Markdown y mapear propiedades clave desde frontmatter (`title`, `sale_name`, `generated_date`, `deals_count`, `top_picks_count`).
+
+#### Checklist de validación manual de import
+
+1. Generar reporte con frontmatter:
+
+```bash
+python3 steam_deals_generator.py --vanity TU_VANITY_URL --md-frontmatter
+```
+
+2. Abrir el `.md` y confirmar que inicia con bloque YAML (`---` ... `---`).
+3. Importar en **Obsidian** y verificar:
+   - título de nota correcto
+   - metadatos visibles
+   - tags detectables
+4. Importar en **Notion** y verificar:
+   - contenido renderiza sin romper tablas/listas
+   - propiedades clave se pueden mapear desde frontmatter
+5. Marcar validación como completa en `PENDIENTES.md` (bitácora + backlog).
 
 ### Ejemplos mini de automatización
 
@@ -597,6 +648,7 @@ python3 steam_deals_generator.py --vanity TU_VANITY_URL \
 | `--schedule` | Ejecutar cada N horas |
 | `--family-json` | JSON de biblioteca familiar |
 | `--max-workers` | Workers de fetch paralelo para enrichment (default: 12; recomendado 12-16) |
+| `--md-frontmatter` | Incluir frontmatter YAML en Markdown (Obsidian/Notion); ver perfil y checklist en “Markdown con frontmatter” |
 
 ## PAYDAY 2 DLC Tracker (detalle)
 

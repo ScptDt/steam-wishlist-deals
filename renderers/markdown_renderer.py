@@ -8,9 +8,18 @@ from .common import markdown_escape
 STORE_URL = "https://store.steampowered.com/app/{appid}/"
 
 MESES = {
-    1: "enero", 2: "febrero", 3: "marzo", 4: "abril",
-    5: "mayo", 6: "junio", 7: "julio", 8: "agosto",
-    9: "septiembre", 10: "octubre", 11: "noviembre", 12: "diciembre",
+    1: "enero",
+    2: "febrero",
+    3: "marzo",
+    4: "abril",
+    5: "mayo",
+    6: "junio",
+    7: "julio",
+    8: "agosto",
+    9: "septiembre",
+    10: "octubre",
+    11: "noviembre",
+    12: "diciembre",
 }
 
 
@@ -20,6 +29,40 @@ def _md_esc(text: str) -> str:
 
 def _link(name: str, appid: str) -> str:
     return f"[{_md_esc(name)}]({STORE_URL.format(appid=appid)})"
+
+
+def _yaml_quote(text: str) -> str:
+    safe = str(text).replace('"', '\\"')
+    return f'"{safe}"'
+
+
+def _build_frontmatter(
+    *,
+    vanity: str,
+    sale_name: str,
+    min_discount: int,
+    wishlist_count: int,
+    deals_count: int,
+    top_picks_count: int,
+    generated_date: str,
+) -> list[str]:
+    return [
+        "---",
+        f"title: {_yaml_quote(f'Steam Wishlist Deals — {vanity}')}",
+        f"profile: {_yaml_quote(vanity)}",
+        f"sale_name: {_yaml_quote(sale_name)}",
+        f"generated_date: {_yaml_quote(generated_date)}",
+        f"min_discount: {int(min_discount)}",
+        f"wishlist_count: {int(wishlist_count)}",
+        f"deals_count: {int(deals_count)}",
+        f"top_picks_count: {int(top_picks_count)}",
+        "tags:",
+        "  - steam-deals",
+        "  - wishlist",
+        "  - markdown-export",
+        "---",
+        "",
+    ]
 
 
 def _prio_badge(priority: int) -> str:
@@ -35,7 +78,10 @@ def _prio_badge(priority: int) -> str:
 def format_deal_row(game: dict, show_storefront: bool = False) -> str:
     pct = f"-{game['discount']}%"
     name = _link(game["steam_name"], game["appid"])
-    if game["score"] < 0.95 and game["hltb_title"].lower() != game["steam_name"].lower():
+    if (
+        game["score"] < 0.95
+        and game["hltb_title"].lower() != game["steam_name"].lower()
+    ):
         name += f" _(HLTB: {_md_esc(game['hltb_title'])})_"
     pph = game.get("price_per_hour")
     pph_str = f" · ${pph:.1f}/h" if pph is not None else ""
@@ -44,7 +90,9 @@ def format_deal_row(game: dict, show_storefront: bool = False) -> str:
     extra = f"{hours_str}{pph_str}" if (hours_str or pph_str) else ""
 
     if show_storefront:
-        return f"| {pct} | {game['price']}{extra} | {game['storefront'] or '?'} | {name} |"
+        return (
+            f"| {pct} | {game['price']}{extra} | {game['storefront'] or '?'} | {name} |"
+        )
     return f"| {pct} | {game['price']}{extra} | {game['price_original']} | {name} |"
 
 
@@ -79,6 +127,7 @@ def generate_md(
     budget_result: dict | None = None,
     compare_data: dict | None = None,
     gift_ideas: list[dict] | None = None,
+    include_frontmatter: bool = False,
     *,
     group_by_tier,
     filter_by_genres,
@@ -116,10 +165,22 @@ def generate_md(
     otras = familia = steam_sf = sin_sf = []
     if hltb_used:
         family_appids = family_appids or set()
-        otras = [g for g in backlog_on_sale if g["storefront"] and g["storefront"].lower() not in ("steam", "") and not g["in_family"]]
+        otras = [
+            g
+            for g in backlog_on_sale
+            if g["storefront"]
+            and g["storefront"].lower() not in ("steam", "")
+            and not g["in_family"]
+        ]
         familia = [g for g in backlog_on_sale if g["in_family"]]
-        steam_sf = [g for g in backlog_on_sale if g["storefront"].lower() == "steam" and not g["in_family"]]
-        sin_sf = [g for g in backlog_on_sale if not g["storefront"] and not g["in_family"]]
+        steam_sf = [
+            g
+            for g in backlog_on_sale
+            if g["storefront"].lower() == "steam" and not g["in_family"]
+        ]
+        sin_sf = [
+            g for g in backlog_on_sale if not g["storefront"] and not g["in_family"]
+        ]
 
     sale_line = f"Evento: 🏷️ **{sale_name}** | " if sale_name else ""
     lines = [
@@ -131,7 +192,9 @@ def generate_md(
     delta_parts = []
     new_deal_count = len(comp.get("new_deals", set()))
     disappeared_count = len(comp.get("disappeared", []))
-    price_drops = sum(1 for v in comp.get("price_changes", {}).values() if v["direction"] == "down")
+    price_drops = sum(
+        1 for v in comp.get("price_changes", {}).values() if v["direction"] == "down"
+    )
     if new_deal_count:
         delta_parts.append(f"🆕 {new_deal_count} nuevos")
     if disappeared_count:
@@ -141,6 +204,20 @@ def generate_md(
     if delta_parts:
         lines.append(f"> {' · '.join(delta_parts)}")
     lines += ["", "---", ""]
+
+    if include_frontmatter:
+        lines = (
+            _build_frontmatter(
+                vanity=vanity,
+                sale_name=sale_name,
+                min_discount=min_discount,
+                wishlist_count=len(wishlist_appids),
+                deals_count=len(deals),
+                top_picks_count=len(top_picks),
+                generated_date=today_obj.isoformat(),
+            )
+            + lines
+        )
 
     if top_picks:
         lines += [
@@ -164,12 +241,16 @@ def generate_md(
             prio = _prio_badge(tp.get("priority", 0))
             name_col = f"{_link(tp['name'], tp['appid'])}{prio}"
             yr = tp.get("release_year") or "—"
-            lines.append(f"| {idx} | {tp['score']} | -{tp['discount']}% | {tp['price_final']} | {yr} | {rev_str} | {mc_str} | {dk_str} | {mp_str} | {name_col} |")
+            lines.append(
+                f"| {idx} | {tp['score']} | -{tp['discount']}% | {tp['price_final']} | {yr} | {rev_str} | {mc_str} | {dk_str} | {mp_str} | {name_col} |"
+            )
         if any(tp.get("recommendation") or tp.get("score_reasons") for tp in top_picks):
             lines += ["", "### ¿Por qué salió arriba?", ""]
             for idx, tp in enumerate(top_picks, 1):
                 recommendation = tp.get("recommendation")
-                reasons = " · ".join(_md_esc(reason) for reason in tp.get("score_reasons", []))
+                reasons = " · ".join(
+                    _md_esc(reason) for reason in tp.get("score_reasons", [])
+                )
                 bullet = f"- {idx}. {_link(tp['name'], tp['appid'])}"
                 if recommendation:
                     bullet += f" — **{_md_esc(recommendation)}**"
@@ -190,7 +271,9 @@ def generate_md(
         for wa in watchlist_alerts:
             savings = wa["target_price"] - (wa["price_raw"] / 100)
             savings_str = f"${savings:.0f}" if savings > 0 else "—"
-            lines.append(f"| {_link(wa['name'], wa['appid'])} | {wa['price_final']} | ${wa['target_price']:.0f} | -{wa['discount']}% | {savings_str} |")
+            lines.append(
+                f"| {_link(wa['name'], wa['appid'])} | {wa['price_final']} | ${wa['target_price']:.0f} | -{wa['discount']}% | {savings_str} |"
+            )
         lines += ["", "---", ""]
 
     if budget_result:
@@ -205,14 +288,18 @@ def generate_md(
             "|---|-------|---|--------|-------|",
         ]
         for idx, pick in enumerate(b["selected"], 1):
-            label = _link(pick['name'], pick['appid'])
+            label = _link(pick["name"], pick["appid"])
             recommendation = pick.get("recommendation")
-            reasons = " · ".join(_md_esc(reason) for reason in pick.get("score_reasons", []))
+            reasons = " · ".join(
+                _md_esc(reason) for reason in pick.get("score_reasons", [])
+            )
             if recommendation:
                 label += f"<br>**{_md_esc(recommendation)}**"
             if reasons:
                 label += f"<br>{reasons}"
-            lines.append(f"| {idx} | {pick.get('score', '—')} | -{pick['discount']}% | {pick['price_final']} | {label} |")
+            lines.append(
+                f"| {idx} | {pick.get('score', '—')} | -{pick['discount']}% | {pick['price_final']} | {label} |"
+            )
         lines += ["", "---", ""]
 
     if compare_data:
@@ -228,19 +315,28 @@ def generate_md(
         if overlap_deals:
             lines += [
                 f"### En común y en oferta ({len(overlap_deals)} juegos)",
-                "", "| % | Precio | Juego |", "|---|--------|-------|",
+                "",
+                "| % | Precio | Juego |",
+                "|---|--------|-------|",
             ]
             for d in sorted(overlap_deals, key=lambda x: -x["discount"])[:20]:
-                lines.append(f"| -{d['discount']}% | {d['price_final']} | {_link(d['name'], d['appid'])} |")
+                lines.append(
+                    f"| -{d['discount']}% | {d['price_final']} | {_link(d['name'], d['appid'])} |"
+                )
             lines.append("")
         if gift_ideas:
             lines += [
                 f"### 🎁 Gift Ideas para {friend} ({len(gift_ideas)} juegos)",
-                "", f"> Juegos que {friend} quiere, están en oferta, y tú no los tienes.", "",
-                "| % | Precio | Juego |", "|---|--------|-------|",
+                "",
+                f"> Juegos que {friend} quiere, están en oferta, y tú no los tienes.",
+                "",
+                "| % | Precio | Juego |",
+                "|---|--------|-------|",
             ]
             for g in gift_ideas[:20]:
-                lines.append(f"| -{g['discount']}% | {g['price_final']} | {_link(g['name'], g['appid'])} |")
+                lines.append(
+                    f"| -{g['discount']}% | {g['price_final']} | {_link(g['name'], g['appid'])} |"
+                )
         lines += ["", "---", ""]
 
     if active_bundles_data:
@@ -258,13 +354,29 @@ def generate_md(
             "",
         ]
         for bname, binfo in bundles_grouped.items():
-            price_str = f"${binfo['price']:.0f} {binfo['currency']}" if binfo['price'] else "Gratis"
-            link = f"[{binfo['store']}]({binfo['url']})" if binfo.get("url") else binfo["store"]
-            lines += [f"### 📦 {bname}", f"> {price_str} en {link}", "", "| Juego | Precio Steam |", "|-------|-------------|"]
+            price_str = (
+                f"${binfo['price']:.0f} {binfo['currency']}"
+                if binfo["price"]
+                else "Gratis"
+            )
+            link = (
+                f"[{binfo['store']}]({binfo['url']})"
+                if binfo.get("url")
+                else binfo["store"]
+            )
+            lines += [
+                f"### 📦 {bname}",
+                f"> {price_str} en {link}",
+                "",
+                "| Juego | Precio Steam |",
+                "|-------|-------------|",
+            ]
             for aid in binfo["appids"]:
                 deal = next((d for d in deals if d["appid"] == aid), None)
                 if deal:
-                    lines.append(f"| {_link(deal['name'], aid)} | {deal['price_final']} |")
+                    lines.append(
+                        f"| {_link(deal['name'], aid)} | {deal['price_final']} |"
+                    )
             lines.append("")
         lines += ["---", ""]
 
@@ -297,7 +409,8 @@ def generate_md(
         genre_deals = filter_by_genres(deals, genres)
         genre_label = ", ".join(genres)
         lines += [
-            "---", "",
+            "---",
+            "",
             f"## Genre Deals — {genre_label}",
             "",
             f"> **{len(genre_deals)} juegos** en oferta que coinciden con: _{genre_label}_.",
@@ -306,9 +419,13 @@ def generate_md(
         if genre_deals:
             lines += ["| % | Precio | Era | Juego |", "|---|--------|-----|-------|"]
             for d in genre_deals:
-                lines.append(f"| -{d['discount']}% | {d['price_final']} | {d['price_original']} | {_link(d['name'], d['appid'])} |")
+                lines.append(
+                    f"| -{d['discount']}% | {d['price_final']} | {d['price_original']} | {_link(d['name'], d['appid'])} |"
+                )
         else:
-            lines.append("_Ningún juego de tu wishlist en oferta coincide con esos géneros._")
+            lines.append(
+                "_Ningún juego de tu wishlist en oferta coincide con esos géneros._"
+            )
         lines.append("")
 
     if tags_data:
@@ -323,11 +440,14 @@ def generate_md(
                     "|---|--------|-------|",
                 ]
                 for d in sorted(tag_deals, key=lambda x: -x["discount"])[:10]:
-                    lines.append(f"| -{d['discount']}% | {d['price_final']} | {_link(d['name'], d['appid'])} |")
+                    lines.append(
+                        f"| -{d['discount']}% | {d['price_final']} | {_link(d['name'], d['appid'])} |"
+                    )
                 lines.append("")
 
     lines += [
-        "---", "",
+        "---",
+        "",
         "## Quitar de la Wishlist",
         "",
         "> Limpieza: juegos que siguen en tu wishlist pero ya no deberían estar ahí.",
@@ -369,59 +489,133 @@ def generate_md(
             for g in sorted(steam_sf, key=lambda x: -x["discount"]):
                 lines.append(format_deal_row(g, show_storefront=True))
 
-        lines += ["", "### Completados / Retirados en HLTB en oferta en la Wishlist", ""]
+        lines += [
+            "",
+            "### Completados / Retirados en HLTB en oferta en la Wishlist",
+            "",
+        ]
         if have_on_sale:
-            lines += ["| % | Precio | Estado | Juego |", "|---|--------|--------|-------|"]
+            lines += [
+                "| % | Precio | Estado | Juego |",
+                "|---|--------|--------|-------|",
+            ]
             for g in have_on_sale:
-                lines.append(f"| -{g['discount']}% | {g['price']} | {g['status']} | {_link(g['steam_name'], g['appid'])} |")
+                lines.append(
+                    f"| -{g['discount']}% | {g['price']} | {g['status']} | {_link(g['steam_name'], g['appid'])} |"
+                )
         else:
             lines.append("_Ninguno encontrado._")
 
     current_year = date.today().year
-    cleanup_neg = [(d, reviews.get(d["appid"])) for d in deals if (r := reviews.get(d["appid"])) and r.get("pct", 100) < 50]
-    cleanup_always = [(d, local_trends.get(d["appid"])) for d in deals if (t := local_trends.get(d["appid"])) and t.get("times_on_sale", 0) >= 5]
-    cleanup_nolinux = [d for d in deals if deck_compat_data.get(d["appid"], 0) == 1 and (p := protondb_data.get(d["appid"])) and p.get("tier") == "borked"]
-    cleanup_ac = [(d, anticheat_data.get(d["appid"])) for d in deals if (a := anticheat_data.get(d["appid"])) and a.get("status") in ("Denied", "Broken")]
-    cleanup_old = [(d, d.get("release_year")) for d in deals if d.get("release_year") and (current_year - d["release_year"]) > 8 and d["discount"] < 70]
+    cleanup_neg = [
+        (d, reviews.get(d["appid"]))
+        for d in deals
+        if (r := reviews.get(d["appid"])) and r.get("pct", 100) < 50
+    ]
+    cleanup_always = [
+        (d, local_trends.get(d["appid"]))
+        for d in deals
+        if (t := local_trends.get(d["appid"])) and t.get("times_on_sale", 0) >= 5
+    ]
+    cleanup_nolinux = [
+        d
+        for d in deals
+        if deck_compat_data.get(d["appid"], 0) == 1
+        and (p := protondb_data.get(d["appid"]))
+        and p.get("tier") == "borked"
+    ]
+    cleanup_ac = [
+        (d, anticheat_data.get(d["appid"]))
+        for d in deals
+        if (a := anticheat_data.get(d["appid"]))
+        and a.get("status") in ("Denied", "Broken")
+    ]
+    cleanup_old = [
+        (d, d.get("release_year"))
+        for d in deals
+        if d.get("release_year")
+        and (current_year - d["release_year"]) > 8
+        and d["discount"] < 70
+    ]
 
     if cleanup_neg:
         cleanup_neg.sort(key=lambda x: x[1]["pct"])
-        lines += ["", f"### 👎 Reviews muy negativas ({len(cleanup_neg)} juegos)", "",
-                  "> Estos juegos tienen reviews negativas, ¿seguro que los quieres?", "",
-                  "| % | Precio | Reviews | Juego |", "|---|--------|---------|-------|"]
+        lines += [
+            "",
+            f"### 👎 Reviews muy negativas ({len(cleanup_neg)} juegos)",
+            "",
+            "> Estos juegos tienen reviews negativas, ¿seguro que los quieres?",
+            "",
+            "| % | Precio | Reviews | Juego |",
+            "|---|--------|---------|-------|",
+        ]
         for d, rev in cleanup_neg:
-            lines.append(f"| -{d['discount']}% | {d['price_final']} | {rev['desc']} ({rev['pct']}%) | {_link(d['name'], d['appid'])} |")
+            lines.append(
+                f"| -{d['discount']}% | {d['price_final']} | {rev['desc']} ({rev['pct']}%) | {_link(d['name'], d['appid'])} |"
+            )
 
     if cleanup_always:
         cleanup_always.sort(key=lambda x: -x[1]["times_on_sale"])
-        lines += ["", f"### 🔄 Siempre en oferta ({len(cleanup_always)} juegos)", "",
-                  "> Estos juegos están siempre en oferta, no hay prisa.", "",
-                  "| % | Precio | Veces | Prom. | Juego |", "|---|--------|-------|-------|-------|"]
+        lines += [
+            "",
+            f"### 🔄 Siempre en oferta ({len(cleanup_always)} juegos)",
+            "",
+            "> Estos juegos están siempre en oferta, no hay prisa.",
+            "",
+            "| % | Precio | Veces | Prom. | Juego |",
+            "|---|--------|-------|-------|-------|",
+        ]
         for d, trend in cleanup_always:
-            lines.append(f"| -{d['discount']}% | {d['price_final']} | {trend['times_on_sale']}x | {trend.get('avg_fmt', '?')} | {_link(d['name'], d['appid'])} |")
+            lines.append(
+                f"| -{d['discount']}% | {d['price_final']} | {trend['times_on_sale']}x | {trend.get('avg_fmt', '?')} | {_link(d['name'], d['appid'])} |"
+            )
 
     if cleanup_nolinux:
-        lines += ["", f"### 🐧 Sin soporte Linux/Deck ({len(cleanup_nolinux)} juegos)", "",
-                  "> ProtonDB Borked + Deck Unsupported.", "",
-                  "| % | Precio | Juego |", "|---|--------|-------|"]
+        lines += [
+            "",
+            f"### 🐧 Sin soporte Linux/Deck ({len(cleanup_nolinux)} juegos)",
+            "",
+            "> ProtonDB Borked + Deck Unsupported.",
+            "",
+            "| % | Precio | Juego |",
+            "|---|--------|-------|",
+        ]
         for d in sorted(cleanup_nolinux, key=lambda x: -x["discount"]):
-            lines.append(f"| -{d['discount']}% | {d['price_final']} | {_link(d['name'], d['appid'])} |")
+            lines.append(
+                f"| -{d['discount']}% | {d['price_final']} | {_link(d['name'], d['appid'])} |"
+            )
 
     if cleanup_ac:
-        lines += ["", f"### ⛔ Anti-cheat no funciona en Linux ({len(cleanup_ac)} juegos)", "",
-                  "> Anti-cheat status Denied o Broken en Linux.", "",
-                  "| % | Precio | Anti-Cheat | Status | Juego |", "|---|--------|------------|--------|-------|"]
+        lines += [
+            "",
+            f"### ⛔ Anti-cheat no funciona en Linux ({len(cleanup_ac)} juegos)",
+            "",
+            "> Anti-cheat status Denied o Broken en Linux.",
+            "",
+            "| % | Precio | Anti-Cheat | Status | Juego |",
+            "|---|--------|------------|--------|-------|",
+        ]
         for d, ac in cleanup_ac:
             ac_names = ", ".join(ac.get("anticheats", []))
-            lines.append(f"| -{d['discount']}% | {d['price_final']} | {ac_names} | {ac['status']} | {_link(d['name'], d['appid'])} |")
+            lines.append(
+                f"| -{d['discount']}% | {d['price_final']} | {ac_names} | {ac['status']} | {_link(d['name'], d['appid'])} |"
+            )
 
     if cleanup_old:
         cleanup_old.sort(key=lambda x: (x[1], -x[0]["discount"]))
-        lines += ["", f"### 🕰️ Juego viejo, descuento bajo ({len(cleanup_old)} juegos)", "",
-                  "> Juegos de más de 8 años con menos de 70% de descuento. Suelen bajar más.", "",
-                  "| % | Precio | Año | Juego |", "|---|--------|-----|-------|"]
+        lines += [
+            "",
+            f"### 🕰️ Juego viejo, descuento bajo ({len(cleanup_old)} juegos)",
+            "",
+            "> Juegos de más de 8 años con menos de 70% de descuento. Suelen bajar más.",
+            "",
+            "| % | Precio | Año | Juego |",
+            "|---|--------|-----|-------|",
+        ]
         for d, year in cleanup_old:
-            lines.append(f"| -{d['discount']}% | {d['price_final']} | {year} | {_link(d['name'], d['appid'])} |")
+            lines.append(
+                f"| -{d['discount']}% | {d['price_final']} | {year} | {_link(d['name'], d['appid'])} |"
+            )
 
     lines += ["", "---", ""]
 
@@ -436,7 +630,9 @@ def generate_md(
             "|---|---------------|-------|",
         ]
         for dd in disappeared:
-            lines.append(f"| -{dd['discount']}% | {dd['price_final']} | {_link(dd['name'], dd['appid'])} |")
+            lines.append(
+                f"| -{dd['discount']}% | {dd['price_final']} | {_link(dd['name'], dd['appid'])} |"
+            )
         lines += ["", "---", ""]
 
     has_itad = bool(historical_lows)
@@ -446,8 +642,23 @@ def generate_md(
             "discount": lambda d: -d["discount"],
             "price": lambda d: d.get("price_raw", 0),
             "reviews": lambda d: -(reviews.get(d["appid"], {}).get("pct", 0)),
-            "priority": lambda d: (priorities.get(d["appid"], 0) == 0, priorities.get(d["appid"], 9999)),
-            "score": lambda d: -(compute_value_score(d["discount"], reviews.get(d["appid"], {}).get("pct"), priorities.get(d["appid"], 0), None, deck_compat_data.get(d["appid"], 0), release_year=d.get("release_year"), metacritic_score=d.get("metacritic_score"))),
+            "priority": lambda d: (
+                priorities.get(d["appid"], 0) == 0,
+                priorities.get(d["appid"], 9999),
+            ),
+            "score": lambda d: (
+                -(
+                    compute_value_score(
+                        d["discount"],
+                        reviews.get(d["appid"], {}).get("pct"),
+                        priorities.get(d["appid"], 0),
+                        None,
+                        deck_compat_data.get(d["appid"], 0),
+                        release_year=d.get("release_year"),
+                        metacritic_score=d.get("metacritic_score"),
+                    )
+                )
+            ),
         }
         tier_deals.sort(key=sort_keys.get(sort_field, sort_keys["discount"]))
 
@@ -487,11 +698,20 @@ def generate_md(
                 markers.append("🆕")
             pc = comp.get("price_changes", {}).get(appid)
             if pc:
-                markers.append(f"⬇️ -{pc['delta_str']}" if pc["direction"] == "down" else f"⬆️ +{pc['delta_str']}")
+                markers.append(
+                    f"⬇️ -{pc['delta_str']}"
+                    if pc["direction"] == "down"
+                    else f"⬆️ +{pc['delta_str']}"
+                )
             streak = comp.get("deal_streak", {}).get(appid, 0)
             if streak >= 3:
                 markers.append(f"🔥 {streak}º run")
-            if not markers and not comp and previous_appids and appid not in previous_appids:
+            if (
+                not markers
+                and not comp
+                and previous_appids
+                and appid not in previous_appids
+            ):
                 markers.append("🆕")
             new_marker = " ".join(markers)
             prio = _prio_badge(priorities.get(d["appid"], 0))
@@ -529,7 +749,9 @@ def generate_md(
 
             if has_best_prices:
                 bp = current_prices.get(d["appid"])
-                bp_str = f"${bp['price']:.0f} en [{bp['store']}]({bp['url']})" if bp else "—"
+                bp_str = (
+                    f"${bp['price']:.0f} en [{bp['store']}]({bp['url']})" if bp else "—"
+                )
                 row += f" | {bp_str}"
 
             if has_trends:

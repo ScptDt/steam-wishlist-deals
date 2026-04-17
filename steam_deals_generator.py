@@ -1116,6 +1116,7 @@ def emit_final_closeout(
     previous_appids: set[str],
     top_picks: list[dict] | None,
     output_md: Path,
+    smart_alerts: dict[str, int] | None = None,
 ):
     if _run_output_module is None:
         raise RuntimeError("Run-output module is not available")
@@ -1126,6 +1127,7 @@ def emit_final_closeout(
         previous_appids,
         top_picks,
         output_md,
+        smart_alerts=smart_alerts,
         build_final_summary_fn=build_final_summary,
         emit_fn=print,
         bold_fn=_bold,
@@ -2009,6 +2011,7 @@ def generate_md(
     budget_result: dict | None = None,
     compare_data: dict | None = None,
     gift_ideas: list[dict] | None = None,
+    include_frontmatter: bool = False,
 ) -> str:
     if _generate_md_renderer is None:
         raise RuntimeError("Markdown renderer module is not available")
@@ -2043,6 +2046,7 @@ def generate_md(
         budget_result=budget_result,
         compare_data=compare_data,
         gift_ideas=gift_ideas,
+        include_frontmatter=include_frontmatter,
         group_by_tier=group_by_tier,
         filter_by_genres=filter_by_genres,
         group_deals_by_tag=group_deals_by_tag,
@@ -3505,6 +3509,41 @@ def main():
     active_bundles = itad_outputs.active_bundles
     itad_ids = itad_outputs.itad_ids
 
+    deal_by_appid = {deal["appid"]: deal for deal in deals}
+    global_historical_low_count = 0
+    for appid, low in historical_lows.items():
+        deal = deal_by_appid.get(appid)
+        if not deal:
+            continue
+        price_raw = deal.get("price_raw", 0)
+        low_price = low.get("price") if isinstance(low, dict) else None
+        if not price_raw or not isinstance(low_price, (int, float)):
+            continue
+        if (price_raw / 100.0) <= float(low_price):
+            global_historical_low_count += 1
+
+    bundle_names = {
+        bundle.get("title")
+        for bundles in active_bundles.values()
+        for bundle in bundles
+        if isinstance(bundle, dict) and bundle.get("title")
+    }
+
+    smart_alerts = {
+        "best_local_count": sum(
+            1
+            for trend in local_trends.values()
+            if trend.get("is_best_local") and not trend.get("is_first_time")
+        ),
+        "price_up_count": sum(
+            1
+            for change in comparison.get("price_changes", {}).values()
+            if change.get("direction") == "up"
+        ),
+        "global_historical_low_count": global_historical_low_count,
+        "active_bundles_count": len(bundle_names),
+    }
+
     post_processing_outputs = run_post_processing(
         deals,
         backlog_on_sale,
@@ -3566,7 +3605,8 @@ def main():
         budget_result=budget_result,
         compare_data=compare_data,
         gift_ideas=gift_ideas,
-        **family_renderer_kwargs,
+        family_appids=family_renderer_kwargs.get("family_appids"),
+        include_frontmatter=bool(FILTERS.get("md_frontmatter")),
     )
 
     # Generar HTML interactivo
@@ -3692,6 +3732,7 @@ def main():
         previous_appids,
         top_picks,
         OUTPUT_MD,
+        smart_alerts=smart_alerts,
     )
 
 

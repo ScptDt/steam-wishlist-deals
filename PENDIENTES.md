@@ -291,11 +291,11 @@ Mientras no haya host nativo Linux/macOS disponible para cierre manual de P2, la
 2. **Optimizacion de velocidad (P0) para wishlists grandes**
    - Cache mas agresivo (24h), mayor concurrencia de fetch y estrategia incremental por timestamps. [Parcial: cache policy ajustada para expirar en el borde del TTL (`>= 24h`) y refresh incremental por entrada con `_fetched_at`; validado con tests. Pendiente: subir concurrencia de fetch.]
 3. **Output/Export de valor inmediato**
-   - Export a Obsidian/Notion con frontmatter YAML.
+   - Export a Obsidian/Notion con frontmatter YAML. [Parcial avanzado: `--md-frontmatter` + guia de perfiles/checklist ya documentados en README; pendiente validacion manual final de importacion extremo a extremo en host real de Obsidian/Notion.]
 4. **Dashboard historico HTML**
-   - Navegacion entre runs + comparativa visual de precios.
+   - Navegacion entre runs + comparativa visual de precios. [Parcial implementado (MVP+3): selector Run A/Run B con paginado simple, busqueda de runs, quick compare de ultimos 2 runs, filtros por estado, orden por delta, persistencia local (`localStorage`), resumen por estado, Top Deltas (bajadas/subidas) y tendencia temporal simple (deals por run, ultimos 20 runs).]
 5. **Alertas inteligentes**
-   - Minimo historico / bundles activos / cambios relevantes entre runs.
+   - Minimo historico global / bundles activos / cambios relevantes entre runs. [Implementado: deteccion de nueva mejor oferta local, subidas de precio vs run anterior, minimo historico global y bundles activos; integrado al resumen final corto del run.]
 
 Notas:
 - Este plan no bloquea el cierre futuro de P2; solo evita tiempo muerto mientras falta host nativo.
@@ -312,6 +312,8 @@ Notas:
 
 ## Bitacora
 
+- 2026-04-16: Avance de alertas inteligentes (corte ampliado): se integra deteccion de minimo historico global y bundles activos, ademas de la deteccion ya existente de nueva mejor oferta local y subidas vs run anterior. Todo queda reflejado en el resumen final corto del run.
+- 2026-04-16: Cierre documental del flujo Obsidian/Notion: README ahora incluye perfiles de frontmatter recomendados y checklist manual de validacion de import (Obsidian + Notion) para ejecucion reproducible. Queda pendiente solo la validacion E2E manual en host real para marcar cierre total del item.
 - 2026-04-08: Se crea este archivo como consolidado unico de pendientes.
 - 2026-04-08: Se implementan eventos estructurados base (progress/file).
 - 2026-04-08: Se añade preflight y acciones rapidas de UX.
@@ -378,13 +380,19 @@ Notas:
 - 2026-04-16: Decision operativa actualizada: sin host nativo Linux/macOS disponible en esta iteracion, P2 queda en estado parcial documentado y se prioriza avance Windows/no bloqueado (documentacion + backlog ejecutable).
 - 2026-04-16: Avance Windows/no bloqueado en optimizacion de velocidad: cache de precios ahora expira exactamente al TTL (24h) y se habilita refresh incremental por entrada via timestamp `_fetched_at` (solo re-fetch de appids stale o faltantes). Se robustecio fallback individual cuando un batch devuelve null (incluyendo batch unitario). Validacion OK con pruebas dirigidas (`4 passed`, `3 passed`) y barrido ampliado de cache/enrichment (`17 passed`).
 - 2026-04-16: Ajuste conservador de parallel fetching en enrichment: `MAX_WORKERS` sube de `8` a `12` (sin cambiar `rate_limit`, backoff ni fallback). Validacion de regresion OK en `tests/test_generator_logic.py -k "EnrichmentTests or PriceCacheTests"` (`17 passed`).
+- 2026-04-16: Dashboard historico web MVP completado en Steam Deals: backend con endpoints `GET /api/history/runs` y `GET /api/history/compare` (con validacion de params y lectura segura de `run_*.json`), UI con selector de runs A/B + tabla comparativa de precios, filtros por estado (`changed/new/removed/same`), orden por delta (`delta_desc/delta_asc/abs_desc`) y persistencia de controles en `localStorage`. Validacion de regresion OK en `tests/test_generator_logic.py -k "History or ConfigTests or PriceCacheTests"` (`17 passed`).
+- 2026-04-16: Dashboard historico web avanza a MVP+1 en UI con visualizacion resumida por estado (`changed/new/removed/same`) y bloque Top Deltas (mayores bajadas/subidas) sobre los runs comparados; se integra sin cambiar contrato backend y manteniendo filtros/orden existentes. Validacion de regresion OK en `tests/test_generator_logic.py -k "History or ConfigTests or PriceCacheTests"` (`17 passed`).
+- 2026-04-16: Dashboard historico web avanza a MVP+2 con tendencia temporal simple en UI usando `GET /api/history/runs` (linea + puntos de `deal_count` sobre ultimos runs, con resumen min/max y delta neto vs primer run). Se mantiene implementacion frontend-only (sin cambio de contrato backend) y convive con comparativa A/B, filtros y orden existentes. Validacion de regresion OK en `tests/test_generator_logic.py -k "History or ConfigTests or PriceCacheTests"` (`17 passed`).
+- 2026-04-16: Dashboard historico web avanza a MVP+3 con navegacion historica avanzada en UI: busqueda de runs, quick compare de ultimos 2 runs y paginado simple en selectores Run A/Run B para mejorar usabilidad con historiales largos. Se mantiene el contrato backend y convive con comparativa A/B, filtros, orden, resumen por estado, Top Deltas y tendencia temporal simple. Validacion de regresion OK en `tests/test_generator_logic.py -k "History or ConfigTests or PriceCacheTests"` (`17 passed`).
+- 2026-04-16: Avance parcial export Obsidian/Notion: Markdown ahora soporta frontmatter YAML base y activacion por CLI via `--md-frontmatter` (pipeline de output integrado y tests dirigidos de config/markdown en verde). Queda pendiente cerrar guia de uso/plantillas y validacion de importacion end-to-end en Obsidian/Notion.
 
 ## Backlog de Features (Propuestos - Planning)
 
 ### Output/Export
 
-- [ ] Exportar a Obsidian/Notion (markdown con frontmatter YAML para importacion directa)
+- [ ] Exportar a Obsidian/Notion (markdown con frontmatter YAML para importacion directa). [Parcial avanzado: `--md-frontmatter` implementado + perfiles/checklist documentados; falta validacion final E2E de import en host real (Obsidian/Notion).]
 - [ ] Dashboard HTML historico con graficos de precios, comparativa entre runs y navegacion de historial
+- [ ] Dashboard HTML historico con graficos de precios, comparativa entre runs y navegacion de historial. [Parcial implementado (MVP+3): comparativa Run A vs Run B con filtros/orden, persistencia local, resumen visual por estado, Top Deltas (bajadas/subidas), tendencia temporal simple (deals por run), busqueda de runs, quick compare de ultimos 2 runs y paginado simple de selectores A/B; pendiente: graficos de tendencia mas ricos (series multipanel/zoom) y refinamiento UX.]
 - [x] Exportar a JSON / API local para integracion con otras herramientas y automatizaciones. [Incluye artifact `.json`, endpoint local `GET /api/latest-report`, quick links UI para abrir/copiar el ultimo JSON, empty state cuando aun no existe reporte y tarjeta-resumen del ultimo run.]
 
 ### Social/Community
@@ -408,7 +416,7 @@ Notas:
 
 ### Alertas inteligentes
 
-- [ ] Alertar por minimo historico, bundles activos y cambios relevantes entre runs
+- [x] Alertar por minimo historico, bundles activos y cambios relevantes entre runs. [Implementado: minimo historico global, bundles activos, nueva mejor oferta local y subidas vs run anterior; incluido en resumen final corto del run.]
 
 ### Expansion de Datos
 

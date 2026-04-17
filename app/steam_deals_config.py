@@ -134,6 +134,11 @@ def build_parser() -> argparse.ArgumentParser:
         metavar="N",
         help="Workers de fetch paralelo para enrichment (default: 12)",
     )
+    parser.add_argument(
+        "--md-frontmatter",
+        action="store_true",
+        help="Incluir frontmatter YAML en Markdown (Obsidian/Notion)",
+    )
     return parser
 
 
@@ -280,6 +285,7 @@ def _build_filters(args, cfg: dict) -> dict:
         "discord_webhook": args.discord_webhook or cfg.get("discord_webhook"),
         "schedule": args.schedule,
         "max_workers": max_workers,
+        "md_frontmatter": bool(args.md_frontmatter),
     }
 
 
