@@ -139,6 +139,24 @@ def build_parser() -> argparse.ArgumentParser:
         action="store_true",
         help="Incluir frontmatter YAML en Markdown (Obsidian/Notion)",
     )
+    parser.add_argument(
+        "--alert-rise-pct",
+        type=float,
+        metavar="PCT",
+        help="Umbral de subida %% para alertas inteligentes (ej: 10 para >=10%%)",
+    )
+    parser.add_argument(
+        "--alert-global-margin-pct",
+        type=float,
+        metavar="PCT",
+        help="Margen %% sobre mínimo global para alertas (ej: 3 para <= mínimo+3%%)",
+    )
+    parser.add_argument(
+        "--alert-score-min",
+        type=float,
+        metavar="SCORE",
+        help="Score mínimo para priorizar alertas inteligentes (ej: 75)",
+    )
     return parser
 
 
@@ -267,6 +285,21 @@ def _build_filters(args, cfg: dict) -> dict:
     max_workers = (
         args.max_workers if args.max_workers is not None else cfg.get("max_workers")
     )
+    alert_rise_pct = (
+        args.alert_rise_pct
+        if args.alert_rise_pct is not None
+        else cfg.get("alert_rise_pct")
+    )
+    alert_global_margin_pct = (
+        args.alert_global_margin_pct
+        if args.alert_global_margin_pct is not None
+        else cfg.get("alert_global_margin_pct")
+    )
+    alert_score_min = (
+        args.alert_score_min
+        if args.alert_score_min is not None
+        else cfg.get("alert_score_min")
+    )
     return {
         "max_price": args.max_price,
         "deck_only": args.deck_only,
@@ -286,6 +319,9 @@ def _build_filters(args, cfg: dict) -> dict:
         "schedule": args.schedule,
         "max_workers": max_workers,
         "md_frontmatter": bool(args.md_frontmatter),
+        "alert_rise_pct": alert_rise_pct,
+        "alert_global_margin_pct": alert_global_margin_pct,
+        "alert_score_min": alert_score_min,
     }
 
 

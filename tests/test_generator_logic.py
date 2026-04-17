@@ -216,6 +216,12 @@ class ConfigTests(unittest.TestCase):
                 "--max-workers",
                 "16",
                 "--md-frontmatter",
+                "--alert-rise-pct",
+                "12.5",
+                "--alert-global-margin-pct",
+                "3",
+                "--alert-score-min",
+                "80",
             ],
         )
 
@@ -227,6 +233,9 @@ class ConfigTests(unittest.TestCase):
         self.assertEqual(result[11]["schedule"], 6.0)
         self.assertEqual(result[11]["max_workers"], 16)
         self.assertEqual(result[11]["md_frontmatter"], True)
+        self.assertEqual(result[11]["alert_rise_pct"], 12.5)
+        self.assertEqual(result[11]["alert_global_margin_pct"], 3.0)
+        self.assertEqual(result[11]["alert_score_min"], 80.0)
 
     def test_get_config_handles_watchlist_and_exits_early(self) -> None:
         calls = []
@@ -1353,6 +1362,8 @@ class HistoryAndTrendTests(unittest.TestCase):
 
         self.assertEqual(comparison["new_deals"], {"b"})
         self.assertEqual(comparison["price_changes"]["a"]["direction"], "down")
+        self.assertEqual(comparison["price_changes"]["a"]["prev_price_raw"], 600)
+        self.assertEqual(comparison["price_changes"]["a"]["change_pct"], -16.67)
         self.assertEqual(comparison["disappeared"][0]["appid"], "c")
         self.assertEqual(comparison["deal_streak"]["a"], 3)
 

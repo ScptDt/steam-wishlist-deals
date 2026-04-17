@@ -1584,6 +1584,30 @@ def _resolve_max_workers(raw_value, default_value: int) -> int:
     return value if value >= 1 else default_value
 
 
+def _resolve_alert_rise_pct(raw_value) -> float:
+    try:
+        value = float(raw_value)
+    except (TypeError, ValueError):
+        return 0.0
+    return value if value > 0 else 0.0
+
+
+def _resolve_alert_global_margin_pct(raw_value) -> float:
+    try:
+        value = float(raw_value)
+    except (TypeError, ValueError):
+        return 0.0
+    return value if value >= 0 else 0.0
+
+
+def _resolve_alert_score_min(raw_value) -> float:
+    try:
+        value = float(raw_value)
+    except (TypeError, ValueError):
+        return 0.0
+    return value if value >= 0 else 0.0
+
+
 def _enrichment_bar(completed: int, total: int, width: int = 25) -> str:
     filled = int((completed / total) * width) if total > 0 else 0
     return f"{C.GRN}{BAR_FILL * filled}{C.DIM}{BAR_EMPTY * (width - filled)}{C.RST}"
@@ -3509,6 +3533,9 @@ def main():
     active_bundles = itad_outputs.active_bundles
     itad_ids = itad_outputs.itad_ids
 
+    alert_global_margin_pct = _resolve_alert_global_margin_pct(
+        FILTERS.get("alert_global_margin_pct")
+    )
     deal_by_appid = {deal["appid"]: deal for deal in deals}
     global_historical_low_count = 0
     for appid, low in historical_lows.items():
@@ -3519,7 +3546,8 @@ def main():
         low_price = low.get("price") if isinstance(low, dict) else None
         if not price_raw or not isinstance(low_price, (int, float)):
             continue
-        if (price_raw / 100.0) <= float(low_price):
+        low_with_margin = float(low_price) * (1.0 + (alert_global_margin_pct / 100.0))
+        if (price_raw / 100.0) <= low_with_margin:
             global_historical_low_count += 1
 
     bundle_names = {
@@ -3529,19 +3557,29 @@ def main():
         if isinstance(bundle, dict) and bundle.get("title")
     }
 
+    alert_rise_pct = _resolve_alert_rise_pct(FILTERS.get("alert_rise_pct"))
+    price_up_count = 0
+    for _appid, change in comparison.get("price_changes", {}).items():
+        if change.get("direction") != "up":
+            continue
+        change_pct = change.get("change_pct")
+        if isinstance(change_pct, (int, float)) and change_pct >= alert_rise_pct:
+            price_up_count += 1
+
+    best_local_count = sum(
+        1
+        for trend in local_trends.values()
+        if trend.get("is_best_local") and not trend.get("is_first_time")
+    )
+
+    active_bundle_games_count = len(active_bundles)
+
     smart_alerts = {
-        "best_local_count": sum(
-            1
-            for trend in local_trends.values()
-            if trend.get("is_best_local") and not trend.get("is_first_time")
-        ),
-        "price_up_count": sum(
-            1
-            for change in comparison.get("price_changes", {}).values()
-            if change.get("direction") == "up"
-        ),
+        "best_local_count": best_local_count,
+        "price_up_count": price_up_count,
         "global_historical_low_count": global_historical_low_count,
         "active_bundles_count": len(bundle_names),
+        "active_bundle_games_count": active_bundle_games_count,
     }
 
     post_processing_outputs = run_post_processing(
@@ -3559,6 +3597,62 @@ def main():
     hltb_hours = post_processing_outputs.hltb_hours
     deals = post_processing_outputs.deals
     top_picks = post_processing_outputs.top_picks
+
+    alert_score_min = _resolve_alert_score_min(FILTERS.get("alert_score_min"))
+    if alert_score_min > 0:
+        qualifying_appids = {
+            pick["appid"]
+            for pick in top_picks
+            if pick.get("appid") and float(pick.get("score", 0.0)) >= alert_score_min
+        }
+
+        scored_price_up_count = 0
+        for appid, change in comparison.get("price_changes", {}).items():
+            if appid not in qualifying_appids:
+                continue
+            if change.get("direction") != "up":
+                continue
+            change_pct = change.get("change_pct")
+            if isinstance(change_pct, (int, float)) and change_pct >= alert_rise_pct:
+                scored_price_up_count += 1
+
+        scored_best_local_count = sum(
+            1
+            for appid, trend in local_trends.items()
+            if appid in qualifying_appids
+            and trend.get("is_best_local")
+            and not trend.get("is_first_time")
+        )
+
+        scored_global_low_count = sum(
+            1
+            for appid, low in historical_lows.items()
+            if appid in qualifying_appids
+            and isinstance(low, dict)
+            and isinstance(low.get("price"), (int, float))
+            and appid in deal_by_appid
+            and deal_by_appid[appid].get("price_raw", 0)
+            and (deal_by_appid[appid].get("price_raw", 0) / 100.0)
+            <= (float(low.get("price")) * (1.0 + (alert_global_margin_pct / 100.0)))
+        )
+
+        scored_bundle_names = {
+            bundle.get("title")
+            for appid, bundles in active_bundles.items()
+            if appid in qualifying_appids
+            for bundle in bundles
+            if isinstance(bundle, dict) and bundle.get("title")
+        }
+        smart_alerts = {
+            **smart_alerts,
+            "best_local_count": scored_best_local_count,
+            "price_up_count": scored_price_up_count,
+            "global_historical_low_count": scored_global_low_count,
+            "active_bundles_count": len(scored_bundle_names),
+            "active_bundle_games_count": sum(
+                1 for appid in active_bundles.keys() if appid in qualifying_appids
+            ),
+        }
 
     engagement_outputs = run_engagement_post_run(
         deals,

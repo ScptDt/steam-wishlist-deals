@@ -11,7 +11,11 @@ from shared.io_utils import write_json_file as _default_write_json_file
 
 def load_previous_deal_appids(output_dir: Path, current_filename: str) -> set[str]:
     """Busca el MD anterior más reciente y extrae los appids de deals."""
-    markdown_files = sorted(output_dir.glob("Steam Deals*.md"), key=lambda file_path: file_path.stat().st_mtime, reverse=True)
+    markdown_files = sorted(
+        output_dir.glob("Steam Deals*.md"),
+        key=lambda file_path: file_path.stat().st_mtime,
+        reverse=True,
+    )
     for file_path in markdown_files:
         if file_path.name == current_filename:
             continue
@@ -25,7 +29,15 @@ def load_previous_deal_appids(output_dir: Path, current_filename: str) -> set[st
     return set()
 
 
-def _run_entry(steam_id: str, vanity: str, sale_name: str, min_discount: int, deals: list[dict], *, now: datetime) -> dict:
+def _run_entry(
+    steam_id: str,
+    vanity: str,
+    sale_name: str,
+    min_discount: int,
+    deals: list[dict],
+    *,
+    now: datetime,
+) -> dict:
     return {
         "steam_id": steam_id,
         "vanity": vanity,
@@ -94,7 +106,9 @@ def load_previous_run(steam_id: str, *, history_dir: Path) -> dict | None:
     return None
 
 
-def load_run_history(steam_id: str, *, history_dir: Path, max_runs: int = 30) -> list[dict]:
+def load_run_history(
+    steam_id: str, *, history_dir: Path, max_runs: int = 30
+) -> list[dict]:
     """Carga los últimos N runs para deal streak tracking."""
     if not history_dir.exists():
         return []
@@ -119,7 +133,12 @@ def compute_deal_comparison(
     run_history: list[dict],
 ) -> dict:
     """Compara deals actuales con run anterior y historial."""
-    result = {"price_changes": {}, "new_deals": set(), "disappeared": [], "deal_streak": {}}
+    result = {
+        "price_changes": {},
+        "new_deals": set(),
+        "disappeared": [],
+        "deal_streak": {},
+    }
     if not previous_run:
         return result
 
@@ -135,13 +154,19 @@ def compute_deal_comparison(
         previous = previous_deals[appid]
         current_price_raw = deal.get("price_raw", 0)
         previous_price_raw = previous.get("price_raw", 0)
-        if not current_price_raw or not previous_price_raw or current_price_raw == previous_price_raw:
+        if (
+            not current_price_raw
+            or not previous_price_raw
+            or current_price_raw == previous_price_raw
+        ):
             continue
         delta = current_price_raw - previous_price_raw
         result["price_changes"][appid] = {
             "delta_raw": delta,
             "delta_str": _delta_str(delta),
             "prev_price": previous.get("price_final", "?"),
+            "prev_price_raw": previous_price_raw,
+            "change_pct": round((delta / previous_price_raw) * 100, 2),
             "direction": "down" if delta < 0 else "up",
         }
 
@@ -203,7 +228,9 @@ def save_price_history(
     write_json_file(price_history_file, history, ensure_ascii=False, indent=None)
 
 
-def log_price_snapshot(history: dict, deals: list[dict], *, today_iso: str | None = None) -> None:
+def log_price_snapshot(
+    history: dict, deals: list[dict], *, today_iso: str | None = None
+) -> None:
     """Register current run's prices into the history."""
     current_day = today_iso or date.today().isoformat()
     games = history.setdefault("games", {})
@@ -215,13 +242,19 @@ def log_price_snapshot(history: dict, deals: list[dict], *, today_iso: str | Non
         game_entry = games.setdefault(appid, {"name": deal["name"], "snapshots": []})
         game_entry["name"] = deal["name"]
         snapshots = game_entry["snapshots"]
-        snapshots[:] = [snapshot for snapshot in snapshots if snapshot["date"] != current_day]
-        snapshots.append({"date": current_day, "discount": deal["discount"], "price_raw": price_raw})
+        snapshots[:] = [
+            snapshot for snapshot in snapshots if snapshot["date"] != current_day
+        ]
+        snapshots.append(
+            {"date": current_day, "discount": deal["discount"], "price_raw": price_raw}
+        )
         if len(snapshots) > 60:
             snapshots[:] = snapshots[-60:]
 
 
-def analyze_trends(history: dict, deals: list[dict], *, today_iso: str | None = None) -> dict[str, dict]:
+def analyze_trends(
+    history: dict, deals: list[dict], *, today_iso: str | None = None
+) -> dict[str, dict]:
     """Analyze price trends for current deals. Returns {appid: trend_info}."""
     games = history.get("games", {})
     result = {}
@@ -235,7 +268,11 @@ def analyze_trends(history: dict, deals: list[dict], *, today_iso: str | None = 
             result[appid] = {"times_on_sale": 1, "is_first_time": True}
             continue
 
-        previous_snapshots = [snapshot for snapshot in game_entry.get("snapshots", []) if snapshot["date"] != current_day]
+        previous_snapshots = [
+            snapshot
+            for snapshot in game_entry.get("snapshots", [])
+            if snapshot["date"] != current_day
+        ]
         if not previous_snapshots:
             result[appid] = {"times_on_sale": 1, "is_first_time": True}
             continue

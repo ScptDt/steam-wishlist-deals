@@ -24,6 +24,7 @@ Analiza tu wishlist de Steam y genera reportes detallados con deals, comparacion
 - **Notificaciones** — Telegram y Discord webhook con resumen de cambios
 - **Scheduler** — Ejecución automática cada N horas
 - **Comparación entre runs** — Detecta deals nuevos, terminados, y bajadas de precio
+- **Alertas inteligentes v2** — Umbrales configurables por subida (`--alert-rise-pct`), margen sobre mínimo global (`--alert-global-margin-pct`) y priorización por score mínimo (`--alert-score-min`)
 
 ### Salida
 - **Markdown** — Reporte completo con tablas, secciones, y badges
@@ -649,6 +650,9 @@ python3 steam_deals_generator.py --vanity TU_VANITY_URL \
 | `--family-json` | JSON de biblioteca familiar |
 | `--max-workers` | Workers de fetch paralelo para enrichment (default: 12; recomendado 12-16) |
 | `--md-frontmatter` | Incluir frontmatter YAML en Markdown (Obsidian/Notion); ver perfil y checklist en “Markdown con frontmatter” |
+| `--alert-rise-pct` | Umbral de subida % para alertas inteligentes (ej: 10 para >=10%) |
+| `--alert-global-margin-pct` | Margen % sobre mínimo global para alertas (ej: 3 para <= mínimo+3%) |
+| `--alert-score-min` | Score mínimo para priorizar alertas inteligentes (ej: 80) |
 
 ## PAYDAY 2 DLC Tracker (detalle)
 

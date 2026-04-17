@@ -294,8 +294,10 @@ Mientras no haya host nativo Linux/macOS disponible para cierre manual de P2, la
    - Export a Obsidian/Notion con frontmatter YAML. [Parcial avanzado: `--md-frontmatter` + guia de perfiles/checklist ya documentados en README; pendiente validacion manual final de importacion extremo a extremo en host real de Obsidian/Notion.]
 4. **Dashboard historico HTML**
    - Navegacion entre runs + comparativa visual de precios. [Parcial implementado (MVP+3): selector Run A/Run B con paginado simple, busqueda de runs, quick compare de ultimos 2 runs, filtros por estado, orden por delta, persistencia local (`localStorage`), resumen por estado, Top Deltas (bajadas/subidas) y tendencia temporal simple (deals por run, ultimos 20 runs).]
-5. **Alertas inteligentes**
-   - Minimo historico global / bundles activos / cambios relevantes entre runs. [Implementado: deteccion de nueva mejor oferta local, subidas de precio vs run anterior, minimo historico global y bundles activos; integrado al resumen final corto del run.]
+5. **Alertas inteligentes (v2)**
+   - Implementacion base v2 completada (minimo historico global, bundles activos, subidas vs run anterior, nueva mejor oferta local y umbrales configurables).
+   - **Pendiente por tiempo**: calibracion fina de umbrales y ejecucion/validacion manual completa en corrida larga real.
+   - **Se retoma en la proxima corrida** para cierre operativo final del frente de Alertas v2.
 
 Notas:
 - Este plan no bloquea el cierre futuro de P2; solo evita tiempo muerto mientras falta host nativo.
@@ -312,7 +314,8 @@ Notas:
 
 ## Bitacora
 
-- 2026-04-16: Avance de alertas inteligentes (corte ampliado): se integra deteccion de minimo historico global y bundles activos, ademas de la deteccion ya existente de nueva mejor oferta local y subidas vs run anterior. Todo queda reflejado en el resumen final corto del run.
+- 2026-04-16: Alertas v2 queda en estado pendiente operativo por tiempo: aunque la implementacion v2 esta lista, falta calibracion/ejecucion manual en corrida larga real. Se agenda retomar en la proxima corrida para validar ajuste final y cerrar el item.
+- 2026-04-16: Cierre Alertas v2: alertas inteligentes ahora soportan umbrales configurables de subida (`--alert-rise-pct`), margen sobre minimo global (`--alert-global-margin-pct`) y priorizacion por score minimo (`--alert-score-min`), manteniendo compatibilidad por default. Se conserva integracion en resumen final corto del run.
 - 2026-04-16: Cierre documental del flujo Obsidian/Notion: README ahora incluye perfiles de frontmatter recomendados y checklist manual de validacion de import (Obsidian + Notion) para ejecucion reproducible. Queda pendiente solo la validacion E2E manual en host real para marcar cierre total del item.
 - 2026-04-08: Se crea este archivo como consolidado unico de pendientes.
 - 2026-04-08: Se implementan eventos estructurados base (progress/file).
@@ -417,6 +420,7 @@ Notas:
 ### Alertas inteligentes
 
 - [x] Alertar por minimo historico, bundles activos y cambios relevantes entre runs. [Implementado: minimo historico global, bundles activos, nueva mejor oferta local y subidas vs run anterior; incluido en resumen final corto del run.]
+- [x] Alertar por minimo historico, bundles activos y cambios relevantes entre runs. [Implementado v2: minimo historico global, bundles activos, nueva mejor oferta local y subidas vs run anterior, con umbrales configurables (`--alert-rise-pct`, `--alert-global-margin-pct`) y priorizacion por score (`--alert-score-min`) en el resumen final corto del run.]
 
 ### Expansion de Datos
 
