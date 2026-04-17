@@ -192,6 +192,12 @@ def _stamp_entry(entry: dict | None, *, now_ts: float) -> dict:
     return stamped
 
 
+def _cache_result_entry(entry: dict | None, *, now_ts: float) -> dict:
+    if not isinstance(entry, dict) or not entry:
+        return {}
+    return _stamp_entry(entry, now_ts=now_ts)
+
+
 def get_deals_from_wishlist(
     appids: list[str],
     fetched_cache: dict,
@@ -313,7 +319,7 @@ def get_deals_from_wishlist(
                 for appid in batch:
                     single = fetch_single_fn(appid, country, delay)
                     parsed = process_app_entry_fn(appid, single) if single else None
-                    fetched_cache[appid] = _stamp_entry(parsed, now_ts=now_ts)
+                    fetched_cache[appid] = _cache_result_entry(parsed, now_ts=now_ts)
                 fetched_count += len(batch)
                 continue
 
@@ -331,12 +337,12 @@ def get_deals_from_wishlist(
                 for appid in batch:
                     single = fetch_single_fn(appid, country, delay)
                     parsed = process_app_entry_fn(appid, single) if single else None
-                    fetched_cache[appid] = _stamp_entry(parsed, now_ts=now_ts)
+                    fetched_cache[appid] = _cache_result_entry(parsed, now_ts=now_ts)
                 fetched_count += len(batch)
                 continue
 
             for appid in batch:
-                fetched_cache[appid] = _stamp_entry(
+                fetched_cache[appid] = _cache_result_entry(
                     process_app_entry_fn(appid, data),
                     now_ts=now_ts,
                 )

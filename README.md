@@ -119,7 +119,7 @@ python3 steam_deals_generator.py --vanity TU_VANITY_URL --warm-cache
 python3 steam_deals_generator.py --vanity TU_VANITY_URL --md-frontmatter
 ```
 
-`--max-workers` controla el paralelismo de fetch en enrichment. Recomendación práctica: empezar en `12` (default), probar `16` si tu red/API responde bien y evitar valores muy altos para reducir riesgo de rate limit.
+`--max-workers` controla el paralelismo de fetch en enrichment. Recomendación práctica: empezar en `12` (default), probar `16` si tu red/API responde bien y evitar valores muy altos para reducir riesgo de rate limit. Este ajuste ya está expuesto también en **Filtros avanzados** de la UI compartida (web + desktop).
 
 ### Warm cache headless
 
@@ -138,6 +138,8 @@ Este modo:
 - sale sin generar `.md`, `.html`, `.json` ni `.csv`
 
 En runs desde source, el caché queda en `./.cache/steam_deals`. En desktop empaquetado/frozen, el caché persistente vive en `~/.cache/steam_deals` (o `XDG_CACHE_HOME/steam_deals` si está definido).
+
+Esto importa para desktop: el wrapper empaquetado ya no depende de rutas temporales `_MEI` para el caché, así que una corrida headless con `--warm-cache` puede precalentar datos que luego reutiliza la app nativa.
 
 Los logs de `--warm-cache` se guardan automáticamente en una carpeta `logs/`:
 
@@ -315,6 +317,13 @@ Ademas, cuando encuentra `WARN`/`FAIL`, ahora agrega guidance mas profundo por p
 
 Tambien puedes ejecutarlo desde la Web UI con los botones **Doctor desktop** y **Autofix desktop**; reutilizan la misma logica y muestran el diagnostico en la consola local.
 
+La misma consola compartida (web + desktop) ya permite:
+
+- **Copiar log**
+- **Descargar log (.txt)**
+
+Esto ayuda a conservar tracebacks largos o warnings dificiles de seleccionar durante validacion manual.
+
 Autofix seguro (opt-in):
 
 - crea `.venv` local si hace falta
@@ -416,9 +425,12 @@ Runbooks detallados por plataforma:
 5. Ejecutar artefacto nativo:
    - `./dist/SteamToolsDesktop`
    - Esperado: ventana nativa abre y la UI responde.
+   - Hallazgo local reciente: en sesion grafica KDE no-root la ventana nativa abrio sin requerir `QT_QPA_PLATFORM=xcb`; si tu stack Wayland/Qt falla, usalo solo como workaround puntual.
 6. Verificación funcional mínima:
-   - Ejecutar preflight, correr run de prueba, generar MD/HTML/CSV y cerrar app.
-   - Esperado: sin crash, outputs presentes, sin procesos colgados.
+    - Ejecutar preflight, correr run de prueba, generar MD/HTML/CSV y cerrar app.
+    - Esperado: sin crash, outputs presentes, sin procesos colgados.
+    - Si la wishlist es muy grande, conviene primero precalentar cache con `STEAM_DEALS_CACHE_DIR="$HOME/.cache/steam_deals" python3 steam_deals_generator.py --vanity TU_VANITY_URL --warm-cache` y conservar el log generado en `<cache>/logs/`.
+    - Si aparece un error largo durante la corrida manual, usa los botones **Copiar log** / **Descargar log (.txt)** antes de cerrar la app.
 7. Fallback mitigación (si la ventana nativa no abre):
    - `python3 steam_deals_web.py --no-open --port 8080`
    - Esperado: servidor arriba en `http://127.0.0.1:8080`.
@@ -470,6 +482,8 @@ Usa esta secuencia en host nativo Linux y macOS. Copia/pega los resultados en `P
 > Estado actual: este runbook queda **preparado para ejecución posterior**. En la iteración actual no se ejecutó validación manual en host nativo Linux/macOS por no contar con ese host; la evidencia disponible es CI parcial (run `24487556896`) y validación avanzada Linux en entorno local documentada en `PENDIENTES.md`.
 
 > Nota de capacidad: si tu wishlist real es muy grande (por ejemplo 2K+ juegos), el smoke funcional Linux no debe tratarse como prueba corta; conviene reservar una ventana amplia antes de ejecutarlo.
+
+> Mitigacion practica ya validada: para wishlists grandes, primero corre `--warm-cache` con `STEAM_DEALS_CACHE_DIR="$HOME/.cache/steam_deals"`. Asi el desktop reutiliza el mismo cache persistente y el log del warm-cache queda guardado en `<cache>/logs/`.
 
 #### Linux (Ubuntu LTS)
 

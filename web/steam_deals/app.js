@@ -7,7 +7,7 @@ function togglePw(btn) {
 
 // ── Config fields (saveable) ──
 const CONFIG_FIELDS = ['vanity','key','hltb','output','discount','genres','family_json','itad_key','compare','telegram_token','telegram_chat','discord_webhook'];
-const FILTER_FIELDS = ['max_price','min_reviews','min_review_count','max_hours','top','sort','budget'];
+const FILTER_FIELDS = ['max_price','min_reviews','min_review_count','max_hours','top','sort','budget','max_workers'];
 const CHECK_FIELDS  = ['deck_only','deck_verified','new_only','csv','no_cache'];
 const GENRE_SUGGESTIONS = [
   'action', 'adventure', 'indie', 'rpg', 'strategy', 'simulation', 'casual', 'sports',
@@ -88,6 +88,16 @@ function fillForm(cfg) {
     } else {
       el.value = cfg[f] || '';
     }
+  });
+  FILTER_FIELDS.forEach(f => {
+    const el = $(f);
+    if (!el || cfg[f] == null) return;
+    el.value = String(cfg[f]);
+  });
+  CHECK_FIELDS.forEach(f => {
+    const el = $(f);
+    if (!el || cfg[f] == null) return;
+    el.checked = !!cfg[f];
   });
 }
 
@@ -300,6 +310,7 @@ const historySortDelta = $('history-sort-delta');
 const historySearch = $('history-search');
 const btnHistoryCompare = $('btn-history-compare');
 const btnHistoryRefresh = $('btn-history-refresh');
+const btnHistoryReset = $('btn-history-reset');
 const btnHistoryQuickCompare = $('btn-history-quick-compare');
 const btnHistoryPrevPage = $('btn-history-prev-page');
 const btnHistoryNextPage = $('btn-history-next-page');
@@ -325,40 +336,74 @@ let historyPage = 1;
 const HISTORY_PAGE_SIZE = 20;
 
 const HISTORY_FILTERS_STORAGE_KEY = 'steam_deals_history_filters_v1';
+const HISTORY_DEFAULT_FILTERS = Object.freeze({
+  include_same: false,
+  status: 'all',
+  sort_delta: 'default',
+});
 
 function saveHistoryFilters() {
   try {
     const payload = {
       include_same: !!(historyIncludeSame && historyIncludeSame.checked),
-      status: historyStatusFilter ? historyStatusFilter.value : 'all',
-      sort_delta: historySortDelta ? historySortDelta.value : 'default',
+      status: historyStatusFilter ? historyStatusFilter.value : HISTORY_DEFAULT_FILTERS.status,
+      sort_delta: historySortDelta ? historySortDelta.value : HISTORY_DEFAULT_FILTERS.sort_delta,
     };
     window.localStorage.setItem(HISTORY_FILTERS_STORAGE_KEY, JSON.stringify(payload));
   } catch (e) {}
 }
 
+function applyHistoryFilterControls(filters = {}) {
+  const merged = {...HISTORY_DEFAULT_FILTERS, ...(filters || {})};
+  if (historyIncludeSame) {
+    historyIncludeSame.checked = !!merged.include_same;
+  }
+  if (historyStatusFilter) {
+    historyStatusFilter.value = merged.status || HISTORY_DEFAULT_FILTERS.status;
+  }
+  if (historySortDelta) {
+    historySortDelta.value = merged.sort_delta || HISTORY_DEFAULT_FILTERS.sort_delta;
+  }
+}
+
 function loadHistoryFilters() {
   try {
     const raw = window.localStorage.getItem(HISTORY_FILTERS_STORAGE_KEY);
-    if (!raw) return;
+    if (!raw) {
+      applyHistoryFilterControls();
+      return;
+    }
     const parsed = JSON.parse(raw);
     const includeSame = !!(parsed && parsed.include_same);
-    const status = parsed && typeof parsed.status === 'string' ? parsed.status : 'all';
-    const sortDelta = parsed && typeof parsed.sort_delta === 'string' ? parsed.sort_delta : 'default';
+    const status = parsed && typeof parsed.status === 'string' ? parsed.status : HISTORY_DEFAULT_FILTERS.status;
+    const sortDelta = parsed && typeof parsed.sort_delta === 'string' ? parsed.sort_delta : HISTORY_DEFAULT_FILTERS.sort_delta;
 
     const validStatus = new Set(['all', 'changed', 'new', 'removed', 'same']);
     const validSort = new Set(['default', 'delta_desc', 'delta_asc', 'abs_desc']);
 
-    if (historyIncludeSame) {
-      historyIncludeSame.checked = includeSame;
-    }
-    if (historyStatusFilter) {
-      historyStatusFilter.value = validStatus.has(status) ? status : 'all';
-    }
-    if (historySortDelta) {
-      historySortDelta.value = validSort.has(sortDelta) ? sortDelta : 'default';
-    }
-  } catch (e) {}
+    applyHistoryFilterControls({
+      include_same: includeSame,
+      status: validStatus.has(status) ? status : HISTORY_DEFAULT_FILTERS.status,
+      sort_delta: validSort.has(sortDelta) ? sortDelta : HISTORY_DEFAULT_FILTERS.sort_delta,
+    });
+  } catch (e) {
+    applyHistoryFilterControls();
+  }
+}
+
+function resetHistoryFilters({announce = false} = {}) {
+  if (historySearch) {
+    historySearch.value = '';
+  }
+  historyPage = 1;
+  applyHistoryFilterControls();
+  saveHistoryFilters();
+  latestFilteredRuns = filterHistoryRuns(latestHistoryRuns, '');
+  refreshRunSelectorsFromState();
+  clearHistoryComparison();
+  if (announce) {
+    appendLine('Filtros del historico restablecidos.', 'ok');
+  }
 }
 
 function formatHistoryRunLabel(run) {
@@ -1664,6 +1709,12 @@ if (btnHistoryRefresh) {
     } finally {
       btnHistoryRefresh.disabled = false;
     }
+  });
+}
+
+if (btnHistoryReset) {
+  btnHistoryReset.addEventListener('click', () => {
+    resetHistoryFilters({announce: true});
   });
 }
 

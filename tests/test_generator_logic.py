@@ -1019,6 +1019,43 @@ class PriceCacheTests(unittest.TestCase):
         self.assertEqual(fetched_cache["10"].get("_fetched_at"), now_ts)
         self.assertEqual(fetched_cache["20"].get("_fetched_at"), fresh_ts)
 
+    def test_get_deals_from_wishlist_keeps_failed_entries_retryable(self) -> None:
+        now_ts = 200000.0
+        fetched_cache = {}
+
+        deals, total = module_get_deals_from_wishlist(
+            ["10"],
+            fetched_cache,
+            "steam-id",
+            min_discount=50,
+            get_json=lambda _url, headers=None: {"10": None},
+            sleep_fn=lambda _seconds: None,
+            monotonic_fn=lambda: 0.0,
+            current_time_fn=lambda: now_ts,
+            save_price_cache_fn=lambda _steam_id, _cache: None,
+            fetch_single_fn=lambda _appid, _country, _delay: None,
+            process_app_entry_fn=lambda appid, data: module_process_app_entry(
+                appid, data, parse_release_year_fn=module_parse_release_year
+            ),
+            emit=lambda *_args, **_kwargs: None,
+            warn=lambda text: text,
+            dim=lambda text: text,
+        )
+
+        missing, stale = module_count_refresh_candidates(
+            ["10"],
+            fetched_cache,
+            now_ts=now_ts + 60,
+            entry_ttl_hours=24,
+        )
+
+        self.assertEqual(total, 1)
+        self.assertEqual(deals, [])
+        self.assertEqual(fetched_cache["10"], {})
+        self.assertNotIn("_fetched_at", fetched_cache["10"])
+        self.assertEqual(missing, 0)
+        self.assertEqual(stale, 1)
+
 
 class RunOutputTests(unittest.TestCase):
     def test_build_output_md_path_sanitizes_sale_name(self) -> None:
