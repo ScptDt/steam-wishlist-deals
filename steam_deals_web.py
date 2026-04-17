@@ -26,6 +26,7 @@ from steam_deals_watchlist import (
     save_watchlist,
 )
 from steam_deals_run_output import find_latest_artifact
+from steam_deals_paths import resolve_cache_dir
 from desktop_doctor import apply_desktop_doctor_fixes, build_desktop_doctor_report
 
 from shared_web_infra import (
@@ -45,9 +46,10 @@ from shared_web_infra import (
 
 SCRIPT_PATH = Path(__file__).resolve().parent / "steam_deals_generator.py"
 PD2_SCRIPT_PATH = Path(__file__).resolve().parent / "payday2_dlc_tracker.py"
+PROJECT_DIR = Path(__file__).resolve().parent
 CONFIG_FILE = Path.home() / ".config" / "steam_deals.json"
 DEFAULT_PORT = 8080
-WEB_DIR = Path(__file__).resolve().parent / "web" / "steam_deals"
+WEB_DIR = PROJECT_DIR / "web" / "steam_deals"
 STEAM_DEALS_HTML_FILE = WEB_DIR / "index.html"
 STEAM_DEALS_CSS_FILE = WEB_DIR / "app.css"
 STEAM_DEALS_JS_FILE = WEB_DIR / "app.js"
@@ -55,7 +57,10 @@ STEAM_DEALS_JS_FILE = WEB_DIR / "app.js"
 _running_proc = None
 _proc_lock = threading.Lock()
 
-LOCAL_CACHE_DIR = SCRIPT_PATH.parent / ".cache" / "steam_deals"
+LOCAL_CACHE_DIR = resolve_cache_dir(
+    PROJECT_DIR,
+    frozen=getattr(sys, "frozen", False),
+)
 HISTORY_DIR = LOCAL_CACHE_DIR / "history"
 
 # ─── Config I/O ──────────────────────────────────

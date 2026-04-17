@@ -50,6 +50,11 @@ def build_parser() -> argparse.ArgumentParser:
         "--no-cache", action="store_true", help="Re-fetch aunque haya caché válida"
     )
     parser.add_argument(
+        "--warm-cache",
+        action="store_true",
+        help="Precalienta caché de precios y sale sin generar reportes",
+    )
+    parser.add_argument(
         "--family-json",
         nargs="?",
         const="",
@@ -311,6 +316,7 @@ def _build_filters(args, cfg: dict) -> dict:
         "sort": args.sort,
         "new_only": args.new_only,
         "csv": args.csv,
+        "warm_cache": args.warm_cache,
         "budget": args.budget,
         "compare": args.compare,
         "telegram_token": args.telegram_token or cfg.get("telegram_token"),

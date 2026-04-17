@@ -171,16 +171,33 @@ details .details-body { padding-top: 0.75rem; }
 }
 
 /* Console */
+.console-actions {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 0.5rem;
+  margin-bottom: 0.75rem;
+}
+.console-actions .btn {
+  padding: 0.45rem 0.75rem;
+  font-size: 0.82rem;
+  background: var(--bg2);
+  color: var(--text);
+  border: 1px solid var(--card-border);
+}
+.console-actions .btn:hover:not(:disabled) {
+  border-color: var(--accent);
+  color: var(--accent);
+}
 .console {
   background: var(--console-bg); border: 1px solid var(--card-border);
   border-radius: 6px; padding: 0.75rem; font-family: 'Consolas', 'Monaco', 'Courier New', monospace;
   font-size: 0.8rem; line-height: 1.5; max-height: 55vh; overflow-y: auto;
-  min-height: 120px;
+  min-height: 120px; user-select: text;
 }
 .console:empty::before {
   content: 'Listo para ejecutar...'; color: var(--text2); opacity: 0.5;
 }
-.console .line { white-space: pre-wrap; word-break: break-all; }
+.console .line { white-space: pre-wrap; word-break: break-all; user-select: text; cursor: text; }
 .console .line-ok { color: var(--green); }
 .console .line-warn { color: var(--yellow); }
 .console .line-err { color: var(--red); }

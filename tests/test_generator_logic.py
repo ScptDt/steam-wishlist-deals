@@ -130,6 +130,8 @@ from steam_deals_watchlist import (
 from steam_deals_generator import (
     apply_filters,
     analyze_trends,
+    build_warm_cache_emit,
+    build_final_summary as generator_build_final_summary,
     build_gift_ideas,
     compute_budget_picks,
     compute_deal_comparison,
@@ -143,6 +145,8 @@ from steam_deals_generator import (
     is_same_game,
     load_previous_deal_appids,
     parse_hltb,
+    run_price_cache_stage,
+    run_warm_cache_mode,
     rank_top_picks,
 )
 
@@ -216,6 +220,7 @@ class ConfigTests(unittest.TestCase):
                 "--max-workers",
                 "16",
                 "--md-frontmatter",
+                "--warm-cache",
                 "--alert-rise-pct",
                 "12.5",
                 "--alert-global-margin-pct",
@@ -233,6 +238,7 @@ class ConfigTests(unittest.TestCase):
         self.assertEqual(result[11]["schedule"], 6.0)
         self.assertEqual(result[11]["max_workers"], 16)
         self.assertEqual(result[11]["md_frontmatter"], True)
+        self.assertEqual(result[11]["warm_cache"], True)
         self.assertEqual(result[11]["alert_rise_pct"], 12.5)
         self.assertEqual(result[11]["alert_global_margin_pct"], 3.0)
         self.assertEqual(result[11]["alert_score_min"], 80.0)
@@ -256,6 +262,120 @@ class ConfigTests(unittest.TestCase):
             )
 
         self.assertEqual(calls, [["list"]])
+
+
+class WarmCacheTests(unittest.TestCase):
+    def test_run_price_cache_stage_updates_cache_when_fetching_new_data(self) -> None:
+        emitted = []
+        saved = []
+        cleared = []
+        forwarded_emit = []
+
+        def fake_get_deals(_wishlist, fetched_cache, _steam_id, **kwargs):
+            forwarded_emit.append(kwargs.get("emit_fn"))
+            fetched_cache["10"] = {"discount_percent": 70}
+            return ([{"appid": "10"}], 1)
+
+        result = run_price_cache_stage(
+            ["10"],
+            "steam-id",
+            no_cache=False,
+            min_discount=50,
+            rate_limit=1.5,
+            load_price_cache_fn=lambda _steam_id: ({}, 0.0),
+            select_cache_fn=lambda *_args, **_kwargs: SimpleNamespace(
+                status="empty", cache={}, missing_ids=("10",)
+            ),
+            clear_cache_files_fn=lambda paths: cleared.extend(paths) or tuple(paths),
+            get_deals_from_wishlist_fn=fake_get_deals,
+            save_price_cache_fn=lambda steam_id, fetched: saved.append((steam_id, dict(fetched))),
+            emit_fn=emitted.append,
+        )
+
+        self.assertEqual(result["n_fetched"], 1)
+        self.assertEqual(result["cache_status"], "empty")
+        self.assertEqual(saved, [("steam-id", {"10": {"discount_percent": 70}})])
+        self.assertEqual(cleared, [])
+        self.assertEqual(forwarded_emit, [emitted.append])
+        self.assertTrue(any("Sin caché" in line for line in emitted))
+        self.assertTrue(any("caché actualizada" in line for line in emitted))
+
+    def test_run_price_cache_stage_reuses_valid_cache_without_saving(self) -> None:
+        emitted = []
+        saved = []
+        cached_payload = {"10": {"discount_percent": 70}}
+
+        result = run_price_cache_stage(
+            ["10"],
+            "steam-id",
+            no_cache=False,
+            min_discount=50,
+            rate_limit=1.5,
+            load_price_cache_fn=lambda _steam_id: (cached_payload, 2.0),
+            select_cache_fn=lambda *_args, **_kwargs: SimpleNamespace(
+                status="valid", cache=cached_payload, missing_ids=()
+            ),
+            clear_cache_files_fn=lambda _paths: (),
+            get_deals_from_wishlist_fn=lambda *_args, **_kwargs: ([{"appid": "10"}], 0),
+            save_price_cache_fn=lambda steam_id, fetched: saved.append((steam_id, fetched)),
+            emit_fn=emitted.append,
+        )
+
+        self.assertEqual(result["n_fetched"], 0)
+        self.assertEqual(result["cache_status"], "valid")
+        self.assertEqual(saved, [])
+        self.assertTrue(any("Caché válida" in line for line in emitted))
+        self.assertTrue(any("desde caché" in line for line in emitted))
+
+    def test_run_warm_cache_mode_reports_summary_and_target_path(self) -> None:
+        steps = []
+        emitted = []
+
+        result = run_warm_cache_mode(
+            ["10", "20"],
+            "steam-id",
+            no_cache=False,
+            min_discount=50,
+            rate_limit=1.5,
+            started_at=0.0,
+            step_fn=steps.append,
+            emit_fn=emitted.append,
+            run_price_cache_stage_fn=lambda *_args, **_kwargs: {
+                "deals": [{"appid": "10"}],
+                "n_fetched": 1,
+                "cache_age": 0.0,
+                "cache_status": "empty",
+                "cache_path": Path("/tmp/cache/prices_cache.json"),
+            },
+        )
+
+        self.assertEqual(steps, ["Precalentando caché de precios..."])
+        self.assertEqual(result["cache_status"], "empty")
+        self.assertTrue(any("Warm cache listo" in line for line in emitted))
+        self.assertTrue(any("Wishlist: 2 juegos" in line for line in emitted))
+        self.assertTrue(any("/tmp/cache/prices_cache.json" in line for line in emitted))
+
+    def test_build_warm_cache_emit_keeps_terminal_output_and_strips_ansi_in_log(self) -> None:
+        terminal_calls = []
+
+        with TemporaryDirectory() as temp_dir:
+            log_path = Path(temp_dir) / "warm-cache.log"
+            with log_path.open("w", encoding="utf-8") as log_handle:
+                emit = build_warm_cache_emit(
+                    log_handle,
+                    terminal_emit=lambda message, **kwargs: terminal_calls.append(
+                        (message, kwargs)
+                    ),
+                )
+                emit("\x1b[32mOK\x1b[0m", flush=True)
+                emit("\rprogress 10/20", end="", flush=True)
+
+            content = log_path.read_text(encoding="utf-8")
+
+        self.assertEqual(terminal_calls[0][0], "\x1b[32mOK\x1b[0m")
+        self.assertIn("OK", content)
+        self.assertIn("\nprogress 10/20", content)
+        self.assertNotIn("\x1b", content)
 
 
 class PresentationHelpersTests(unittest.TestCase):
@@ -1077,6 +1197,28 @@ class RunOutputTests(unittest.TestCase):
 
     def test_build_final_summary_appends_smart_alerts_when_present(self) -> None:
         new_count, summary = module_build_final_summary(
+            12.3,
+            [{"appid": "10"}, {"appid": "20"}],
+            [{"appid": "10"}],
+            {"10"},
+            [{"name": "Portal 2", "score": 95.4}],
+            Path("/tmp/Steam Deals 2026-04-14.md"),
+            {
+                "best_local_count": 2,
+                "price_up_count": 1,
+                "global_historical_low_count": 3,
+                "active_bundles_count": 2,
+            },
+        )
+
+        self.assertEqual(new_count, 1)
+        self.assertEqual(
+            summary,
+            "  2 deals · 1 backlog · 1 nuevos · Top pick: Portal 2 (95.4) · 2 mejor local · 1 subieron · 3 mín. global · 2 bundles activos · Steam Deals 2026-04-14.md",
+        )
+
+    def test_generator_build_final_summary_accepts_smart_alerts(self) -> None:
+        new_count, summary = generator_build_final_summary(
             12.3,
             [{"appid": "10"}, {"appid": "20"}],
             [{"appid": "10"}],

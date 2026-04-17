@@ -19,6 +19,7 @@ Config guardada en ~/.config/steam_deals.json tras el primer run interactivo.
 """
 
 import json
+import os
 import re
 import sys
 import time
@@ -303,6 +304,15 @@ try:
     import steam_deals_run_output as _run_output_module
 except Exception:
     _run_output_module = None
+
+try:
+    from steam_deals_paths import (
+        resolve_cache_dir as _resolve_cache_dir_impl,
+        resolve_logs_dir as _resolve_logs_dir_impl,
+    )
+except Exception:
+    _resolve_cache_dir_impl = None
+    _resolve_logs_dir_impl = None
 
 
 try:
@@ -1101,11 +1111,18 @@ def build_final_summary(
     previous_appids: set[str],
     top_picks: list[dict] | None,
     output_md: Path,
+    smart_alerts: dict[str, int] | None = None,
 ) -> tuple[int, str]:
     if _run_output_module is None:
         raise RuntimeError("Run-output module is not available")
     return _run_output_module.build_final_summary(
-        elapsed, deals, backlog_on_sale, previous_appids, top_picks, output_md
+        elapsed,
+        deals,
+        backlog_on_sale,
+        previous_appids,
+        top_picks,
+        output_md,
+        smart_alerts,
     )
 
 
@@ -1141,7 +1158,13 @@ def emit_final_closeout(
 # ─────────────────────────────────────────────
 
 PROJECT_DIR = Path(__file__).resolve().parent
-CACHE_DIR = PROJECT_DIR / ".cache" / "steam_deals"
+if _resolve_cache_dir_impl is None:
+    CACHE_DIR = PROJECT_DIR / ".cache" / "steam_deals"
+else:
+    CACHE_DIR = _resolve_cache_dir_impl(
+        PROJECT_DIR,
+        frozen=getattr(sys, "frozen", False),
+    )
 CACHE_FILE = CACHE_DIR / "prices_cache.json"
 CACHE_MAX_HOURS = 24
 REVIEWS_CACHE_FILE = CACHE_DIR / "reviews_cache.json"
@@ -1156,6 +1179,65 @@ PROTONDB_CACHE_FILE = CACHE_DIR / "protondb_cache.json"
 ANTICHEAT_CACHE_FILE = CACHE_DIR / "anticheat_cache.json"
 ACHIEVEMENTS_CACHE_FILE = CACHE_DIR / "achievements_cache.json"
 ACHIEVEMENTS_CACHE_TTL = 720  # 30 days in hours
+ANSI_ESCAPE_RE = re.compile(r"\x1b\[[0-9;?]*[A-Za-z]")
+
+
+def resolve_logs_dir(*, env=None, frozen: bool = False) -> Path:
+    if _resolve_logs_dir_impl is None:
+        return PROJECT_DIR / "logs"
+    return _resolve_logs_dir_impl(PROJECT_DIR, env=env, frozen=frozen)
+
+
+def build_warm_cache_log_path(logs_dir: Path, *, now_fn=datetime.now) -> Path:
+    timestamp = now_fn().strftime("%Y-%m-%d_%H-%M-%S")
+    return logs_dir / f"warm-cache-{timestamp}.log"
+
+
+def strip_ansi_for_log(text: str) -> str:
+    return ANSI_ESCAPE_RE.sub("", text)
+
+
+def write_warm_cache_log(log_handle, message: str, *, end: str = "\n", flush: bool = False) -> None:
+    clean_message = strip_ansi_for_log(str(message)).replace("\r", "\n")
+    clean_end = strip_ansi_for_log(str(end)).replace("\r", "\n")
+    log_handle.write(clean_message)
+    log_handle.write(clean_end)
+    if flush:
+        log_handle.flush()
+
+
+def build_warm_cache_emit(log_handle, *, terminal_emit=print):
+    def emit(message="", **kwargs):
+        try:
+            terminal_emit(message, **kwargs)
+        except TypeError:
+            terminal_emit(message)
+        write_warm_cache_log(
+            log_handle,
+            str(message),
+            end=str(kwargs.get("end", "\n")),
+            flush=bool(kwargs.get("flush", False)),
+        )
+
+    return emit
+
+
+def open_warm_cache_log_file(*, env=None, frozen: bool = False, now_fn=datetime.now):
+    logs_dir = resolve_logs_dir(env=env, frozen=frozen)
+    logs_dir.mkdir(parents=True, exist_ok=True)
+    log_path = build_warm_cache_log_path(logs_dir, now_fn=now_fn)
+    return log_path, log_path.open("w", encoding="utf-8")
+
+
+def build_price_related_cache_files() -> tuple[Path, ...]:
+    return (
+        REVIEWS_CACHE_FILE,
+        DECK_CACHE_FILE,
+        TAGS_CACHE_FILE,
+        PROTONDB_CACHE_FILE,
+        ANTICHEAT_CACHE_FILE,
+        ACHIEVEMENTS_CACHE_FILE,
+    )
 
 
 def clear_cache_files(cache_files: list[Path]) -> tuple[Path, ...]:
@@ -1402,6 +1484,119 @@ def save_price_cache(steam_id: str, fetched: dict) -> None:
     _prices_module.save_price_cache(CACHE_FILE, steam_id, fetched)
 
 
+def format_price_cache_status(price_cache_policy, cache_age: float) -> str:
+    status = getattr(price_cache_policy, "status", "empty")
+    if status == "bypass":
+        return _warn("--no-cache: ignorando caché existente")
+    if status == "valid":
+        new_appids = getattr(price_cache_policy, "missing_ids", ())
+        status_msg = (
+            f"{len(new_appids)} nuevos por fetchear"
+            if new_appids
+            else _dim("sin nuevos, skip fetch")
+        )
+        return f"{_ok(f'Caché válida ({cache_age:.1f}h)')} — {status_msg}"
+    if status == "expired":
+        return _warn(f"Caché expirada ({cache_age:.0f}h) — re-fetching todo")
+    return _dim("Sin caché — fetch completo")
+
+
+def build_price_cache_completion_message(
+    deals: list[dict], min_discount: int, n_fetched: int
+) -> str:
+    suffix = "caché actualizada" if n_fetched > 0 else "desde caché"
+    return _ok(f"{len(deals):,} deals (≥{min_discount}%) — {suffix}")
+
+
+def run_price_cache_stage(
+    wishlist_appids: list[str],
+    steam_id: str,
+    *,
+    no_cache: bool,
+    min_discount: int,
+    rate_limit: float,
+    load_price_cache_fn=load_price_cache,
+    select_cache_fn=select_scoped_cache,
+    clear_cache_files_fn=clear_cache_files,
+    get_deals_from_wishlist_fn=None,
+    save_price_cache_fn=save_price_cache,
+    emit_fn=print,
+) -> dict:
+    if get_deals_from_wishlist_fn is None:
+        get_deals_from_wishlist_fn = get_deals_from_wishlist
+
+    fetched_cache, cache_age = load_price_cache_fn(steam_id)
+    price_cache_policy = select_cache_fn(
+        wishlist_appids,
+        fetched_cache,
+        cache_age,
+        no_cache=no_cache,
+        ttl_hours=CACHE_MAX_HOURS,
+    )
+    fetched_cache = price_cache_policy.cache
+
+    if price_cache_policy.status == "bypass":
+        clear_cache_files_fn(list(build_price_related_cache_files()))
+    emit_fn(f"  {format_price_cache_status(price_cache_policy, cache_age)}")
+
+    try:
+        deals, n_fetched = get_deals_from_wishlist_fn(
+            wishlist_appids,
+            fetched_cache,
+            steam_id,
+            country="mx",
+            min_discount=min_discount,
+            rate_limit=rate_limit,
+            emit_fn=emit_fn,
+        )
+    except KeyboardInterrupt as exc:
+        emit_fn(f"\n  {_warn('Interrumpido — guardando caché parcial...')}")
+        save_price_cache_fn(steam_id, fetched_cache)
+        emit_fn(f"  {_ok('Caché guardada. Ejecuta de nuevo para continuar donde quedó.')}")
+        raise SystemExit(1) from exc
+
+    if n_fetched > 0:
+        save_price_cache_fn(steam_id, fetched_cache)
+    emit_fn(f"  {build_price_cache_completion_message(deals, min_discount, n_fetched)}")
+    return {
+        "deals": deals,
+        "n_fetched": n_fetched,
+        "cache_age": cache_age,
+        "cache_status": price_cache_policy.status,
+        "cache_path": CACHE_FILE,
+    }
+
+
+def run_warm_cache_mode(
+    wishlist_appids: list[str],
+    steam_id: str,
+    *,
+    no_cache: bool,
+    min_discount: int,
+    rate_limit: float,
+    started_at: float,
+    step_fn,
+    emit_fn=print,
+    run_price_cache_stage_fn=run_price_cache_stage,
+) -> dict:
+    step_fn("Precalentando caché de precios...")
+    cache_result = run_price_cache_stage_fn(
+        wishlist_appids,
+        steam_id,
+        no_cache=no_cache,
+        min_discount=min_discount,
+        rate_limit=rate_limit,
+        emit_fn=emit_fn,
+    )
+    elapsed = time.monotonic() - started_at
+    emit_fn(f"\n  {_ok(f'Warm cache listo en {elapsed:.1f}s')}")
+    emit_fn(
+        f"  {_dim(f'Wishlist: {len(wishlist_appids):,} juegos · Deals actuales: {len(cache_result['deals']):,}') }"
+    )
+    emit_fn(f"  {_dim(f'Caché objetivo: {cache_result['cache_path']}')}")
+    return cache_result
+
+
 # ─────────────────────────────────────────────
 # FETCH DE PRECIOS (batched con fallback)
 # ─────────────────────────────────────────────
@@ -1442,6 +1637,8 @@ def get_deals_from_wishlist(
     country: str = "mx",
     min_discount: int = 50,
     rate_limit: float = 1.5,
+    *,
+    emit_fn=print,
 ) -> tuple[list[dict], int]:
     if _prices_module is None:
         raise RuntimeError("Prices module is not available")
@@ -1458,7 +1655,7 @@ def get_deals_from_wishlist(
         save_price_cache_fn=save_price_cache,
         fetch_single_fn=_fetch_single,
         process_app_entry_fn=_process_app_entry,
-        emit=print,
+        emit=emit_fn,
         warn=_warn,
         dim=_dim,
         bar_fill=BAR_FILL,
@@ -3233,11 +3430,23 @@ def main():
     global MAX_WORKERS
     MAX_WORKERS = _resolve_max_workers(FILTERS.get("max_workers"), MAX_WORKERS)
     WEB_EVENT_MODE = bool(WEB_RUN)
+    WARM_CACHE_ONLY = bool(FILTERS.get("warm_cache"))
+    emit = print
+    warm_cache_log_handle = None
+    if WARM_CACHE_ONLY:
+        try:
+            warm_cache_log_path, warm_cache_log_handle = open_warm_cache_log_file(
+                env=os.environ,
+                frozen=getattr(sys, "frozen", False),
+            )
+            emit = build_warm_cache_emit(warm_cache_log_handle, terminal_emit=print)
+            emit(f"  {_dim(f'Log warm-cache: {warm_cache_log_path}')}")
+        except OSError as exc:
+            print(f"  {_warn(f'No se pudo abrir log de warm-cache: {exc}')}")
+
     if not WEB_RUN and not INTERACTIVE:
-        print(
-            f"  {_dim('Flujo recomendado: wizard web (python3 steam_deals_web.py).')}"
-        )
-        print(
+        emit(f"  {_dim('Flujo recomendado: wizard web (python3 steam_deals_web.py).')}")
+        emit(
             f"  {_dim('CLI disponible con flags/config, o modo interactivo con --interactive.')}\n"
         )
     RATE_LIMIT = 1.5
@@ -3245,18 +3454,22 @@ def main():
 
     # Calcular total de pasos dinámicamente (+2 reviews/deck, +1 protondb/ac, +1 tags, +1 HTML, owned solo con key)
     TOTAL = (
-        11
-        + (1 if KEY else 0)
-        + (1 if FAMILY_JSON else 0)
-        + (1 if HLTB_CSV else 0)
-        + (1 if ITAD_KEY else 0)
-        + (1 if FILTERS.get("csv") else 0)
-        + (1 if FILTERS.get("telegram_token") or FILTERS.get("discord_webhook") else 0)
-        + (1 if FILTERS.get("compare") else 0)
+        3
+        if WARM_CACHE_ONLY
+        else (
+            11
+            + (1 if KEY else 0)
+            + (1 if FAMILY_JSON else 0)
+            + (1 if HLTB_CSV else 0)
+            + (1 if ITAD_KEY else 0)
+            + (1 if FILTERS.get("csv") else 0)
+            + (1 if FILTERS.get("telegram_token") or FILTERS.get("discord_webhook") else 0)
+            + (1 if FILTERS.get("compare") else 0)
+        )
     )
 
     if not KEY:
-        print(f"  {_dim('Sin API Key — modo público (wishlist debe ser pública)')}")
+        emit(f"  {_dim('Sin API Key — modo público (wishlist debe ser pública)')}")
     _n = [0]
 
     def step(msg: str):
@@ -3266,36 +3479,53 @@ def main():
                 _n[0],
                 TOTAL,
                 msg,
-                emit=print,
+                emit=emit,
                 emit_event_fn=emit_event,
                 bold_fn=_bold,
                 color_cyan=C.CYN,
                 color_reset=C.RST,
             )
             return
-        print(f"\n{C.CYN}[{_n[0]}/{TOTAL}]{C.RST} {_bold(msg)}", flush=True)
+        emit(f"\n{C.CYN}[{_n[0]}/{TOTAL}]{C.RST} {_bold(msg)}", flush=True)
         emit_event("progress", current=_n[0], total=TOTAL, label=msg)
 
     # Validar rutas opcionales antes de arrancar
     if HLTB_CSV and not HLTB_CSV.exists():
-        print(f"{_err(f'HLTB CSV no encontrado: {HLTB_CSV}')}")
+        emit(f"{_err(f'HLTB CSV no encontrado: {HLTB_CSV}')}")
         HLTB_CSV = None
     if FAMILY_JSON and not FAMILY_JSON.exists():
-        print(f"{_err(f'Family JSON no encontrado: {FAMILY_JSON}')}")
+        emit(f"{_err(f'Family JSON no encontrado: {FAMILY_JSON}')}")
         FAMILY_JSON = None
 
     # [1] Steam ID
     step("Resolviendo Steam ID...")
     steam_id = resolve_steam_id(KEY, VANITY)
-    print(f"  {_ok(steam_id)}")
+    emit(f"  {_ok(steam_id)}")
 
     # [2] Wishlist (con prioridad)
     step("Obteniendo wishlist...")
     wishlist_appids, priorities = get_wishlist(KEY, steam_id)
     ranked = sum(1 for p in priorities.values() if p > 0)
-    print(f"  {_ok(f'{len(wishlist_appids):,} juegos ({ranked:,} con prioridad)')}")
+    emit(f"  {_ok(f'{len(wishlist_appids):,} juegos ({ranked:,} con prioridad)')}")
 
-    # [3] Biblioteca propia (requiere API key)
+    if WARM_CACHE_ONLY:
+        try:
+            run_warm_cache_mode(
+                wishlist_appids,
+                steam_id,
+                no_cache=no_cache,
+                min_discount=MIN_DISCOUNT,
+                rate_limit=RATE_LIMIT,
+                started_at=t0,
+                step_fn=step,
+                emit_fn=emit,
+            )
+        finally:
+            if warm_cache_log_handle is not None:
+                warm_cache_log_handle.close()
+        return
+
+        # [3] Biblioteca propia (requiere API key)
     owned: dict[str, str] = {}
     if KEY:
         step("Obteniendo biblioteca de Steam...")
@@ -3358,66 +3588,14 @@ def main():
 
     # [5] Precios (con smart cache + batching)
     step("Obteniendo precios de Steam...")
-    fetched_cache, cache_age = load_price_cache(steam_id)
-
-    price_cache_policy = select_scoped_cache(
+    price_stage = run_price_cache_stage(
         wishlist_appids,
-        fetched_cache,
-        cache_age,
+        steam_id,
         no_cache=no_cache,
-        ttl_hours=CACHE_MAX_HOURS,
+        min_discount=MIN_DISCOUNT,
+        rate_limit=RATE_LIMIT,
     )
-    fetched_cache = price_cache_policy.cache
-
-    if price_cache_policy.status == "bypass":
-        clear_cache_files(
-            [
-                REVIEWS_CACHE_FILE,
-                DECK_CACHE_FILE,
-                TAGS_CACHE_FILE,
-                PROTONDB_CACHE_FILE,
-                ANTICHEAT_CACHE_FILE,
-                ACHIEVEMENTS_CACHE_FILE,
-            ]
-        )
-        print(f"  {_warn('--no-cache: ignorando caché existente')}")
-    elif price_cache_policy.status == "valid":
-        new_appids = price_cache_policy.missing_ids
-        status_msg = (
-            f"{len(new_appids)} nuevos por fetchear"
-            if new_appids
-            else _dim("sin nuevos, skip fetch")
-        )
-        print(f"  {_ok(f'Caché válida ({cache_age:.1f}h)')} — {status_msg}")
-    elif price_cache_policy.status == "expired":
-        print(f"  {_warn(f'Caché expirada ({cache_age:.0f}h) — re-fetching todo')}")
-    else:
-        print(f"  {_dim('Sin caché — fetch completo')}")
-
-    try:
-        deals, n_fetched = get_deals_from_wishlist(
-            wishlist_appids,
-            fetched_cache,
-            steam_id,
-            country="mx",
-            min_discount=MIN_DISCOUNT,
-            rate_limit=RATE_LIMIT,
-        )
-    except KeyboardInterrupt:
-        print(f"\n  {_warn('Interrumpido — guardando caché parcial...')}")
-        save_price_cache(steam_id, fetched_cache)
-        print(
-            f"  {_ok('Caché guardada. Ejecuta de nuevo para continuar donde quedó.')}"
-        )
-        sys.exit(1)
-
-    if n_fetched > 0:
-        save_price_cache(steam_id, fetched_cache)
-        print(
-            f"  {_ok(f'{len(deals):,} deals (≥{MIN_DISCOUNT}%) — caché actualizada')}"
-        )
-    else:
-        print(f"  {_ok(f'{len(deals):,} deals (≥{MIN_DISCOUNT}%) — desde caché')}")
+    deals = price_stage["deals"]
 
     # Comparar con runs anteriores
     comparison = compute_deal_comparison(deals, previous_run, run_history)

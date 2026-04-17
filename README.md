@@ -112,11 +112,49 @@ python3 steam_deals_generator.py --vanity TU_VANITY_URL --discount 60 --max-pric
 # Wishlist grande (ajuste conservador de paralelismo en enrichment)
 python3 steam_deals_generator.py --vanity TU_VANITY_URL --max-workers 16
 
+# Precalentar caché de precios sin abrir Web/Desktop ni generar reportes
+python3 steam_deals_generator.py --vanity TU_VANITY_URL --warm-cache
+
 # Export Markdown con frontmatter YAML (Obsidian/Notion)
 python3 steam_deals_generator.py --vanity TU_VANITY_URL --md-frontmatter
 ```
 
 `--max-workers` controla el paralelismo de fetch en enrichment. Recomendación práctica: empezar en `12` (default), probar `16` si tu red/API responde bien y evitar valores muy altos para reducir riesgo de rate limit.
+
+### Warm cache headless
+
+Si quieres dejar una corrida de preparación en segundo plano sin abrir la Web UI o Desktop, usa:
+
+```bash
+python3 steam_deals_generator.py --vanity TU_VANITY_URL --warm-cache
+```
+
+Este modo:
+
+- resuelve tu `steam_id`
+- baja la wishlist
+- actualiza `prices_cache.json`
+- guarda un log legible de la corrida headless
+- sale sin generar `.md`, `.html`, `.json` ni `.csv`
+
+En runs desde source, el caché queda en `./.cache/steam_deals`. En desktop empaquetado/frozen, el caché persistente vive en `~/.cache/steam_deals` (o `XDG_CACHE_HOME/steam_deals` si está definido).
+
+Los logs de `--warm-cache` se guardan automáticamente en una carpeta `logs/`:
+
+- desde source: `./logs/warm-cache-YYYY-MM-DD_HH-MM-SS.log`
+- si usas `STEAM_DEALS_CACHE_DIR` o un binario frozen: `<cache_dir>/logs/warm-cache-...log`
+
+Si quieres forzar una ruta específica para logs, puedes usar:
+
+```bash
+STEAM_DEALS_LOG_DIR="$HOME/logs/steam-deals" python3 steam_deals_generator.py --vanity TU_VANITY_URL --warm-cache
+```
+
+Si quieres forzar una ruta específica para compartir caché entre distintos modos, puedes usar:
+
+```bash
+STEAM_DEALS_CACHE_DIR="$HOME/.cache/steam_deals" python3 steam_deals_generator.py --vanity TU_VANITY_URL --warm-cache
+```
 
 ## Web UI
 

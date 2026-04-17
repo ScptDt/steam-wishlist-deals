@@ -66,9 +66,23 @@ Esperado:
 - server local arriba
 - sin fallback inmediato al navegador
 
+> En la validacion local mas reciente, una sesion grafica KDE normal (no root) abrio la ventana nativa sin necesitar `QT_QPA_PLATFORM=xcb`. Si tu stack Wayland/Qt falla, manten `xcb` solo como workaround puntual, no como requisito por defecto.
+
 ## 5. Smoke funcional minimo
 
 > Nota practica: con wishlists muy grandes (por ejemplo 2K+ juegos) este smoke deja de ser una validacion corta. Reservar una ventana amplia; con cache frio puede tardar bastante antes de generar outputs finales.
+
+> Mitigacion recomendada para wishlists grandes: antes del run largo, calienta `prices_cache.json` desde terminal con `--warm-cache`. Esto evita perder tiempo en una ventana desktop abierta solo esperando fetch inicial.
+
+```bash
+source .venv/bin/activate
+STEAM_DEALS_CACHE_DIR="$HOME/.cache/steam_deals" python steam_deals_generator.py --vanity TU_VANITY_URL --warm-cache
+```
+
+Esperado:
+- se actualiza `prices_cache.json` sin abrir la UI
+- se crea un log legible en `~/.cache/steam_deals/logs/` (o `./logs/` si corres desde source sin override)
+- el siguiente run desktop reutiliza el cache persistente y no depende de rutas temporales `_MEI`
 
 Dentro de la UI desktop:
 
@@ -83,6 +97,9 @@ Esperado:
 - run sin crash
 - outputs generados
 - cierre limpio sin procesos colgados
+
+Tip operativo:
+- si aparece un traceback largo o warning dificil de copiar, usa los botones **Copiar log** / **Descargar log (.txt)** dentro de la UI antes de cerrar la app
 
 ## 6. Fallback web (mitigacion)
 
@@ -131,6 +148,23 @@ Reintentar con:
 export QT_QPA_PLATFORM=xcb
 ```
 
+Si en KDE/X11 o en una sesion grafica normal el artefacto ya abre sin ese flag, no lo fuerces en la evidencia final.
+
 ### Validacion hecha como root
 
 No cerrar el pendiente final de UX nativa con evidencia solo de root; repetir desde tu usuario grafico normal.
+
+### Cache / logs no persisten entre lanzadas
+
+El desktop actualizado ya no debe guardar cache dentro de `_MEI`. Si quieres calentar cache o dejar evidencia de un run largo fuera de la UI:
+
+```bash
+source .venv/bin/activate
+STEAM_DEALS_CACHE_DIR="$HOME/.cache/steam_deals" python steam_deals_generator.py --vanity TU_VANITY_URL --warm-cache
+```
+
+Opcionalmente puedes separar logs con:
+
+```bash
+STEAM_DEALS_LOG_DIR="$HOME/logs/steam-deals" python steam_deals_generator.py --vanity TU_VANITY_URL --warm-cache
+```

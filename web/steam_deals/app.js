@@ -311,6 +311,8 @@ const historyTrend = $('history-trend');
 const historyTableWrap = $('history-table-wrap');
 const historyTableBody = $('history-table-body');
 const consoleEl = $('console');
+const btnCopyLog = $('btn-copy-log');
+const btnDownloadLog = $('btn-download-log');
 const progressBar = $('progress-bar');
 const progressText = $('progress-text');
 const fileLinks = $('file-links');
@@ -318,6 +320,7 @@ let abortCtrl = null;
 let shownErrorHints = new Set();
 let latestHistoryRuns = [];
 let latestFilteredRuns = [];
+let executionLogEntries = [];
 let historyPage = 1;
 const HISTORY_PAGE_SIZE = 20;
 
@@ -1040,13 +1043,90 @@ btnOpenLast.addEventListener('click', async () => {
 });
 
 function appendLine(text, cls) {
+  const safeText = String(text ?? '');
+  const safeCls = cls || 'normal';
   const div = document.createElement('div');
-  div.className = 'line line-' + cls;
-  div.textContent = text;
+  div.className = 'line line-' + safeCls;
+  div.textContent = safeText;
   consoleEl.appendChild(div);
   consoleEl.scrollTop = consoleEl.scrollHeight;
-  maybeShowActionableHint(text, cls);
+  executionLogEntries.push({text: safeText, cls: safeCls});
+  updateExecutionLogButtons();
+  maybeShowActionableHint(safeText, safeCls);
 }
+
+function getExecutionLogText() {
+  return executionLogEntries.map(entry => entry.text).join('\n').trim();
+}
+
+function updateExecutionLogButtons() {
+  const hasLog = executionLogEntries.some(entry => (entry.text || '').trim());
+  if (btnCopyLog) btnCopyLog.disabled = !hasLog;
+  if (btnDownloadLog) btnDownloadLog.disabled = !hasLog;
+}
+
+function resetExecutionLog() {
+  executionLogEntries = [];
+  consoleEl.innerHTML = '';
+  updateExecutionLogButtons();
+}
+
+function flashButtonLabel(btn, label) {
+  if (!btn) return;
+  const original = btn.dataset.originalLabel || btn.innerHTML;
+  btn.dataset.originalLabel = original;
+  btn.textContent = label;
+  window.setTimeout(() => {
+    btn.innerHTML = btn.dataset.originalLabel || original;
+  }, 2000);
+}
+
+function buildExecutionLogFilename() {
+  return 'steam-deals-log-' + new Date().toISOString().replace(/[:]/g, '-').replace(/\..+/, '') + '.txt';
+}
+
+function copyExecutionLog() {
+  const text = getExecutionLogText();
+  if (!text) {
+    flashButtonLabel(btnCopyLog, 'Sin log');
+    return;
+  }
+
+  if (navigator.clipboard && typeof navigator.clipboard.writeText === 'function') {
+    navigator.clipboard.writeText(text).then(() => {
+      flashButtonLabel(btnCopyLog, 'Copiado!');
+    }).catch(() => {
+      window.prompt('Copia este log:', text);
+      flashButtonLabel(btnCopyLog, 'Listo');
+    });
+    return;
+  }
+
+  window.prompt('Copia este log:', text);
+  flashButtonLabel(btnCopyLog, 'Listo');
+}
+
+function downloadExecutionLog() {
+  const text = getExecutionLogText();
+  if (!text) {
+    flashButtonLabel(btnDownloadLog, 'Sin log');
+    return;
+  }
+
+  const blob = new Blob([text + '\n'], {type: 'text/plain;charset=utf-8'});
+  const objectUrl = URL.createObjectURL(blob);
+  const link = document.createElement('a');
+  link.href = objectUrl;
+  link.download = buildExecutionLogFilename();
+  document.body.appendChild(link);
+  link.click();
+  link.remove();
+  window.setTimeout(() => URL.revokeObjectURL(objectUrl), 1000);
+  flashButtonLabel(btnDownloadLog, 'Descargado');
+}
+
+if (btnCopyLog) btnCopyLog.addEventListener('click', copyExecutionLog);
+if (btnDownloadLog) btnDownloadLog.addEventListener('click', downloadExecutionLog);
 
 btnRun.addEventListener('click', async () => {
   if (!$('vanity').value.trim()) {
@@ -1057,7 +1137,7 @@ btnRun.addEventListener('click', async () => {
   }
 
   shownErrorHints = new Set();
-  consoleEl.innerHTML = '';
+  resetExecutionLog();
   progressBar.style.width = '0%';
   progressText.textContent = 'Iniciando...';
   fileLinks.innerHTML = '';
@@ -1150,7 +1230,7 @@ btnStop.addEventListener('click', async () => {
 if (btnRunPd2) btnRunPd2.addEventListener('click', async () => {
   if (!$('vanity').value.trim()) { $('vanity').focus(); return; }
   shownErrorHints = new Set();
-  consoleEl.innerHTML = '';
+  resetExecutionLog();
   progressBar.style.width = '0%';
   progressBar.style.background = 'linear-gradient(90deg, #d4a84b, #b8922e)';
   progressText.textContent = 'PAYDAY 2 Tracker...';
@@ -1561,6 +1641,7 @@ loadWatchlist();
 syncLatestReportEmptyState();
 syncLatestReportCard();
 loadHistoryFilters();
+updateExecutionLogButtons();
 
 if (historyIncludeSame) {
   historyIncludeSame.addEventListener('change', saveHistoryFilters);

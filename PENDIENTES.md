@@ -1,6 +1,6 @@
 # Pendientes (Fuente Unica)
 
-Ultima actualizacion: 2026-04-16
+Ultima actualizacion: 2026-04-17
 
 ## Regla de Oro
 
@@ -16,7 +16,7 @@ No se mantienen documentos paralelos de planificacion; este archivo es la unica 
 
 - Objetivo: llevar Steam Tools a una experiencia ultra user friendly y preparada para ejecutable desktop.
 - Fase actual: P2 en validacion cross-platform (cierre manual pendiente por host nativo).
-- Item activo: avanzar con pendientes no bloqueados desde Windows mientras Linux/macOS quedan en espera de host nativo.
+- Item activo: cerrar el smoke largo Linux con apoyo de warm-cache/logs y seguir pendientes no bloqueados mientras macOS sigue en espera de host nativo.
 
 ## Pendientes Priorizados
 
@@ -33,7 +33,7 @@ No se mantienen documentos paralelos de planificacion; este archivo es la unica 
 
 ### P2 - Cross-platform
 
-- [ ] Validar build desktop en Linux (Ubuntu LTS). [Parcial alto: build local OK, ventana nativa + server local confirmados en sesion no-root, packaging PyInstaller corregido y primer evento `progress` validado dentro del binario congelado; falta smoke funcional completo con outputs `.md/.html/.csv` y cierre limpio.]
+- [ ] Validar build desktop en Linux (Ubuntu LTS). [Parcial alto: doctor READY en `.venv`, build local OK, ventana nativa + server local confirmados en sesion grafica KDE no-root, packaging PyInstaller corregido, primer evento `progress` validado dentro del binario congelado y corrida larga real avanzada hasta `[8/11]` con artifacts `.md/.html/share.html/.json` antes de un bug de closeout final ya corregido; la UI ahora permite copiar/descargar logs, el desktop usa cache persistente y existe `--warm-cache` headless con logs. Falta rerun final con outputs `.md/.html/.csv` completos y cierre limpio.]
 - [ ] Validar build desktop en macOS (app bundle + apertura local).
 - [x] Documentar dependencias nativas por plataforma para pywebview.
 - [ ] Validar cross-platform el fallback web: si `pywebview` no es compatible o no inicia backend nativo, abrir la Web UI en el navegador por defecto con aviso visible en la interfaz. [Linux parcial OK: fallback confirmado en primer intento sin backend, luego ventana nativa OK con Qt/X11; falta host nativo/macOS.]
@@ -277,10 +277,11 @@ P2 se considera **cerrado** cuando se cumpla TODO:
 
 ## Proximo Paso Operativo
 
-- Linux ya tiene evidencia local fuerte: en Debian/Ubuntu con PEP 668 se requiere `.venv`, el build desktop local genera `dist/SteamToolsDesktop`, la ventana nativa abre en sesion grafica no-root (forzando `QT_QPA_PLATFORM=xcb`) y el binario congelado ya emite el primer evento `progress` del generator tras corregir packaging PyInstaller.
+- Linux ya tiene evidencia local fuerte: en Debian/Ubuntu con PEP 668 se requiere `.venv`, el build desktop local genera `dist/SteamToolsDesktop`, la ventana nativa abre en sesion grafica KDE no-root sin requerir `QT_QPA_PLATFORM=xcb` en la prueba mas reciente, y el binario congelado ya emite el primer evento `progress` del generator tras corregir packaging PyInstaller.
+- Nueva mitigacion operativa Linux: el desktop ya guarda cache en ruta persistente fuera de `_MEI`, existe `--warm-cache` headless para precalentar `prices_cache.json` sin abrir UI y ese modo ahora guarda logs legibles en carpeta `logs/` (o `<cache>/logs` cuando aplica).
 - Validacion manual macOS queda **pospuesta intencionalmente** hasta contar con host nativo disponible.
 - El runbook para cierre de P2 ya esta documentado en `README.md` y en `docs/runbooks/desktop-{linux,macos,windows}.md`; el criterio de evidencia queda definido en este archivo.
-- Siguiente reactivacion: correr el smoke funcional largo de Linux (wishlist real 2K+ juegos: preflight, run completo, outputs y cierre limpio) en una ventana amplia; luego ejecutar checklist manual macOS y despues pegar evidencia final en bitacora para cierre P2.
+- Siguiente reactivacion: dejar terminar `--warm-cache`, relanzar el smoke funcional largo de Linux con el binario actualizado para confirmar `.md/.html/.csv` + cierre limpio, y luego ejecutar checklist manual macOS cuando exista host nativo disponible.
 
 ## Plan inmediato (Windows / No bloqueado)
 
@@ -307,6 +308,7 @@ Notas:
 
 | Fecha | Plataforma | Estado | Incidencias | Proximo paso |
 |---|---|---|---|---|
+| 2026-04-17 | Linux (entorno local) | validacion manual avanzada | Sesion KDE nativa confirmada. `steam_tools_desktop.py --doctor` quedo READY en `.venv`; build local actualizado OK. Corrida larga real del desktop avanzo hasta `[8/11]` (`tags`) y ya habia escrito `.md`, `.html`, `share.html` y `.json`, pero detecto un bug real en el closeout final por mismatch de `smart_alerts`; el fix ya quedo validado con tests dirigidos. Se agregaron acciones UI para copiar/descargar logs, el desktop paso a usar cache persistente fuera de `_MEI` y se sumo `--warm-cache` headless con logs en carpeta `logs/`. | Dejar terminar warm-cache, rerun Linux final con cache caliente y confirmar `.csv` + cierre limpio sin procesos colgados. |
 | 2026-04-16 | Decision operativa | Linux muy avanzado / macOS pospuesto | Se ejecuto validacion local fuerte en Linux durante esta iteracion; macOS sigue pendiente por no contar aun con host nativo disponible. CI cross-platform permanece OK como evidencia parcial base (`24487556896`). El smoke funcional Linux queda diferido porque la wishlist real supera 2K juegos y requiere una ventana amplia. | Ejecutar smoke funcional largo Linux cuando haya ventana suficiente; luego reactivar runbook macOS para cierre P2. |
 | 2026-04-16 | Linux (entorno local) | validacion manual avanzada | `python3`/`pip` OK. `python3 -m pip install -r requirements-desktop.txt` fallo en system Python por PEP 668 (`externally-managed-environment`), por lo que se uso `.venv`. Build local OK con `dist/SteamToolsDesktop`. Primer arranque del artefacto: fallback web confirmado por falta de backend nativo (`qtpy`/`gi`). Tras instalar `pywebview[qt]` y rehacer build, se confirmo ventana nativa + server local en sesion grafica no-root usando `runuser` + `QT_QPA_PLATFORM=xcb`. El smoke funcional completo encontro un bug real de packaging (`ModuleNotFoundError: shared`) dentro del binario congelado; se corrigio `build_desktop.py`/spec agregando `--paths` + `collect_submodules(shared/renderers/app)` + hidden imports, y luego un check liviano del binario valido el primer evento `progress` (`Resolviendo Steam ID...`) del generator ya empaquetado. Warning actual a revisar: `libtiff.so.5` en empaquetado Qt. | Ejecutar run largo con wishlist real para confirmar outputs `.md/.html/.csv` y cierre limpio; decidir luego si `libtiff.so.5` requiere nota/paquete adicional. |
 | 2026-04-16 | Linux (Ubuntu LTS) | validado en CI (parcial) | Workflow `Desktop Cross-Platform Validation` OK en `ubuntu-latest` (run `24487556896`): install deps, build desktop, `py_compile`, check fallback local y artifact `dist-ubuntu-latest` publicado. Falta validacion manual en host Linux nativo para ventana real, preflight funcional completo y cierre sin procesos colgados. | Ejecutar checklist manual Linux en host Ubuntu LTS y registrar incidencias/workarounds de backend nativo `pywebview`. |
@@ -314,6 +316,9 @@ Notas:
 
 ## Bitacora
 
+- 2026-04-17: El smoke largo Linux del desktop detecto un bug real de closeout final: `steam_deals_run_output.py` ya pasaba `smart_alerts` al resumen corto pero el wrapper compatible en `steam_deals_generator.py` no aceptaba ese argumento. Se corrigio el boundary, quedaron tests dirigidos en verde y la proxima corrida larga debe validar el cierre E2E sin crash.
+- 2026-04-17: La UI compartida Steam Deals ahora permite copiar y descargar el log visible de ejecucion; se hizo para no perder tracebacks largos durante validacion manual desktop/web.
+- 2026-04-17: El cache del desktop ya no se pierde en `_MEI`: se movio a ruta persistente de usuario en modo frozen y se agrego `--warm-cache` headless para precalentar `prices_cache.json` sin abrir UI. La v2 del warm-cache guarda logs automaticamente en carpeta `logs/` (o `<cache>/logs` cuando se usa ruta persistente/override).
 - 2026-04-16: Alertas v2 queda en estado pendiente operativo por tiempo: aunque la implementacion v2 esta lista, falta calibracion/ejecucion manual en corrida larga real. Se agenda retomar en la proxima corrida para validar ajuste final y cerrar el item.
 - 2026-04-16: Cierre Alertas v2: alertas inteligentes ahora soportan umbrales configurables de subida (`--alert-rise-pct`), margen sobre minimo global (`--alert-global-margin-pct`) y priorizacion por score minimo (`--alert-score-min`), manteniendo compatibilidad por default. Se conserva integracion en resumen final corto del run.
 - 2026-04-16: Cierre documental del flujo Obsidian/Notion: README ahora incluye perfiles de frontmatter recomendados y checklist manual de validacion de import (Obsidian + Notion) para ejecucion reproducible. Queda pendiente solo la validacion E2E manual en host real para marcar cierre total del item.
