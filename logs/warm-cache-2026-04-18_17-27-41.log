@@ -1,0 +1,25 @@
+  Log warm-cache: C:\Users\Bryan Grijalva\Documents\Dev\steam-deals\steam-wishlist-deals\logs\warm-cache-2026-04-18_17-27-41.log
+  Flujo recomendado: wizard web (python3 steam_deals_web.py).
+  CLI disponible con flags/config, o modo interactivo con --interactive.
+
+  Sin API Key — modo público (wishlist debe ser pública)
+
+[1/3] Resolviendo Steam ID...
+  OK  76561198245393934
+
+[2/3] Obteniendo wishlist...
+  OK  2,941 juegos (2,796 con prioridad)
+
+[3/3] Precalentando caché de precios...
+  Sin caché — fetch completo
+  Fetching 2,941 juegos en 148 batches (~3.7 min)...
+
+  ------------------------- 0/2,941 ETA ~3.7 min  
+  !  HTTP 400 en batch 1, saltando
+
+  Batch falló, intentando individualmente...
+
+  ------------------------- 20/2,941 ETA 86.3m  
+  !  HTTP 400 en batch 2, saltando
+
+  Batch falló, intentando individualmente...

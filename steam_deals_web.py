@@ -945,9 +945,9 @@ details .details-body { padding-top: 0.75rem; }
           <option value="price">Precio</option>
           <option value="reviews">Reviews</option>
           <option value="priority">Prioridad wishlist</option>
-          <option value="score">Score (recomendacion compuesta)</option>
+          <option value="score">Score (recomendación compuesta)</option>
         </select>
-        <div class="hint">Score combina reviews, descuento, prioridad, $/hora HLTB, Deck, Metacritic y edad.</div>
+        <div class="hint">Score combina reviews, descuento, prioridad, $/hora HLTB, Deck, Metacritic y antigüedad (años desde lanzamiento).</div>
       </div>
     </div>
     <div class="field">
@@ -1004,7 +1004,7 @@ details .details-body { padding-top: 0.75rem; }
         </div>
         <div class="row">
           <div class="field">
-            <label>Presupuesto (MXN) <span class="optional">(Budget Mode)</span></label>
+            <label>Presupuesto (MXN) <span class="optional">(Tu Presupuesto Ideal)</span></label>
             <input type="number" id="budget" min="0" step="50" placeholder="Sin limite">
             <div class="hint">Recomienda la mejor combinacion de juegos</div>
           </div>
@@ -2123,6 +2123,52 @@ async function removeWatchlist(appid) {
 let currentShareData = null;
 let currentSteamUrl = '';
 
+function encodeSharePayload(data) {
+  const json = JSON.stringify(data || {});
+  try {
+    return btoa(unescape(encodeURIComponent(json)));
+  } catch (e) {
+    try {
+      return btoa(json);
+    } catch (e2) {
+      return '';
+    }
+  }
+}
+
+function copyTextWithFallback(text) {
+  if (!text) return Promise.reject(new Error('empty-text'));
+  if (navigator.clipboard && typeof navigator.clipboard.writeText === 'function') {
+    return navigator.clipboard.writeText(text);
+  }
+  return new Promise((resolve, reject) => {
+    const textarea = document.createElement('textarea');
+    textarea.value = text;
+    textarea.setAttribute('readonly', '');
+    textarea.style.position = 'fixed';
+    textarea.style.opacity = '0';
+    document.body.appendChild(textarea);
+    textarea.select();
+    try {
+      const ok = document.execCommand('copy');
+      textarea.remove();
+      if (ok) resolve();
+      else reject(new Error('copy-failed'));
+    } catch (err) {
+      textarea.remove();
+      reject(err);
+    }
+  });
+}
+
+function flashShareButton(button, successLabel, defaultLabel) {
+  if (!button) return;
+  button.textContent = successLabel;
+  setTimeout(() => {
+    button.textContent = defaultLabel;
+  }, 2000);
+}
+
 function openShareModal(game) {
   const name = game.name || game.steam_name || 'Unknown';
   const price = game.price || 0;
@@ -2157,21 +2203,27 @@ function closeShareModal() {
 
 function copyShareLink() {
   if (!currentShareData) return;
-  const encoded = btoa(JSON.stringify(currentShareData));
+  const encoded = encodeSharePayload(currentShareData);
+  if (!encoded) {
+    appendLine('No se pudo generar link para compartir.', 'err');
+    return;
+  }
   const shareUrl = 'steamtools://share?data=' + encoded;
-  navigator.clipboard.writeText(shareUrl).then(() => {
+  copyTextWithFallback(shareUrl).then(() => {
     const btn = document.getElementById('btn-copy-app');
-    btn.textContent = 'Copiado!';
-    setTimeout(() => btn.textContent = 'Copiar link steamtools://', 2000);
+    flashShareButton(btn, 'Copiado!', 'Copiar link steamtools://');
+  }).catch(() => {
+    window.prompt('Copia este link:', shareUrl);
   });
 }
 
 function copySteamLink() {
   if (!currentSteamUrl) return;
-  navigator.clipboard.writeText(currentSteamUrl).then(() => {
+  copyTextWithFallback(currentSteamUrl).then(() => {
     const btn = document.querySelector('.share-btn-copy-steam');
-    btn.textContent = 'Copiado!';
-    setTimeout(() => btn.textContent = 'Copiar link de Steam', 2000);
+    flashShareButton(btn, 'Copiado!', 'Copiar link de Steam');
+  }).catch(() => {
+    window.prompt('Copia este link de Steam:', currentSteamUrl);
   });
 }
 

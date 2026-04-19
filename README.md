@@ -11,15 +11,15 @@ Analiza tu wishlist de Steam y genera reportes detallados con deals, comparacion
 - **Steam Deck / ProtonDB / Anti-Cheat** — Compatibilidad completa para Linux/Deck
 - **Achievements** — Total de logros y porcentaje promedio de completion global
 - **Multiplayer/Co-op** — Detección automática de modo de juego (Co-op, PvP, Single, Multi)
-- **Tags de SteamSpy** — Categorización por tags + estimación de jugadores
+- **Etiquetas (SteamSpy)** — Categorización por etiquetas + estimación de jugadores
 - **ITAD (IsThereAnyDeal)** — Mínimo histórico, precios multi-tienda, bundles activos
 - **HLTB (HowLongToBeat)** — Cruce con tu backlog exportado de HLTB
 - **Historial de precios** — Tendencias locales con sparklines SVG en el HTML
-- **Top Picks** — Ranking por value score (reviews, descuento, prioridad, $/hora, Deck, Metacritic, edad) con recomendación rápida y razones visibles
+- **Top Picks** — Ranking por value score (reviews, descuento, prioridad, $/hora, Deck, Metacritic y antigüedad, medida como años desde lanzamiento) con recomendación rápida y razones visibles
 
 ### Herramientas
 - **Watchlist Personal** — Alertas cuando un juego baja de tu precio objetivo
-- **Budget Mode** — "Tengo $500, ¿qué compro?" — optimizador greedy por eficiencia con contexto de recomendación en los picks sugeridos
+- **Tu Presupuesto Ideal** — "Tengo $500, ¿qué compro?" — optimizador greedy por eficiencia con contexto de recomendación en los picks sugeridos
 - **Comparar Wishlists** — Overlap con amigos + gift ideas
 - **Notificaciones** — Telegram y Discord webhook con resumen de cambios
 - **Scheduler** — Ejecución automática cada N horas
@@ -30,6 +30,7 @@ Analiza tu wishlist de Steam y genera reportes detallados con deals, comparacion
 - **Markdown** — Reporte completo con tablas, secciones, y badges
 - **HTML interactivo** — Dashboard con gráficas, filtros en vivo, thumbnails con hover zoom, sparklines de precio
 - **HTML compartible** — Versión ligera para enviar a amigos
+- **Título de reporte con nombre de perfil** — El `<title>` de HTML/Share usa el nombre visible del perfil Steam cuando está disponible (con fallback al identificador original)
 - **JSON** — Export estructurado para automatización local (`meta`, `inputs`, `summary`, `top_picks`, `deals`, `budget_result`, etc.)
 - **CSV** — Exportación para Excel/Google Sheets (+ botón "Copiar para Sheets" en el HTML)
 - **Resumen final inteligente** — Alertas clave por run: mejor precio local, subidas vs run anterior, mínimo histórico global y bundles activos
@@ -635,7 +636,7 @@ python3 steam_deals_generator.py --watchlist list
 python3 steam_deals_generator.py --watchlist remove 730
 ```
 
-## Budget Mode
+## Tu Presupuesto Ideal
 
 ```bash
 # ¿Qué compro con $500?
@@ -750,7 +751,7 @@ Los datos se cachean en `.cache/steam_deals/` (dentro del proyecto) para evitar 
 |------|-----|
 | Precios | 24 horas |
 | Reviews, Deck, ProtonDB, Anti-Cheat | 7 días |
-| Tags (SteamSpy), Achievements | 30 días |
+| Etiquetas (SteamSpy), Achievements | 30 días |
 
 Usa `--no-cache` para forzar re-fetch.
 

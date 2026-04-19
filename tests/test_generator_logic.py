@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import json
+import time
 import unittest
 from datetime import date
 from datetime import datetime
@@ -83,6 +84,7 @@ from steam_deals_steam_api import (
     get_owned_games as module_get_owned_games,
     get_wishlist as module_get_wishlist,
     load_family_games as module_load_family_games,
+    resolve_profile_display_name as module_resolve_profile_display_name,
     resolve_steam_id as module_resolve_steam_id,
 )
 from steam_deals_notifications import (
@@ -288,7 +290,9 @@ class WarmCacheTests(unittest.TestCase):
             ),
             clear_cache_files_fn=lambda paths: cleared.extend(paths) or tuple(paths),
             get_deals_from_wishlist_fn=fake_get_deals,
-            save_price_cache_fn=lambda steam_id, fetched: saved.append((steam_id, dict(fetched))),
+            save_price_cache_fn=lambda steam_id, fetched: saved.append(
+                (steam_id, dict(fetched))
+            ),
             emit_fn=emitted.append,
         )
 
@@ -317,7 +321,9 @@ class WarmCacheTests(unittest.TestCase):
             ),
             clear_cache_files_fn=lambda _paths: (),
             get_deals_from_wishlist_fn=lambda *_args, **_kwargs: ([{"appid": "10"}], 0),
-            save_price_cache_fn=lambda steam_id, fetched: saved.append((steam_id, fetched)),
+            save_price_cache_fn=lambda steam_id, fetched: saved.append(
+                (steam_id, fetched)
+            ),
             emit_fn=emitted.append,
         )
 
@@ -353,9 +359,17 @@ class WarmCacheTests(unittest.TestCase):
         self.assertEqual(result["cache_status"], "empty")
         self.assertTrue(any("Warm cache listo" in line for line in emitted))
         self.assertTrue(any("Wishlist: 2 juegos" in line for line in emitted))
-        self.assertTrue(any("/tmp/cache/prices_cache.json" in line for line in emitted))
+        self.assertTrue(
+            any(
+                Path("/tmp/cache/prices_cache.json").as_posix()
+                in line.replace("\\", "/")
+                for line in emitted
+            )
+        )
 
-    def test_build_warm_cache_emit_keeps_terminal_output_and_strips_ansi_in_log(self) -> None:
+    def test_build_warm_cache_emit_keeps_terminal_output_and_strips_ansi_in_log(
+        self,
+    ) -> None:
         terminal_calls = []
 
         with TemporaryDirectory() as temp_dir:
@@ -1142,9 +1156,8 @@ class RunOutputTests(unittest.TestCase):
             older = out_dir / "Steam Deals 2026-04-14.json"
             newer = out_dir / "Steam Deals 2026-04-15.json"
             older.write_text("{}", encoding="utf-8")
+            time.sleep(0.02)
             newer.write_text("{}", encoding="utf-8")
-            older.touch()
-            newer.touch()
 
             latest = module_find_latest_artifact(out_dir, "Steam Deals*.json")
 
@@ -1205,11 +1218,12 @@ class RunOutputTests(unittest.TestCase):
             previous_appids={"20"},
             top_picks=[{"appid": "10", "name": "Portal 2", "score": 95.4}],
             comparison={"new_deals": {"10"}, "disappeared": [{"appid": "20"}]},
+            profile_display_name="BG00G Display",
         )
 
         data = json.loads(payload)
 
-        self.assertEqual(data["meta"]["profile"], "BG00G")
+        self.assertEqual(data["meta"]["profile"], "BG00G Display")
         self.assertEqual(data["summary"]["deals_count"], 1)
         self.assertEqual(data["summary"]["new_deals_count"], 1)
         self.assertEqual(data["inputs"]["wishlist_count"], 2)
@@ -1959,6 +1973,30 @@ class SteamAdapterTests(unittest.TestCase):
 
         self.assertEqual(sale_name, "Steam Summer Sale")
 
+    def test_resolve_profile_display_name_prefers_player_summary(self) -> None:
+        display_name = module_resolve_profile_display_name(
+            "76561198000000000",
+            "https://steamcommunity.com/profiles/76561198000000000/",
+            api_key="key",
+            get_json=lambda _url: {"response": {"players": [{"personaname": "BG00G"}]}},
+            fetch_public_profile_xml=lambda _v: "",
+        )
+
+        self.assertEqual(display_name, "BG00G")
+
+    def test_resolve_profile_display_name_falls_back_to_xml_when_no_key(self) -> None:
+        display_name = module_resolve_profile_display_name(
+            "76561198000000000",
+            "bg00g",
+            api_key=None,
+            get_json=lambda _url: {},
+            fetch_public_profile_xml=lambda _v: (
+                "<steamID><![CDATA[BG00G Public]]></steamID>"
+            ),
+        )
+
+        self.assertEqual(display_name, "BG00G Public")
+
 
 class NotificationsTests(unittest.TestCase):
     def test_build_notification_summary_returns_none_when_nothing_notable(self) -> None:
@@ -2441,7 +2479,7 @@ class RankTopPicksTests(unittest.TestCase):
             },
         )
 
-        self.assertIn("Budget Mode", md)
+        self.assertIn("Tu Presupuesto Ideal", md)
         self.assertIn("Comprar ahora", md)
         self.assertIn("descuento muy raro de ver", md)
 
@@ -2478,7 +2516,7 @@ class RankTopPicksTests(unittest.TestCase):
             },
         )
 
-        self.assertIn("Budget Mode", html)
+        self.assertIn("Tu Presupuesto Ideal", html)
         self.assertIn("Comprar ahora", html)
         self.assertIn("reviews muy positivas", html)
 

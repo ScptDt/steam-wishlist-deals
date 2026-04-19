@@ -5,6 +5,233 @@ function togglePw(btn) {
   inp.type = inp.type === 'password' ? 'text' : 'password';
 }
 
+function clearFieldError(inputEl) {
+  if (!inputEl) return;
+  inputEl.classList.remove('input-error');
+  const field = inputEl.closest('.field') || inputEl.parentElement;
+  if (!field) return;
+  const msg = field.querySelector('.field-error');
+  if (msg) msg.remove();
+}
+
+function formErrorSummaryEl() {
+  return $('form-error-summary');
+}
+
+function hideFormErrorSummary() {
+  const el = formErrorSummaryEl();
+  if (!el) return;
+  el.classList.add('hidden');
+  el.innerHTML = '';
+}
+
+function showFormErrorSummary(messages) {
+  const normalized = (messages || [])
+    .map((item) => {
+      if (!item) return null;
+      if (typeof item === 'string') {
+        return {message: item, fieldId: ''};
+      }
+      return {
+        message: String(item.message || '').trim(),
+        fieldId: String(item.fieldId || '').trim(),
+      };
+    })
+    .filter((item) => item && item.message);
+
+  const seen = new Set();
+  const uniqueMessages = normalized.filter((item) => {
+    const key = `${item.message}::${item.fieldId}`;
+    if (seen.has(key)) return false;
+    seen.add(key);
+    return true;
+  });
+
+  const el = formErrorSummaryEl();
+  if (!el || !uniqueMessages.length) {
+    hideFormErrorSummary();
+    return;
+  }
+  el.innerHTML = `
+    <strong>Revisa estos campos antes de continuar:</strong>
+    <ul>${uniqueMessages.map((item) => {
+      const safeMsg = escapeHtml(item.message);
+      const safeFieldId = escapeHtml(item.fieldId);
+      if (!item.fieldId) {
+        return `<li>${safeMsg}</li>`;
+      }
+      return `<li><button type="button" class="form-error-link" data-field-id="${safeFieldId}">${safeMsg}</button></li>`;
+    }).join('')}</ul>
+  `;
+
+  el.querySelectorAll('.form-error-link').forEach((btn) => {
+    btn.addEventListener('click', () => {
+      const targetId = btn.dataset.fieldId || '';
+      const target = $(targetId);
+      if (!target) return;
+      target.scrollIntoView({behavior: 'smooth', block: 'center'});
+      target.focus();
+    });
+  });
+
+  el.classList.remove('hidden');
+  try {
+    el.focus();
+  } catch (e) {}
+}
+
+function setFieldError(inputEl, message) {
+  if (!inputEl) return;
+  clearFieldError(inputEl);
+  inputEl.classList.add('input-error');
+  const field = inputEl.closest('.field') || inputEl.parentElement;
+  if (!field) return;
+  const msg = document.createElement('div');
+  msg.className = 'field-error';
+  msg.textContent = message;
+  field.appendChild(msg);
+}
+
+function clearFieldErrorLater(inputEl) {
+  if (!inputEl) return;
+  const handler = () => clearFieldError(inputEl);
+  inputEl.addEventListener('input', handler, {once: true});
+}
+
+function validateOptionalNumberRange(inputEl, {
+  min = null,
+  max = null,
+  integer = false,
+  label = 'Este campo',
+} = {}) {
+  if (!inputEl) return true;
+  clearFieldError(inputEl);
+  const raw = String(inputEl.value || '').trim();
+  if (!raw) return true;
+  const value = Number(raw);
+  if (!Number.isFinite(value)) {
+    setFieldError(inputEl, `${label}: ingresa un numero valido.`);
+    clearFieldErrorLater(inputEl);
+    return false;
+  }
+  if (integer && !Number.isInteger(value)) {
+    setFieldError(inputEl, `${label}: usa un numero entero.`);
+    clearFieldErrorLater(inputEl);
+    return false;
+  }
+  if (min != null && value < min) {
+    setFieldError(inputEl, `${label}: debe ser >= ${min}.`);
+    clearFieldErrorLater(inputEl);
+    return false;
+  }
+  if (max != null && value > max) {
+    setFieldError(inputEl, `${label}: debe ser <= ${max}.`);
+    clearFieldErrorLater(inputEl);
+    return false;
+  }
+  return true;
+}
+
+function isLikelySteamProfileInput(value) {
+  const raw = String(value || '').trim();
+  if (!raw) return false;
+  if (/\s/.test(raw)) return false;
+  if (/^\d{16,}$/.test(raw)) return true;
+  if (/^https?:\/\/steamcommunity\.com\/(id|profiles)\/.+/i.test(raw)) return true;
+  if (/^(id|profiles)\/.+/i.test(raw)) return true;
+  return /^[A-Za-z0-9_-]+$/.test(raw);
+}
+
+function validateDealsFormBeforeRun() {
+  const vanityInput = $('vanity');
+  const compareInput = $('compare');
+  const maxWorkersInput = $('max_workers');
+  const topInput = $('top');
+  const errors = [];
+
+  clearFieldError(vanityInput);
+  if (!vanityInput.value.trim()) {
+    const msg = 'El perfil de Steam es obligatorio para ejecutar.';
+    setFieldError(vanityInput, msg);
+    errors.push({message: msg, fieldId: 'vanity'});
+    vanityInput.focus();
+    clearFieldErrorLater(vanityInput);
+    showFormErrorSummary(errors);
+    return false;
+  }
+
+  clearFieldError(compareInput);
+  if (compareInput && compareInput.value.trim() && !isLikelySteamProfileInput(compareInput.value)) {
+    const msg = 'Comparar con: usa Vanity URL, Steam ID o URL de perfil valida.';
+    setFieldError(compareInput, msg);
+    errors.push({message: msg, fieldId: 'compare'});
+    compareInput.focus();
+    clearFieldErrorLater(compareInput);
+    showFormErrorSummary(errors);
+    return false;
+  }
+
+  if (!validateOptionalNumberRange(maxWorkersInput, { min: 1, max: 64, integer: true, label: 'Workers de enrichment' })) {
+    errors.push({message: 'Workers de enrichment: usa un entero entre 1 y 64.', fieldId: 'max_workers'});
+    maxWorkersInput.focus();
+    showFormErrorSummary(errors);
+    return false;
+  }
+
+  if (!validateOptionalNumberRange(topInput, { min: 1, max: 50, integer: true, label: 'Top picks' })) {
+    errors.push({message: 'Top picks: usa un entero entre 1 y 50.', fieldId: 'top'});
+    topInput.focus();
+    showFormErrorSummary(errors);
+    return false;
+  }
+
+  hideFormErrorSummary();
+  return true;
+}
+
+function validatePd2FormBeforeRun() {
+  const vanityInput = $('vanity');
+  const budgetInput = $('pd2_budget');
+  const alertInput = $('pd2_alert');
+  const minDealInput = $('pd2_min_deal');
+  const errors = [];
+
+  clearFieldError(vanityInput);
+  if (!vanityInput.value.trim()) {
+    const msg = 'El perfil de Steam es obligatorio para ejecutar.';
+    setFieldError(vanityInput, msg);
+    errors.push({message: msg, fieldId: 'vanity'});
+    vanityInput.focus();
+    clearFieldErrorLater(vanityInput);
+    showFormErrorSummary(errors);
+    return false;
+  }
+
+  if (!validateOptionalNumberRange(budgetInput, { min: 0, integer: false, label: 'Presupuesto MXN' })) {
+    errors.push({message: 'Presupuesto MXN: usa un numero mayor o igual a 0.', fieldId: 'pd2_budget'});
+    budgetInput.focus();
+    showFormErrorSummary(errors);
+    return false;
+  }
+
+  if (!validateOptionalNumberRange(alertInput, { min: 0, integer: false, label: 'Alerta de precio' })) {
+    errors.push({message: 'Alerta de precio: usa un numero mayor o igual a 0.', fieldId: 'pd2_alert'});
+    alertInput.focus();
+    showFormErrorSummary(errors);
+    return false;
+  }
+
+  if (!validateOptionalNumberRange(minDealInput, { min: 0, max: 100, integer: true, label: 'Min. descuento para recomendar' })) {
+    errors.push({message: 'Min. descuento para recomendar: usa un entero entre 0 y 100.', fieldId: 'pd2_min_deal'});
+    minDealInput.focus();
+    showFormErrorSummary(errors);
+    return false;
+  }
+
+  hideFormErrorSummary();
+  return true;
+}
+
 // ── Config fields (saveable) ──
 const CONFIG_FIELDS = ['vanity','key','hltb','output','discount','genres','family_json','itad_key','compare','telegram_token','telegram_chat','discord_webhook'];
 const FILTER_FIELDS = ['max_price','min_reviews','min_review_count','max_hours','top','sort','budget','max_workers'];
@@ -220,9 +447,9 @@ function wizShowStep(n) {
 function wizNext() {
   if (wizStep === 0 && !document.getElementById('wiz-vanity').value.trim()) {
     const inp = document.getElementById('wiz-vanity');
-    inp.style.borderColor = 'var(--red)';
+    setFieldError(inp, 'Ingresa tu Vanity URL, Steam ID o URL de perfil.');
     inp.focus();
-    setTimeout(() => inp.style.borderColor = '', 2000);
+    clearFieldErrorLater(inp);
     return;
   }
   if (wizStep < WIZ_TOTAL - 1) wizShowStep(wizStep + 1);
@@ -655,7 +882,7 @@ function renderHistoryTrend(runs) {
   if (!historyTrend) return;
   const source = Array.isArray(runs) ? runs : [];
   if (source.length < 2) {
-    historyTrend.innerHTML = '<div class="history-trend-title">Tendencia temporal (deals por run)</div><div class="history-trend-empty">Se necesitan al menos 2 runs para mostrar tendencia.</div>';
+    historyTrend.innerHTML = '<div class="history-trend-title">Evolución de ofertas por run</div><div class="history-trend-subtitle">Muestra cuántos deals se detectaron en cada run (no el precio de juegos individuales).</div><div class="history-trend-empty">Se necesitan al menos 2 runs para mostrar evolución.</div>';
     historyTrend.classList.remove('hidden');
     return;
   }
@@ -701,14 +928,20 @@ function renderHistoryTrend(runs) {
   const firstValue = values[0];
   const lastValue = values[values.length - 1];
   const trendDelta = lastValue - firstValue;
-  const trendLabel = trendDelta === 0
-    ? 'sin cambio neto'
+  const trendSignalClass = trendDelta === 0
+    ? 'history-trend-signal-neutral'
     : trendDelta > 0
-    ? `+${trendDelta} vs primer run`
-    : `${trendDelta} vs primer run`;
+      ? 'history-trend-signal-up'
+      : 'history-trend-signal-down';
+  const trendLabel = trendDelta === 0
+    ? 'Estable (sin cambio neto vs primer run)'
+    : trendDelta > 0
+      ? `Subiendo (+${trendDelta} ofertas vs primer run)`
+      : `Bajando (${trendDelta} ofertas vs primer run)`;
 
   historyTrend.innerHTML = `
-    <div class="history-trend-title">Tendencia temporal (deals por run · ultimos ${normalized.length})</div>
+    <div class="history-trend-title">Evolución de ofertas por run (últimos ${normalized.length})</div>
+    <div class="history-trend-subtitle">Lectura rápida: si sube hay más ofertas detectadas; si baja hay menos.</div>
     <svg class="history-trend-svg" viewBox="0 0 ${width} ${height}" preserveAspectRatio="none" role="img" aria-label="Tendencia temporal de deals por run">
       <line x1="${padX}" y1="${height - padY}" x2="${width - padX}" y2="${height - padY}" stroke="var(--card-border)" stroke-width="1" />
       <line x1="${padX}" y1="${padY}" x2="${padX}" y2="${height - padY}" stroke="var(--card-border)" stroke-width="1" />
@@ -717,7 +950,7 @@ function renderHistoryTrend(runs) {
     </svg>
     <div class="history-trend-meta">
       <span>Min: ${escapeHtml(minValue)} · Max: ${escapeHtml(maxValue)}</span>
-      <span>Tendencia: ${escapeHtml(trendLabel)}</span>
+      <span class="${trendSignalClass}">Tendencia: ${escapeHtml(trendLabel)}</span>
     </div>
   `;
   historyTrend.classList.remove('hidden');
@@ -849,13 +1082,13 @@ function setModeBanner(hasCache, hasConfig) {
     return;
   }
   if (hasCache) {
-    title.textContent = 'Modo: Actualizacion rapida';
+    title.textContent = 'Modo: Actualización rápida';
     hint.textContent = hasConfig
-      ? 'Se detecto cache local. Puedes ejecutar directo o ajustar presets.'
-      : 'Hay cache local disponible. Revisa tu perfil y ejecuta cuando quieras.';
+      ? 'Se detectó caché local. Puedes ejecutar directo o ajustar presets.'
+      : 'Hay caché local disponible. Revisa tu perfil y ejecuta cuando quieras.';
   } else {
     title.textContent = 'Modo: Primer setup';
-    hint.textContent = 'No se detecto cache local. Usa el wizard y ejecuta tu primer analisis.';
+    hint.textContent = 'No se detectó caché local. Usa el wizard y ejecuta tu primer análisis.';
   }
 }
 
@@ -889,15 +1122,13 @@ function switchTab(name) {
   dealsPanel.style.display = isPd2 ? 'none' : 'block';
   pd2Panel.style.display = isPd2 ? 'block' : 'none';
 
-   if (btnRun) btnRun.style.display = isPd2 ? 'none' : '';
-   if (btnRunPd2) btnRunPd2.style.display = isPd2 ? '' : 'none';
+  if (btnRun) btnRun.style.display = isPd2 ? 'none' : '';
+  if (btnRunPd2) btnRunPd2.style.display = isPd2 ? '' : 'none';
 
   dealsTab.classList.toggle('active', !isPd2);
   pd2Tab.classList.toggle('active', isPd2);
-  dealsTab.style.background = isPd2 ? 'var(--card)' : 'var(--accent)';
-  dealsTab.style.color = isPd2 ? 'var(--text2)' : '#fff';
-  pd2Tab.style.background = isPd2 ? 'var(--accent)' : 'var(--card)';
-  pd2Tab.style.color = isPd2 ? '#fff' : 'var(--text2)';
+  dealsTab.setAttribute('aria-selected', isPd2 ? 'false' : 'true');
+  pd2Tab.setAttribute('aria-selected', isPd2 ? 'true' : 'false');
 }
 
 function applyPreset(name) {
@@ -1217,10 +1448,7 @@ if (btnCopyLog) btnCopyLog.addEventListener('click', copyExecutionLog);
 if (btnDownloadLog) btnDownloadLog.addEventListener('click', downloadExecutionLog);
 
 btnRun.addEventListener('click', async () => {
-  if (!$('vanity').value.trim()) {
-    $('vanity').focus();
-    $('vanity').style.borderColor = 'var(--red)';
-    setTimeout(() => $('vanity').style.borderColor = '', 2000);
+  if (!validateDealsFormBeforeRun()) {
     return;
   }
 
@@ -1316,7 +1544,9 @@ btnStop.addEventListener('click', async () => {
 });
 
 if (btnRunPd2) btnRunPd2.addEventListener('click', async () => {
-  if (!$('vanity').value.trim()) { $('vanity').focus(); return; }
+  if (!validatePd2FormBeforeRun()) {
+    return;
+  }
   shownErrorHints = new Set();
   resetExecutionLog();
   progressBar.style.width = '0%';
@@ -1667,6 +1897,52 @@ async function removeWatchlist(appid) {
 let currentShareData = null;
 let currentSteamUrl = '';
 
+function encodeSharePayload(data) {
+  const json = JSON.stringify(data || {});
+  try {
+    return btoa(unescape(encodeURIComponent(json)));
+  } catch (e) {
+    try {
+      return btoa(json);
+    } catch (e2) {
+      return '';
+    }
+  }
+}
+
+function copyTextWithFallback(text) {
+  if (!text) return Promise.reject(new Error('empty-text'));
+  if (navigator.clipboard && typeof navigator.clipboard.writeText === 'function') {
+    return navigator.clipboard.writeText(text);
+  }
+  return new Promise((resolve, reject) => {
+    const textarea = document.createElement('textarea');
+    textarea.value = text;
+    textarea.setAttribute('readonly', '');
+    textarea.style.position = 'fixed';
+    textarea.style.opacity = '0';
+    document.body.appendChild(textarea);
+    textarea.select();
+    try {
+      const ok = document.execCommand('copy');
+      textarea.remove();
+      if (ok) resolve();
+      else reject(new Error('copy-failed'));
+    } catch (err) {
+      textarea.remove();
+      reject(err);
+    }
+  });
+}
+
+function flashShareButton(button, successLabel, defaultLabel) {
+  if (!button) return;
+  button.textContent = successLabel;
+  setTimeout(() => {
+    button.textContent = defaultLabel;
+  }, 2000);
+}
+
 function openShareModal(game) {
   const name = game.name || game.steam_name || 'Unknown';
   const price = game.price || 0;
@@ -1701,21 +1977,27 @@ function closeShareModal() {
 
 function copyShareLink() {
   if (!currentShareData) return;
-  const encoded = btoa(JSON.stringify(currentShareData));
+  const encoded = encodeSharePayload(currentShareData);
+  if (!encoded) {
+    appendLine('No se pudo generar link para compartir.', 'err');
+    return;
+  }
   const shareUrl = 'steamtools://share?data=' + encoded;
-  navigator.clipboard.writeText(shareUrl).then(() => {
+  copyTextWithFallback(shareUrl).then(() => {
     const btn = document.getElementById('btn-copy-app');
-    btn.textContent = 'Copiado!';
-    setTimeout(() => btn.textContent = 'Copiar link steamtools://', 2000);
+    flashShareButton(btn, 'Copiado!', 'Copiar link steamtools://');
+  }).catch(() => {
+    window.prompt('Copia este link:', shareUrl);
   });
 }
 
 function copySteamLink() {
   if (!currentSteamUrl) return;
-  navigator.clipboard.writeText(currentSteamUrl).then(() => {
+  copyTextWithFallback(currentSteamUrl).then(() => {
     const btn = document.querySelector('.share-btn-copy-steam');
-    btn.textContent = 'Copiado!';
-    setTimeout(() => btn.textContent = 'Copiar link de Steam', 2000);
+    flashShareButton(btn, 'Copiado!', 'Copiar link de Steam');
+  }).catch(() => {
+    window.prompt('Copia este link de Steam:', currentSteamUrl);
   });
 }
 

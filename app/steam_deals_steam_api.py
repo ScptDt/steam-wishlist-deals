@@ -9,6 +9,7 @@ from pathlib import Path
 PROFILE_ID_RE = re.compile(r"https?://steamcommunity\.com/profiles/(\d+)")
 PROFILE_VANITY_RE = re.compile(r"https?://steamcommunity\.com/id/([^/]+)")
 STEAM_ID64_RE = re.compile(r"<steamID64>(\d+)</steamID64>")
+STEAM_ID_RE = re.compile(r"<steamID><!\[CDATA\[(.*?)\]\]></steamID>")
 
 
 def _normalized_vanity(vanity: str) -> str:
@@ -48,7 +49,54 @@ def resolve_steam_id(
     return steam_id_match.group(1)
 
 
-def get_wishlist(api_key: str | None, steam_id: str, *, get_json) -> tuple[list[str], dict[str, int]]:
+def resolve_profile_display_name(
+    steam_id: str,
+    vanity_input: str,
+    *,
+    api_key: str | None,
+    get_json,
+    fetch_public_profile_xml,
+) -> str:
+    """Resuelve nombre visible del perfil Steam con fallback seguro."""
+
+    if api_key:
+        try:
+            url = (
+                "https://api.steampowered.com/ISteamUser/GetPlayerSummaries/v2/"
+                f"?key={api_key}&steamids={steam_id}"
+            )
+            data = get_json(url)
+            players = data.get("response", {}).get("players", [])
+            if players:
+                name = str(players[0].get("personaname", "")).strip()
+                if name:
+                    return name
+        except Exception:
+            pass
+
+    fallback_source = vanity_input
+    profile_match = PROFILE_ID_RE.match(vanity_input)
+    if profile_match:
+        fallback_source = profile_match.group(1)
+    else:
+        fallback_source = _normalized_vanity(vanity_input)
+
+    try:
+        text = fetch_public_profile_xml(fallback_source)
+        steam_id_match = STEAM_ID_RE.search(text)
+        if steam_id_match:
+            name = steam_id_match.group(1).strip()
+            if name:
+                return name
+    except Exception:
+        pass
+
+    return fallback_source
+
+
+def get_wishlist(
+    api_key: str | None, steam_id: str, *, get_json
+) -> tuple[list[str], dict[str, int]]:
     """Devuelve (lista de appids, dict appid→priority). Funciona con o sin API key."""
     url = f"https://api.steampowered.com/IWishlistService/GetWishlist/v1/?steamid={steam_id}"
     if api_key:
@@ -57,7 +105,9 @@ def get_wishlist(api_key: str | None, steam_id: str, *, get_json) -> tuple[list[
         data = get_json(url)
     except urllib.error.HTTPError as exc:
         if exc.code in (401, 403):
-            raise ValueError(f"No se pudo acceder a la wishlist (HTTP {exc.code}). ¿Es privada?") from exc
+            raise ValueError(
+                f"No se pudo acceder a la wishlist (HTTP {exc.code}). ¿Es privada?"
+            ) from exc
         raise
     items = data.get("response", {}).get("items", [])
     appids = [str(item["appid"]) for item in items]
@@ -72,7 +122,10 @@ def get_owned_games(api_key: str, steam_id: str, *, get_json) -> dict[str, str]:
         f"?key={api_key}&steamid={steam_id}&include_appinfo=1&include_played_free_games=1"
     )
     data = get_json(url)
-    return {str(game["appid"]): game["name"] for game in data.get("response", {}).get("games", [])}
+    return {
+        str(game["appid"]): game["name"]
+        for game in data.get("response", {}).get("games", [])
+    }
 
 
 def compare_wishlists(
@@ -110,7 +163,9 @@ def load_family_games(json_path: Path) -> set[str]:
 def get_active_sale(*, get_json) -> str:
     """Detecta la oferta/evento activo en Steam via marketing messages API."""
     try:
-        data = get_json("https://api.steampowered.com/IMarketingMessagesService/GetActiveMarketingMessages/v1/")
+        data = get_json(
+            "https://api.steampowered.com/IMarketingMessagesService/GetActiveMarketingMessages/v1/"
+        )
         messages = data.get("response", {}).get("messages", [])
         for preferred_type in (1, 11):
             for message in messages:

@@ -1,6 +1,6 @@
 # Pendientes (Fuente Unica)
 
-Ultima actualizacion: 2026-04-17
+Ultima actualizacion: 2026-04-18
 
 ## Regla de Oro
 
@@ -30,6 +30,22 @@ No se mantienen documentos paralelos de planificacion; este archivo es la unica 
 - [x] Banner de modo: primer setup vs actualizacion.
 - [x] Errores accionables por categoria (network/config/rate-limit/encoding).
 - [x] Presets de ejecucion (rapido, completo, ahorro).
+- [x] Renombrar "Budget Mode" a un nombre mas claro para usuarios no tecnicos.
+- [x] Renombrar "Steam Tags" a "Etiquetas" en UI.
+- [x] Cambiar la metrica "edad" por un termino mas claro (ej. "antiguedad") y explicar que mide.
+- [ ] Corregir share (compartir deals): reportado primero en Top Picks y luego como falla general en todo el share.
+- [ ] Modo Presupuesto (dinamica "Battle Royale" interna, no genero): permitir reemplazar sugerencias tanto de lista completa ("probar otra lista") como de juego individual ("cambiar este juego"), manteniendo presupuesto y priorizando valor/score.
+- [ ] Modo Presupuesto: ofrecer 3 variantes de seleccion para el mismo presupuesto (lista chica = pocos juegos/ticket alto, lista media = balanceada, lista grande = mas juegos/ticket bajo).
+- [ ] Agregar acceso rapido (boton tipo flecha) a grafica/historico de precios junto al minimo historico; evaluar mostrar minimo global y minimo en ventana de tiempo.
+- [ ] Revisar/replantear bloque de tendencia (trend): actualmente no se entiende y no aporta valor claro.
+- [ ] Renombrar/ajustar trend para lenguaje mas claro al usuario final (ej. "Tendencia de precios") y simplificar su interpretacion.
+- [ ] [Futuro] Agregar selector de moneda en UI para cambiar divisa de precios.
+- [ ] Agregar hints explicativos de metricas/criterios usados en UI para que el usuario entienda que se esta utilizando en cada seccion.
+- [ ] Filtros avanzados: agregar filtro por tipo de recomendacion/mensaje (ej. "vale la pena", "considerar", "esperar") aplicado sobre los mensajes de Top Picks.
+- [ ] Agregar apartado "Shuffle 1 juego": recomendar un solo juego de la wishlist segun presupuesto + critica/score, con boton para rerollear ("dame otro").
+- [ ] Definir estrategia de outputs para evitar archivos desperdigados: (A) guardar por defecto en estructura `output/YYYY-MM-DD/` o (B) generar archivos solo bajo accion explicita (boton/comando), a decidir en iteracion futura.
+- [ ] Cambiar etiqueta "Era" por termino mas claro en UI/reportes (ej. "Precio original").
+- [x] Ajustar el `<title>` de los reportes HTML para mostrar el nombre visible del perfil de Steam (en lugar de URL/steamid cuando aplique). [Sugerencia tester R1CK]
 
 ### P2 - Cross-platform
 
@@ -316,6 +332,11 @@ Notas:
 
 ## Bitacora
 
+- 2026-04-18: Se agrega pendiente sugerido por tester R1CK para que el `<title>` de los reportes HTML use el nombre visible del perfil de Steam en lugar de URL/steamid cuando corresponda.
+- 2026-04-18: Queda implementada la mejora sugerida por tester R1CK: los reportes HTML (`.html` y `Share HTML`) y `meta.profile` en JSON ya usan el nombre visible del perfil Steam cuando está disponible, con fallback seguro al identificador original si no se puede resolver.
+- 2026-04-18: Se cierra el pendiente de claridad de scoring sobre "edad": se estandariza como "antigüedad" y se documenta explícitamente que mide años desde lanzamiento.
+- 2026-04-18: Se renombra "Budget Mode" a "Tu Presupuesto Ideal" en documentación, UI y reportes para hacerlo más claro para usuarios no técnicos.
+- 2026-04-18: Se renombra "Steam Tags" a "Etiquetas" en la UI/reportes relevantes y documentación para mantener lenguaje más claro para usuarios no técnicos.
 - 2026-04-17: Se blindó el refresh incremental por `_fetched_at`: si un fetch de precios falla o devuelve `null`, esa entrada ya no queda marcada como fresca por 24h. El siguiente run la vuelve a tratar como retryable.
 - 2026-04-17: La UI compartida ahora expone `max_workers` en Filtros avanzados y los presets de Steam Deals tambien ajustan workers sugeridos (`rapido=12`, `completo=16`, `ahorro=8`) sin cambiar todavia el default global.
 - 2026-04-17: El dashboard historico gano un boton para restablecer filtros y un resumen visible de Run A / Run B al usar quick compare, para que la comparacion de los ultimos 2 runs sea mas clara.

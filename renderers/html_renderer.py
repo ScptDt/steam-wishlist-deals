@@ -11,9 +11,18 @@ CAPSULE_URL = "https://cdn.akamai.steamstatic.com/steam/apps/{appid}/capsule_231
 HEADER_URL = "https://cdn.akamai.steamstatic.com/steam/apps/{appid}/header.jpg"
 
 MESES = {
-    1: "enero", 2: "febrero", 3: "marzo", 4: "abril",
-    5: "mayo", 6: "junio", 7: "julio", 8: "agosto",
-    9: "septiembre", 10: "octubre", 11: "noviembre", 12: "diciembre",
+    1: "enero",
+    2: "febrero",
+    3: "marzo",
+    4: "abril",
+    5: "mayo",
+    6: "junio",
+    7: "julio",
+    8: "agosto",
+    9: "septiembre",
+    10: "octubre",
+    11: "noviembre",
+    12: "diciembre",
 }
 
 
@@ -26,7 +35,11 @@ def _html_link(name: str, appid: str) -> str:
 
 
 def _html_deck_badge(category: int) -> str:
-    labels = {3: ("Verified", "verified"), 2: ("Playable", "playable"), 1: ("Unsupported", "unsupported")}
+    labels = {
+        3: ("Verified", "verified"),
+        2: ("Playable", "playable"),
+        1: ("Unsupported", "unsupported"),
+    }
     if category not in labels:
         return '<span class="badge deck-unknown">—</span>'
     text, cls = labels[category]
@@ -77,7 +90,9 @@ def _html_achievements_badge(ach: dict | None) -> str:
     return f'<span class="badge ach-badge" title="Avg global completion: {ach["avg_completion"]:.1f}%">🏆 {ach["count"]}</span>'
 
 
-def _build_sparkline_svg(snapshots: list[dict], width: int = 80, height: int = 24) -> str:
+def _build_sparkline_svg(
+    snapshots: list[dict], width: int = 80, height: int = 24
+) -> str:
     if len(snapshots) < 2:
         return ""
     prices = [s["price_raw"] / 100 for s in snapshots]
@@ -91,15 +106,23 @@ def _build_sparkline_svg(snapshots: list[dict], width: int = 80, height: int = 2
         points.append(f"{x},{y}")
     polyline = " ".join(points)
     last_price = prices[-1]
-    color = "#6cc644" if last_price <= mn else "#f0b232" if last_price <= mn + rng * 0.3 else "#c7d5e0"
+    color = (
+        "#6cc644"
+        if last_price <= mn
+        else "#f0b232"
+        if last_price <= mn + rng * 0.3
+        else "#c7d5e0"
+    )
     lx, ly = points[-1].split(",")
-    return (f'<svg width="{width}" height="{height}" style="vertical-align:middle" title="Historial: ${mn:.0f}-${mx:.0f}">'
-            f'<polyline points="{polyline}" fill="none" stroke="{color}" stroke-width="1.5"/>'
-            f'<circle cx="{lx}" cy="{ly}" r="2" fill="{color}"/></svg>')
+    return (
+        f'<svg width="{width}" height="{height}" style="vertical-align:middle" title="Historial: ${mn:.0f}-${mx:.0f}">'
+        f'<polyline points="{polyline}" fill="none" stroke="{color}" stroke-width="1.5"/>'
+        f'<circle cx="{lx}" cy="{ly}" r="2" fill="{color}"/></svg>'
+    )
 
 
 def _html_price_raw(price_str: str) -> float:
-    m = re.search(r'[\d,.]+', price_str.replace(',', ''))
+    m = re.search(r"[\d,.]+", price_str.replace(",", ""))
     return float(m.group()) if m else 0.0
 
 
@@ -321,6 +344,49 @@ function copyForSheets() {
 }
 let currentShareData = null;
 let currentSteamUrl = '';
+function encodeSharePayload(data) {
+  const json = JSON.stringify(data || {});
+  try {
+    return btoa(unescape(encodeURIComponent(json)));
+  } catch (e) {
+    try {
+      return btoa(json);
+    } catch (e2) {
+      return '';
+    }
+  }
+}
+function copyTextWithFallback(text) {
+  if (!text) return Promise.reject(new Error('empty-text'));
+  if (navigator.clipboard && typeof navigator.clipboard.writeText === 'function') {
+    return navigator.clipboard.writeText(text);
+  }
+  return new Promise((resolve, reject) => {
+    const textarea = document.createElement('textarea');
+    textarea.value = text;
+    textarea.setAttribute('readonly', '');
+    textarea.style.position = 'fixed';
+    textarea.style.opacity = '0';
+    document.body.appendChild(textarea);
+    textarea.select();
+    try {
+      const ok = document.execCommand('copy');
+      textarea.remove();
+      if (ok) resolve();
+      else reject(new Error('copy-failed'));
+    } catch (err) {
+      textarea.remove();
+      reject(err);
+    }
+  });
+}
+function flashShareButton(button, successLabel, defaultLabel) {
+  if (!button) return;
+  button.textContent = successLabel;
+  setTimeout(() => {
+    button.textContent = defaultLabel;
+  }, 2000);
+}
 function openShareModal(game) {
   currentShareData = game;
   currentSteamUrl = 'https://store.steampowered.com/app/' + game.appid + '/';
@@ -335,20 +401,23 @@ function closeShareModal() {
 }
 function copyShareLink() {
   if (!currentShareData) return;
-  const encoded = btoa(JSON.stringify(currentShareData));
+  const encoded = encodeSharePayload(currentShareData);
+  if (!encoded) return;
   const shareUrl = 'steamtools://share?data=' + encoded;
-  navigator.clipboard.writeText(shareUrl).then(() => {
+  copyTextWithFallback(shareUrl).then(() => {
     const btn = document.getElementById('btn-copy-app');
-    btn.textContent = 'Copiado!';
-    setTimeout(() => btn.textContent = 'Copiar link steamtools://', 2000);
+    flashShareButton(btn, 'Copiado!', 'Copiar link steamtools://');
+  }).catch(() => {
+    window.prompt('Copia este link:', shareUrl);
   });
 }
 function copySteamLink() {
   if (!currentSteamUrl) return;
-  navigator.clipboard.writeText(currentSteamUrl).then(() => {
+  copyTextWithFallback(currentSteamUrl).then(() => {
     const btn = document.querySelector('.share-btn-copy-steam');
-    btn.textContent = 'Copiado!';
-    setTimeout(() => btn.textContent = 'Copiar link de Steam', 2000);
+    flashShareButton(btn, 'Copiado!', 'Copiar link de Steam');
+  }).catch(() => {
+    window.prompt('Copia este link de Steam:', currentSteamUrl);
   });
 }
 function openInSteam() {
@@ -357,7 +426,16 @@ function openInSteam() {
 """
 
 
-def _build_dashboard_html(deals, reviews, deck_compat_data, tags_data, protondb_data, *, group_by_tier, group_deals_by_tag):
+def _build_dashboard_html(
+    deals,
+    reviews,
+    deck_compat_data,
+    tags_data,
+    protondb_data,
+    *,
+    group_by_tier,
+    group_deals_by_tag,
+):
     if not deals:
         return ""
     total = len(deals)
@@ -368,7 +446,7 @@ def _build_dashboard_html(deals, reviews, deck_compat_data, tags_data, protondb_
     prices = sorted(_html_price_raw(d["price_final"]) for d in deals)
     median_price = prices[len(prices) // 2] if prices else 0
 
-    fin_html = f'''<div class="dash-card" style="grid-column:1/-1">
+    fin_html = f"""<div class="dash-card" style="grid-column:1/-1">
   <h3>&#128176; Resumen Financiero</h3>
   <div class="fin-grid">
     <div class="fin-item"><div class="fin-value">${total_orig:,.0f}</div><div class="fin-label">Precio original</div></div>
@@ -377,9 +455,15 @@ def _build_dashboard_html(deals, reviews, deck_compat_data, tags_data, protondb_
     <div class="fin-item"><div class="fin-value">-{avg_disc:.0f}%</div><div class="fin-label">Descuento promedio</div></div>
     <div class="fin-item"><div class="fin-value">${median_price:.0f}</div><div class="fin-label">Precio mediana</div></div>
   </div>
-</div>'''
+</div>"""
 
-    tier_colors = {"90%+": "#6cc644", "80–89%": "#4eaa5a", "70–79%": "#f0b232", "60–69%": "#e89030", "50–59%": "#c7322e"}
+    tier_colors = {
+        "90%+": "#6cc644",
+        "80–89%": "#4eaa5a",
+        "70–79%": "#f0b232",
+        "60–69%": "#e89030",
+        "50–59%": "#c7322e",
+    }
     tiers = group_by_tier(deals)
     max_t = max((len(ds) for _, ds in tiers), default=1) or 1
     bars_html = ""
@@ -393,7 +477,12 @@ def _build_dashboard_html(deals, reviews, deck_compat_data, tags_data, protondb_
     for d in deals:
         deck_category = deck_compat_data.get(d["appid"], 0)
         dk_counts[deck_category] = dk_counts.get(deck_category, 0) + 1
-    dk_colors = {3: ("#6cc644", "Verified"), 2: ("#f0b232", "Playable"), 1: ("#c7322e", "Unsupported"), 0: ("#555", "Unknown")}
+    dk_colors = {
+        3: ("#6cc644", "Verified"),
+        2: ("#f0b232", "Playable"),
+        1: ("#c7322e", "Unsupported"),
+        0: ("#555", "Unknown"),
+    }
     dk_segs = ""
     dk_legend = ""
     for cat in (3, 2, 1, 0):
@@ -409,7 +498,14 @@ def _build_dashboard_html(deals, reviews, deck_compat_data, tags_data, protondb_
         if pdb:
             tier = pdb.get("tier", "")
             pdb_counts[tier] = pdb_counts.get(tier, 0) + 1
-    pdb_colors = {"native": "#6cc644", "platinum": "#b4c7dc", "gold": "#d4a84b", "silver": "#a8a8a8", "bronze": "#cd7f32", "borked": "#c7322e"}
+    pdb_colors = {
+        "native": "#6cc644",
+        "platinum": "#b4c7dc",
+        "gold": "#d4a84b",
+        "silver": "#a8a8a8",
+        "bronze": "#cd7f32",
+        "borked": "#c7322e",
+    }
     pdb_segs = ""
     pdb_legend = ""
     for tier in ("native", "platinum", "gold", "silver", "bronze", "borked"):
@@ -419,10 +515,10 @@ def _build_dashboard_html(deals, reviews, deck_compat_data, tags_data, protondb_
             pdb_segs += f'<div class="stacked-seg" style="width:{pct}%;background:{pdb_colors[tier]}">{count if pct > 5 else ""}</div>'
             pdb_legend += f'<span class="legend-item"><span class="legend-dot" style="background:{pdb_colors[tier]}"></span>{tier.title()} ({count})</span>'
 
-    compat_html = f'''<div class="dash-card"><h3>&#127918; Deck / ProtonDB</h3>
+    compat_html = f"""<div class="dash-card"><h3>&#127918; Deck / ProtonDB</h3>
   <div style="margin-bottom:.6rem"><div style="font-size:.75rem;color:var(--text-secondary);margin-bottom:.2rem">Steam Deck</div><div class="stacked-bar">{dk_segs}</div><div class="stacked-legend">{dk_legend}</div></div>
   <div><div style="font-size:.75rem;color:var(--text-secondary);margin-bottom:.2rem">ProtonDB</div><div class="stacked-bar">{pdb_segs}</div><div class="stacked-legend">{pdb_legend}</div></div>
-</div>'''
+</div>"""
 
     tags_html = ""
     if tags_data:
@@ -433,9 +529,9 @@ def _build_dashboard_html(deals, reviews, deck_compat_data, tags_data, protondb_
             for tag_name, tag_deals in tag_groups[:8]:
                 pct = len(tag_deals) / max_tg * 100
                 tg_bars += f'<div class="hbar-row"><span class="hbar-label">{_html_esc(tag_name)}</span><div class="hbar-track"><div class="hbar-fill" style="width:{pct}%;background:var(--accent-blue)">{len(tag_deals)}</div></div><span class="hbar-value">{len(tag_deals)}</span></div>\n'
-            tags_html = f'<div class="dash-card"><h3>&#127991; Top Tags</h3>{tg_bars}</div>'
+            tags_html = f'<div class="dash-card"><h3>&#127991; Top Etiquetas</h3>{tg_bars}</div>'
 
-    return f'''<details open class="dashboard">
+    return f"""<details open class="dashboard">
   <summary>&#128202; Dashboard</summary>
   <div class="dash-grid">
     {fin_html}
@@ -443,7 +539,7 @@ def _build_dashboard_html(deals, reviews, deck_compat_data, tags_data, protondb_
     {compat_html}
     {tags_html}
   </div>
-</details>'''
+</details>"""
 
 
 def generate_html(
@@ -474,11 +570,20 @@ def generate_html(
     gift_ideas: list[dict] | None = None,
     local_trends: dict[str, dict] | None = None,
     price_history: dict | None = None,
+    profile_display_name: str | None = None,
     *,
     group_by_tier,
     group_deals_by_tag,
 ) -> str:
-    del backlog_on_sale, have_on_sale, owned, genres, hltb_used, family_appids, local_trends
+    del (
+        backlog_on_sale,
+        have_on_sale,
+        owned,
+        genres,
+        hltb_used,
+        family_appids,
+        local_trends,
+    )
 
     today_obj = date.today()
     today = f"{today_obj.day} de {MESES[today_obj.month]} de {today_obj.year}"
@@ -499,12 +604,24 @@ def generate_html(
 
     total_deals = len(deals)
     avg_disc = sum(d["discount"] for d in deals) / total_deals if total_deals else 0
-    avg_price = sum(_html_price_raw(d["price_final"]) for d in deals) / total_deals if total_deals else 0
+    avg_price = (
+        sum(_html_price_raw(d["price_final"]) for d in deals) / total_deals
+        if total_deals
+        else 0
+    )
     verified = sum(1 for d in deals if deck_compat_data.get(d["appid"]) == 3)
-    new_count = sum(1 for d in deals if previous_appids and d["appid"] not in previous_appids) if previous_appids else 0
+    new_count = (
+        sum(1 for d in deals if previous_appids and d["appid"] not in previous_appids)
+        if previous_appids
+        else 0
+    )
 
     parts = []
-    sale_html = f'Evento: <span class="sale-badge">&#127991; {_html_esc(sale_name)}</span> | ' if sale_name else ""
+    sale_html = (
+        f'Evento: <span class="sale-badge">&#127991; {_html_esc(sale_name)}</span> | '
+        if sale_name
+        else ""
+    )
     pills = [
         f'<span class="pill">{len(wishlist_appids):,} en wishlist</span>',
         f'<span class="pill pill-accent" id="stat-deals">{total_deals:,} deals (&ge;{min_discount}%)</span>',
@@ -514,11 +631,11 @@ def generate_html(
     ]
     if new_count:
         pills.append(f'<span class="pill pill-new">{new_count} nuevos</span>')
-    parts.append(f'''<header class="stats-bar">
+    parts.append(f"""<header class="stats-bar">
   <h1>Steam Deals &mdash; {_html_esc(vanity)}</h1>
   <div class="stats-meta">{sale_html}{today} | Precios en MXN</div>
   <div class="stats-pills">{"".join(pills)}</div>
-</header>''')
+</header>""")
 
     parts.append(
         _build_dashboard_html(
@@ -535,7 +652,15 @@ def generate_html(
     if top_picks:
         cards = []
         for idx, tp in enumerate(top_picks, 1):
-            rank_cls = "rank-gold" if idx == 1 else "rank-silver" if idx == 2 else "rank-bronze" if idx == 3 else ""
+            rank_cls = (
+                "rank-gold"
+                if idx == 1
+                else "rank-silver"
+                if idx == 2
+                else "rank-bronze"
+                if idx == 3
+                else ""
+            )
             rev_html = _html_review_badge(tp.get("review"))
             dk_html = _html_deck_badge(tp.get("deck", 0))
             mc_html = _html_metacritic_badge(tp.get("metacritic_score"))
@@ -547,33 +672,41 @@ def generate_html(
             min_hist_str = f"${min_hist['price']:.0f}" if min_hist else ""
             recommendation = _html_esc(tp.get("recommendation", ""))
             why_text = _html_esc(" · ".join(tp.get("score_reasons", [])))
-            why_html = f'<div class="pick-recommendation">{recommendation}</div><div class="pick-why">{why_text}</div>' if recommendation or why_text else ""
+            why_html = (
+                f'<div class="pick-recommendation">{recommendation}</div><div class="pick-why">{why_text}</div>'
+                if recommendation or why_text
+                else ""
+            )
             tp_data = f'{{"name":"{_html_esc(tp["name"])}","appid":"{tp["appid"]}","price":"{_html_esc(tp["price_final"])}","price_original":"{_html_esc(tp.get("price_original", ""))}","discount":{tp["discount"]},"min_hist":"{min_hist_str}"}}'
             cards.append(f'''<div class="pick-card {rank_cls}">
   <a href="{store_url}" target="_blank" style="display:block">
     <img class="pick-img" src="{header_img}" alt="" loading="lazy" onerror="this.style.display='none'">
     <div class="pick-body">
       <div class="pick-rank">#{idx}</div>
-      <div class="pick-score">{tp['score']}</div>
-      <div class="pick-name">{_html_esc(tp['name'])}{prio_html}</div>
-      <div class="pick-details"><span class="pick-discount">-{tp['discount']}%</span><span class="pick-price">{_html_esc(tp['price_final'])}</span></div>
+      <div class="pick-score">{tp["score"]}</div>
+      <div class="pick-name">{_html_esc(tp["name"])}{prio_html}</div>
+      <div class="pick-details"><span class="pick-discount">-{tp["discount"]}%</span><span class="pick-price">{_html_esc(tp["price_final"])}</span></div>
       <div class="pick-meta">{rev_html} &middot; {mc_html} &middot; {dk_html} &middot; {mp_html}</div>
       {why_html}
     </div>
   </a>
   <button class="share-btn-mini" onclick="openShareModal({tp_data})" title="Compartir">&#128279;</button>
 </div>''')
-        parts.append(f'''<section class="top-picks">
+        parts.append(f"""<section class="top-picks">
   <h2>&#127942; Top {len(top_picks)} Picks</h2>
-  <p class="section-desc">Ranking: reviews (26%) + descuento (22%) + prioridad (18%) + $/hora HLTB (14%) + Deck (10%) + Metacritic (5%) + edad (5%).</p>
+  <p class="section-desc">Ranking: reviews (26%) + descuento (22%) + prioridad (18%) + $/hora HLTB (14%) + Deck (10%) + Metacritic (5%) + antigüedad (5%).</p>
   <div class="picks-grid">{"".join(cards)}</div>
-</section>''')
+</section>""")
 
     if watchlist_alerts:
         wl_rows = []
         for wa in watchlist_alerts:
             savings = wa["target_price"] - (wa.get("price_raw", 0) / 100)
-            savings_html = f'<span style="color:var(--accent-green)">+${savings:.0f}</span>' if savings > 0 else ""
+            savings_html = (
+                f'<span style="color:var(--accent-green)">+${savings:.0f}</span>'
+                if savings > 0
+                else ""
+            )
             capsule = CAPSULE_URL.format(appid=wa["appid"])
             wl_rows.append(f'''<div class="wl-card">
   <img src="{capsule}" alt="" loading="lazy" style="width:120px;height:45px;border-radius:4px;object-fit:cover" onerror="this.style.display='none'">
@@ -583,15 +716,19 @@ def generate_html(
     <div style="font-size:.8rem"><span class="pick-discount">-{wa["discount"]}%</span></div>
   </div>
 </div>''')
-        parts.append(f'''<section class="top-picks" style="margin-bottom:1.5rem">
+        parts.append(f"""<section class="top-picks" style="margin-bottom:1.5rem">
   <h2>&#127919; Watchlist Alerts</h2>
   <p class="section-desc">{len(watchlist_alerts)} juegos alcanzaron tu precio objetivo</p>
   <div style="display:grid;grid-template-columns:repeat(auto-fill,minmax(280px,1fr));gap:.6rem">{"".join(wl_rows)}</div>
-</section>''')
+</section>""")
 
     if budget_result:
         budget_data = budget_result
-        pct_used = budget_data["total_spent"] / budget_data["budget"] * 100 if budget_data["budget"] > 0 else 0
+        pct_used = (
+            budget_data["total_spent"] / budget_data["budget"] * 100
+            if budget_data["budget"] > 0
+            else 0
+        )
         budget_rows = ""
         for idx, pick in enumerate(budget_data["selected"], 1):
             capsule = CAPSULE_URL.format(appid=pick["appid"])
@@ -605,23 +742,23 @@ def generate_html(
   <td>{_html_esc(pick["price_final"])}</td>
   <td><div class="game-cell"><img class="game-thumb" src="{capsule}" alt="" loading="lazy" onerror="this.style.display='none'"><span>{_html_link(pick["name"], pick["appid"])}{pick_context}</span></div></td>
 </tr>'''
-        parts.append(f'''<section style="margin-bottom:1.5rem">
-  <h2>&#128176; Budget Mode &mdash; ${budget_data["budget"]:.0f} MXN</h2>
+        parts.append(f"""<section style="margin-bottom:1.5rem">
+  <h2>&#128176; Tu Presupuesto Ideal &mdash; ${budget_data["budget"]:.0f} MXN</h2>
   <p class="section-desc">Con ${budget_data["budget"]:.0f} MXN puedes comprar {budget_data["games_count"]} juegos &middot; Ahorro: ${budget_data["total_savings"]:.0f} &middot; Restante: ${budget_data["remaining"]:.0f}</p>
   <div style="background:var(--bg-secondary);border-radius:6px;height:24px;margin-bottom:.8rem;overflow:hidden;position:relative">
     <div style="height:100%;width:{pct_used:.0f}%;background:linear-gradient(90deg,var(--accent-blue),#4b9cd3);border-radius:6px"></div>
     <div style="position:absolute;inset:0;display:flex;align-items:center;justify-content:center;font-size:.75rem;font-weight:600;color:var(--text-primary)">${budget_data["total_spent"]:.0f} / ${budget_data["budget"]:.0f} ({pct_used:.0f}%)</div>
   </div>
   <div class="table-wrap"><table class="deals-table"><thead><tr><th>#</th><th>Score</th><th>%</th><th>Precio</th><th>Juego</th></tr></thead><tbody>{budget_rows}</tbody></table></div>
-</section>''')
+</section>""")
 
     if compare_data:
         friend = compare_data.get("friend_vanity", "?")
         overlap = compare_data.get("overlap", set())
         overlap_deals = [d for d in deals if d["appid"] in overlap]
-        comp_html = f'''<section style="margin-bottom:1.5rem">
+        comp_html = f"""<section style="margin-bottom:1.5rem">
   <h2>&#128101; Wishlist Comparison &mdash; {_html_esc(friend)}</h2>
-  <p class="section-desc">{len(overlap)} juegos en com&uacute;n'''
+  <p class="section-desc">{len(overlap)} juegos en com&uacute;n"""
         if overlap_deals:
             comp_html += f" &middot; {len(overlap_deals)} en oferta"
         comp_html += "</p>"
@@ -655,9 +792,23 @@ def generate_html(
 </details>''')
 
     for tier_name, tier_deals in group_by_tier(deals):
-        tier_deals.sort(key=lambda d: (priorities.get(d["appid"], 0) == 0, priorities.get(d["appid"], 9999)))
-        tid = re.sub(r'[^a-z0-9]', '', tier_name.lower())
-        cols = [("", "text"), ("%", "num"), ("Precio", "price"), ("Era", "price"), ("Reviews", "num"), ("MC", "num"), ("Deck", "text"), ("Modo", "text")]
+        tier_deals.sort(
+            key=lambda d: (
+                priorities.get(d["appid"], 0) == 0,
+                priorities.get(d["appid"], 9999),
+            )
+        )
+        tid = re.sub(r"[^a-z0-9]", "", tier_name.lower())
+        cols = [
+            ("", "text"),
+            ("%", "num"),
+            ("Precio", "price"),
+            ("Era", "price"),
+            ("Reviews", "num"),
+            ("MC", "num"),
+            ("Deck", "text"),
+            ("Modo", "text"),
+        ]
         if has_ach:
             cols.append(("Logros", "num"))
         if has_sparklines:
@@ -669,7 +820,7 @@ def generate_html(
         cols.append(("Juego", "text"))
 
         ths = "".join(
-            f'<th onclick="sortTable(\'t-{tid}\',{i},\'{col_type}\')">{_html_esc(header)} <span class="sort-arrow">&#9650;&#9660;</span></th>'
+            f"<th onclick=\"sortTable('t-{tid}',{i},'{col_type}')\">{_html_esc(header)} <span class=\"sort-arrow\">&#9650;&#9660;</span></th>"
             for i, (header, col_type) in enumerate(cols)
         )
 
@@ -718,32 +869,36 @@ def generate_html(
                 else:
                     cells.append("<td>—</td>")
             capsule_img = CAPSULE_URL.format(appid=appid)
-            desc_attr = f' title="{_html_esc(d.get("description", ""))}"' if d.get("description") else ""
+            desc_attr = (
+                f' title="{_html_esc(d.get("description", ""))}"'
+                if d.get("description")
+                else ""
+            )
             min_hist = historical_lows.get(appid)
             min_hist_str = f"${min_hist['price']:.0f}" if min_hist else ""
             game_data = f'{{"name":"{_html_esc(d["name"])}","appid":"{appid}","price":"{_html_esc(d["price_final"])}","price_original":"{_html_esc(d["price_original"])}","discount":{d["discount"]},"min_hist":"{min_hist_str}"}}'
             name_html = (
                 f'<div class="game-cell">'
                 f'<img class="game-thumb" src="{capsule_img}" alt="" loading="lazy" onerror="this.style.display=\'none\'">'
-                f'<span{desc_attr}>{_html_link(d["name"], appid)}{_html_prio_badge(prio)}</span>'
+                f"<span{desc_attr}>{_html_link(d['name'], appid)}{_html_prio_badge(prio)}</span>"
                 f'<button class="share-btn-mini" onclick="openShareModal({game_data})" title="Compartir" style="margin-left:.4rem;position:relative;top:-1px">&#128279;</button>'
-                f'</div>'
+                f"</div>"
             )
             cells.append(f"<td>{name_html}</td>")
 
             data_attrs = f'data-discount="{d["discount"]}" data-price="{price_num}" data-deck="{dk}" data-review="{rev_pct}" data-name="{_html_esc(d["name"].lower())}" data-new="{"1" if is_new else "0"}"'
             rows.append(f"<tr {data_attrs}>{''.join(cells)}</tr>")
 
-        parts.append(f'''<details open class="tier-section">
+        parts.append(f"""<details open class="tier-section">
   <summary class="tier-header">{_html_esc(tier_name)} de Descuento <span class="tier-count">(<span class="visible-count">{len(tier_deals)}</span> juegos)</span></summary>
   <div class="table-wrap"><table class="deals-table" id="t-{tid}"><thead><tr>{ths}</tr></thead><tbody>{"".join(rows)}</tbody></table></div>
-</details>''')
+</details>""")
 
-    return f'''<!DOCTYPE html>
+    return f"""<!DOCTYPE html>
 <html lang="es">
-<head><meta charset="UTF-8"><meta name="viewport" content="width=device-width,initial-scale=1.0"><title>Steam Deals &mdash; {_html_esc(vanity)}</title><style>{_HTML_CSS}</style></head>
+<head><meta charset="UTF-8"><meta name="viewport" content="width=device-width,initial-scale=1.0"><title>Steam Deals &mdash; {_html_esc(profile_display_name or vanity)}</title><style>{_HTML_CSS}</style></head>
 <body>
 {"".join(parts)}
 <script>{_HTML_JS}</script>
 </body>
-</html>'''
+</html>"""

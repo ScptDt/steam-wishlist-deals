@@ -54,6 +54,7 @@ def generate_json(
     budget_result: dict | None = None,
     compare_data: dict | None = None,
     gift_ideas: list[dict] | None = None,
+    profile_display_name: str | None = None,
 ) -> str:
     previous_appids = previous_appids or set()
     family_appids = family_appids or set()
@@ -76,7 +77,7 @@ def generate_json(
     payload = {
         "meta": {
             "generated_at": datetime.now().astimezone().isoformat(timespec="seconds"),
-            "profile": vanity,
+            "profile": profile_display_name or vanity,
             "sale_name": sale_name or None,
         },
         "inputs": {

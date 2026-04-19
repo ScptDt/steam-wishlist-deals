@@ -223,7 +223,7 @@ def generate_md(
         lines += [
             "## 🏆 Top 10 Picks",
             "",
-            "> Ranking: reviews (26%) + descuento (22%) + prioridad (18%) + $/hora HLTB (14%) + Deck (10%) + Metacritic (5%) + edad (5%).",
+            "> Ranking: reviews (26%) + descuento (22%) + prioridad (18%) + $/hora HLTB (14%) + Deck (10%) + Metacritic (5%) + antigüedad (5%).",
             "",
             "| # | Score | % | Precio | Año | Reviews | MC | Deck/Linux | Modo | Juego |",
             "|---|-------|---|--------|-----|---------|----|-----------|----|-------|",
@@ -279,7 +279,7 @@ def generate_md(
     if budget_result:
         b = budget_result
         lines += [
-            f"## 💰 Budget Mode — ${b['budget']:.0f} MXN",
+            f"## 💰 Tu Presupuesto Ideal — ${b['budget']:.0f} MXN",
             "",
             f"> Con **${b['budget']:.0f} MXN** puedes comprar **{b['games_count']} juegos**.",
             f"> Total: ${b['total_spent']:.0f} | Ahorro vs original: ${b['total_savings']:.0f} | Restante: ${b['remaining']:.0f}",
@@ -675,7 +675,7 @@ def generate_md(
             header += " | Logros"
             sep += "|-------"
         if has_tags:
-            header += " | Tags"
+            header += " | Etiquetas"
             sep += "|------"
         if has_itad:
             header += " | Min. hist."

@@ -46,13 +46,14 @@ class ResolveCacheDirTests(unittest.TestCase):
 
 class ResolveLogsDirTests(unittest.TestCase):
     def test_source_runs_default_to_project_logs_folder(self) -> None:
+        project_dir = Path("/workspace/deals")
         logs_dir = resolve_logs_dir(
-            Path("/workspace/deals"),
+            project_dir,
             env={},
             frozen=False,
         )
 
-        self.assertEqual(logs_dir, Path("/workspace/deals/logs"))
+        self.assertEqual(logs_dir, project_dir.resolve() / "logs")
 
     def test_cache_override_routes_logs_inside_cache_folder(self) -> None:
         logs_dir = resolve_logs_dir(

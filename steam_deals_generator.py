@@ -185,6 +185,7 @@ try:
         get_owned_games as _get_owned_games_impl,
         get_wishlist as _get_wishlist_impl,
         load_family_games as _load_family_games_impl,
+        resolve_profile_display_name as _resolve_profile_display_name_impl,
         resolve_steam_id as _resolve_steam_id_impl,
     )
 except Exception:
@@ -193,6 +194,7 @@ except Exception:
     _get_owned_games_impl = None
     _get_wishlist_impl = None
     _load_family_games_impl = None
+    _resolve_profile_display_name_impl = None
     _resolve_steam_id_impl = None
 
 
@@ -529,7 +531,10 @@ def get_config():
 
 
 def _fetch_public_profile_xml(vanity: str) -> str:
-    url = f"https://steamcommunity.com/id/{vanity}/?xml=1"
+    if vanity.isdigit() and len(vanity) >= 16:
+        url = f"https://steamcommunity.com/profiles/{vanity}/?xml=1"
+    else:
+        url = f"https://steamcommunity.com/id/{vanity}/?xml=1"
     req = urllib.request.Request(url, headers={"User-Agent": "Mozilla/5.0"})
     with urllib.request.urlopen(req, timeout=15) as response:
         return response.read().decode("utf-8")
@@ -542,6 +547,22 @@ def resolve_steam_id(api_key: str | None, vanity: str) -> str:
     return _resolve_steam_id_impl(
         api_key,
         vanity,
+        get_json=_get_json,
+        fetch_public_profile_xml=_fetch_public_profile_xml,
+    )
+
+
+def resolve_profile_display_name(
+    steam_id: str,
+    vanity_input: str,
+    api_key: str | None,
+) -> str:
+    if _resolve_profile_display_name_impl is None:
+        return vanity_input
+    return _resolve_profile_display_name_impl(
+        steam_id,
+        vanity_input,
+        api_key=api_key,
         get_json=_get_json,
         fetch_public_profile_xml=_fetch_public_profile_xml,
     )
@@ -1197,7 +1218,9 @@ def strip_ansi_for_log(text: str) -> str:
     return ANSI_ESCAPE_RE.sub("", text)
 
 
-def write_warm_cache_log(log_handle, message: str, *, end: str = "\n", flush: bool = False) -> None:
+def write_warm_cache_log(
+    log_handle, message: str, *, end: str = "\n", flush: bool = False
+) -> None:
     clean_message = strip_ansi_for_log(str(message)).replace("\r", "\n")
     clean_end = strip_ansi_for_log(str(end)).replace("\r", "\n")
     log_handle.write(clean_message)
@@ -1552,7 +1575,9 @@ def run_price_cache_stage(
     except KeyboardInterrupt as exc:
         emit_fn(f"\n  {_warn('Interrumpido — guardando caché parcial...')}")
         save_price_cache_fn(steam_id, fetched_cache)
-        emit_fn(f"  {_ok('Caché guardada. Ejecuta de nuevo para continuar donde quedó.')}")
+        emit_fn(
+            f"  {_ok('Caché guardada. Ejecuta de nuevo para continuar donde quedó.')}"
+        )
         raise SystemExit(1) from exc
 
     if n_fetched > 0:
@@ -1591,7 +1616,7 @@ def run_warm_cache_mode(
     elapsed = time.monotonic() - started_at
     emit_fn(f"\n  {_ok(f'Warm cache listo en {elapsed:.1f}s')}")
     emit_fn(
-        f"  {_dim(f'Wishlist: {len(wishlist_appids):,} juegos · Deals actuales: {len(cache_result['deals']):,}') }"
+        f"  {_dim(f'Wishlist: {len(wishlist_appids):,} juegos · Deals actuales: {len(cache_result['deals']):,}')}"
     )
     emit_fn(f"  {_dim(f'Caché objetivo: {cache_result['cache_path']}')}")
     return cache_result
@@ -2743,9 +2768,7 @@ def _build_dashboard_html(deals, reviews, deck_compat_data, tags_data, protondb_
             for tname, tdeals in tag_groups[:8]:
                 pct = len(tdeals) / max_tg * 100
                 tg_bars += f'<div class="hbar-row"><span class="hbar-label">{_html_esc(tname)}</span><div class="hbar-track"><div class="hbar-fill" style="width:{pct}%;background:var(--accent-blue)">{len(tdeals)}</div></div><span class="hbar-value">{len(tdeals)}</span></div>\n'
-            tags_html = (
-                f'<div class="dash-card"><h3>&#127991; Top Tags</h3>{tg_bars}</div>'
-            )
+            tags_html = f'<div class="dash-card"><h3>&#127991; Top Etiquetas</h3>{tg_bars}</div>'
 
     return f"""<details open class="dashboard">
   <summary>&#128202; Dashboard</summary>
@@ -2786,6 +2809,7 @@ def generate_html(
     gift_ideas: list[dict] | None = None,
     local_trends: dict[str, dict] | None = None,
     price_history: dict | None = None,
+    profile_display_name: str | None = None,
 ) -> str:
     if _generate_html_renderer is not None:
         return _generate_html_renderer(
@@ -2816,6 +2840,7 @@ def generate_html(
             gift_ideas=gift_ideas,
             local_trends=local_trends,
             price_history=price_history,
+            profile_display_name=profile_display_name,
             group_by_tier=group_by_tier,
             group_deals_by_tag=group_deals_by_tag,
         )
@@ -2920,7 +2945,7 @@ def generate_html(
 </div>''')
         parts.append(f"""<section class="top-picks">
   <h2>&#127942; Top {len(top_picks)} Picks</h2>
-  <p class="section-desc">Ranking: reviews (26%) + descuento (22%) + prioridad (18%) + $/hora HLTB (14%) + Deck (10%) + Metacritic (5%) + edad (5%).</p>
+  <p class="section-desc">Ranking: reviews (26%) + descuento (22%) + prioridad (18%) + $/hora HLTB (14%) + Deck (10%) + Metacritic (5%) + antigüedad (5%).</p>
   <div class="picks-grid">{"".join(cards)}</div>
 </section>""")
 
@@ -2949,7 +2974,7 @@ def generate_html(
   <div style="display:grid;grid-template-columns:repeat(auto-fill,minmax(280px,1fr));gap:.6rem">{"".join(wl_rows)}</div>
 </section>""")
 
-    # ── Budget Mode ──
+    # ── Modo Presupuesto ──
     if budget_result:
         b = budget_result
         pct_used = b["total_spent"] / b["budget"] * 100 if b["budget"] > 0 else 0
@@ -2962,7 +2987,7 @@ def generate_html(
   <td><div class="game-cell"><img class="game-thumb" src="{capsule}" alt="" loading="lazy" onerror="this.style.display='none'"><span>{_html_link(pick["name"], pick["appid"])}</span></div></td>
 </tr>'''
         parts.append(f"""<section style="margin-bottom:1.5rem">
-  <h2>&#128176; Budget Mode &mdash; ${b["budget"]:.0f} MXN</h2>
+  <h2>&#128176; Modo Presupuesto &mdash; ${b["budget"]:.0f} MXN</h2>
   <p class="section-desc">Con ${b["budget"]:.0f} MXN puedes comprar {b["games_count"]} juegos &middot; Ahorro: ${b["total_savings"]:.0f} &middot; Restante: ${b["remaining"]:.0f}</p>
   <div style="background:var(--bg-secondary);border-radius:6px;height:24px;margin-bottom:.8rem;overflow:hidden;position:relative">
     <div style="height:100%;width:{pct_used:.0f}%;background:linear-gradient(90deg,var(--accent-blue),#4b9cd3);border-radius:6px"></div>
@@ -3121,7 +3146,7 @@ def generate_html(
 
     return f"""<!DOCTYPE html>
 <html lang="es">
-<head><meta charset="UTF-8"><meta name="viewport" content="width=device-width,initial-scale=1.0"><title>Steam Deals &mdash; {_html_esc(vanity)}</title><style>{_HTML_CSS}</style></head>
+<head><meta charset="UTF-8"><meta name="viewport" content="width=device-width,initial-scale=1.0"><title>Steam Deals &mdash; {_html_esc(profile_display_name or vanity)}</title><style>{_HTML_CSS}</style></head>
 <body>
 {"".join(parts)}
 <script>{_HTML_JS}</script>
@@ -3142,6 +3167,7 @@ def generate_share_html(
     top_picks=None,
     reviews=None,
     deck_compat=None,
+    profile_display_name: str | None = None,
 ):
     """Generate a lightweight shareable HTML page with the deals list."""
     if _generate_share_html_renderer is not None:
@@ -3153,12 +3179,13 @@ def generate_share_html(
             top_picks=top_picks,
             reviews=reviews,
             deck_compat=deck_compat,
+            profile_display_name=profile_display_name,
         )
     reviews = reviews or {}
     deck_compat = deck_compat or {}
     top_picks = top_picks or []
     today = date.today().strftime("%Y-%m-%d")
-    title = f"Steam Deals — {vanity}"
+    title = f"Steam Deals — {profile_display_name or vanity}"
     rows = ""
     for d in deals:
         appid = d["appid"]
@@ -3301,6 +3328,7 @@ def generate_json(
     budget_result=None,
     compare_data=None,
     gift_ideas=None,
+    profile_display_name: str | None = None,
 ) -> str:
     if _generate_json_renderer is None:
         raise RuntimeError("JSON renderer module is not available")
@@ -3335,6 +3363,7 @@ def generate_json(
         budget_result=budget_result,
         compare_data=compare_data,
         gift_ideas=gift_ideas,
+        profile_display_name=profile_display_name,
     )
 
 
@@ -3463,7 +3492,11 @@ def main():
             + (1 if HLTB_CSV else 0)
             + (1 if ITAD_KEY else 0)
             + (1 if FILTERS.get("csv") else 0)
-            + (1 if FILTERS.get("telegram_token") or FILTERS.get("discord_webhook") else 0)
+            + (
+                1
+                if FILTERS.get("telegram_token") or FILTERS.get("discord_webhook")
+                else 0
+            )
             + (1 if FILTERS.get("compare") else 0)
         )
     )
@@ -3501,6 +3534,7 @@ def main():
     step("Resolviendo Steam ID...")
     steam_id = resolve_steam_id(KEY, VANITY)
     emit(f"  {_ok(steam_id)}")
+    profile_display_name = resolve_profile_display_name(steam_id, VANITY, KEY)
 
     # [2] Wishlist (con prioridad)
     step("Obteniendo wishlist...")
@@ -3910,6 +3944,7 @@ def main():
         gift_ideas=gift_ideas,
         local_trends=local_trends,
         price_history=price_history,
+        profile_display_name=profile_display_name,
         **family_renderer_kwargs,
     )
 
@@ -3922,6 +3957,7 @@ def main():
         top_picks=top_picks,
         reviews=reviews_data,
         deck_compat=deck_data,
+        profile_display_name=profile_display_name,
     )
 
     step("Generando JSON...")
@@ -3955,6 +3991,7 @@ def main():
         budget_result=budget_result,
         compare_data=compare_data,
         gift_ideas=gift_ideas,
+        profile_display_name=profile_display_name,
         **family_renderer_kwargs,
     )
 
