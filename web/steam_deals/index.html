@@ -18,9 +18,9 @@
       <div class="share-game-minhist" id="share-minhist"></div>
     </div>
     <div class="share-actions">
-      <button class="share-btn share-btn-copy-app" id="btn-copy-app" onclick="copyShareLink()">Copiar link steamtools://</button>
-      <button class="share-btn share-btn-copy-steam" onclick="copySteamLink()">Copiar link de Steam</button>
-      <button class="share-btn share-btn-open" onclick="openInSteam()">Abrir en Steam</button>
+      <button type="button" class="share-btn share-btn-copy-app" id="btn-copy-app" onclick="copyShareLink()">Copiar link steamtools://</button>
+      <button type="button" class="share-btn share-btn-copy-steam" onclick="copySteamLink()">Copiar link de Steam</button>
+      <button type="button" class="share-btn share-btn-open" onclick="openInSteam()">Abrir en Steam</button>
     </div>
     <button type="button" class="share-close" onclick="closeShareModal()">Cerrar</button>
   </div>
@@ -229,7 +229,28 @@
           <option value="priority">Prioridad wishlist</option>
           <option value="score">Score (recomendación compuesta)</option>
         </select>
-        <div class="hint">Score combina reviews, descuento, prioridad, $/hora HLTB, Deck, Metacritic y antigüedad (años desde lanzamiento).</div>
+        <div class="hint">Score te ayuda a decidir por dónde empezar. Mezcla calidad, descuento, prioridad en tu wishlist, valor por hora y señales extra como Deck, Metacritic y antigüedad.</div>
+      </div>
+    </div>
+    <div class="metrics-guide" aria-label="Ayuda rápida para entender las métricas principales">
+      <div class="metrics-guide-title">Cómo leer las métricas principales</div>
+      <div class="metrics-guide-grid">
+        <div class="metrics-guide-item">
+          <strong>Score</strong>
+          <span>Es una recomendación compuesta para priorizar qué revisar primero; no reemplaza tu gusto, solo resume varias señales útiles.</span>
+        </div>
+        <div class="metrics-guide-item">
+          <strong>Mínimo histórico</strong>
+          <span>Es el precio más bajo detectado antes en Steam. Sirve para comparar si la oferta actual está cerca de su mejor momento.</span>
+        </div>
+        <div class="metrics-guide-item">
+          <strong>Antigüedad</strong>
+          <span>Son los años desde el lanzamiento. Da contexto sobre qué tan nuevo o veterano es un juego; no significa por sí sola que sea mejor o peor.</span>
+        </div>
+        <div class="metrics-guide-item">
+          <strong>Tendencia general</strong>
+          <span>Resume si en las últimas corridas aparecieron más o menos ofertas. No representa el precio de un juego individual.</span>
+        </div>
       </div>
     </div>
     <div class="field">
@@ -288,7 +309,7 @@
           <div class="field">
             <label>Presupuesto (MXN) <span class="optional">(Tu Presupuesto Ideal)</span></label>
             <input type="number" id="budget" min="0" step="50" placeholder="Sin limite">
-            <div class="hint">Recomienda la mejor combinación de juegos</div>
+            <div class="hint">Te propone una lista balanceada dentro de tu tope. En el reporte también verás variantes chica, media y grande, además de opciones para cambiar un juego sin romper el presupuesto.</div>
           </div>
           <div class="field">
             <label>Comparar con <span class="optional">(opcional)</span></label>
@@ -355,6 +376,7 @@
 
   <div class="card" id="history-card">
     <h2>&#128200; Histórico de runs (MVP)</h2>
+    <p class="history-card-intro">Compara dos ejecuciones para entender qué cambió en la wishlist. Si solo quieres una lectura rápida, empieza con <strong>Comparar últimos 2 runs</strong>.</p>
     <div class="row">
       <div class="field">
         <label>Run A (base)</label>
@@ -395,7 +417,8 @@
         <input type="text" id="history-search" placeholder="fecha, sale, steam_id o vanity">
       </div>
       <div class="field field-align-end">
-        <button class="btn btn-ghost btn-full" type="button" id="btn-history-quick-compare">Comparar últimos 2 runs</button>
+        <button class="btn btn-ghost btn-full" type="button" id="btn-history-quick-compare" title="Selecciona automáticamente los 2 runs más recientes y los compara por ti">Comparar últimos 2 runs</button>
+        <div class="hint">Ideal para revisar lo más reciente sin elegir runs manualmente.</div>
       </div>
     </div>
     <div class="history-pagination" id="history-pagination">
@@ -404,9 +427,23 @@
       <button class="btn btn-ghost" type="button" id="btn-history-next-page">Siguiente ▶</button>
     </div>
     <div class="actions actions-spaced-top">
-      <button class="btn btn-primary" type="button" id="btn-history-compare">Comparar runs</button>
-      <button class="btn btn-ghost" type="button" id="btn-history-refresh">&#128260; Recargar runs</button>
-      <button class="btn btn-ghost" type="button" id="btn-history-reset">&#10227; Restablecer filtros</button>
+      <button class="btn btn-primary" type="button" id="btn-history-compare" title="Compara los runs seleccionados con los filtros actuales">Comparar runs</button>
+      <button class="btn btn-ghost" type="button" id="btn-history-refresh" title="Actualiza la lista de runs disponibles sin recargar toda la página">&#128260; Recargar runs</button>
+      <button class="btn btn-ghost" type="button" id="btn-history-reset" title="Limpia búsqueda, filtros y orden para volver al estado base">&#10227; Restablecer filtros</button>
+    </div>
+    <div class="history-actions-guide" aria-label="Ayuda rápida para las acciones del histórico">
+      <div class="history-actions-guide-item">
+        <strong>Comparar runs</strong>
+        <span>Usa Run A y Run B con los filtros actuales para ver cambios detallados de precio.</span>
+      </div>
+      <div class="history-actions-guide-item">
+        <strong>Recargar runs</strong>
+        <span>Actualiza la lista cuando acabas de generar un reporte nuevo o cambió el histórico.</span>
+      </div>
+      <div class="history-actions-guide-item">
+        <strong>Restablecer filtros</strong>
+        <span>Limpia búsqueda, orden y estados para volver al punto de partida.</span>
+      </div>
     </div>
     <div id="history-selection-summary" class="history-selection-summary hidden"></div>
     <div id="history-summary" class="history-summary hidden"></div>
@@ -468,11 +505,33 @@
   <div class="form-error-summary hidden" id="form-error-summary" role="alert" aria-live="polite" tabindex="-1"></div>
 
   <div class="actions actions-utility actions-margin-sm">
-    <button class="btn btn-ghost" id="btn-preflight">&#129514; Probar config</button>
-    <button class="btn btn-ghost" id="btn-desktop-doctor">&#129658; Doctor desktop</button>
-    <button class="btn btn-ghost" id="btn-desktop-autofix">&#128295; Autofix desktop</button>
-    <button class="btn btn-ghost" id="btn-clear-cache">&#128465; Limpiar cache</button>
-    <button class="btn btn-ghost" id="btn-open-last">&#128194; Abrir ultimo reporte</button>
+    <button class="btn btn-ghost" id="btn-preflight" title="Revisa si tu perfil, rutas y claves están listas antes de ejecutar">&#129514; Probar config</button>
+    <button class="btn btn-ghost" id="btn-desktop-doctor" title="Diagnostica si el modo desktop está listo en este equipo">&#129658; Doctor desktop</button>
+    <button class="btn btn-ghost" id="btn-desktop-autofix" title="Intenta aplicar arreglos seguros del entorno desktop">&#128295; Autofix desktop</button>
+    <button class="btn btn-ghost" id="btn-clear-cache" title="Borra caché local para forzar una nueva descarga de datos">&#128465; Limpiar cache</button>
+    <button class="btn btn-ghost" id="btn-open-last" title="Abre el último reporte generado sin volver a ejecutar">&#128194; Abrir ultimo reporte</button>
+  </div>
+  <div class="actions-help" aria-label="Ayuda rápida para botones utilitarios">
+    <div class="actions-help-item">
+      <strong>Probar config</strong>
+      <span>Revisa tu perfil, rutas y claves antes de empezar un run completo.</span>
+    </div>
+    <div class="actions-help-item">
+      <strong>Doctor desktop</strong>
+      <span>Diagnostica si el modo desktop está listo en este equipo y qué falta revisar.</span>
+    </div>
+    <div class="actions-help-item">
+      <strong>Autofix desktop</strong>
+      <span>Intenta aplicar arreglos seguros del entorno desktop sin tocar tu configuración principal.</span>
+    </div>
+    <div class="actions-help-item">
+      <strong>Limpiar cache</strong>
+      <span>Borra datos temporales locales para forzar una descarga nueva en la siguiente corrida.</span>
+    </div>
+    <div class="actions-help-item">
+      <strong>Abrir ultimo reporte</strong>
+      <span>Abre el último reporte generado para revisarlo sin volver a ejecutar.</span>
+    </div>
   </div>
 
   <div class="actions actions-margin-md">
@@ -485,7 +544,7 @@
   <div class="card" id="output-card">
     <div class="output-head">
       <h2>Ejecución</h2>
-      <p class="output-hint">Sigue el progreso en vivo. Puedes copiar o descargar el log al terminar.</p>
+      <p class="output-hint">Sigue el progreso en vivo. Puedes copiar el log o guardarlo localmente durante o al terminar.</p>
     </div>
     <div class="progress-container">
       <div class="progress-bar" id="progress-bar"></div>

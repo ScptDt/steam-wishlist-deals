@@ -13,6 +13,7 @@ import subprocess
 import sys
 import threading
 import time
+import urllib.parse
 import urllib.request
 import webbrowser
 import runpy
@@ -79,6 +80,25 @@ def _run_embedded_script(script_name: str, script_args: list[str]) -> None:
         sys.argv = prev_argv
 
 
+def decode_share_payload(data_encoded: str) -> dict:
+    import base64
+    import json
+
+    normalized = urllib.parse.unquote(str(data_encoded or "").strip()).replace(" ", "+")
+    if not normalized:
+        raise ValueError("share payload vacío")
+    padding = len(normalized) % 4
+    if padding:
+        normalized += "=" * (4 - padding)
+
+    payload = json.loads(base64.b64decode(normalized).decode("utf-8"))
+    if not isinstance(payload, dict):
+        raise ValueError("share payload inválido")
+    if "price_original" not in payload and payload.get("original_price") is not None:
+        payload["price_original"] = payload.get("original_price")
+    return payload
+
+
 def main() -> None:
     if any(arg in ("-h", "--help") for arg in sys.argv[1:]):
         print(
@@ -110,10 +130,7 @@ def main() -> None:
         if arg.startswith("--share="):
             data_encoded = arg.split("=", 1)[1]
             try:
-                import base64
-                import json
-
-                game_data = json.loads(base64.b64decode(data_encoded).decode("utf-8"))
+                game_data = decode_share_payload(data_encoded)
                 print(f"\n[C] Shared Deal: {game_data.get('name', 'Unknown')}")
                 print(
                     f"    Price: {game_data.get('price', 'N/A')} (was {game_data.get('price_original', 'N/A')})"

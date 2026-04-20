@@ -328,6 +328,13 @@ function fillForm(cfg) {
   });
 }
 
+function applyDefaultTransientFilters() {
+  const noCacheEl = $('no_cache');
+  if (noCacheEl) noCacheEl.checked = false;
+  const pd2NoCacheEl = $('pd2_no_cache');
+  if (pd2NoCacheEl) pd2NoCacheEl.checked = false;
+}
+
 const genresInput = $('genres');
 const genresSuggestions = $('genres-suggestions');
 let genresActiveIndex = -1;
@@ -498,6 +505,7 @@ Promise.all([
   fetch('/api/ui-state').then(r => r.json()),
 ]).then(([cfg, state]) => {
   fillForm(cfg);
+  applyDefaultTransientFilters();
   prefillWizard(cfg, false);
   if (state) {
     setModeBanner(!!state.has_cache, !!state.has_config);
@@ -512,6 +520,7 @@ Promise.all([
 }).catch(() => {
   fetch('/api/config').then(r => r.json()).then(cfg => {
     fillForm(cfg);
+    applyDefaultTransientFilters();
     prefillWizard(cfg, false);
     setModeBanner(false, !!(cfg && cfg.vanity));
     announceDesktopFallback();
@@ -878,11 +887,32 @@ function parseHistoryRunTimestamp(run) {
   return 0;
 }
 
+function getHistoryTrendSignal(trendDelta) {
+  const safeDelta = Number(trendDelta) || 0;
+  const magnitude = Math.abs(safeDelta);
+  if (magnitude === 0) {
+    return {
+      className: 'history-trend-signal-neutral',
+      label: 'Estable frente al primer run',
+    };
+  }
+  if (safeDelta > 0) {
+    return {
+      className: 'history-trend-signal-up',
+      label: `Más ofertas detectadas (+${magnitude} vs primer run)`,
+    };
+  }
+  return {
+    className: 'history-trend-signal-down',
+    label: `Menos ofertas detectadas (-${magnitude} vs primer run)`,
+  };
+}
+
 function renderHistoryTrend(runs) {
   if (!historyTrend) return;
   const source = Array.isArray(runs) ? runs : [];
   if (source.length < 2) {
-    historyTrend.innerHTML = '<div class="history-trend-title">Evolución de ofertas por run</div><div class="history-trend-subtitle">Muestra cuántos deals se detectaron en cada run (no el precio de juegos individuales).</div><div class="history-trend-empty">Se necesitan al menos 2 runs para mostrar evolución.</div>';
+    historyTrend.innerHTML = '<div class="history-trend-title">Tendencia general del histórico</div><div class="history-trend-subtitle">Cuenta cuántas ofertas se detectaron en cada run. Sirve para ver si el volumen general sube o baja; no muestra el precio de un juego individual.</div><div class="history-trend-empty">Se necesitan al menos 2 runs para calcular la tendencia general.</div>';
     historyTrend.classList.remove('hidden');
     return;
   }
@@ -928,29 +958,20 @@ function renderHistoryTrend(runs) {
   const firstValue = values[0];
   const lastValue = values[values.length - 1];
   const trendDelta = lastValue - firstValue;
-  const trendSignalClass = trendDelta === 0
-    ? 'history-trend-signal-neutral'
-    : trendDelta > 0
-      ? 'history-trend-signal-up'
-      : 'history-trend-signal-down';
-  const trendLabel = trendDelta === 0
-    ? 'Estable (sin cambio neto vs primer run)'
-    : trendDelta > 0
-      ? `Subiendo (+${trendDelta} ofertas vs primer run)`
-      : `Bajando (${trendDelta} ofertas vs primer run)`;
+  const trendSignal = getHistoryTrendSignal(trendDelta);
 
   historyTrend.innerHTML = `
-    <div class="history-trend-title">Evolución de ofertas por run (últimos ${normalized.length})</div>
-    <div class="history-trend-subtitle">Lectura rápida: si sube hay más ofertas detectadas; si baja hay menos.</div>
-    <svg class="history-trend-svg" viewBox="0 0 ${width} ${height}" preserveAspectRatio="none" role="img" aria-label="Tendencia temporal de deals por run">
+    <div class="history-trend-title">Tendencia general del histórico (últimos ${normalized.length} runs)</div>
+    <div class="history-trend-subtitle">Cuenta cuántas ofertas se detectaron por run. Si quieres revisar juegos concretos, usa la tabla y Top cambios.</div>
+    <svg class="history-trend-svg" viewBox="0 0 ${width} ${height}" preserveAspectRatio="none" role="img" aria-label="Tendencia general del volumen de ofertas por run">
       <line x1="${padX}" y1="${height - padY}" x2="${width - padX}" y2="${height - padY}" stroke="var(--card-border)" stroke-width="1" />
       <line x1="${padX}" y1="${padY}" x2="${padX}" y2="${height - padY}" stroke="var(--card-border)" stroke-width="1" />
       <polyline fill="none" stroke="var(--accent)" stroke-width="2" points="${polyline}" />
       ${dots}
     </svg>
     <div class="history-trend-meta">
-      <span>Min: ${escapeHtml(minValue)} · Max: ${escapeHtml(maxValue)}</span>
-      <span class="${trendSignalClass}">Tendencia: ${escapeHtml(trendLabel)}</span>
+      <span>Rango: ${escapeHtml(minValue)} a ${escapeHtml(maxValue)} ofertas</span>
+      <span class="${trendSignal.className}">Señal general: ${escapeHtml(trendSignal.label)}</span>
     </div>
   `;
   historyTrend.classList.remove('hidden');
@@ -1411,37 +1432,40 @@ function copyExecutionLog() {
     return;
   }
 
-  if (navigator.clipboard && typeof navigator.clipboard.writeText === 'function') {
-    navigator.clipboard.writeText(text).then(() => {
-      flashButtonLabel(btnCopyLog, 'Copiado!');
-    }).catch(() => {
-      window.prompt('Copia este log:', text);
-      flashButtonLabel(btnCopyLog, 'Listo');
-    });
-    return;
-  }
-
-  window.prompt('Copia este log:', text);
-  flashButtonLabel(btnCopyLog, 'Listo');
+  copyTextWithFallback(text).then(() => {
+    flashButtonLabel(btnCopyLog, 'Copiado!');
+  }).catch(() => {
+    window.prompt('Copia este log:', text);
+    flashButtonLabel(btnCopyLog, 'Listo');
+  });
 }
 
-function downloadExecutionLog() {
+async function downloadExecutionLog() {
   const text = getExecutionLogText();
   if (!text) {
     flashButtonLabel(btnDownloadLog, 'Sin log');
     return;
   }
 
-  const blob = new Blob([text + '\n'], {type: 'text/plain;charset=utf-8'});
-  const objectUrl = URL.createObjectURL(blob);
-  const link = document.createElement('a');
-  link.href = objectUrl;
-  link.download = buildExecutionLogFilename();
-  document.body.appendChild(link);
-  link.click();
-  link.remove();
-  window.setTimeout(() => URL.revokeObjectURL(objectUrl), 1000);
-  flashButtonLabel(btnDownloadLog, 'Descargado');
+  try {
+    const resp = await fetch('/api/log/export', {
+      method: 'POST',
+      headers: {'Content-Type': 'application/json'},
+      body: JSON.stringify({
+        text,
+        filename: buildExecutionLogFilename(),
+      }),
+    });
+    const data = await resp.json();
+    if (!resp.ok) {
+      throw new Error((data && data.message) || ('HTTP ' + resp.status));
+    }
+    appendLine('Log guardado en: ' + data.path, 'ok');
+    flashButtonLabel(btnDownloadLog, 'Guardado');
+  } catch (e) {
+    appendLine('No se pudo guardar log: ' + e.message, 'err');
+    flashButtonLabel(btnDownloadLog, 'Error');
+  }
 }
 
 if (btnCopyLog) btnCopyLog.addEventListener('click', copyExecutionLog);
@@ -1537,8 +1561,18 @@ btnRun.addEventListener('click', async () => {
 });
 
 btnStop.addEventListener('click', async () => {
-  try { await fetch('/api/stop', {method: 'POST'}); } catch(e) {}
-  appendLine('--- Cancelado por el usuario ---', 'warn');
+  appendLine('Solicitando detener ejecucion...', 'warn');
+  try {
+    const resp = await fetch('/api/stop', {method: 'POST'});
+    let payload = {};
+    try {
+      payload = await resp.json();
+    } catch (e) {}
+    if (payload && payload.status === 'stopped') appendLine('--- Cancelado por el usuario ---', 'warn');
+    else appendLine('No habia una ejecucion activa para detener.', 'dim');
+  } catch(e) {
+    appendLine('No se pudo detener la ejecucion: ' + e.message, 'err');
+  }
   btnStop.disabled = true;
   if (abortCtrl) abortCtrl.abort();
 });
@@ -1666,6 +1700,421 @@ function formatLatestReportTimestamp(value) {
   return date.toLocaleString(undefined, { dateStyle: 'medium', timeStyle: 'short' });
 }
 
+function parseShareMoney(value) {
+  if (value == null || value === '') return null;
+  if (typeof value === 'number') {
+    return Number.isFinite(value) ? value : null;
+  }
+  const cleaned = String(value)
+    .trim()
+    .replace(/[^\d.,-]/g, '')
+    .replace(/,/g, '');
+  if (!cleaned) return null;
+  const parsed = Number(cleaned);
+  return Number.isFinite(parsed) ? parsed : null;
+}
+
+function formatShareMoney(value) {
+  const amount = parseShareMoney(value);
+  if (amount == null) return '';
+  const normalized = Math.abs(amount - Math.round(amount)) < 0.001
+    ? amount.toFixed(0)
+    : amount.toFixed(2);
+  return `$${normalized}`;
+}
+
+function buildShareGamePayload(game, report = null) {
+  const source = game && typeof game === 'object' ? game : {};
+  const appid = String(source.appid || '').trim();
+  if (!appid) return null;
+
+  const reportDeals = Array.isArray(report && report.deals) ? report.deals : [];
+  const fallbackDeal = reportDeals.find((deal) => String((deal && deal.appid) || '') === appid) || {};
+  const historicalLows = report && typeof report.historical_lows === 'object' ? (report.historical_lows || {}) : {};
+  const historicalLow = historicalLows[appid] || null;
+
+  const name = source.name || source.steam_name || fallbackDeal.name || fallbackDeal.steam_name || 'Juego desconocido';
+  const currentPrice = parseShareMoney(source.price ?? source.price_final ?? fallbackDeal.price ?? fallbackDeal.price_final);
+  const originalPrice = parseShareMoney(source.price_original ?? source.original_price ?? fallbackDeal.price_original ?? fallbackDeal.original_price) ?? currentPrice;
+  const discount = Number(source.discount ?? fallbackDeal.discount ?? 0) || 0;
+  const minHist = parseShareMoney(source.min_hist ?? source.min_historical ?? (historicalLow && historicalLow.price));
+  const steamUrl = `https://store.steampowered.com/app/${appid}/`;
+
+  const priceLabel = formatShareMoney(currentPrice);
+  const originalLabel = formatShareMoney(originalPrice != null ? originalPrice : currentPrice);
+  const minHistLabel = formatShareMoney(minHist);
+
+  return {
+    appid,
+    name,
+    discount,
+    steamUrl,
+    displayPrice: priceLabel ? `${priceLabel} MXN` : 'Precio no disponible',
+    displayOriginalPrice: originalPrice != null && currentPrice != null && originalPrice > currentPrice ? `${originalLabel} MXN` : '',
+    displayMinHist: minHistLabel ? `${minHistLabel} MXN` : '',
+    payload: {
+      name,
+      steam_name: name,
+      appid,
+      price: priceLabel || '',
+      price_final: priceLabel || '',
+      price_original: originalLabel || priceLabel || '',
+      original_price: originalLabel || priceLabel || '',
+      discount,
+      min_hist: minHistLabel || '',
+      min_historical: minHistLabel || '',
+      url: steamUrl,
+    },
+  };
+}
+
+let latestBudgetUiState = null;
+
+function toBudgetNumber(value) {
+  const num = Number(value);
+  return Number.isFinite(num) ? num : 0;
+}
+
+function formatBudgetCurrency(value) {
+  return `$${toBudgetNumber(value).toFixed(0)} MXN`;
+}
+
+function estimateBudgetSavingsFromPicks(picks) {
+  return (Array.isArray(picks) ? picks : []).reduce((total, pick) => {
+    const price = toBudgetNumber(pick && pick.price_raw) / 100;
+    const discount = toBudgetNumber(pick && pick.discount);
+    if (price <= 0 || discount <= 0 || discount >= 100) return total;
+    const original = price * 100 / (100 - discount);
+    return total + (original - price);
+  }, 0);
+}
+
+function cloneBudgetPickForUi(pick) {
+  const source = pick && typeof pick === 'object' ? pick : {};
+  return {
+    ...source,
+    score_reasons: Array.isArray(source.score_reasons) ? [...source.score_reasons] : [],
+    replacement_candidates: Array.isArray(source.replacement_candidates)
+      ? source.replacement_candidates.map(candidate => ({
+        ...candidate,
+        score_reasons: Array.isArray(candidate.score_reasons) ? [...candidate.score_reasons] : [],
+      }))
+      : [],
+  };
+}
+
+function buildFallbackBudgetVariant(budgetResult) {
+  if (!budgetResult || typeof budgetResult !== 'object') return null;
+  return {
+    id: budgetResult.selected_variant || 'primary',
+    label: 'Lista actual',
+    description: 'Selección principal guardada en el último run.',
+    selected: Array.isArray(budgetResult.selected) ? budgetResult.selected : [],
+    total_spent: toBudgetNumber(budgetResult.total_spent),
+    remaining: toBudgetNumber(budgetResult.remaining),
+    total_savings: toBudgetNumber(budgetResult.total_savings),
+    games_count: toBudgetNumber(budgetResult.games_count),
+    budget: toBudgetNumber(budgetResult.budget),
+  };
+}
+
+function findBudgetVariant(budgetResult, variantId) {
+  const variants = Array.isArray(budgetResult && budgetResult.variants) ? budgetResult.variants : [];
+  if (!variants.length) return buildFallbackBudgetVariant(budgetResult);
+  return variants.find(variant => variant && variant.id === variantId)
+    || variants.find(variant => variant && variant.id === budgetResult.selected_variant)
+    || variants[0];
+}
+
+function createLatestBudgetUiState(report) {
+  const budgetResult = report && typeof report === 'object' ? (report.budget_result || null) : null;
+  const fallbackVariant = findBudgetVariant(budgetResult, budgetResult && budgetResult.selected_variant);
+  return {
+    report,
+    budgetResult,
+    selectedVariantId: (fallbackVariant && fallbackVariant.id) || '',
+    openReplacementFor: '',
+    appliedReplacement: null,
+  };
+}
+
+function getActiveBudgetPreview() {
+  if (!latestBudgetUiState || !latestBudgetUiState.budgetResult) return null;
+  const budgetResult = latestBudgetUiState.budgetResult;
+  const variant = findBudgetVariant(budgetResult, latestBudgetUiState.selectedVariantId);
+  if (!variant) return null;
+
+  const budget = toBudgetNumber(budgetResult.budget || variant.budget);
+  let selected = (Array.isArray(variant.selected) ? variant.selected : []).map(cloneBudgetPickForUi);
+  let totalSpent = toBudgetNumber(variant.total_spent ?? budgetResult.total_spent);
+  let remaining = toBudgetNumber(variant.remaining ?? budgetResult.remaining);
+
+  const replacementState = latestBudgetUiState.appliedReplacement;
+  let replacementSourceAppid = '';
+  let replacementCandidateAppid = '';
+
+  if (replacementState && replacementState.variantId === (variant.id || '')) {
+    const sourceIndex = selected.findIndex(item => item && item.appid === replacementState.sourceAppid);
+    if (sourceIndex >= 0) {
+      const sourcePick = selected[sourceIndex];
+      const candidate = (sourcePick.replacement_candidates || []).find(item => item && item.appid === replacementState.candidateAppid);
+      if (candidate) {
+        replacementSourceAppid = replacementState.sourceAppid;
+        replacementCandidateAppid = replacementState.candidateAppid;
+        selected[sourceIndex] = {
+          ...cloneBudgetPickForUi(candidate),
+          replacement_preview: true,
+          replacement_source_name: sourcePick.name || '',
+        };
+        if (Number.isFinite(Number(candidate.swap_total_spent))) {
+          totalSpent = Number(candidate.swap_total_spent);
+        }
+        if (Number.isFinite(Number(candidate.swap_remaining))) {
+          remaining = Number(candidate.swap_remaining);
+        } else {
+          remaining = Math.max(0, budget - totalSpent);
+        }
+      }
+    }
+  }
+
+  return {
+    budget,
+    variant,
+    selected,
+    gamesCount: selected.length,
+    totalSpent,
+    remaining,
+    totalSavings: estimateBudgetSavingsFromPicks(selected),
+    replacementSourceAppid,
+    replacementCandidateAppid,
+  };
+}
+
+function renderLatestBudgetVariantButtons(budgetResult, preview) {
+  const variants = Array.isArray(budgetResult && budgetResult.variants) ? budgetResult.variants : [];
+  if (!variants.length) return '';
+  return `
+    <div class="latest-budget-section">
+      <div class="latest-budget-section-title">Probar otra lista</div>
+      <div class="latest-budget-section-subtitle">Las tres variantes vienen del último JSON generado; no cambian tu techo de presupuesto.</div>
+      <div class="latest-budget-variant-grid">
+        ${variants.map((variant) => {
+          const isActive = preview.variant && variant.id === preview.variant.id;
+          const btnClass = isActive ? 'btn btn-primary latest-budget-variant-btn is-active' : 'btn btn-ghost latest-budget-variant-btn';
+          return `
+            <button type="button" class="${btnClass}" data-budget-variant="${escapeHtml(variant.id || '')}">
+              <span class="latest-budget-variant-label">${escapeHtml(variant.label || variant.id || 'Variante')}</span>
+              <span class="latest-budget-variant-meta">${escapeHtml(variant.games_count || 0)} juegos · ${escapeHtml(formatBudgetCurrency(variant.total_spent || 0))}</span>
+              <span class="latest-budget-variant-copy">${escapeHtml(variant.description || '')}</span>
+            </button>
+          `;
+        }).join('')}
+      </div>
+    </div>
+  `;
+}
+
+function renderLatestBudgetReplacementOptions(pick, preview) {
+  const replacements = Array.isArray(pick && pick.replacement_candidates) ? pick.replacement_candidates : [];
+  if (!replacements.length) return '';
+  const isOpen = latestBudgetUiState && latestBudgetUiState.openReplacementFor === pick.appid;
+  const isPreview = preview && preview.replacementSourceAppid === pick.appid;
+  const triggerLabel = isPreview ? 'Cambiar otra vez' : 'Cambiar este juego';
+  const resetButton = isPreview
+    ? `<button type="button" class="btn btn-ghost latest-budget-inline-btn" data-budget-reset-replacement="${escapeHtml(pick.appid)}">Volver al original</button>`
+    : '';
+  const optionsHtml = isOpen ? `
+    <div class="latest-budget-replacement-list">
+      ${replacements.map((candidate) => {
+        const isSelected = preview && preview.replacementSourceAppid === pick.appid && preview.replacementCandidateAppid === candidate.appid;
+        return `
+          <button type="button" class="latest-budget-replacement-option${isSelected ? ' is-selected' : ''}" data-budget-replacement-source="${escapeHtml(pick.appid)}" data-budget-replacement-candidate="${escapeHtml(candidate.appid || '')}">
+            <strong>${escapeHtml(candidate.name || '')}</strong>
+            <span>${escapeHtml(candidate.price_final || '—')} · Score ${escapeHtml(candidate.score || '—')} · Nuevo total ${escapeHtml(formatBudgetCurrency(candidate.swap_total_spent || 0))}</span>
+          </button>
+        `;
+      }).join('')}
+    </div>
+  ` : '';
+  return `
+    <div class="latest-budget-replacements-wrap">
+      <div class="latest-budget-replacements-actions">
+        <button type="button" class="btn btn-ghost latest-budget-inline-btn" data-budget-toggle-replacement="${escapeHtml(pick.appid)}">${triggerLabel}</button>
+        ${resetButton}
+      </div>
+      ${optionsHtml}
+    </div>
+  `;
+}
+
+function renderLatestBudgetSelection(preview) {
+  const selected = Array.isArray(preview && preview.selected) ? preview.selected : [];
+  if (!selected.length) {
+    return '<div class="latest-budget-empty">No hubo juegos que entraran en el presupuesto de este run.</div>';
+  }
+  return `
+    <div class="latest-budget-selection-grid">
+      ${selected.map((pick, index) => {
+        const reasons = Array.isArray(pick.score_reasons) && pick.score_reasons.length
+          ? `<div class="latest-budget-pick-reasons">${escapeHtml(pick.score_reasons.join(' · '))}</div>`
+          : '';
+        const replacementBadge = pick.replacement_preview
+          ? `<span class="latest-budget-preview-badge">Reemplazo de ${escapeHtml(pick.replacement_source_name || 'otro juego')}</span>`
+          : '';
+        return `
+          <div class="latest-budget-pick-card">
+            <div class="latest-budget-pick-head">
+              <div>
+                <div class="latest-budget-pick-index">Juego ${index + 1}</div>
+                <div class="latest-budget-pick-name">${escapeHtml(pick.name || '')}</div>
+              </div>
+              ${replacementBadge}
+            </div>
+            <div class="latest-budget-pick-meta">${escapeHtml(pick.price_final || '—')} · Score ${escapeHtml(pick.score || '—')} · -${escapeHtml(pick.discount || 0)}%</div>
+            <div class="latest-budget-pick-recommendation">${escapeHtml(pick.recommendation || 'Selección del modo presupuesto')}</div>
+            ${reasons}
+            <div class="latest-budget-pick-actions">
+              <button type="button" class="btn btn-ghost latest-budget-inline-btn" data-share-budget-pick="${escapeHtml(pick.appid || '')}">Compartir</button>
+            </div>
+            ${renderLatestBudgetReplacementOptions(pick, preview)}
+          </div>
+        `;
+      }).join('')}
+    </div>
+  `;
+}
+
+function renderLatestShareTopPicks(report) {
+  const topPicks = Array.isArray(report && report.top_picks) ? report.top_picks.slice(0, 4) : [];
+  if (!topPicks.length) return '';
+  const cards = topPicks.map((pick) => {
+    const shareGame = buildShareGamePayload(pick, report);
+    if (!shareGame) return '';
+    const minHistText = shareGame.displayMinHist
+      ? `Mín. histórico: ${shareGame.displayMinHist}`
+      : 'Sin mínimo histórico en este reporte';
+    return `
+      <div class="latest-share-card">
+        <div class="latest-share-card-title">${escapeHtml(shareGame.name)}</div>
+        <div class="latest-share-card-price">${escapeHtml(shareGame.displayPrice)}${shareGame.discount ? ` · -${escapeHtml(shareGame.discount)}%` : ''}</div>
+        <div class="latest-share-card-meta">${escapeHtml(minHistText)}</div>
+        <div class="latest-share-card-actions">
+          <button type="button" class="btn btn-ghost latest-share-trigger" data-share-top-pick="${escapeHtml(shareGame.appid)}">Compartir</button>
+          <a class="file-link latest-share-open-link" href="${escapeHtml(shareGame.steamUrl)}" target="_blank" rel="noopener noreferrer">Abrir en Steam</a>
+        </div>
+      </div>
+    `;
+  }).filter(Boolean).join('');
+  if (!cards) return '';
+  return `
+    <div class="latest-share-section">
+      <div class="latest-share-section-title">Compartir Top Picks</div>
+      <div class="latest-share-section-subtitle">Abre el modal desde aquí para copiar el link <code>steamtools://share</code> o el link de Steam con el payload más reciente.</div>
+      <div class="latest-share-grid">${cards}</div>
+    </div>
+  `;
+}
+
+function renderLatestBudgetPanel(report) {
+  const budgetResult = report && typeof report === 'object' ? (report.budget_result || null) : null;
+  if (!budgetResult) return '';
+  const preview = getActiveBudgetPreview();
+  if (!preview) return '';
+  return `
+    <div class="latest-budget-panel">
+      <div class="latest-budget-head">
+        <div>
+          <div class="latest-budget-title">Modo Presupuesto</div>
+          <div class="latest-budget-subtitle">Techo activo del último run: ${escapeHtml(formatBudgetCurrency(preview.budget))}. Puedes alternar variantes o probar un reemplazo sin perder ese límite.</div>
+        </div>
+        <div class="latest-budget-current">${escapeHtml(preview.variant.label || 'Lista actual')}</div>
+      </div>
+      <div class="latest-budget-summary-grid">
+        <div class="latest-budget-summary-item"><span>Total</span><strong>${escapeHtml(formatBudgetCurrency(preview.totalSpent))}</strong></div>
+        <div class="latest-budget-summary-item"><span>Restante</span><strong>${escapeHtml(formatBudgetCurrency(preview.remaining))}</strong></div>
+        <div class="latest-budget-summary-item"><span>Juegos</span><strong>${escapeHtml(preview.gamesCount)}</strong></div>
+        <div class="latest-budget-summary-item"><span>Ahorro</span><strong>${escapeHtml(formatBudgetCurrency(preview.totalSavings))}</strong></div>
+      </div>
+      ${renderLatestBudgetVariantButtons(budgetResult, preview)}
+      <div class="latest-budget-section">
+        <div class="latest-budget-section-title">Selección activa</div>
+        <div class="latest-budget-section-subtitle">Usa la variante actual como base y, si quieres, prueba un cambio puntual por juego.</div>
+        ${renderLatestBudgetSelection(preview)}
+      </div>
+    </div>
+  `;
+}
+
+function bindLatestBudgetActions() {
+  const el = latestReportCardEl();
+  if (!el || !latestBudgetUiState || !latestBudgetUiState.budgetResult) return;
+
+  el.querySelectorAll('[data-budget-variant]').forEach((btn) => {
+    btn.addEventListener('click', () => {
+      latestBudgetUiState.selectedVariantId = btn.dataset.budgetVariant || '';
+      latestBudgetUiState.openReplacementFor = '';
+      latestBudgetUiState.appliedReplacement = null;
+      renderLatestReportCard();
+    });
+  });
+
+  el.querySelectorAll('[data-budget-toggle-replacement]').forEach((btn) => {
+    btn.addEventListener('click', () => {
+      const sourceAppid = btn.dataset.budgetToggleReplacement || '';
+      latestBudgetUiState.openReplacementFor = latestBudgetUiState.openReplacementFor === sourceAppid ? '' : sourceAppid;
+      renderLatestReportCard();
+    });
+  });
+
+  el.querySelectorAll('[data-budget-replacement-source]').forEach((btn) => {
+    btn.addEventListener('click', () => {
+      latestBudgetUiState.appliedReplacement = {
+        variantId: latestBudgetUiState.selectedVariantId,
+        sourceAppid: btn.dataset.budgetReplacementSource || '',
+        candidateAppid: btn.dataset.budgetReplacementCandidate || '',
+      };
+      latestBudgetUiState.openReplacementFor = btn.dataset.budgetReplacementSource || '';
+      renderLatestReportCard();
+    });
+  });
+
+  el.querySelectorAll('[data-budget-reset-replacement]').forEach((btn) => {
+    btn.addEventListener('click', () => {
+      latestBudgetUiState.appliedReplacement = null;
+      latestBudgetUiState.openReplacementFor = btn.dataset.budgetResetReplacement || '';
+      renderLatestReportCard();
+    });
+  });
+}
+
+function bindLatestShareActions() {
+  const el = latestReportCardEl();
+  if (!el || !latestBudgetUiState || !latestBudgetUiState.report) return;
+  const report = latestBudgetUiState.report;
+
+  el.querySelectorAll('[data-share-top-pick]').forEach((btn) => {
+    btn.addEventListener('click', () => {
+      const appid = btn.dataset.shareTopPick || '';
+      const topPick = (Array.isArray(report.top_picks) ? report.top_picks : []).find(
+        (item) => String((item && item.appid) || '') === appid,
+      );
+      openShareModal(topPick, report);
+    });
+  });
+
+  el.querySelectorAll('[data-share-budget-pick]').forEach((btn) => {
+    btn.addEventListener('click', () => {
+      const appid = btn.dataset.shareBudgetPick || '';
+      const preview = getActiveBudgetPreview();
+      const pick = preview && Array.isArray(preview.selected)
+        ? preview.selected.find((item) => String((item && item.appid) || '') === appid)
+        : null;
+      openShareModal(pick, report);
+    });
+  });
+}
+
 function latestReportCardEl() {
   let el = $('latest-report-card');
   if (el) return el;
@@ -1681,15 +2130,24 @@ function latestReportCardEl() {
 function hideLatestReportCard() {
   const el = latestReportCardEl();
   if (!el) return;
+  latestBudgetUiState = null;
   el.classList.add('hidden');
   el.innerHTML = '';
 }
 
 function renderLatestReportCard(report) {
+  if (report) {
+    latestBudgetUiState = createLatestBudgetUiState(report);
+  }
+  const activeReport = report || (latestBudgetUiState && latestBudgetUiState.report);
+  if (!activeReport) {
+    hideLatestReportCard();
+    return;
+  }
   const el = latestReportCardEl();
   if (!el) return;
-  const meta = report && typeof report === 'object' ? (report.meta || {}) : {};
-  const summary = report && typeof report === 'object' ? (report.summary || {}) : {};
+  const meta = activeReport && typeof activeReport === 'object' ? (activeReport.meta || {}) : {};
+  const summary = activeReport && typeof activeReport === 'object' ? (activeReport.summary || {}) : {};
   const subtitleParts = [];
   if (meta.profile) subtitleParts.push(`Perfil: ${escapeHtml(meta.profile)}`);
   subtitleParts.push(escapeHtml(formatLatestReportTimestamp(meta.generated_at)));
@@ -1716,8 +2174,12 @@ function renderLatestReportCard(report) {
         </div>
       `).join('')}
     </div>
+    ${renderLatestShareTopPicks(activeReport)}
+    ${renderLatestBudgetPanel(activeReport)}
   `;
   el.classList.remove('hidden');
+  bindLatestShareActions();
+  bindLatestBudgetActions();
 }
 
 async function syncLatestReportCard(files = null) {
@@ -1943,29 +2405,21 @@ function flashShareButton(button, successLabel, defaultLabel) {
   }, 2000);
 }
 
-function openShareModal(game) {
-  const name = game.name || game.steam_name || 'Unknown';
-  const price = game.price || 0;
-  const original = game.price_original || price;
-  const discount = game.discount || 0;
-  const minHist = game.min_hist || game.min_historical || null;
-  const appid = game.appid;
+function openShareModal(game, report = null) {
+  const shareGame = buildShareGamePayload(game, report || (latestBudgetUiState && latestBudgetUiState.report));
+  if (!shareGame) {
+    appendLine('No se pudo preparar el deal para compartir.', 'warn');
+    return;
+  }
 
-  currentShareData = {
-    name: name,
-    appid: appid,
-    price: price,
-    original_price: original,
-    discount: discount,
-    min_hist: minHist,
-    url: 'https://store.steampowered.com/app/' + appid + '/'
-  };
+  currentShareData = shareGame.payload;
+  currentSteamUrl = shareGame.steamUrl;
 
-  currentSteamUrl = 'https://store.steampowered.com/app/' + appid + '/';
-
-  document.getElementById('share-name').textContent = name;
-  document.getElementById('share-price').innerHTML = (original > price ? `<span>$${original} MXN </span>` : '') + `$${price} MXN (${discount}% OFF)`;
-  document.getElementById('share-minhist').innerHTML = minHist ? `Minimo historico: <span>$${minHist} MXN</span>` : '';
+  document.getElementById('share-name').textContent = shareGame.name;
+  document.getElementById('share-price').innerHTML = `${shareGame.displayOriginalPrice ? `<span>${escapeHtml(shareGame.displayOriginalPrice)} </span>` : ''}${escapeHtml(shareGame.displayPrice)}${shareGame.discount ? ` (${escapeHtml(shareGame.discount)}% OFF)` : ''}`;
+  document.getElementById('share-minhist').innerHTML = shareGame.displayMinHist
+    ? `Mínimo histórico en Steam: <span>${escapeHtml(shareGame.displayMinHist)}</span> · Te ayuda a ver si la oferta actual está cerca de su mejor precio.`
+    : 'Sin dato de mínimo histórico. Si agregas ITAD tendrás esa referencia en más reportes.';
 
   document.getElementById('share-modal').classList.add('active');
 }
@@ -1973,6 +2427,7 @@ function openShareModal(game) {
 function closeShareModal() {
   document.getElementById('share-modal').classList.remove('active');
   currentShareData = null;
+  currentSteamUrl = '';
 }
 
 function copyShareLink() {
@@ -2007,6 +2462,21 @@ function openInSteam() {
   }
 }
 
+function bindShareModalInteractions() {
+  const modal = $('share-modal');
+  if (!modal || modal.dataset.bound === '1') return;
+  modal.dataset.bound = '1';
+  modal.addEventListener('click', (ev) => {
+    if (ev.target === modal) closeShareModal();
+  });
+  document.addEventListener('keydown', (ev) => {
+    if (ev.key === 'Escape' && modal.classList.contains('active')) {
+      closeShareModal();
+    }
+  });
+}
+
+bindShareModalInteractions();
 loadWatchlist();
 syncLatestReportEmptyState();
 syncLatestReportCard();

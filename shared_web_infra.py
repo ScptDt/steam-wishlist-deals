@@ -2,6 +2,7 @@ from __future__ import annotations
 
 import json
 import os
+import signal
 import subprocess
 from pathlib import Path
 from typing import Any, Callable, Iterable, Mapping, Protocol, Sequence
@@ -196,6 +197,14 @@ def start_text_subprocess(
     command: Sequence[str],
     env: Mapping[str, str] | None = None,
 ) -> subprocess.Popen[str]:
+    popen_kwargs: dict[str, Any] = {}
+    if os.name == "nt":
+        creation_flag = getattr(subprocess, "CREATE_NEW_PROCESS_GROUP", 0)
+        if creation_flag:
+            popen_kwargs["creationflags"] = creation_flag
+    else:
+        popen_kwargs["start_new_session"] = True
+
     return subprocess.Popen(
         list(command),
         stdout=subprocess.PIPE,
@@ -206,6 +215,7 @@ def start_text_subprocess(
         encoding="utf-8",
         errors="replace",
         bufsize=1,
+        **popen_kwargs,
     )
 
 
@@ -247,18 +257,45 @@ def stream_process_as_sse(
             on_stdout_line(raw_line, emitter)
         proc.wait()
     except Exception:
-        proc.kill()
-        proc.wait()
+        stop_process(proc, timeout_seconds=1.0)
 
     if on_done is not None:
         on_done(proc, emitter)
 
 
-def stop_process(proc: subprocess.Popen[str], timeout_seconds: float = 3.0) -> None:
+def stop_process(
+    proc: subprocess.Popen[str],
+    timeout_seconds: float = 3.0,
+    *,
+    os_name: str = os.name,
+    getpgid=None,
+    killpg=None,
+) -> None:
     if proc.poll() is not None:
         return
-    proc.terminate()
+
+    if getpgid is None:
+        getpgid = os.getpgid
+    if killpg is None:
+        killpg = os.killpg
+
+    process_group_id = None
+    if os_name != "nt":
+        try:
+            process_group_id = getpgid(proc.pid)
+            killpg(process_group_id, signal.SIGTERM)
+        except (AttributeError, ProcessLookupError, OSError):
+            proc.terminate()
+    else:
+        proc.terminate()
+
     try:
         proc.wait(timeout=timeout_seconds)
     except subprocess.TimeoutExpired:
-        proc.kill()
+        if os_name != "nt" and process_group_id is not None:
+            try:
+                killpg(process_group_id, signal.SIGKILL)
+            except (AttributeError, ProcessLookupError, OSError):
+                proc.kill()
+        else:
+            proc.kill()

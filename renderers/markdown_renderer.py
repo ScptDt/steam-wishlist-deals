@@ -96,6 +96,67 @@ def format_deal_row(game: dict, show_storefront: bool = False) -> str:
     return f"| {pct} | {game['price']}{extra} | {game['price_original']} | {name} |"
 
 
+def _format_budget_pick_label(pick: dict) -> str:
+    label = _link(pick["name"], pick["appid"])
+    recommendation = pick.get("recommendation")
+    reasons = " · ".join(_md_esc(reason) for reason in pick.get("score_reasons", []))
+    if recommendation:
+        label += f"<br>**{_md_esc(recommendation)}**"
+    if reasons:
+        label += f"<br>{reasons}"
+    return label
+
+
+def _build_budget_variants_lines(variants: list[dict], *, selected_variant: str | None) -> list[str]:
+    if not variants:
+        return []
+    lines = [
+        "### 🔁 Probar otra lista",
+        "",
+        "> El mismo presupuesto ahora se resume en tres variantes: lista chica, media y grande.",
+        "",
+    ]
+    for variant in variants:
+        marker = " **(actual)**" if variant.get("id") == selected_variant else ""
+        names = ", ".join(_md_esc(item.get("name", "")) for item in variant.get("selected", []))
+        lines.append(
+            f"- **{_md_esc(variant.get('label') or variant.get('id') or 'Variante')}**{marker} — {_md_esc(variant.get('description', ''))}"
+        )
+        lines.append(
+            f"  - Total: ${variant.get('total_spent', 0):.0f} | Restante: ${variant.get('remaining', 0):.0f} | Juegos: {variant.get('games_count', 0)}"
+        )
+        lines.append(f"  - Incluye: {names or 'Sin selección disponible'}")
+    lines += ["", ""]
+    return lines
+
+
+def _build_budget_replacement_lines(selected: list[dict]) -> list[str]:
+    groups = []
+    for pick in selected:
+        replacements = pick.get("replacement_candidates") or []
+        if not replacements:
+            continue
+        groups.append(f"- **{_md_esc(pick.get('name', 'Juego'))}**")
+        groups.append(
+            "  - Opciones para cambiar este juego sin romper el presupuesto:"
+        )
+        for replacement in replacements:
+            groups.append(
+                f"    - {_link(replacement['name'], replacement['appid'])} | {replacement.get('price_final', '—')} | Score {replacement.get('score', '—')} | Nuevo total: ${replacement.get('swap_total_spent', 0):.0f} | Restante: ${replacement.get('swap_remaining', 0):.0f}"
+            )
+    if not groups:
+        return []
+    return [
+        "### 🔄 Cambiar este juego",
+        "",
+        "> Cada sugerencia respeta el mismo presupuesto total de la variante mostrada arriba.",
+        "",
+        *groups,
+        "",
+        "",
+    ]
+
+
 def generate_md(
     deals: list[dict],
     backlog_on_sale: list[dict],
@@ -223,7 +284,7 @@ def generate_md(
         lines += [
             "## 🏆 Top 10 Picks",
             "",
-            "> Ranking: reviews (26%) + descuento (22%) + prioridad (18%) + $/hora HLTB (14%) + Deck (10%) + Metacritic (5%) + antigüedad (5%).",
+            "> Score = recomendación compuesta para priorizar qué revisar primero. Combina reviews (26%) + descuento (22%) + prioridad (18%) + $/hora HLTB (14%) + Deck (10%) + Metacritic (5%) + antigüedad (5%).",
             "",
             "| # | Score | % | Precio | Año | Reviews | MC | Deck/Linux | Modo | Juego |",
             "|---|-------|---|--------|-----|---------|----|-----------|----|-------|",
@@ -278,6 +339,8 @@ def generate_md(
 
     if budget_result:
         b = budget_result
+        variants = b.get("variants") or []
+        selected_variant = b.get("selected_variant")
         lines += [
             f"## 💰 Tu Presupuesto Ideal — ${b['budget']:.0f} MXN",
             "",
@@ -288,18 +351,14 @@ def generate_md(
             "|---|-------|---|--------|-------|",
         ]
         for idx, pick in enumerate(b["selected"], 1):
-            label = _link(pick["name"], pick["appid"])
-            recommendation = pick.get("recommendation")
-            reasons = " · ".join(
-                _md_esc(reason) for reason in pick.get("score_reasons", [])
-            )
-            if recommendation:
-                label += f"<br>**{_md_esc(recommendation)}**"
-            if reasons:
-                label += f"<br>{reasons}"
+            label = _format_budget_pick_label(pick)
             lines.append(
                 f"| {idx} | {pick.get('score', '—')} | -{pick['discount']}% | {pick['price_final']} | {label} |"
             )
+        lines += _build_budget_variants_lines(
+            variants, selected_variant=selected_variant
+        )
+        lines += _build_budget_replacement_lines(b.get("selected", []))
         lines += ["", "---", ""]
 
     if compare_data:
@@ -669,6 +728,19 @@ def generate_md(
 
         has_tags = bool(tags_data)
         has_ach = bool(achievements_data)
+        has_trends = bool(local_trends)
+        metric_notes = []
+        if has_itad:
+            metric_notes.append(
+                "Mín. histórico = mejor precio detectado antes en Steam."
+            )
+        if has_trends:
+            metric_notes.append(
+                "Tendencia local = cómo se movió el precio del juego en tus corridas previas."
+            )
+        if metric_notes:
+            lines += [f"> {' · '.join(metric_notes)}", ""]
+
         header = "| | % | Precio | Era | Año | Reviews | MC | Deck/Linux | Modo"
         sep = "|-|---|--------|-----|-----|---------|----|-----------|----|"
         if has_ach:
@@ -678,14 +750,13 @@ def generate_md(
             header += " | Etiquetas"
             sep += "|------"
         if has_itad:
-            header += " | Min. hist."
+            header += " | Mín. histórico"
             sep += "|------------"
         if has_best_prices:
             header += " | Mejor precio"
             sep += "|--------------"
-        has_trends = bool(local_trends)
         if has_trends:
-            header += " | Tendencia"
+            header += " | Tendencia local"
             sep += "|-----------"
         header += " | Juego |"
         sep += "|-------|"

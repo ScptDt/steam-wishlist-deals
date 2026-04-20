@@ -1231,6 +1231,45 @@ class RunOutputTests(unittest.TestCase):
         self.assertEqual(data["comparison"]["new_deals"], ["10"])
         self.assertEqual(data["top_picks"][0]["score"], 95.4)
 
+    def test_generate_json_preserves_extended_budget_payload(self) -> None:
+        budget_result = compute_budget_picks(
+            deals=[
+                {"appid": "a", "price_raw": 1500, "discount": 50, "name": "Alpha"},
+                {"appid": "b", "price_raw": 1000, "discount": 50, "name": "Bravo"},
+                {"appid": "c", "price_raw": 500, "discount": 50, "name": "Charlie"},
+                {"appid": "d", "price_raw": 400, "discount": 50, "name": "Delta"},
+            ],
+            budget_mxn=15,
+            top_picks=[
+                {"appid": "a", "score": 95.0},
+                {"appid": "b", "score": 80.0},
+                {"appid": "c", "score": 60.0},
+                {"appid": "d", "score": 30.0},
+            ],
+            watchlist_alerts=[],
+        )
+
+        payload = generate_json(
+            deals=[],
+            backlog_on_sale=[],
+            have_on_sale=[],
+            vanity="BG00G",
+            owned={},
+            wishlist_appids=["a"],
+            min_discount=50,
+            genres=[],
+            budget_result=budget_result,
+        )
+
+        data = json.loads(payload)
+
+        self.assertEqual(data["budget_result"]["selected_variant"], "balanced")
+        self.assertEqual(
+            [variant["id"] for variant in data["budget_result"]["variants"]],
+            ["small", "balanced", "large"],
+        )
+        self.assertIn("actions", data["budget_result"])
+
     def test_build_final_summary_preserves_current_fields(self) -> None:
         new_count, summary = module_build_final_summary(
             12.3,
@@ -2275,6 +2314,98 @@ class BudgetPickTests(unittest.TestCase):
         )
         self.assertEqual(result["selected"][1]["recommendation"], "Comprar ahora")
 
+    def test_budget_payload_exposes_variants_and_replacement_actions(self) -> None:
+        deals = [
+            {"appid": "a", "price_raw": 1500, "discount": 50, "name": "Alpha"},
+            {"appid": "b", "price_raw": 1000, "discount": 50, "name": "Bravo"},
+            {"appid": "c", "price_raw": 500, "discount": 50, "name": "Charlie"},
+            {"appid": "d", "price_raw": 400, "discount": 50, "name": "Delta"},
+        ]
+        top_picks = [
+            {"appid": "a", "score": 95.0, "recommendation": "Comprar ahora"},
+            {"appid": "b", "score": 80.0, "recommendation": "Muy buena oferta"},
+            {"appid": "c", "score": 60.0, "recommendation": "Vale la pena"},
+            {"appid": "d", "score": 30.0, "recommendation": "Solo si ya lo traías en radar"},
+        ]
+
+        result = compute_budget_picks(
+            deals=deals,
+            budget_mxn=15,
+            top_picks=top_picks,
+            watchlist_alerts=[],
+        )
+
+        variants = {variant["id"]: variant for variant in result["variants"]}
+
+        self.assertEqual(result["selected_variant"], "balanced")
+        self.assertEqual(list(variants.keys()), ["small", "balanced", "large"])
+        self.assertEqual(
+            [deal["appid"] for deal in variants["small"]["selected"]], ["a"]
+        )
+        self.assertEqual(
+            [deal["appid"] for deal in variants["balanced"]["selected"]],
+            ["c", "b"],
+        )
+        self.assertEqual(
+            [deal["appid"] for deal in variants["large"]["selected"]], ["d", "c"]
+        )
+        self.assertEqual(
+            [deal["appid"] for deal in result["selected"]], ["c", "b"]
+        )
+        self.assertTrue(result["actions"]["reroll_list"]["available"])
+        self.assertEqual(
+            result["actions"]["reroll_list"]["variant_ids"],
+            ["small", "balanced", "large"],
+        )
+        self.assertTrue(result["actions"]["replace_game"]["available"])
+        self.assertEqual(
+            result["actions"]["replace_game"]["replaceable_by_variant"]["balanced"],
+            ["c", "b"],
+        )
+        self.assertEqual(
+            result["selected"][0]["replacement_candidates"][0]["appid"], "d"
+        )
+
+    def test_budget_variants_and_replacements_preserve_budget_totals(self) -> None:
+        result = compute_budget_picks(
+            deals=[
+                {"appid": "a", "price_raw": 1500, "discount": 50, "name": "Alpha"},
+                {"appid": "b", "price_raw": 1000, "discount": 50, "name": "Bravo"},
+                {"appid": "c", "price_raw": 500, "discount": 50, "name": "Charlie"},
+                {"appid": "d", "price_raw": 400, "discount": 50, "name": "Delta"},
+            ],
+            budget_mxn=15,
+            top_picks=[
+                {"appid": "a", "score": 95.0},
+                {"appid": "b", "score": 80.0},
+                {"appid": "c", "score": 60.0},
+                {"appid": "d", "score": 30.0},
+            ],
+            watchlist_alerts=[],
+        )
+
+        self.assertEqual(
+            [deal["appid"] for deal in result["selected"]],
+            [deal["appid"] for deal in result["variants"][1]["selected"]],
+        )
+
+        for variant in result["variants"]:
+            self.assertLessEqual(variant["total_spent"], result["budget"])
+            self.assertEqual(variant["games_count"], len(variant["selected"]))
+            self.assertAlmostEqual(
+                variant["remaining"],
+                round(result["budget"] - variant["total_spent"], 2),
+            )
+            selected_appids = {deal["appid"] for deal in variant["selected"]}
+            for pick in variant["selected"]:
+                for candidate in pick.get("replacement_candidates", []):
+                    self.assertNotIn(candidate["appid"], selected_appids)
+                    self.assertLessEqual(candidate["swap_total_spent"], result["budget"])
+                    self.assertAlmostEqual(
+                        candidate["swap_remaining"],
+                        round(result["budget"] - candidate["swap_total_spent"], 2),
+                    )
+
 
 class RankTopPicksTests(unittest.TestCase):
     def test_returns_highest_scoring_deals_first_and_limits_result_count(self) -> None:
@@ -2373,6 +2504,7 @@ class RankTopPicksTests(unittest.TestCase):
         self.assertIn("¿Por qué salió arriba?", md)
         self.assertIn("Comprar ahora", md)
         self.assertIn("reviews muy positivas", md)
+        self.assertIn("Score = recomendación compuesta para priorizar qué revisar primero.", md)
 
     def test_generate_md_can_include_obsidian_notion_frontmatter(self) -> None:
         md = generate_md(
@@ -2450,6 +2582,7 @@ class RankTopPicksTests(unittest.TestCase):
         self.assertIn("reviews muy positivas", html)
         self.assertIn("Score 95.4", html)
         self.assertIn("Metacritic 90", html)
+        self.assertIn("Score = recomendación compuesta para priorizar qué revisar primero.", html)
 
     def test_generate_share_html_labels_top_pick_score_and_metacritic(self) -> None:
         html = generate_share_html(
@@ -2470,6 +2603,152 @@ class RankTopPicksTests(unittest.TestCase):
 
         self.assertIn("Score 95.4", html)
         self.assertIn("Metacritic 90", html)
+        self.assertIn("Score = recomendación compuesta para priorizar qué revisar primero.", html)
+        self.assertIn("Mínimo histórico en Steam", html)
+
+    def test_generate_html_share_payload_keeps_aliases_for_renderer_buttons(self) -> None:
+        html = generate_html(
+            deals=[
+                {
+                    "appid": "a",
+                    "name": "Alpha",
+                    "discount": 90,
+                    "price_final": "$10",
+                    "price_original": "$20",
+                    "price_raw": 1000,
+                    "metacritic_score": 90,
+                    "categories": [2],
+                }
+            ],
+            backlog_on_sale=[],
+            have_on_sale=[],
+            vanity="BG00G",
+            owned={},
+            wishlist_appids=["a"],
+            min_discount=50,
+            genres=[],
+            historical_lows={"a": {"price": 5, "date": "2026-04-20"}},
+            top_picks=[
+                {
+                    "appid": "a",
+                    "name": "Alpha",
+                    "discount": 90,
+                    "price_final": "$10",
+                    "score": 95.4,
+                    "metacritic_score": 90,
+                    "categories": [2],
+                }
+            ],
+        )
+
+        self.assertIn("data-share-game=", html)
+        self.assertIn("original_price", html)
+        self.assertIn("price_original", html)
+        self.assertIn("min_historical", html)
+
+    def test_generate_share_html_renders_share_buttons_with_normalized_payload(self) -> None:
+        html = generate_share_html(
+            deals=[
+                {
+                    "appid": "a",
+                    "name": "Alpha",
+                    "discount": 90,
+                    "price_final": "$10",
+                    "price_original": "$20",
+                }
+            ],
+            vanity="BG00G",
+            min_discount=50,
+            top_picks=[
+                {
+                    "appid": "a",
+                    "name": "Alpha",
+                    "discount": 90,
+                    "price_final": "$10",
+                    "score": 95.4,
+                    "metacritic_score": 90,
+                }
+            ],
+            historical_lows={"a": {"price": 5, "date": "2026-04-20"}},
+        )
+
+        self.assertIn("share-btn-inline", html)
+        self.assertIn("data-share-game=", html)
+        self.assertIn("original_price", html)
+        self.assertIn("min_historical", html)
+
+    def test_generate_html_share_surfaces_include_modal_and_share_actions(self) -> None:
+        html = generate_html(
+            deals=[
+                {
+                    "appid": "a",
+                    "name": "Alpha",
+                    "discount": 90,
+                    "price_final": "$10",
+                    "price_original": "$20",
+                    "price_raw": 1000,
+                    "metacritic_score": 90,
+                    "categories": [2],
+                }
+            ],
+            backlog_on_sale=[],
+            have_on_sale=[],
+            vanity="BG00G",
+            owned={},
+            wishlist_appids=["a"],
+            min_discount=50,
+            genres=[],
+            historical_lows={"a": {"price": 5, "date": "2026-04-20"}},
+            top_picks=[
+                {
+                    "appid": "a",
+                    "name": "Alpha",
+                    "discount": 90,
+                    "price_final": "$10",
+                    "score": 95.4,
+                    "metacritic_score": 90,
+                    "categories": [2],
+                }
+            ],
+        )
+
+        self.assertIn('id="share-modal"', html)
+        self.assertIn("Copiar link steamtools://", html)
+        self.assertIn("Abrir en Steam", html)
+        self.assertIn("data-share-game=", html)
+        self.assertIn("bindShareModalInteractions", html)
+
+    def test_generate_share_html_surfaces_include_modal_and_share_actions(self) -> None:
+        html = generate_share_html(
+            deals=[
+                {
+                    "appid": "a",
+                    "name": "Alpha",
+                    "discount": 90,
+                    "price_final": "$10",
+                    "price_original": "$20",
+                }
+            ],
+            vanity="BG00G",
+            min_discount=50,
+            top_picks=[
+                {
+                    "appid": "a",
+                    "name": "Alpha",
+                    "discount": 90,
+                    "price_final": "$10",
+                    "score": 95.4,
+                    "metacritic_score": 90,
+                }
+            ],
+            historical_lows={"a": {"price": 5, "date": "2026-04-20"}},
+        )
+
+        self.assertIn('id="share-modal"', html)
+        self.assertIn("Copiar link steamtools://", html)
+        self.assertIn("Abrir en Steam", html)
+        self.assertIn("data-share-game=", html)
+        self.assertIn("bindShareModalInteractions", html)
 
     def test_generate_md_includes_budget_recommendation_context(self) -> None:
         md = generate_md(
@@ -2544,6 +2823,80 @@ class RankTopPicksTests(unittest.TestCase):
         self.assertIn("Tu Presupuesto Ideal", html)
         self.assertIn("Comprar ahora", html)
         self.assertIn("reviews muy positivas", html)
+
+    def test_generate_md_includes_budget_variants_and_replacements(self) -> None:
+        budget_result = compute_budget_picks(
+            deals=[
+                {"appid": "a", "name": "Alpha", "discount": 50, "price_raw": 1500, "price_final": "$15"},
+                {"appid": "b", "name": "Bravo", "discount": 50, "price_raw": 1000, "price_final": "$10"},
+                {"appid": "c", "name": "Charlie", "discount": 50, "price_raw": 500, "price_final": "$5"},
+                {"appid": "d", "name": "Delta", "discount": 50, "price_raw": 400, "price_final": "$4"},
+            ],
+            budget_mxn=15,
+            top_picks=[
+                {"appid": "a", "score": 95.0, "recommendation": "Comprar ahora", "score_reasons": ["score más alto"]},
+                {"appid": "b", "score": 80.0, "recommendation": "Muy buena oferta", "score_reasons": ["balance sólido"]},
+                {"appid": "c", "score": 60.0, "recommendation": "Vale la pena", "score_reasons": ["ticket accesible"]},
+                {"appid": "d", "score": 30.0, "recommendation": "Solo si ya lo traías en radar", "score_reasons": ["relleno barato"]},
+            ],
+            watchlist_alerts=[],
+        )
+        md = generate_md(
+            deals=[],
+            backlog_on_sale=[],
+            have_on_sale=[],
+            vanity="BG00G",
+            owned={},
+            wishlist_appids=["a"],
+            min_discount=50,
+            genres=[],
+            budget_result=budget_result,
+        )
+
+        self.assertIn("### 🔁 Probar otra lista", md)
+        self.assertIn("Lista chica", md)
+        self.assertIn("Lista media", md)
+        self.assertIn("Lista grande", md)
+        self.assertIn("### 🔄 Cambiar este juego", md)
+        self.assertIn("Delta", md)
+        self.assertIn("Nuevo total: $14", md)
+
+    def test_generate_html_includes_budget_variants_and_replacements(self) -> None:
+        budget_result = compute_budget_picks(
+            deals=[
+                {"appid": "a", "name": "Alpha", "discount": 50, "price_raw": 1500, "price_final": "$15"},
+                {"appid": "b", "name": "Bravo", "discount": 50, "price_raw": 1000, "price_final": "$10"},
+                {"appid": "c", "name": "Charlie", "discount": 50, "price_raw": 500, "price_final": "$5"},
+                {"appid": "d", "name": "Delta", "discount": 50, "price_raw": 400, "price_final": "$4"},
+            ],
+            budget_mxn=15,
+            top_picks=[
+                {"appid": "a", "score": 95.0, "recommendation": "Comprar ahora", "score_reasons": ["score más alto"]},
+                {"appid": "b", "score": 80.0, "recommendation": "Muy buena oferta", "score_reasons": ["balance sólido"]},
+                {"appid": "c", "score": 60.0, "recommendation": "Vale la pena", "score_reasons": ["ticket accesible"]},
+                {"appid": "d", "score": 30.0, "recommendation": "Solo si ya lo traías en radar", "score_reasons": ["relleno barato"]},
+            ],
+            watchlist_alerts=[],
+        )
+        html = generate_html(
+            deals=[],
+            backlog_on_sale=[],
+            have_on_sale=[],
+            vanity="BG00G",
+            owned={},
+            wishlist_appids=["a"],
+            min_discount=50,
+            genres=[],
+            budget_result=budget_result,
+        )
+
+        self.assertIn("Probar otra lista", html)
+        self.assertIn("Lista chica", html)
+        self.assertIn("Lista media", html)
+        self.assertIn("Lista grande", html)
+        self.assertIn("Cambiar este juego", html)
+        self.assertIn("Delta", html)
+        self.assertIn("Nuevo total: $14", html)
 
 
 if __name__ == "__main__":

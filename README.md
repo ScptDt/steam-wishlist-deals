@@ -656,6 +656,81 @@ python3 steam_deals_generator.py --watchlist remove 730
 python3 steam_deals_generator.py --vanity TU_VANITY_URL --budget 500
 ```
 
+### Validación UX/output del modo presupuesto
+
+Checks mínimos antes de pasar a trabajo de share:
+
+1. **Output principal**
+   - confirmar que el `.json` del último run preserve `budget_result.selected`, `selected_variant`, `variants` y `actions`
+   - confirmar que `.md` y `.html` sigan mostrando la sección `Tu Presupuesto Ideal`
+
+2. **Variantes en Web UI**
+   - correr `python3 steam_deals_web.py`
+   - ejecutar un run con presupuesto activo
+   - en la tarjeta **Último reporte**, cambiar entre `Lista chica`, `Lista media` y `Lista grande`
+   - verificar que el **techo activo** siga igual al presupuesto del run y que cambien juegos/totales según la variante
+
+3. **Cambio por juego**
+   - abrir `Cambiar este juego` en un pick que tenga reemplazos
+   - verificar que el preview actualice `Total` y `Restante` sin exceder el mismo presupuesto
+   - usar `Volver al original` y confirmar que la selección principal se restaura
+
+4. **Cobertura automatizada**
+   - `tests/test_generator_logic.py` valida:
+     - variantes `small` / `balanced` / `large`
+     - acciones de `probar otra lista` y `cambiar este juego`
+     - preservación de totales y `swap_total_spent` / `swap_remaining`
+     - render de variantes/reemplazos en `.md`, `.html` y `.json`
+
+## Validación end-to-end de share
+
+Checks mínimos para cerrar el flujo de compartir:
+
+1. **Cobertura automatizada**
+   - `tests/test_generator_logic.py` valida:
+     - contrato del payload share en `generate_html(...)`
+     - contrato del payload share en `generate_share_html(...)`
+     - presencia del modal, botones y acciones `steamtools://share` en ambas superficies
+     - path/nombre del artifact `Steam Deals Share YYYY-MM-DD.html`
+   - `tests/test_desktop_share.py` valida compatibilidad del payload para desktop:
+     - alias `original_price -> price_original`
+     - payload URL-encoded
+
+2. **Web UI en vivo**
+   - correr `python3 steam_deals_web.py`
+   - ejecutar un run que genere `.json`, `.html` y `Steam Deals Share <fecha>.html`
+   - en **Último reporte**, abrir share desde:
+     - un **Top Pick**
+     - y, si existe presupuesto, un **budget pick**
+   - confirmar que el modal muestra:
+     - nombre correcto
+     - precio actual
+     - precio original cuando aplique
+     - mínimo histórico o fallback textual si no hay dato
+
+3. **HTML generado**
+   - abrir el `.html` interactivo generado
+   - confirmar que los botones share siguen funcionando desde:
+     - top picks
+     - tabla principal
+   - verificar cierre por botón, click fuera y `Esc`
+
+4. **Share HTML generado**
+   - abrir `Steam Deals Share <fecha>.html`
+   - confirmar que top picks y filas de deals exponen botón share
+   - verificar que `Copiar link steamtools://`, `Copiar link de Steam` y `Abrir en Steam` funcionan o caen al fallback esperado
+
+5. **Compatibilidad de payload**
+   - revisar que el mismo deal mantenga campos clave entre superficies:
+     - `appid`
+     - `name` / `steam_name`
+     - `price` / `price_final`
+     - `price_original` / `original_price`
+     - `min_hist` / `min_historical`
+     - `discount`
+     - `url`
+   - confirmar que el link `steamtools://share?data=...` sigue siendo decodificable por `steam_tools_desktop.py`
+
 ## Comparar Wishlists
 
 ```bash

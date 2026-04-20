@@ -12,6 +12,7 @@ import sys
 import threading
 import urllib.parse
 import webbrowser
+from datetime import datetime
 from http.server import HTTPServer, BaseHTTPRequestHandler
 from pathlib import Path
 
@@ -26,7 +27,7 @@ from steam_deals_watchlist import (
     save_watchlist,
 )
 from steam_deals_run_output import find_latest_artifact
-from steam_deals_paths import resolve_cache_dir
+from steam_deals_paths import resolve_cache_dir, resolve_logs_dir
 from desktop_doctor import apply_desktop_doctor_fixes, build_desktop_doctor_report
 
 from shared_web_infra import (
@@ -61,6 +62,10 @@ LOCAL_CACHE_DIR = resolve_cache_dir(
     PROJECT_DIR,
     frozen=getattr(sys, "frozen", False),
 )
+LOCAL_LOGS_DIR = resolve_logs_dir(
+    PROJECT_DIR,
+    frozen=getattr(sys, "frozen", False),
+)
 HISTORY_DIR = LOCAL_CACHE_DIR / "history"
 
 # ─── Config I/O ──────────────────────────────────
@@ -87,6 +92,31 @@ def has_local_cache() -> bool:
         return LOCAL_CACHE_DIR.exists() and any(LOCAL_CACHE_DIR.iterdir())
     except OSError:
         return False
+
+
+def build_execution_log_filename(*, now_fn=datetime.now) -> str:
+    return f"steam-deals-log-{now_fn().strftime('%Y-%m-%d_%H-%M-%S')}.txt"
+
+
+def save_execution_log_text(
+    text: str,
+    *,
+    filename: str | None = None,
+    logs_dir: Path = LOCAL_LOGS_DIR,
+    now_fn=datetime.now,
+) -> Path:
+    raw_name = (filename or build_execution_log_filename(now_fn=now_fn)).strip()
+    safe_name = re.sub(r"[^A-Za-z0-9._-]", "-", Path(raw_name).name) or build_execution_log_filename(now_fn=now_fn)
+    if not safe_name.endswith(".txt"):
+        safe_name += ".txt"
+
+    normalized_text = str(text or "").replace("\r\n", "\n").replace("\r", "\n")
+    output_text = normalized_text.rstrip("\n") + "\n"
+
+    logs_dir.mkdir(parents=True, exist_ok=True)
+    output_path = logs_dir / safe_name
+    output_path.write_text(output_text, encoding="utf-8")
+    return output_path
 
 
 def _safe_history_filename(raw_name: str) -> str | None:
@@ -2181,6 +2211,7 @@ function openShareModal(game) {
     name: name,
     appid: appid,
     price: price,
+    price_original: original,
     original_price: original,
     discount: discount,
     min_hist: minHist,
@@ -2318,6 +2349,8 @@ class Handler(BaseHTTPRequestHandler):
             self._serve_watchlist_add()
         elif path == "/api/watchlist/delete":
             self._serve_watchlist_delete()
+        elif path == "/api/log/export":
+            self._serve_log_export()
         else:
             self.send_error(404)
 
@@ -2479,6 +2512,40 @@ class Handler(BaseHTTPRequestHandler):
         items, _removed = remove_watchlist_item(load_watchlist(), appid)
         save_watchlist(items)
         self._send_json({"status": "deleted", "items": items})
+
+    def _serve_log_export(self):
+        body = self._read_json_body()
+        if body is None:
+            return
+        text = str(body.get("text", ""))
+        filename = str(body.get("filename", "")).strip() or None
+        if not text.strip():
+            self._send_json(
+                {
+                    "error": "empty_log",
+                    "message": "No hay contenido de log para exportar.",
+                },
+                status=400,
+            )
+            return
+        try:
+            saved_path = save_execution_log_text(text, filename=filename)
+        except Exception as e:
+            self._send_json(
+                {
+                    "error": "log_export_failed",
+                    "message": f"No se pudo guardar el log: {e}",
+                },
+                status=500,
+            )
+            return
+        self._send_json(
+            {
+                "status": "saved",
+                "path": str(saved_path),
+                "name": saved_path.name,
+            }
+        )
 
     # ── Serve generated files ──
 

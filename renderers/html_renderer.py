@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 from datetime import date
+import json
 import re
 
 from .common import html_escape
@@ -125,6 +126,136 @@ def _build_sparkline_svg(
 def _html_price_raw(price_str: str) -> float:
     m = re.search(r"[\d,.]+", price_str.replace(",", ""))
     return float(m.group()) if m else 0.0
+
+
+def _build_share_payload(
+    *,
+    name: str,
+    appid: str,
+    price: str,
+    original_price: str,
+    discount: int,
+    min_hist: str,
+) -> dict[str, object]:
+    return {
+        "name": name,
+        "steam_name": name,
+        "appid": appid,
+        "price": price,
+        "price_final": price,
+        "price_original": original_price,
+        "original_price": original_price,
+        "discount": discount,
+        "min_hist": min_hist,
+        "min_historical": min_hist,
+        "url": STORE_URL.format(appid=appid),
+    }
+
+
+def _share_payload_attr(payload: dict[str, object]) -> str:
+    return _html_esc(json.dumps(payload, ensure_ascii=False))
+
+
+def _html_share_button(
+    payload: dict[str, object],
+    *,
+    class_name: str = "share-btn-mini",
+    title: str = "Compartir",
+    style: str = "",
+    label: str = "&#128279;",
+) -> str:
+    style_attr = f' style="{style}"' if style else ""
+    return (
+        f'<button class="{class_name}" type="button" '
+        f'data-share-game="{_share_payload_attr(payload)}" '
+        f'onclick="openShareModal(JSON.parse(this.dataset.shareGame))" '
+        f'title="{_html_esc(title)}"{style_attr}>{label}</button>'
+    )
+
+
+def _html_budget_pick_context(pick: dict) -> str:
+    recommendation = _html_esc(pick.get("recommendation", ""))
+    reasons = _html_esc(" · ".join(pick.get("score_reasons", [])))
+    if not recommendation and not reasons:
+        return ""
+    return (
+        f'<div class="pick-recommendation" style="margin-top:.25rem">{recommendation}</div>'
+        f'<div class="pick-why">{reasons}</div>'
+    )
+
+
+def _html_budget_variant_cards(variants: list[dict], *, selected_variant: str | None) -> str:
+    if not variants:
+        return ""
+    cards = []
+    for variant in variants:
+        label = _html_esc(variant.get("label") or variant.get("id") or "Variante")
+        description = _html_esc(variant.get("description", ""))
+        selected_names = [
+            _html_esc(item.get("name", ""))
+            for item in variant.get("selected", [])[:4]
+        ]
+        names_text = ", ".join(name for name in selected_names if name)
+        extra_count = max(0, len(variant.get("selected", [])) - len(selected_names))
+        if extra_count:
+            names_text += f" +{extra_count} más"
+        selected_badge = (
+            '<span style="font-size:.7rem;padding:.12rem .45rem;border-radius:999px;background:var(--accent-blue);color:#000;font-weight:700">Actual</span>'
+            if variant.get("id") == selected_variant
+            else ""
+        )
+        border_color = (
+            "var(--accent-blue)"
+            if variant.get("id") == selected_variant
+            else "var(--border)"
+        )
+        cards.append(
+            f'''<div style="background:var(--bg-card);border:1px solid {border_color};border-radius:8px;padding:.75rem .85rem">
+  <div style="display:flex;justify-content:space-between;gap:.6rem;align-items:flex-start;margin-bottom:.35rem">
+    <strong style="color:var(--text-primary)">{label}</strong>
+    {selected_badge}
+  </div>
+  <div style="font-size:.76rem;color:var(--text-secondary);line-height:1.4;margin-bottom:.45rem">{description}</div>
+  <div style="font-size:.76rem;color:var(--text-primary)">{variant.get('games_count', 0)} juegos &middot; ${variant.get('total_spent', 0):.0f} gastados &middot; ${variant.get('remaining', 0):.0f} restante</div>
+  <div style="font-size:.74rem;color:var(--text-secondary);margin-top:.35rem">Incluye: {names_text or 'Sin selección disponible'}</div>
+</div>'''
+        )
+    return f'''<div style="margin-top:.95rem">
+  <h3 style="font-size:.95rem;margin:0 0 .35rem">&#128257; Probar otra lista</h3>
+  <p class="section-desc">El modo presupuesto ahora prepara tres variantes para el mismo tope: lista chica, media y grande.</p>
+  <div style="display:grid;grid-template-columns:repeat(auto-fit,minmax(210px,1fr));gap:.65rem">{"".join(cards)}</div>
+</div>'''
+
+
+def _html_budget_replacements(selected: list[dict]) -> str:
+    replacement_groups = []
+    for pick in selected:
+        replacements = pick.get("replacement_candidates") or []
+        if not replacements:
+            continue
+        options = []
+        for replacement in replacements:
+            options.append(
+                f'<li style="margin:.2rem 0"><strong>{_html_link(replacement["name"], replacement["appid"])}</strong> '
+                f'&middot; {_html_esc(replacement.get("price_final", "—"))} '
+                f'&middot; Score {_html_esc(str(replacement.get("score", "—")))} '
+                f'&middot; Nuevo total: ${replacement.get("swap_total_spent", 0):.0f} '
+                f'&middot; Restante: ${replacement.get("swap_remaining", 0):.0f}</li>'
+            )
+        replacement_groups.append(
+            f'''<div style="background:var(--bg-card);border:1px solid var(--border);border-radius:8px;padding:.7rem .8rem">
+  <div style="font-size:.82rem;color:var(--text-primary);margin-bottom:.35rem"><strong>{_html_esc(pick.get("name", ""))}</strong></div>
+  <div style="font-size:.75rem;color:var(--text-secondary);margin-bottom:.3rem">Opciones para cambiar este juego sin romper el presupuesto:</div>
+  <ul style="margin:0;padding-left:1.1rem;font-size:.75rem;color:var(--text-secondary)">{"".join(options)}</ul>
+</div>'''
+        )
+    if not replacement_groups:
+        return ""
+    return f'''<div style="margin-top:.95rem">
+  <h3 style="font-size:.95rem;margin:0 0 .35rem">&#128260; Cambiar este juego</h3>
+  <p class="section-desc">Cada bloque propone reemplazos que siguen respetando el mismo presupuesto total.</p>
+  <div style="display:grid;gap:.6rem">{"".join(replacement_groups)}</div>
+</div>'''
 
 
 _HTML_CSS = """
@@ -321,7 +452,10 @@ function resetFilters() {
   document.querySelectorAll('.filter-group output').forEach(o => { if (o.id === 'f-disc-val') o.textContent = '50%'; else if (o.id === 'f-price-val') o.textContent = 'Sin limite'; else if (o.id === 'f-rev-val') o.textContent = '0%'; });
   applyFilters();
 }
-document.addEventListener('DOMContentLoaded', applyFilters);
+document.addEventListener('DOMContentLoaded', () => {
+  applyFilters();
+  bindShareModalInteractions();
+});
 function copyForSheets() {
   const rows = [];
   document.querySelectorAll('.deals-table').forEach(table => {
@@ -345,6 +479,56 @@ function copyForSheets() {
 }
 let currentShareData = null;
 let currentSteamUrl = '';
+function parseShareMoney(value) {
+  if (value == null || value === '') return null;
+  if (typeof value === 'number') {
+    return Number.isFinite(value) ? value : null;
+  }
+  const cleaned = String(value).trim().replace(/[^\\d.,-]/g, '').replace(/,/g, '');
+  if (!cleaned) return null;
+  const parsed = Number(cleaned);
+  return Number.isFinite(parsed) ? parsed : null;
+}
+function formatShareMoney(value) {
+  const amount = parseShareMoney(value);
+  if (amount == null) return '';
+  return '$' + (Math.abs(amount - Math.round(amount)) < 0.001 ? amount.toFixed(0) : amount.toFixed(2));
+}
+function buildShareGamePayload(game) {
+  const source = game && typeof game === 'object' ? game : {};
+  const appid = String(source.appid || '').trim();
+  if (!appid) return null;
+  const name = source.name || source.steam_name || 'Juego desconocido';
+  const currentPrice = parseShareMoney(source.price ?? source.price_final);
+  const originalPrice = parseShareMoney(source.price_original ?? source.original_price) ?? currentPrice;
+  const discount = Number(source.discount || 0) || 0;
+  const minHist = parseShareMoney(source.min_hist ?? source.min_historical);
+  const steamUrl = source.url || ('https://store.steampowered.com/app/' + appid + '/');
+  const priceLabel = formatShareMoney(currentPrice);
+  const originalLabel = formatShareMoney(originalPrice != null ? originalPrice : currentPrice);
+  const minHistLabel = formatShareMoney(minHist);
+  return {
+    name,
+    discount,
+    steamUrl,
+    displayPrice: priceLabel ? (priceLabel + ' MXN') : 'Precio no disponible',
+    displayOriginalPrice: originalPrice != null && currentPrice != null && originalPrice > currentPrice ? (originalLabel + ' MXN') : '',
+    displayMinHist: minHistLabel ? (minHistLabel + ' MXN') : '',
+    payload: {
+      name,
+      steam_name: name,
+      appid,
+      price: priceLabel || '',
+      price_final: priceLabel || '',
+      price_original: originalLabel || priceLabel || '',
+      original_price: originalLabel || priceLabel || '',
+      discount,
+      min_hist: minHistLabel || '',
+      min_historical: minHistLabel || '',
+      url: steamUrl,
+    },
+  };
+}
 function encodeSharePayload(data) {
   const json = JSON.stringify(data || {});
   try {
@@ -389,16 +573,24 @@ function flashShareButton(button, successLabel, defaultLabel) {
   }, 2000);
 }
 function openShareModal(game) {
-  currentShareData = game;
-  currentSteamUrl = 'https://store.steampowered.com/app/' + game.appid + '/';
-  document.getElementById('share-name').textContent = game.name || '';
-  document.getElementById('share-price').innerHTML = (game.price_original && game.price ? '<span>$' + game.price_original + ' </span>' : '') + (game.price || '') + (game.discount ? ' (' + game.discount + '% OFF)' : '');
-  document.getElementById('share-minhist').innerHTML = game.min_hist ? 'Minimo historico: <span>$' + game.min_hist + '</span>' : '';
+  const shareGame = buildShareGamePayload(game);
+  if (!shareGame) return;
+  currentShareData = shareGame.payload;
+  currentSteamUrl = shareGame.steamUrl;
+  document.getElementById('share-name').textContent = shareGame.name;
+  document.getElementById('share-price').innerHTML =
+    (shareGame.displayOriginalPrice ? '<span>' + shareGame.displayOriginalPrice + ' </span>' : '') +
+    shareGame.displayPrice +
+    (shareGame.discount ? ' (' + shareGame.discount + '% OFF)' : '');
+  document.getElementById('share-minhist').innerHTML = shareGame.displayMinHist
+    ? 'Mínimo histórico en Steam: <span>' + shareGame.displayMinHist + '</span> · Te ayuda a ver si la oferta actual está cerca de su mejor precio.'
+    : 'Sin dato de mínimo histórico. Si agregas ITAD tendrás esa referencia en más reportes.';
   document.getElementById('share-modal').classList.add('active');
 }
 function closeShareModal() {
   document.getElementById('share-modal').classList.remove('active');
   currentShareData = null;
+  currentSteamUrl = '';
 }
 function copyShareLink() {
   if (!currentShareData) return;
@@ -423,6 +615,19 @@ function copySteamLink() {
 }
 function openInSteam() {
   if (currentSteamUrl) window.open(currentSteamUrl, '_blank');
+}
+function bindShareModalInteractions() {
+  const modal = document.getElementById('share-modal');
+  if (!modal || modal.dataset.bound === '1') return;
+  modal.dataset.bound = '1';
+  modal.addEventListener('click', (ev) => {
+    if (ev.target === modal) closeShareModal();
+  });
+  document.addEventListener('keydown', (ev) => {
+    if (ev.key === 'Escape' && modal.classList.contains('active')) {
+      closeShareModal();
+    }
+  });
 }
 """
 
@@ -602,6 +807,7 @@ def generate_html(
     has_best = bool(current_prices)
     has_ach = bool(achievements_data)
     has_sparklines = bool(price_history_games)
+    deals_by_appid = {deal["appid"]: deal for deal in deals}
 
     total_deals = len(deals)
     avg_disc = sum(d["discount"] for d in deals) / total_deals if total_deals else 0
@@ -671,8 +877,12 @@ def generate_html(
             prio_html = _html_prio_badge(tp.get("priority", 0))
             header_img = HEADER_URL.format(appid=tp["appid"])
             store_url = STORE_URL.format(appid=tp["appid"])
+            source_deal = deals_by_appid.get(tp["appid"], {})
             min_hist = historical_lows.get(tp["appid"])
             min_hist_str = f"${min_hist['price']:.0f}" if min_hist else ""
+            original_price = _html_esc(
+                str(tp.get("price_original") or source_deal.get("price_original") or tp.get("price_final") or "")
+            )
             recommendation = _html_esc(tp.get("recommendation", ""))
             why_text = _html_esc(" · ".join(tp.get("score_reasons", [])))
             why_html = (
@@ -680,24 +890,31 @@ def generate_html(
                 if recommendation or why_text
                 else ""
             )
-            tp_data = f'{{"name":"{_html_esc(tp["name"])}","appid":"{tp["appid"]}","price":"{_html_esc(tp["price_final"])}","price_original":"{_html_esc(tp.get("price_original", ""))}","discount":{tp["discount"]},"min_hist":"{min_hist_str}"}}'
+            share_payload = _build_share_payload(
+                name=tp["name"],
+                appid=tp["appid"],
+                price=str(tp.get("price_final") or ""),
+                original_price=original_price,
+                discount=int(tp.get("discount") or 0),
+                min_hist=min_hist_str,
+            )
             cards.append(f'''<div class="pick-card {rank_cls}">
   <a href="{store_url}" target="_blank" style="display:block">
     <img class="pick-img" src="{header_img}" alt="" loading="lazy" onerror="this.style.display='none'">
     <div class="pick-body">
       <div class="pick-rank">#{idx}</div>
-      <div class="pick-score" title="Score del ranking">Score {_html_esc(str(tp["score"]))}</div>
+      <div class="pick-score" title="Score = recomendación compuesta para priorizar qué revisar primero.">Score {_html_esc(str(tp["score"]))}</div>
       <div class="pick-name">{_html_esc(tp["name"])}{prio_html}</div>
       <div class="pick-details"><span class="pick-discount">-{tp["discount"]}%</span><span class="pick-price">{_html_esc(tp["price_final"])}</span></div>
       <div class="pick-meta">{rev_html} &middot; {mc_html} &middot; {dk_html} &middot; {mp_html}</div>
       {why_html}
     </div>
   </a>
-  <button class="share-btn-mini" onclick="openShareModal({tp_data})" title="Compartir">&#128279;</button>
+  {_html_share_button(share_payload)}
 </div>''')
         parts.append(f"""<section class="top-picks">
   <h2>&#127942; Top {len(top_picks)} Picks</h2>
-  <p class="section-desc">Ranking: reviews (26%) + descuento (22%) + prioridad (18%) + $/hora HLTB (14%) + Deck (10%) + Metacritic (5%) + antigüedad (5%).</p>
+  <p class="section-desc">Score = recomendación compuesta para priorizar qué revisar primero. Combina reviews (26%) + descuento (22%) + prioridad (18%) + $/hora HLTB (14%) + Deck (10%) + Metacritic (5%) + antigüedad (5%).</p>
   <div class="picks-grid">{"".join(cards)}</div>
 </section>""")
 
@@ -727,6 +944,8 @@ def generate_html(
 
     if budget_result:
         budget_data = budget_result
+        selected_variant = budget_data.get("selected_variant")
+        variants = budget_data.get("variants") or []
         pct_used = (
             budget_data["total_spent"] / budget_data["budget"] * 100
             if budget_data["budget"] > 0
@@ -735,16 +954,16 @@ def generate_html(
         budget_rows = ""
         for idx, pick in enumerate(budget_data["selected"], 1):
             capsule = CAPSULE_URL.format(appid=pick["appid"])
-            recommendation = _html_esc(pick.get("recommendation", ""))
-            reasons = _html_esc(" · ".join(pick.get("score_reasons", [])))
-            pick_context = ""
-            if recommendation or reasons:
-                pick_context = f'<div class="pick-recommendation" style="margin-top:.25rem">{recommendation}</div><div class="pick-why">{reasons}</div>'
+            pick_context = _html_budget_pick_context(pick)
             budget_rows += f'''<tr>
   <td>{idx}</td><td>{pick.get("score", "—")}</td><td>-{pick["discount"]}%</td>
   <td>{_html_esc(pick["price_final"])}</td>
   <td><div class="game-cell"><img class="game-thumb" src="{capsule}" alt="" loading="lazy" onerror="this.style.display='none'"><span>{_html_link(pick["name"], pick["appid"])}{pick_context}</span></div></td>
 </tr>'''
+        variant_cards_html = _html_budget_variant_cards(
+            variants, selected_variant=selected_variant
+        )
+        replacements_html = _html_budget_replacements(budget_data.get("selected", []))
         parts.append(f"""<section style="margin-bottom:1.5rem">
   <h2>&#128176; Tu Presupuesto Ideal &mdash; ${budget_data["budget"]:.0f} MXN</h2>
   <p class="section-desc">Con ${budget_data["budget"]:.0f} MXN puedes comprar {budget_data["games_count"]} juegos &middot; Ahorro: ${budget_data["total_savings"]:.0f} &middot; Restante: ${budget_data["remaining"]:.0f}</p>
@@ -753,6 +972,8 @@ def generate_html(
     <div style="position:absolute;inset:0;display:flex;align-items:center;justify-content:center;font-size:.75rem;font-weight:600;color:var(--text-primary)">${budget_data["total_spent"]:.0f} / ${budget_data["budget"]:.0f} ({pct_used:.0f}%)</div>
   </div>
   <div class="table-wrap"><table class="deals-table"><thead><tr><th>#</th><th>Score</th><th>%</th><th>Precio</th><th>Juego</th></tr></thead><tbody>{budget_rows}</tbody></table></div>
+  {variant_cards_html}
+  {replacements_html}
 </section>""")
 
     if compare_data:
@@ -815,9 +1036,9 @@ def generate_html(
         if has_ach:
             cols.append(("Logros", "num"))
         if has_sparklines:
-            cols.append(("Trend", "text"))
+            cols.append(("Tendencia local", "text"))
         if has_itad:
-            cols.append(("Min. hist.", "price"))
+            cols.append(("Mín. histórico", "price"))
         if has_best:
             cols.append(("Mejor precio", "price"))
         cols.append(("Juego", "text"))
@@ -879,12 +1100,19 @@ def generate_html(
             )
             min_hist = historical_lows.get(appid)
             min_hist_str = f"${min_hist['price']:.0f}" if min_hist else ""
-            game_data = f'{{"name":"{_html_esc(d["name"])}","appid":"{appid}","price":"{_html_esc(d["price_final"])}","price_original":"{_html_esc(d["price_original"])}","discount":{d["discount"]},"min_hist":"{min_hist_str}"}}'
+            share_payload = _build_share_payload(
+                name=d["name"],
+                appid=appid,
+                price=str(d.get("price_final") or ""),
+                original_price=str(d.get("price_original") or d.get("price_final") or ""),
+                discount=int(d.get("discount") or 0),
+                min_hist=min_hist_str,
+            )
             name_html = (
                 f'<div class="game-cell">'
                 f'<img class="game-thumb" src="{capsule_img}" alt="" loading="lazy" onerror="this.style.display=\'none\'">'
                 f"<span{desc_attr}>{_html_link(d['name'], appid)}{_html_prio_badge(prio)}</span>"
-                f'<button class="share-btn-mini" onclick="openShareModal({game_data})" title="Compartir" style="margin-left:.4rem;position:relative;top:-1px">&#128279;</button>'
+                f'{_html_share_button(share_payload, style="margin-left:.4rem;position:relative;top:-1px")}'
                 f"</div>"
             )
             cells.append(f"<td>{name_html}</td>")
@@ -892,8 +1120,24 @@ def generate_html(
             data_attrs = f'data-discount="{d["discount"]}" data-price="{price_num}" data-deck="{dk}" data-review="{rev_pct}" data-name="{_html_esc(d["name"].lower())}" data-new="{"1" if is_new else "0"}"'
             rows.append(f"<tr {data_attrs}>{''.join(cells)}</tr>")
 
+        note_parts = []
+        if has_sparklines:
+            note_parts.append(
+                "Tendencia local = cómo se movió el precio de cada juego en tus corridas previas."
+            )
+        if has_itad:
+            note_parts.append(
+                "Mín. histórico = mejor precio detectado antes en Steam."
+            )
+        note_html = (
+            f'<p class="section-desc">{" · ".join(note_parts)}</p>'
+            if note_parts
+            else ""
+        )
+
         parts.append(f"""<details open class="tier-section">
   <summary class="tier-header">{_html_esc(tier_name)} de Descuento <span class="tier-count">(<span class="visible-count">{len(tier_deals)}</span> juegos)</span></summary>
+  {note_html}
   <div class="table-wrap"><table class="deals-table" id="t-{tid}"><thead><tr>{ths}</tr></thead><tbody>{"".join(rows)}</tbody></table></div>
 </details>""")
 
@@ -902,6 +1146,22 @@ def generate_html(
 <head><meta charset="UTF-8"><meta name="viewport" content="width=device-width,initial-scale=1.0"><title>Steam Deals &mdash; {_html_esc(profile_display_name or vanity)}</title><style>{_HTML_CSS}</style></head>
 <body>
 {"".join(parts)}
+<div class="share-modal" id="share-modal">
+  <div class="share-modal-content">
+    <h3>Compartir Deal</h3>
+    <div class="share-game-info">
+      <div class="share-game-name" id="share-name"></div>
+      <div class="share-game-price" id="share-price"></div>
+      <div class="share-game-minhist" id="share-minhist"></div>
+    </div>
+    <div class="share-actions">
+      <button type="button" class="share-btn share-btn-copy-app" id="btn-copy-app" onclick="copyShareLink()">Copiar link steamtools://</button>
+      <button type="button" class="share-btn share-btn-copy-steam" onclick="copySteamLink()">Copiar link de Steam</button>
+      <button type="button" class="share-btn share-btn-open" onclick="openInSteam()">Abrir en Steam</button>
+    </div>
+    <button type="button" class="share-close" onclick="closeShareModal()">Cerrar</button>
+  </div>
+</div>
 <script>{_HTML_JS}</script>
 </body>
 </html>"""

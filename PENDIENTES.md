@@ -1,6 +1,6 @@
 # Pendientes (Fuente Unica)
 
-Ultima actualizacion: 2026-04-18
+Ultima actualizacion: 2026-04-20
 
 ## Regla de Oro
 
@@ -24,6 +24,7 @@ No se mantienen documentos paralelos de planificacion; este archivo es la unica 
 
 - [x] Empaquetado con PyInstaller (build inicial) validado en Windows.
 - [x] Checklist de release y smoke tests (primera version).
+- [ ] Corregir botón `Detener` en Steam Deals desktop/web: hoy puede quedarse solo en "Solicitando detener ejecucion..." sin frenar el proceso de forma confiable; si el usuario hace varios clicks, el mensaje se duplica y aumenta la confusion.
 
 ### P1 - UX Ultra Friendly
 
@@ -39,6 +40,7 @@ No se mantienen documentos paralelos de planificacion; este archivo es la unica 
 - [ ] Agregar acceso rapido (boton tipo flecha) a grafica/historico de precios junto al minimo historico; evaluar mostrar minimo global y minimo en ventana de tiempo.
 - [ ] Revisar/replantear bloque de tendencia (trend): actualmente no se entiende y no aporta valor claro.
 - [ ] Renombrar/ajustar trend para lenguaje mas claro al usuario final (ej. "Tendencia de precios") y simplificar su interpretacion.
+- [ ] Dashboard historico: agregar notas/highlights breves a los botones debajo de los selectores de runs (`Comparar runs`, `Recargar runs`, `Restablecer filtros`) para que se entienda rapido cuando usar cada accion.
 - [ ] [Futuro] Agregar selector de moneda en UI para cambiar divisa de precios.
 - [ ] Agregar hints explicativos de metricas/criterios usados en UI para que el usuario entienda que se esta utilizando en cada seccion.
 - [ ] Filtros avanzados: agregar filtro por tipo de recomendacion/mensaje (ej. "vale la pena", "considerar", "esperar") aplicado sobre los mensajes de Top Picks.
@@ -332,6 +334,11 @@ Notas:
 
 ## Bitacora
 
+- 2026-04-20: Quick win de UX en `Tu Presupuesto Ideal`: el campo de presupuesto en Filtros avanzados ahora explica mejor que genera una lista balanceada y que el reporte puede mostrar variantes chica/media/grande y cambios de juego dentro del tope.
+- 2026-04-20: Avance en share/compartir deals: se corrige el contrato del payload entre Web UI y desktop (`price_original` vs `original_price`) y el parser de `steam_tools_desktop.py` ahora tolera payload base64 URL-encoded y alias legacy; falta validación manual E2E del flujo completo para cerrar el pendiente general de share.
+- 2026-04-20: El dashboard historico suma `title` explicativos en `Comparar últimos 2 runs`, `Comparar runs`, `Recargar runs` y `Restablecer filtros`, reforzando la ayuda visible ya añadida en la sección.
+- 2026-04-20: La UI principal de Steam Deals ahora muestra notas breves y `title` explicativos para los botones utilitarios (`Probar config`, `Doctor desktop`, `Autofix desktop`, `Limpiar cache`, `Abrir ultimo reporte`) para que un usuario normal entienda mejor qué hace cada acción.
+- 2026-04-20: Se confirma que el repo ya cuenta con artifact Linux `dist/SteamToolsDesktop`; el `.exe` historico corresponde al flujo Windows y no sirve como validacion nativa en Linux.
 - 2026-04-20: Sanitizacion base del repo aplicada para reducir ruido operativo: `.tmp/`, `.pytest_cache/`, `logs/` y reportes `Steam Deals*.json` pasan a tratarse como artefactos locales no versionados; el cache real se conserva fuera de esta limpieza para no penalizar wishlists grandes.
 - 2026-04-20: Sugerencia de tester CH4VE5 implementada: Top Picks y Share HTML ya etiquetan explicitamente `Score` y `Metacritic`, para que no se vea solo un numero aislado.
 - 2026-04-20: Sugerencia de tester J0HNNY implementada: el paso `[3/12] Comparando wishlists...` ya muestra el nombre visible del amigo cuando se puede resolver, con fallback seguro al vanity original.

@@ -14,6 +14,28 @@ SCORE_WEIGHTS = {
 }
 
 
+BUDGET_VARIANTS = (
+    {
+        "id": "small",
+        "label": "Lista chica",
+        "description": "Pocos juegos, ticket más alto y prioridad por score.",
+        "strategy": "high_score",
+    },
+    {
+        "id": "balanced",
+        "label": "Lista media",
+        "description": "Balance entre score, valor y cantidad de juegos.",
+        "strategy": "balanced",
+    },
+    {
+        "id": "large",
+        "label": "Lista grande",
+        "description": "Más juegos, ticket más bajo y valor razonable dentro del presupuesto.",
+        "strategy": "low_price",
+    },
+)
+
+
 def build_gift_ideas(friend_set, deals, owned):
     """Find deals that the friend wants but you don't own."""
     owned_set = set(owned.keys())
@@ -290,6 +312,21 @@ def _budget_pick_payload(deal: dict, score: float, *, top_pick: dict | None = No
     return payload
 
 
+def _budget_pick_cost(deal: dict) -> float:
+    return deal.get("price_raw", 0) / 100
+
+
+def _clone_budget_pick(deal: dict) -> dict:
+    cloned = dict(deal)
+    cloned["score_reasons"] = list(deal.get("score_reasons") or [])
+    if deal.get("replacement_candidates"):
+        cloned["replacement_candidates"] = [
+            _clone_budget_pick(candidate)
+            for candidate in deal.get("replacement_candidates", [])
+        ]
+    return cloned
+
+
 def _build_budget_candidates(deals, pick_scores: dict[str, float], pick_contexts: dict[str, dict]) -> list[dict]:
     candidates = []
     for deal in deals:
@@ -317,10 +354,12 @@ def _select_watchlist_hits(watchlist_alerts, pick_scores: dict[str, float], rema
             continue
         score = pick_scores.get(alert["appid"], 50.0)
         selected.append(
-            _budget_pick_payload(
+            _clone_budget_pick(
+                _budget_pick_payload(
                 alert,
                 score,
                 top_pick=pick_contexts.get(alert["appid"]),
+                )
             )
         )
         remaining -= cost
@@ -328,19 +367,147 @@ def _select_watchlist_hits(watchlist_alerts, pick_scores: dict[str, float], rema
     return selected, remaining, selected_appids
 
 
-def _select_by_efficiency(candidates: list[dict], remaining: float, excluded_appids: set[str]) -> tuple[list[dict], float]:
+def _sorted_budget_candidates(candidates: list[dict], strategy: str) -> list[dict]:
+    if strategy == "high_score":
+        return sorted(
+            candidates,
+            key=lambda deal: (
+                -deal["score"],
+                -deal.get("price_raw", 0),
+                -deal.get("efficiency", 0),
+                deal["appid"],
+            ),
+        )
+    if strategy == "low_price":
+        return sorted(
+            candidates,
+            key=lambda deal: (
+                deal.get("price_raw", 0),
+                -deal["score"],
+                -deal.get("efficiency", 0),
+                deal["appid"],
+            ),
+        )
+    return sorted(
+        candidates,
+        key=lambda deal: (
+            -deal.get("efficiency", 0),
+            -deal["score"],
+            deal.get("price_raw", 0),
+            deal["appid"],
+        ),
+    )
+
+
+def _select_by_strategy(candidates: list[dict], remaining: float, excluded_appids: set[str], *, strategy: str) -> tuple[list[dict], float]:
     selected = []
-    for candidate in sorted(candidates, key=lambda deal: -deal["efficiency"]):
+    for candidate in _sorted_budget_candidates(candidates, strategy):
         if candidate["appid"] in excluded_appids:
             continue
-        cost = candidate.get("price_raw", 0) / 100
+        cost = _budget_pick_cost(candidate)
         if cost <= 0 or cost > remaining:
             continue
-        selected.append(candidate)
+        selected.append(_clone_budget_pick(candidate))
         remaining -= cost
         if remaining <= 0:
             break
     return selected, remaining
+
+
+def _estimate_budget_summary(selected: list[dict], budget_mxn: float, remaining: float) -> dict:
+    total_spent = budget_mxn - remaining
+    return {
+        "budget": budget_mxn,
+        "selected": selected,
+        "total_spent": round(total_spent, 2),
+        "total_savings": round(_estimate_total_savings(selected), 2),
+        "remaining": round(remaining, 2),
+        "games_count": len(selected),
+    }
+
+
+def _build_replacement_candidates(selected: list[dict], candidates: list[dict], remaining: float, budget_mxn: float, *, strategy: str, limit: int = 3) -> list[dict]:
+    selected_appids = {deal["appid"] for deal in selected}
+    ordered_candidates = _sorted_budget_candidates(candidates, strategy)
+    total_spent = budget_mxn - remaining
+    enriched = []
+    for deal in selected:
+        current_cost = _budget_pick_cost(deal)
+        swap_budget = remaining + _budget_pick_cost(deal)
+        alternatives = []
+        for candidate in ordered_candidates:
+            if candidate["appid"] in selected_appids:
+                continue
+            cost = _budget_pick_cost(candidate)
+            if cost <= 0 or cost > swap_budget:
+                continue
+            replacement = _clone_budget_pick(candidate)
+            replacement["swap_total_spent"] = round(
+                total_spent - current_cost + cost, 2
+            )
+            replacement["swap_remaining"] = round(swap_budget - cost, 2)
+            alternatives.append(replacement)
+            if len(alternatives) >= limit:
+                break
+        enriched_deal = _clone_budget_pick(deal)
+        if alternatives:
+            enriched_deal["replacement_candidates"] = alternatives
+        enriched.append(enriched_deal)
+    return enriched
+
+
+def _build_budget_variant(variant: dict, candidates: list[dict], budget_mxn: float, watchlist_alerts, pick_scores: dict[str, float], pick_contexts: dict[str, dict]) -> dict:
+    watchlist_selected, remaining, watchlist_appids = _select_watchlist_hits(
+        watchlist_alerts,
+        pick_scores,
+        budget_mxn,
+        pick_contexts,
+    )
+    strategy_selected, remaining = _select_by_strategy(
+        candidates,
+        remaining,
+        watchlist_appids,
+        strategy=variant["strategy"],
+    )
+    selected = [*watchlist_selected, *strategy_selected]
+    selected = _build_replacement_candidates(
+        selected,
+        candidates,
+        remaining,
+        budget_mxn,
+        strategy=variant["strategy"],
+    )
+    summary = _estimate_budget_summary(selected, budget_mxn, remaining)
+    return {
+        **summary,
+        "id": variant["id"],
+        "label": variant["label"],
+        "description": variant["description"],
+        "strategy": variant["strategy"],
+    }
+
+
+def _build_budget_actions(variants: list[dict], *, selected_variant: str) -> dict:
+    replaceable_by_variant = {
+        variant["id"]: [
+            deal["appid"]
+            for deal in variant.get("selected", [])
+            if deal.get("replacement_candidates")
+        ]
+        for variant in variants
+    }
+    return {
+        "reroll_list": {
+            "available": len(variants) > 1,
+            "default_variant": selected_variant,
+            "variant_ids": [variant["id"] for variant in variants],
+        },
+        "replace_game": {
+            "available": any(replaceable_by_variant.values()),
+            "candidate_limit": 3,
+            "replaceable_by_variant": replaceable_by_variant,
+        },
+    }
 
 
 def _estimate_total_savings(selected: list[dict]) -> float:
@@ -360,21 +527,26 @@ def compute_budget_picks(deals, budget_mxn, top_picks, watchlist_alerts=None):
     pick_scores = _pick_scores_map(top_picks)
     pick_contexts = _pick_context_map(top_picks)
     candidates = _build_budget_candidates(deals, pick_scores, pick_contexts)
-    watchlist_selected, remaining, watchlist_appids = _select_watchlist_hits(
-        watchlist_alerts,
-        pick_scores,
-        budget_mxn,
-        pick_contexts,
+    variants = [
+        _build_budget_variant(
+            variant,
+            candidates,
+            budget_mxn,
+            watchlist_alerts,
+            pick_scores,
+            pick_contexts,
+        )
+        for variant in BUDGET_VARIANTS
+    ]
+    primary_variant = next(
+        variant for variant in variants if variant["id"] == "balanced"
     )
-    efficiency_selected, remaining = _select_by_efficiency(candidates, remaining, watchlist_appids)
-    selected = [*watchlist_selected, *efficiency_selected]
-    total_spent = budget_mxn - remaining
-    total_savings = _estimate_total_savings(selected)
     return {
-        "budget": budget_mxn,
-        "selected": selected,
-        "total_spent": round(total_spent, 2),
-        "total_savings": round(total_savings, 2),
-        "remaining": round(remaining, 2),
-        "games_count": len(selected),
+        **_estimate_budget_summary(primary_variant["selected"], budget_mxn, primary_variant["remaining"]),
+        "selected_variant": primary_variant["id"],
+        "variants": variants,
+        "actions": _build_budget_actions(
+            variants,
+            selected_variant=primary_variant["id"],
+        ),
     }

@@ -3171,6 +3171,7 @@ def generate_share_html(
     top_picks=None,
     reviews=None,
     deck_compat=None,
+    historical_lows=None,
     profile_display_name: str | None = None,
 ):
     """Generate a lightweight shareable HTML page with the deals list."""
@@ -3183,6 +3184,7 @@ def generate_share_html(
             top_picks=top_picks,
             reviews=reviews,
             deck_compat=deck_compat,
+            historical_lows=historical_lows,
             profile_display_name=profile_display_name,
         )
     reviews = reviews or {}
@@ -3970,6 +3972,7 @@ def main():
         top_picks=top_picks,
         reviews=reviews_data,
         deck_compat=deck_data,
+        historical_lows=historical_lows,
         profile_display_name=profile_display_name,
     )
 
