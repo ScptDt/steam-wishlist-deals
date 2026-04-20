@@ -65,6 +65,19 @@ Este repo tiene **dos superficies de UX** y una superficie operativa por CLI:
 - La lógica pesada vive en los scripts CLI (`steam_deals_generator.py` y `payday2_dlc_tracker.py`); la capa web coordina ejecución, validación y progreso.
 - Para trabajo operativo, roadmap y deuda técnica, la fuente de verdad sigue siendo `PENDIENTES.md`.
 
+## Reglas de trabajo del repo
+
+Resumen corto para mantener rumbo y evitar ruido en el repo:
+
+- **`PENDIENTES.md` es la fuente única de verdad operativa**: backlog, bitácora y pendientes vivos.
+- **La Web UI es la UX principal**; desktop debe seguir reutilizando la misma UI y no abrir otro frontend separado.
+- **`CLI` es la superficie operativa** para automatización, flags avanzados y corridas reproducibles.
+- **Artefactos temporales o generados no se versionan**: `.tmp/`, `.pytest_cache/`, `logs/` y reportes `Steam Deals*.md/.html/.json/.csv` son locales.
+- **El caché local sí se conserva**: `./.cache/steam_deals` o la ruta persistente equivalente no se limpia por rutina porque acelera corridas reales.
+- **Si necesitas un ejemplo o fixture**, guárdalo en `tests/fixtures/` o `docs/` con nombre intencional, no como salida cruda de una corrida real.
+
+Reglas ampliadas y criterios de organización: `docs/project-rules.md`.
+
 ### Ruta rápida recomendada
 1. **Web UI (Steam Deals):** `python3 steam_deals_web.py`
 2. **Web UI (PAYDAY 2):** `python3 payday2_web.py`

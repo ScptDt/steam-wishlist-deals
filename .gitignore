@@ -2,9 +2,13 @@ __pycache__/
 .claude/
 .vscode/
 .opencode/
+.tmp/
+.pytest_cache/
+logs/
 *.pyc
 Steam Deals*.md
 Steam Deals*.html
+Steam Deals*.json
 Steam Deals*.csv
 PAYDAY2_Plan_de_Compra.*
 .cache/

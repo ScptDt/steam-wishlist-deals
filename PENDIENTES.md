@@ -332,6 +332,7 @@ Notas:
 
 ## Bitacora
 
+- 2026-04-20: Sanitizacion base del repo aplicada para reducir ruido operativo: `.tmp/`, `.pytest_cache/`, `logs/` y reportes `Steam Deals*.json` pasan a tratarse como artefactos locales no versionados; el cache real se conserva fuera de esta limpieza para no penalizar wishlists grandes.
 - 2026-04-20: Sugerencia de tester CH4VE5 implementada: Top Picks y Share HTML ya etiquetan explicitamente `Score` y `Metacritic`, para que no se vea solo un numero aislado.
 - 2026-04-20: Sugerencia de tester J0HNNY implementada: el paso `[3/12] Comparando wishlists...` ya muestra el nombre visible del amigo cuando se puede resolver, con fallback seguro al vanity original.
 - 2026-04-20: Sugerencia de tester R0CH4 verificada/cerrada: el dashboard historico ya incluye boton `Recargar runs` para refrescar manualmente el listado tras varias ejecuciones.
