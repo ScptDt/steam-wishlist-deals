@@ -33,15 +33,21 @@ def _render_deal_row(
 def _render_top_pick_card(top_pick: dict) -> str:
     header = HEADER_URL.format(appid=top_pick["appid"])
     store = STORE_URL.format(appid=top_pick["appid"])
+    metacritic_score = top_pick.get("metacritic_score")
+    metacritic_html = (
+        f'<div style="font-size:.75rem;color:#8f98a0;margin-top:.15rem">Metacritic {metacritic_score}</div>'
+        if metacritic_score is not None
+        else ""
+    )
     return (
         f'<a href="{store}" target="_blank" '
         f'style="text-decoration:none;color:inherit;background:#16202d;border:1px solid #2a475e;'
         f'border-radius:6px;overflow:hidden;display:flex;flex-direction:column">'
         f'<img src="{header}" style="width:100%;aspect-ratio:460/215;object-fit:cover" loading="lazy">'
         f'<div style="padding:.4rem .6rem"><div style="font-size:1.2rem;font-weight:bold;color:#66c0f4">'
-        f'{top_pick["score"]}</div><div style="font-size:.8rem;margin:.2rem 0">{html_escape(top_pick["name"])}</div>'
+        f'Score {top_pick["score"]}</div><div style="font-size:.8rem;margin:.2rem 0">{html_escape(top_pick["name"])}</div>'
         f'<div style="font-size:.8rem"><span style="color:#6cc644">-{top_pick["discount"]}%</span> '
-        f"{html_escape(top_pick['price_final'])}</div></div></a>"
+        f"{html_escape(top_pick['price_final'])}</div>{metacritic_html}</div></a>"
     )
 
 

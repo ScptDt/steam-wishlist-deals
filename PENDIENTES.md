@@ -310,7 +310,7 @@ Mientras no haya host nativo Linux/macOS disponible para cierre manual de P2, la
 3. **Output/Export de valor inmediato**
    - Export a Obsidian/Notion con frontmatter YAML. [Parcial avanzado: `--md-frontmatter` + guia de perfiles/checklist ya documentados en README; pendiente validacion manual final de importacion extremo a extremo en host real de Obsidian/Notion.]
 4. **Dashboard historico HTML**
-   - Navegacion entre runs + comparativa visual de precios. [Parcial implementado (MVP+3): selector Run A/Run B con paginado simple, busqueda de runs, quick compare de ultimos 2 runs, filtros por estado, orden por delta, persistencia local (`localStorage`), reset rapido de filtros, resumen visible de los runs autoseleccionados en quick compare, resumen por estado, Top Deltas (bajadas/subidas) y tendencia temporal simple (deals por run, ultimos 20 runs).]
+   - Navegacion entre runs + comparativa visual de precios. [Parcial implementado (MVP+3): selector Run A/Run B con paginado simple, busqueda de runs, quick compare de ultimos 2 runs, boton manual para `Recargar runs`, filtros por estado, orden por delta, persistencia local (`localStorage`), reset rapido de filtros, resumen visible de los runs autoseleccionados en quick compare, resumen por estado, Top Deltas (bajadas/subidas) y tendencia temporal simple (deals por run, ultimos 20 runs).]
 5. **Alertas inteligentes (v2)**
    - Implementacion base v2 completada (minimo historico global, bundles activos, subidas vs run anterior, nueva mejor oferta local y umbrales configurables).
    - **Pendiente por tiempo**: calibracion fina de umbrales y ejecucion/validacion manual completa en corrida larga real.
@@ -332,6 +332,9 @@ Notas:
 
 ## Bitacora
 
+- 2026-04-20: Sugerencia de tester CH4VE5 implementada: Top Picks y Share HTML ya etiquetan explicitamente `Score` y `Metacritic`, para que no se vea solo un numero aislado.
+- 2026-04-20: Sugerencia de tester J0HNNY implementada: el paso `[3/12] Comparando wishlists...` ya muestra el nombre visible del amigo cuando se puede resolver, con fallback seguro al vanity original.
+- 2026-04-20: Sugerencia de tester R0CH4 verificada/cerrada: el dashboard historico ya incluye boton `Recargar runs` para refrescar manualmente el listado tras varias ejecuciones.
 - 2026-04-18: Se agrega pendiente sugerido por tester R1CK para que el `<title>` de los reportes HTML use el nombre visible del perfil de Steam en lugar de URL/steamid cuando corresponda.
 - 2026-04-18: Queda implementada la mejora sugerida por tester R1CK: los reportes HTML (`.html` y `Share HTML`) y `meta.profile` en JSON ya usan el nombre visible del perfil Steam cuando está disponible, con fallback seguro al identificador original si no se puede resolver.
 - 2026-04-18: Se cierra el pendiente de claridad de scoring sobre "edad": se estandariza como "antigüedad" y se documenta explícitamente que mide años desde lanzamiento.
@@ -424,7 +427,7 @@ Notas:
 
 - [ ] Exportar a Obsidian/Notion (markdown con frontmatter YAML para importacion directa). [Parcial avanzado: `--md-frontmatter` implementado + perfiles/checklist documentados; falta validacion final E2E de import en host real (Obsidian/Notion).]
 - [ ] Dashboard HTML historico con graficos de precios, comparativa entre runs y navegacion de historial
-- [ ] Dashboard HTML historico con graficos de precios, comparativa entre runs y navegacion de historial. [Parcial implementado (MVP+3): comparativa Run A vs Run B con filtros/orden, persistencia local, resumen visual por estado, Top Deltas (bajadas/subidas), tendencia temporal simple (deals por run), busqueda de runs, quick compare de ultimos 2 runs y paginado simple de selectores A/B; pendiente: graficos de tendencia mas ricos (series multipanel/zoom) y refinamiento UX.]
+- [ ] Dashboard HTML historico con graficos de precios, comparativa entre runs y navegacion de historial. [Parcial implementado (MVP+3): comparativa Run A vs Run B con filtros/orden, persistencia local, resumen visual por estado, Top Deltas (bajadas/subidas), tendencia temporal simple (deals por run), busqueda de runs, quick compare de ultimos 2 runs, boton manual `Recargar runs` y paginado simple de selectores A/B; pendiente: graficos de tendencia mas ricos (series multipanel/zoom) y refinamiento UX.]
 - [x] Exportar a JSON / API local para integracion con otras herramientas y automatizaciones. [Incluye artifact `.json`, endpoint local `GET /api/latest-report`, quick links UI para abrir/copiar el ultimo JSON, empty state cuando aun no existe reporte y tarjeta-resumen del ultimo run.]
 
 ### Social/Community

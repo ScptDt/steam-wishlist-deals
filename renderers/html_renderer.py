@@ -63,11 +63,12 @@ def _html_prio_badge(priority: int) -> str:
     return f' <span class="{cls}">#{priority}</span>'
 
 
-def _html_metacritic_badge(score: int | None) -> str:
+def _html_metacritic_badge(score: int | None, *, with_label: bool = False) -> str:
     if score is None:
         return '<span class="review-na">—</span>'
     cls = "mc-good" if score >= 75 else "mc-mixed" if score >= 50 else "mc-bad"
-    return f'<span class="badge {cls}">{score}</span>'
+    label = f"Metacritic {score}" if with_label else str(score)
+    return f'<span class="badge {cls}" title="Metacritic">{label}</span>'
 
 
 def _html_multiplayer_badges(categories: list[int]) -> str:
@@ -663,7 +664,9 @@ def generate_html(
             )
             rev_html = _html_review_badge(tp.get("review"))
             dk_html = _html_deck_badge(tp.get("deck", 0))
-            mc_html = _html_metacritic_badge(tp.get("metacritic_score"))
+            mc_html = _html_metacritic_badge(
+                tp.get("metacritic_score"), with_label=True
+            )
             mp_html = _html_multiplayer_badges(tp.get("categories", []))
             prio_html = _html_prio_badge(tp.get("priority", 0))
             header_img = HEADER_URL.format(appid=tp["appid"])
@@ -683,7 +686,7 @@ def generate_html(
     <img class="pick-img" src="{header_img}" alt="" loading="lazy" onerror="this.style.display='none'">
     <div class="pick-body">
       <div class="pick-rank">#{idx}</div>
-      <div class="pick-score">{tp["score"]}</div>
+      <div class="pick-score" title="Score del ranking">Score {_html_esc(str(tp["score"]))}</div>
       <div class="pick-name">{_html_esc(tp["name"])}{prio_html}</div>
       <div class="pick-details"><span class="pick-discount">-{tp["discount"]}%</span><span class="pick-price">{_html_esc(tp["price_final"])}</span></div>
       <div class="pick-meta">{rev_html} &middot; {mc_html} &middot; {dk_html} &middot; {mp_html}</div>

@@ -144,6 +144,7 @@ from steam_deals_generator import (
     generate_html,
     generate_json,
     generate_md,
+    generate_share_html,
     is_same_game,
     load_previous_deal_appids,
     parse_hltb,
@@ -1914,9 +1915,11 @@ class SteamAdapterTests(unittest.TestCase):
             "friend",
             resolve_steam_id_fn=lambda _api_key, _vanity: "friend-id",
             get_wishlist_fn=lambda _api_key, _steam_id: (["10", "20"], {"10": 1}),
+            resolve_profile_display_name_fn=lambda _steam_id, _vanity, _api_key: "Johnny",
         )
 
         self.assertEqual(comparison["friend_id"], "friend-id")
+        self.assertEqual(comparison["friend_name"], "Johnny")
         self.assertEqual(comparison["friend_set"], {"10", "20"})
 
     def test_load_family_games_supports_dict_shape(self) -> None:
@@ -2445,6 +2448,28 @@ class RankTopPicksTests(unittest.TestCase):
         self.assertIn("pick-recommendation", html)
         self.assertIn("Comprar ahora", html)
         self.assertIn("reviews muy positivas", html)
+        self.assertIn("Score 95.4", html)
+        self.assertIn("Metacritic 90", html)
+
+    def test_generate_share_html_labels_top_pick_score_and_metacritic(self) -> None:
+        html = generate_share_html(
+            deals=[],
+            vanity="BG00G",
+            min_discount=50,
+            top_picks=[
+                {
+                    "appid": "a",
+                    "name": "Alpha",
+                    "discount": 90,
+                    "price_final": "$10",
+                    "score": 95.4,
+                    "metacritic_score": 90,
+                }
+            ],
+        )
+
+        self.assertIn("Score 95.4", html)
+        self.assertIn("Metacritic 90", html)
 
     def test_generate_md_includes_budget_recommendation_context(self) -> None:
         md = generate_md(

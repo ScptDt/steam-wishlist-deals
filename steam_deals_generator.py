@@ -594,6 +594,7 @@ def compare_wishlists(api_key, steam_id_1, vanity_2):
         vanity_2,
         resolve_steam_id_fn=resolve_steam_id,
         get_wishlist_fn=get_wishlist,
+        resolve_profile_display_name_fn=resolve_profile_display_name,
     )
 
 
@@ -2348,11 +2349,12 @@ def _html_prio_badge(priority: int) -> str:
     return f' <span class="{cls}">#{priority}</span>'
 
 
-def _html_metacritic_badge(score: int | None) -> str:
+def _html_metacritic_badge(score: int | None, *, with_label: bool = False) -> str:
     if score is None:
         return '<span class="review-na">\u2014</span>'
     cls = "mc-good" if score >= 75 else "mc-mixed" if score >= 50 else "mc-bad"
-    return f'<span class="badge {cls}">{score}</span>'
+    label = f"Metacritic {score}" if with_label else str(score)
+    return f'<span class="badge {cls}" title="Metacritic">{label}</span>'
 
 
 def multiplayer_badges(categories: list[int]) -> str:
@@ -2922,7 +2924,9 @@ def generate_html(
             )
             rev_html = _html_review_badge(tp.get("review"))
             dk_html = _html_deck_badge(tp.get("deck", 0))
-            mc_html = _html_metacritic_badge(tp.get("metacritic_score"))
+            mc_html = _html_metacritic_badge(
+                tp.get("metacritic_score"), with_label=True
+            )
             mp_html = _html_multiplayer_badges(tp.get("categories", []))
             prio_html = _html_prio_badge(tp.get("priority", 0))
             header_img = HEADER_URL.format(appid=tp["appid"])
@@ -2935,7 +2939,7 @@ def generate_html(
     <img class="pick-img" src="{header_img}" alt="" loading="lazy" onerror="this.style.display='none'">
     <div class="pick-body">
       <div class="pick-rank">#{idx}</div>
-      <div class="pick-score">{tp["score"]}</div>
+      <div class="pick-score" title="Score del ranking">Score {_html_esc(str(tp["score"]))}</div>
       <div class="pick-name">{_html_esc(tp["name"])}{prio_html}</div>
       <div class="pick-details"><span class="pick-discount">-{tp["discount"]}%</span><span class="pick-price">{_html_esc(tp["price_final"])}</span></div>
       <div class="pick-meta">{rev_html} &middot; {mc_html} &middot; {dk_html} &middot; {mp_html}</div>
@@ -3203,7 +3207,13 @@ def generate_share_html(
         for idx, tp in enumerate(top_picks[:5], 1):
             header = HEADER_URL.format(appid=tp["appid"])
             store = STORE_URL.format(appid=tp["appid"])
-            pick_cards += f'<a href="{store}" target="_blank" style="text-decoration:none;color:inherit;background:#16202d;border:1px solid #2a475e;border-radius:6px;overflow:hidden;display:flex;flex-direction:column"><img src="{header}" style="width:100%;aspect-ratio:460/215;object-fit:cover" loading="lazy"><div style="padding:.4rem .6rem"><div style="font-size:1.2rem;font-weight:bold;color:#66c0f4">{tp["score"]}</div><div style="font-size:.8rem;margin:.2rem 0">{_html_esc(tp["name"])}</div><div style="font-size:.8rem"><span style="color:#6cc644">-{tp["discount"]}%</span> {_html_esc(tp["price_final"])}</div></div></a>'
+            metacritic_score = tp.get("metacritic_score")
+            metacritic_html = (
+                f'<div style="font-size:.75rem;color:#8f98a0;margin-top:.15rem">Metacritic {metacritic_score}</div>'
+                if metacritic_score is not None
+                else ""
+            )
+            pick_cards += f'<a href="{store}" target="_blank" style="text-decoration:none;color:inherit;background:#16202d;border:1px solid #2a475e;border-radius:6px;overflow:hidden;display:flex;flex-direction:column"><img src="{header}" style="width:100%;aspect-ratio:460/215;object-fit:cover" loading="lazy"><div style="padding:.4rem .6rem"><div style="font-size:1.2rem;font-weight:bold;color:#66c0f4">Score {tp["score"]}</div><div style="font-size:.8rem;margin:.2rem 0">{_html_esc(tp["name"])}</div><div style="font-size:.8rem"><span style="color:#6cc644">-{tp["discount"]}%</span> {_html_esc(tp["price_final"])}{metacritic_html}</div></div></a>'
         picks_html = f'<h2 style="margin:1rem 0 .5rem">Top Picks</h2><div style="display:grid;grid-template-columns:repeat(auto-fill,minmax(160px,1fr));gap:.5rem">{pick_cards}</div>'
 
     sale_line = f" — {_html_esc(sale_name)}" if sale_name else ""
@@ -3577,8 +3587,11 @@ def main():
             my_set = set(wishlist_appids)
             overlap = my_set & friend_set
             compare_data["overlap"] = overlap
+            friend_label = compare_data.get("friend_name") or compare_data.get(
+                "friend_vanity", "Friend"
+            )
             print(
-                f"  {_ok(f'Friend: {len(compare_data['friend_appids']):,} juegos en wishlist')}"
+                f"  {_ok(f'{friend_label}: {len(compare_data['friend_appids']):,} juegos en wishlist')}"
             )
             print(f"  {_ok(f'{len(overlap)} en común')}")
         except Exception as e:

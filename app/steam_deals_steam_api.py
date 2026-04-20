@@ -135,15 +135,25 @@ def compare_wishlists(
     *,
     resolve_steam_id_fn,
     get_wishlist_fn,
+    resolve_profile_display_name_fn=None,
 ):
     """Compare two wishlists. Returns overlap, unique to each, friend info."""
     _ = steam_id_1
     friend_id = resolve_steam_id_fn(api_key, vanity_2)
     friend_appids, friend_priorities = get_wishlist_fn(api_key, friend_id)
     friend_set = set(friend_appids)
+    friend_name = vanity_2
+    if resolve_profile_display_name_fn is not None:
+        try:
+            resolved_name = resolve_profile_display_name_fn(friend_id, vanity_2, api_key)
+            if resolved_name:
+                friend_name = str(resolved_name)
+        except Exception:
+            pass
     return {
         "friend_id": friend_id,
         "friend_vanity": vanity_2,
+        "friend_name": friend_name,
         "friend_appids": friend_appids,
         "friend_priorities": friend_priorities,
         "friend_set": friend_set,
