@@ -1727,6 +1727,37 @@ class RunOutputTests(unittest.TestCase):
         self.assertEqual(result["json"], Path("/tmp/out/Steam Deals 2026-04-14.json"))
         self.assertEqual(result["csv"], Path("/tmp/out/Steam Deals 2026-04-14.csv"))
 
+    def test_write_output_artifacts_preserves_required_desktop_closeout_outputs(
+        self,
+    ) -> None:
+        written = []
+
+        def fake_write_artifact(path: Path, content: str) -> Path:
+            written.append(path)
+            return path
+
+        module_write_output_artifacts(
+            ModuleOutputArtifactPaths(
+                output_md=Path("/tmp/out/Steam Deals 2026-04-14.md"),
+                output_html=Path("/tmp/out/Steam Deals 2026-04-14.html"),
+                output_share=Path("/tmp/out/Steam Deals Share 2026-04-14.html"),
+                output_json=Path("/tmp/out/Steam Deals 2026-04-14.json"),
+                output_csv=Path("/tmp/out/Steam Deals 2026-04-14.csv"),
+            ),
+            ModuleOutputArtifactPayloads(
+                markdown="md",
+                html="html",
+                share_html="share",
+                json_content="json",
+                csv_content="csv",
+            ),
+            write_artifact_fn=fake_write_artifact,
+        )
+
+        self.assertTrue(any(path.suffix == ".md" for path in written))
+        self.assertTrue(any(path.suffix == ".html" and "Share" not in path.name for path in written))
+        self.assertTrue(any(path.suffix == ".csv" for path in written))
+
     def test_generate_json_serializes_summary_and_set_based_comparison(self) -> None:
         payload = generate_json(
             deals=[
@@ -3422,6 +3453,45 @@ class RankTopPicksTests(unittest.TestCase):
         self.assertIn("data-budget-variant-btn=", html)
         self.assertIn("data-budget-options=", html)
         self.assertIn("share-btn-close", html)
+
+    def test_generate_html_adds_min_historical_trend_jump_when_both_signals_exist(self) -> None:
+        html = generate_html(
+            deals=[
+                {
+                    "appid": "a",
+                    "name": "Alpha",
+                    "discount": 90,
+                    "price_final": "$10",
+                    "price_original": "$20",
+                    "price_raw": 1000,
+                    "metacritic_score": 90,
+                    "categories": [2],
+                }
+            ],
+            backlog_on_sale=[],
+            have_on_sale=[],
+            vanity="gaben",
+            owned={},
+            wishlist_appids=["a"],
+            min_discount=50,
+            genres=[],
+            historical_lows={"a": {"price": 5, "date": "2026-04-20"}},
+            price_history={
+                "games": {
+                    "a": {
+                        "snapshots": [
+                            {"price_raw": 2000},
+                            {"price_raw": 1500},
+                            {"price_raw": 1000},
+                        ]
+                    }
+                }
+            },
+        )
+
+        self.assertIn("Ver tendencia", html)
+        self.assertIn('data-trend-cell="a"', html)
+        self.assertIn("focusTrendCell", html)
 
 
 if __name__ == "__main__":

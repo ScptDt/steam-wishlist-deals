@@ -320,6 +320,34 @@ def _html_budget_variant_panels(variants: list[dict], *, selected_variant: str |
     )
 
 
+def _html_recommendation_guide() -> str:
+    return """<div class="recommendation-guide">
+  <div class="recommendation-guide-title">Cómo leer la recomendación rápida</div>
+  <div class="recommendation-guide-grid">
+    <div class="recommendation-guide-item">
+      <strong>Comprar ahora</strong>
+      <span>Muy buena combinación de descuento, señales de calidad y prioridad en tu wishlist.</span>
+    </div>
+    <div class="recommendation-guide-item">
+      <strong>Vale la pena</strong>
+      <span>Se ve sólido para revisar pronto, aunque no necesariamente sea lo más urgente del run.</span>
+    </div>
+    <div class="recommendation-guide-item">
+      <strong>Solo si ya lo traías en radar</strong>
+      <span>Puede seguir siendo buen deal, pero hoy no sobresale tanto frente a otras opciones.</span>
+    </div>
+  </div>
+</div>"""
+
+
+def _html_min_hist_jump_button(appid: str) -> str:
+    return (
+        f'<button type="button" class="min-hist-jump-btn" '
+        f'onclick="focusTrendCell(\'{_html_esc(appid)}\')" '
+        'title="Ir rápido a la tendencia local de este juego">&#10148; Ver tendencia</button>'
+    )
+
+
 _HTML_CSS = """
 :root {
   --bg-primary: #1b2838; --bg-secondary: #2a475e; --bg-card: #16202d;
@@ -465,6 +493,16 @@ a.pick-card:hover { border-color: var(--accent-blue); transform: translateY(-2px
 .budget-reroll-inline { padding: .2rem .55rem; font-size: .72rem; }
 .budget-value-context { display: block; }
 .budget-reroll-preview { margin-top: .28rem; color: var(--accent-yellow); font-size: .73rem; line-height: 1.4; }
+.min-hist-cell { display: inline-flex; align-items: center; gap: .4rem; flex-wrap: wrap; }
+.min-hist-jump-btn { background: var(--bg-primary); color: var(--accent-blue); border: 1px solid var(--border); border-radius: 999px; padding: .12rem .5rem; font-size: .7rem; cursor: pointer; }
+.min-hist-jump-btn:hover { border-color: var(--accent-blue); }
+.trend-focus { outline: 2px solid var(--accent-blue); outline-offset: 2px; background: rgba(102,192,244,.08); border-radius: 6px; transition: background .2s ease; }
+.recommendation-guide { margin: 0 0 1rem; padding: .85rem .95rem; border-radius: 8px; border: 1px solid var(--border); background: linear-gradient(180deg, var(--bg-secondary), var(--bg-primary)); }
+.recommendation-guide-title { margin-bottom: .6rem; color: var(--accent-blue); font-size: .82rem; font-weight: 700; }
+.recommendation-guide-grid { display: grid; grid-template-columns: repeat(auto-fit, minmax(210px, 1fr)); gap: .6rem; }
+.recommendation-guide-item { padding: .65rem .7rem; border-radius: 8px; border: 1px solid rgba(102, 192, 244, 0.18); background: rgba(12, 20, 30, 0.18); }
+.recommendation-guide-item strong { display: block; margin-bottom: .25rem; color: var(--text-primary); font-size: .79rem; }
+.recommendation-guide-item span { display: block; color: var(--text-secondary); font-size: .76rem; line-height: 1.45; }
 """
 
 _HTML_JS = """
@@ -801,6 +839,16 @@ function bindBudgetHtmlInteractions() {
   const activeButton = buttons.find((btn) => btn.classList.contains('is-active')) || buttons[0];
   activateBudgetVariant(activeButton.dataset.budgetVariantBtn);
 }
+function focusTrendCell(appid) {
+  if (!appid) return;
+  const target = document.querySelector('[data-trend-cell="' + appid + '"]');
+  if (!target) return;
+  target.scrollIntoView({ behavior: 'smooth', block: 'center', inline: 'center' });
+  target.classList.remove('trend-focus');
+  void target.offsetWidth;
+  target.classList.add('trend-focus');
+  setTimeout(() => target.classList.remove('trend-focus'), 1600);
+}
 """
 
 
@@ -1087,6 +1135,7 @@ def generate_html(
         parts.append(f"""<section class="top-picks">
   <h2>&#127942; Top {len(top_picks)} Picks</h2>
   <p class="section-desc">Score = recomendación compuesta para priorizar qué revisar primero. Combina reviews (26%) + descuento (22%) + prioridad (18%) + $/hora HLTB (14%) + Deck (10%) + Metacritic (5%) + antigüedad (5%).</p>
+  {_html_recommendation_guide()}
   <div class="picks-grid">{"".join(cards)}</div>
 </section>""")
 
@@ -1236,6 +1285,8 @@ def generate_html(
             price_num = _html_price_raw(d["price_final"])
             mc = d.get("metacritic_score")
             mp_cats = d.get("categories", [])
+            game_hist = price_history_games.get(appid, {}) if has_sparklines else {}
+            snaps = game_hist.get("snapshots", []) if has_sparklines else []
             cells = [
                 f"<td>{new_html}</td>",
                 f"<td>-{d['discount']}%</td>",
@@ -1250,15 +1301,20 @@ def generate_html(
                 ach = achievements_data.get(appid)
                 cells.append(f"<td>{_html_achievements_badge(ach)}</td>")
             if has_sparklines:
-                game_hist = price_history_games.get(appid, {})
-                snaps = game_hist.get("snapshots", [])
                 spark = _build_sparkline_svg(snaps) if len(snaps) >= 2 else "—"
-                cells.append(f"<td>{spark}</td>")
+                cells.append(
+                    f"<td data-trend-cell=\"{_html_esc(appid)}\">{spark}</td>"
+                )
             if has_itad:
                 low = historical_lows.get(appid)
                 if low:
                     low_txt = f"${low['price']:.0f} ({low['date']})"
-                    cells.append(f"<td>{_html_esc(low_txt)}</td>")
+                    trend_jump = (
+                        _html_min_hist_jump_button(appid) if len(snaps) >= 2 else ""
+                    )
+                    cells.append(
+                        f"<td><div class=\"min-hist-cell\"><span>{_html_esc(low_txt)}</span>{trend_jump}</div></td>"
+                    )
                 else:
                     cells.append("<td>—</td>")
             if has_best:
@@ -1304,6 +1360,10 @@ def generate_html(
         if has_itad:
             note_parts.append(
                 "Mín. histórico = mejor precio detectado antes en Steam."
+            )
+        if has_itad and has_sparklines:
+            note_parts.append(
+                "Usa ➡ Ver tendencia junto a Mín. histórico para saltar rápido al movimiento local del precio."
             )
         note_html = (
             f'<p class="section-desc">{" · ".join(note_parts)}</p>'

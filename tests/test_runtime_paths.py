@@ -6,6 +6,28 @@ from pathlib import Path
 from steam_deals_paths import resolve_cache_dir, resolve_logs_dir
 
 
+class DesktopPersistenceContractTests(unittest.TestCase):
+    def test_frozen_runs_share_same_root_for_cache_and_logs(self) -> None:
+        project_dir = Path("/tmp/_MEI123")
+        env = {"HOME": "/home/tester"}
+
+        cache_dir = resolve_cache_dir(project_dir, env=env, frozen=True)
+        logs_dir = resolve_logs_dir(project_dir, env=env, frozen=True)
+
+        self.assertEqual(cache_dir, Path("/home/tester/.cache/steam_deals"))
+        self.assertEqual(logs_dir, cache_dir / "logs")
+
+    def test_cache_override_keeps_logs_nested_inside_same_persistent_root(self) -> None:
+        project_dir = Path("/tmp/_MEI123")
+        env = {"STEAM_DEALS_CACHE_DIR": "/var/tmp/steam-cache"}
+
+        cache_dir = resolve_cache_dir(project_dir, env=env, frozen=True)
+        logs_dir = resolve_logs_dir(project_dir, env=env, frozen=True)
+
+        self.assertEqual(cache_dir, Path("/var/tmp/steam-cache"))
+        self.assertEqual(logs_dir, Path("/var/tmp/steam-cache/logs"))
+
+
 class ResolveCacheDirTests(unittest.TestCase):
     def test_source_runs_keep_repo_local_cache_dir(self) -> None:
         cache_dir = resolve_cache_dir(

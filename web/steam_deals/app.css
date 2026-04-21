@@ -142,7 +142,9 @@ a:hover { text-decoration: underline; }
 
 .field-align-end {
   display: flex;
-  align-items: flex-end;
+  flex-direction: column;
+  align-items: stretch;
+  justify-content: flex-end;
 }
 
 .field-align-end .hint {
@@ -155,9 +157,10 @@ a:hover { text-decoration: underline; }
 
 .history-quick-btn {
   min-height: 44px;
+  width: 100%;
   padding-inline: 1rem;
-  font-size: 0.92rem;
-  white-space: nowrap;
+  font-size: 0.9rem;
+  white-space: normal;
 }
 
 .actions-spaced-top {

@@ -9,6 +9,12 @@ Runbook manual para validar el wrapper desktop de Steam Tools en Windows.
 - PowerShell funcional.
 - Microsoft Edge WebView2 Runtime instalado o validable manualmente.
 
+## Modelo de evidencia y fase del track
+
+- Este runbook aporta evidencia de apoyo dentro de la **Fase 2 — Paridad compartida y readiness**.
+- Windows sirve como baseline util para launcher, doctor, outputs y fallback, pero **no sustituye** el cierre Linux/macOS exigido por P2.
+- La **Fase 1** sigue siendo Linux desktop binario; la **Fase 3** sigue siendo macOS native-host closure.
+
 ## 1. Preparar entorno
 
 ```powershell

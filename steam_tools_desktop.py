@@ -13,6 +13,7 @@ import subprocess
 import sys
 import threading
 import time
+import traceback
 import urllib.parse
 import urllib.request
 import webbrowser
@@ -24,6 +25,7 @@ from urllib.parse import urlencode
 ROOT = Path(__file__).resolve().parent
 HOST = "127.0.0.1"
 PORT = 8080
+PORT_SCAN_SIZE = 10
 URL = f"http://{HOST}:{PORT}"
 
 FALLBACK_REASON_MESSAGES = {
@@ -33,22 +35,69 @@ FALLBACK_REASON_MESSAGES = {
 }
 
 
-def _fallback_url(reason: str | None = None) -> str:
+def _fallback_url(reason: str | None = None, *, base_url: str = URL) -> str:
     if not reason:
-        return URL
+        return base_url
     query = urlencode({"desktop_fallback": "1", "reason": reason})
-    return f"{URL}?{query}"
+    return f"{base_url}?{query}"
 
 
-def _wait_server(url: str, timeout: float = 15.0) -> bool:
+def _config_probe_url(base_url: str) -> str:
+    return f"{base_url.rstrip('/')}/api/config"
+
+
+def _probe_steam_deals_server(
+    base_url: str,
+    *,
+    timeout: float = 1.5,
+    urlopen_fn=urllib.request.urlopen,
+) -> bool:
+    try:
+        with urlopen_fn(_config_probe_url(base_url), timeout=timeout) as response:
+            return int(getattr(response, "status", 200)) == 200
+    except Exception:
+        return False
+
+
+def _candidate_urls(start_port: int, *, host: str = HOST) -> list[str]:
+    return [
+        f"http://{host}:{port}"
+        for port in range(start_port, start_port + PORT_SCAN_SIZE)
+    ]
+
+
+def _wait_server(
+    url: str,
+    timeout: float = 15.0,
+    *,
+    urlopen_fn=urllib.request.urlopen,
+    sleep_fn=time.sleep,
+) -> bool:
     start = time.monotonic()
     while (time.monotonic() - start) < timeout:
-        try:
-            with urllib.request.urlopen(url, timeout=1.5):
-                return True
-        except Exception:
-            time.sleep(0.2)
+        if _probe_steam_deals_server(url, timeout=1.5, urlopen_fn=urlopen_fn):
+            return True
+        sleep_fn(0.2)
     return False
+
+
+def _discover_live_url(
+    start_port: int,
+    timeout: float = 15.0,
+    *,
+    urlopen_fn=urllib.request.urlopen,
+    sleep_fn=time.sleep,
+) -> str | None:
+    start = time.monotonic()
+    urls = _candidate_urls(start_port)
+    while (time.monotonic() - start) < timeout:
+        for base_url in urls:
+            if _probe_steam_deals_server(
+                base_url, timeout=1.5, urlopen_fn=urlopen_fn
+            ):
+                return base_url
+        sleep_fn(0.2)
+    return None
 
 
 def _run_internal_web_server() -> None:
@@ -157,6 +206,7 @@ def main() -> None:
     proc = None
     keep_server_alive = False
     browser_fallback_opened = threading.Event()
+    active_url = URL
 
     def _open_browser_fallback(reason: str) -> None:
         nonlocal keep_server_alive
@@ -165,10 +215,20 @@ def main() -> None:
         browser_fallback_opened.set()
         keep_server_alive = True
         print(FALLBACK_REASON_MESSAGES.get(reason, FALLBACK_REASON_MESSAGES["window-error"]))
-        webbrowser.open(_fallback_url(reason))
+        fallback_target = _fallback_url(reason, base_url=active_url)
+        opened = False
+        try:
+            opened = webbrowser.open(fallback_target)
+        except Exception as exc:
+            print(f"No se pudo abrir el navegador automáticamente: {exc}")
+        if not opened:
+            print(f"Abre manualmente: {fallback_target}")
 
     # If a local server is already alive, reuse it instead of spawning another one.
-    if not _wait_server(URL, timeout=0.6):
+    reused_url = _discover_live_url(PORT, timeout=0.6)
+    if reused_url is not None:
+        active_url = reused_url
+    else:
         if getattr(sys, "frozen", False):
             cmd = [sys.executable, "--internal-web", "--no-open", "--port", str(PORT)]
         else:
@@ -177,13 +237,17 @@ def main() -> None:
         proc = subprocess.Popen(cmd, cwd=str(ROOT))
 
     try:
-        if not _wait_server(URL, timeout=25.0):
+        discovered_url = _discover_live_url(PORT, timeout=25.0)
+        if not discovered_url:
             raise RuntimeError("No se pudo iniciar Steam Deals Web UI para desktop.")
+        active_url = discovered_url
 
         try:
             import webview  # type: ignore[import-not-found]
         except Exception:
             # If native webview is unavailable, continue in browser mode.
+            print("Fallo al importar pywebview/backend nativo:")
+            traceback.print_exc()
             _open_browser_fallback("missing-webview")
             return
 
@@ -198,7 +262,7 @@ def main() -> None:
 
         webview.create_window(
             "Steam Tools",
-            URL,
+            active_url,
             width=1280,
             height=860,
             min_size=(1000, 700),
@@ -207,6 +271,8 @@ def main() -> None:
         webview.start(debug=False)
 
     except Exception:
+        print("Detalle del fallo de ventana nativa:")
+        traceback.print_exc()
         _open_browser_fallback("window-error")
 
     finally:

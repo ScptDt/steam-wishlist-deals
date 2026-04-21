@@ -9,6 +9,13 @@ Runbook manual para validar el wrapper desktop de Steam Tools en Linux.
 - Si Debian/Ubuntu marca PEP 668, usar `.venv` del repo.
 - Este runbook no instala paquetes del sistema automaticamente.
 
+## Modelo de evidencia y fase del track
+
+- Este runbook cubre la **Fase 1 — Linux desktop binario (cierre prioritario)**.
+- La evidencia que cierra esta fase debe salir del **binario desktop** en sesion grafica normal.
+- Una corrida desde Web UI/source ayuda a validar generator, performance y UX compartida, pero **no sustituye** la evidencia del binario para cerrar Linux desktop.
+- La **Fase 2** (paridad compartida/readiness) y la **Fase 3** (macOS native-host closure) van despues de este cierre Linux.
+
 ## Flujo recomendado
 
 ### 1. Preparar entorno local
@@ -113,7 +120,41 @@ Durante un caso grande (wishlist real / smoke largo), conviene guardar evidencia
 - `Fallback individual aplicado a ... juegos en ... tandas`
 - artifacts generados al final (`.md`, `.html`, `.csv` para cierre desktop; `share.html/.json` como evidencia adicional)
 
-> Una corrida larga desde Web UI/source cuenta como evidencia funcional del generator y del Track Performance, pero no sustituye el cierre final del desktop Linux: para cerrar P2 sigue haciendo falta repetir la corrida dentro del binario y confirmar `.csv` + cierre limpio.
+### Checklist de cierre Linux desktop binario
+
+Usa esta lista solo para la evidencia que realmente cierra la **Fase 1**:
+
+- [ ] `python steam_tools_desktop.py --doctor` en `.venv` sin FAIL reales
+- [ ] Build local del desktop ejecutado (`python build_desktop.py`) y artefacto `dist/SteamToolsDesktop` presente
+- [ ] Binario abierto en sesion grafica normal (no root)
+- [ ] Ventana nativa visible sin crash inmediato
+- [ ] **Probar config** ejecutado desde la UI
+- [ ] Run largo completado desde el binario desktop (no desde Web UI/source)
+- [ ] Artefacts confirmados: `.md`, `.html`, `.csv`
+- [ ] `share.html` / `.json` guardados como evidencia adicional si aplican (no sustituyen `.csv` ni cierran Linux por sí solos)
+- [ ] Sin fallback no deseado al navegador (o fallback documentado si ocurrio)
+- [ ] Cierre limpio de la app
+- [ ] Sin procesos colgados despues del cierre
+- [ ] Bitácora actualizada en `PENDIENTES.md` con comando, resultado y workaround si hizo falta
+
+> `--warm-cache` y una corrida larga desde Web UI/source cuentan como preparación y evidencia funcional del generator/Track Performance, pero no sustituyen el cierre final del desktop Linux: para cerrar P2 sigue haciendo falta repetir la corrida dentro del binario y confirmar `.csv` + cierre limpio.
+
+### Plantilla sugerida para la entrada final de bitácora
+
+- Host/sesión gráfica:
+- Comandos ejecutados:
+- Doctor desktop: OK/FAIL
+- Build desktop: OK/FAIL
+- Apertura nativa: OK/FAIL
+- `Probar config`: OK/FAIL
+- Run largo desde binario: OK/FAIL
+- Artefactos confirmados: `.md` / `.html` / `.csv`
+- Evidencia adicional: `share.html` / `.json`
+- Fallback al navegador: sí/no
+- Cierre limpio: sí/no
+- Procesos colgados: sí/no
+- Workarounds usados:
+- Incidencias observadas:
 
 ## 6. Fallback web (mitigacion)
 

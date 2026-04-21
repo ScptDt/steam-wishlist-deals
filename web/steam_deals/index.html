@@ -224,6 +224,7 @@
       <div class="field">
         <label>Top picks</label>
         <input type="number" id="top" value="10" min="1" max="50">
+        <div class="hint">Define cuántos juegos quieres ver destacados arriba. No cambia el total de deals del reporte.</div>
       </div>
       <div class="field">
         <label>Ordenar por</label>
@@ -296,29 +297,32 @@
             <input type="number" id="max_price" min="0" placeholder="Sin limite">
           </div>
           <div class="field">
-            <label>Min reviews %</label>
+            <label>Reviews positivas mín. (%)</label>
             <input type="number" id="min_reviews" min="0" max="100" placeholder="Cualquiera">
+            <div class="hint">Muestra solo juegos con al menos ese porcentaje de reseñas positivas.</div>
           </div>
         </div>
         <div class="row">
           <div class="field">
-            <label>Min # de reviews</label>
+            <label>Cantidad mínima de reviews</label>
             <input type="number" id="min_review_count" min="0" placeholder="Cualquiera">
+            <div class="hint">Úsalo para evitar juegos con muy pocas reseñas y resultados menos confiables.</div>
           </div>
           <div class="field">
-            <label>Max HLTB horas</label>
+            <label>Duración máxima (horas)</label>
             <input type="number" id="max_hours" min="0" placeholder="Sin limite">
+            <div class="hint">Úsalo si prefieres juegos más cortos o no quieres meter algo demasiado largo en este run.</div>
           </div>
         </div>
         <div class="field">
           <label>Comparar con <span class="optional">(opcional)</span></label>
           <input type="text" id="compare" placeholder="Vanity URL del amigo">
-          <div class="hint">La wishlist de tu amigo debe ser pública</div>
+          <div class="hint">Úsalo para ver juegos en común y posibles ideas de regalo. La wishlist de tu amigo debe ser pública.</div>
         </div>
         <div class="field">
           <label>Workers de enrichment <span class="optional">(opcional)</span></label>
           <input type="number" id="max_workers" min="1" max="64" step="1" placeholder="12">
-          <div class="hint">Default 12. Si tu red/API responde bien, prueba 16; evita subir demasiado para reducir riesgo de rate limit.</div>
+          <div class="hint">Si no estás seguro, déjalo en 12. Prueba 16 solo si tu conexión va bien; si ves errores raros o lentitud, vuelve a 12 u 8.</div>
         </div>
         <div class="checks checks-spaced">
           <label><input type="checkbox" id="deck_only"> Solo Deck compatible</label>
@@ -327,6 +331,9 @@
           <label><input type="checkbox" id="csv"> Generar CSV</label>
           <label><input type="checkbox" id="no_cache"> Ignorar cache</label>
         </div>
+        <div class="hint">Deck compatible = corre en Steam Deck aunque quizá necesite ajustes. Deck Verified = suele correr mejor y pedir menos ajustes.</div>
+        <div class="hint">`Solo deals nuevos` muestra juegos que entraron en oferta frente al run anterior. Si no hay historial previo, puede aportar poco o nada.</div>
+        <div class="hint">`Generar CSV` sirve si quieres llevar los resultados a Excel o Google Sheets sin depender solo del HTML.</div>
       </div>
     </details>
 
@@ -377,16 +384,17 @@
     <p class="history-card-intro">Compara dos ejecuciones para entender qué cambió en la wishlist. Si solo quieres una lectura rápida, empieza con <strong>Comparar últimos 2 runs</strong>.</p>
     <div class="row">
       <div class="field">
-        <label>Run A (base)</label>
+        <label>Run inicial</label>
         <select id="history-left"></select>
       </div>
       <div class="field">
-        <label>Run B (comparar)</label>
+        <label>Run a comparar</label>
         <select id="history-right"></select>
       </div>
     </div>
     <div class="checks checks-tight">
       <label><input type="checkbox" id="history-include-same"> Incluir precios sin cambio</label>
+      <div class="hint">Si lo activas, también verás juegos cuyo precio quedó igual entre ambos runs.</div>
     </div>
     <div class="row row-spaced">
       <div class="field">
@@ -402,21 +410,23 @@
       <div class="field">
         <label>Orden delta</label>
         <select id="history-sort-delta">
-          <option value="default">Default</option>
+          <option value="default">Orden normal</option>
           <option value="delta_desc">Mayor subida primero</option>
           <option value="delta_asc">Mayor bajada primero</option>
           <option value="abs_desc">Mayor cambio absoluto</option>
         </select>
+        <div class="hint">Te ayuda a decidir si quieres ver primero las subidas, las bajadas o cualquier cambio fuerte entre ambos runs.</div>
       </div>
     </div>
     <div class="row row-spaced">
       <div class="field">
         <label>Buscar runs</label>
-        <input type="text" id="history-search" placeholder="fecha, sale, steam_id o vanity">
+        <input type="text" id="history-search" placeholder="fecha, evento o perfil">
+        <div class="hint">Puedes buscar por fecha, nombre del evento o el perfil usado en ese run.</div>
       </div>
       <div class="field field-align-end">
-        <button class="btn btn-ghost history-quick-btn" type="button" id="btn-history-quick-compare" title="Selecciona automáticamente los 2 runs más recientes y los compara por ti">Últimos 2 runs</button>
-        <div class="hint">Compara rápido los 2 runs más recientes sin elegirlos a mano.</div>
+        <button class="btn btn-ghost history-quick-btn" type="button" id="btn-history-quick-compare" title="Selecciona automáticamente los 2 runs más recientes y los compara por ti">Comparar 2 recientes</button>
+        <div class="hint">Toma los 2 runs más recientes y los compara sin elegirlos a mano.</div>
       </div>
     </div>
     <div class="history-pagination" id="history-pagination">

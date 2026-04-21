@@ -9,6 +9,13 @@ Runbook manual para validar el wrapper desktop de Steam Tools en macOS.
 - Command Line Tools disponibles o instalables con `xcode-select --install`.
 - Este runbook no automatiza firma, notarizacion ni cambios persistentes del sistema.
 
+## Modelo de evidencia y fase del track
+
+- Este runbook cubre la **Fase 3 — macOS native-host closure**.
+- La fase macOS solo debe tomarse como cierre cuando exista **host nativo** y se valide desde la `.app` local.
+- La evidencia de Web UI/source o incluso la evidencia Linux/Windows **no sustituye** la evidencia nativa de macOS.
+- La **Fase 1** (Linux desktop binario) va primero; la **Fase 2** (paridad compartida/readiness) prepara el terreno antes del cierre final en macOS.
+
 ## 1. Preparar entorno
 
 ```bash

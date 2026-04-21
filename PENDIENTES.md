@@ -26,6 +26,7 @@ No se mantienen documentos paralelos de planificacion; este archivo es la unica 
 - [x] Checklist de release y smoke tests (primera version).
 - [ ] Corregir botón `Detener` en Steam Deals desktop/web: hoy puede quedarse solo en "Solicitando detener ejecucion..." sin frenar el proceso de forma confiable; si el usuario hace varios clicks, el mensaje se duplica y aumenta la confusion.
 - [ ] Revisar inconsistencia de caché/batches en precios Steam: el run puede reportar `Caché válida (...) — sin nuevos, skip fetch` y aun así lanzar `Fetching N juegos`, además de caer en `HTTP 400` por batch y degradarse a fallback individual muy lento. Decidir si se resuelve como quick win de mensajes/guardrails o como track más amplio de fetch batching/cache behavior.
+- [ ] Invalidar o refrescar el cache de precios cuando cambien las Weeklong/Midweek/Weekend Deals; detectar automaticamente cuando reinician o cuanto les falta para evitar reutilizar datos viejos.
 
 ### P1 - UX Ultra Friendly
 
@@ -44,11 +45,12 @@ No se mantienen documentos paralelos de planificacion; este archivo es la unica 
 - [x] Renombrar/ajustar trend para lenguaje mas claro al usuario final (ej. "Tendencia de precios") y simplificar su interpretacion.
 - [x] Dashboard historico: agregar notas/highlights breves a los botones debajo de los selectores de runs (`Comparar runs`, `Recargar runs`, `Restablecer filtros`) para que se entienda rapido cuando usar cada accion.
 - [ ] Dashboard historico: ajustar el copy y la apariencia del botón `Comparar últimos 2 runs`, porque hoy se ve extraño visualmente y el texto se siente demasiado largo/apretado para un usuario normal.
+- [ ] Mostrar proximas ofertas grandes y pequenas de Steam en la UI/reportes para dar contexto de si conviene comprar ahora o esperar. [Relacionado con el Track de reinicio/tiempo restante de Weeklong/Midweek/Weekend Deals.]
 - [ ] [Futuro] Agregar selector de moneda en UI para cambiar divisa de precios.
 - [ ] Agregar hints explicativos de metricas/criterios usados en UI para que el usuario entienda que se esta utilizando en cada seccion. [Parcial: UI principal + reportes/share ya explican score, minimo historico, antiguedad y tendencia general; pendiente extenderlo de forma mas uniforme a otras secciones.]
 - [ ] Filtros avanzados: agregar filtro por tipo de recomendacion/mensaje (ej. "vale la pena", "considerar", "esperar") aplicado sobre los mensajes de Top Picks.
 - [ ] Agregar apartado "Shuffle 1 juego": recomendar un solo juego de la wishlist segun presupuesto + critica/score, con boton para rerollear ("dame otro").
-- [ ] Definir estrategia de outputs para evitar archivos desperdigados: (A) guardar por defecto en estructura `output/YYYY-MM-DD/` o (B) generar archivos solo bajo accion explicita (boton/comando), a decidir en iteracion futura.
+- [ ] Definir estrategia de outputs para evitar archivos desperdigados: (A) guardar por defecto en estructura `output/YYYY-MM-DD/` o (B) generar archivos solo bajo accion explicita (boton/comando), a decidir en iteracion futura. [Incluye evaluar mover runs/reportes generados a una carpeta dedicada en vez de dejarlos en la raíz; tratarlo como track de reestructuración, no como quick win.]
 - [ ] Corregir UX de apertura de archivos generados (`/files/...`): hoy algunos botones/enlaces de reportes pueden dar la impresión de no hacer nada o abrir una página en blanco al intentar ver `.md/.html/.json`; aclarar el comportamiento esperado y evitar confusión para el usuario normal.
 - [x] Cambiar etiqueta "Era" por termino mas claro en UI/reportes (ej. "Precio original").
 - [x] Ajustar el `<title>` de los reportes HTML para mostrar el nombre visible del perfil de Steam (en lugar de URL/steamid cuando aplique). [Sugerencia tester R1CK]
@@ -297,6 +299,64 @@ P2 se considera **cerrado** cuando se cumpla TODO:
 - [ ] Bitacora Cross-Platform actualizada con evidencia por paso (comando, resultado y workaround si aplica).
 - [ ] README y/o notas operativas alineadas con incidencias reales encontradas en validacion manual.
 
+### Modelo de evidencia y orden del Track Desktop
+
+Orden actual del track:
+
+1. **Fase 1 — Linux desktop binario (cierre prioritario)**
+    - build local
+    - apertura de ventana nativa
+    - smoke funcional largo
+    - `.md/.html/.csv`
+    - cierre limpio sin procesos colgados
+    - bitacora actualizada con evidencia binaria
+2. **Fase 2 — Paridad compartida y readiness**
+   - fallback web
+   - Desktop Doctor / Autofix
+   - temas compartidos web/desktop (stop/share/reportes)
+   - evidencia Windows como baseline de apoyo, no como cierre de P2
+3. **Fase 3 — macOS native-host closure**
+   - host macOS nativo disponible
+   - build `.app`
+   - apertura local
+   - smoke funcional y cierre limpio
+
+Modelo de evidencia:
+
+- **Web UI/source** cuenta como evidencia funcional del generator, performance y UX compartida.
+- **Desktop binario** cuenta como evidencia de cierre desktop real.
+- La evidencia web/source **no sustituye** la evidencia nativa del binario para cerrar Linux/macOS.
+
+Checklist resumido para cerrar **Fase 1 — Linux desktop binario**:
+
+- [ ] `python steam_tools_desktop.py --doctor` sin FAIL reales
+- [ ] `python build_desktop.py` OK + `dist/SteamToolsDesktop` presente
+- [ ] Binario abierto en sesión gráfica normal (no root)
+- [ ] `Probar config` ejecutado desde la UI
+- [ ] Run largo completado **desde el binario desktop**
+- [ ] Artefactos finales confirmados: `.md`, `.html`, `.csv`
+- [ ] `share.html` / `.json` guardados solo como evidencia adicional (si aplica)
+- [ ] Fallback al navegador documentado si ocurrió
+- [ ] Cierre limpio confirmado
+- [ ] Sin procesos colgados tras cerrar
+
+Plantilla mínima para la entrada final de bitácora Linux:
+
+- Host/sesión gráfica:
+- Comandos ejecutados:
+- Doctor desktop:
+- Build desktop:
+- Apertura nativa:
+- `Probar config`:
+- Run largo desde binario:
+- Artefactos: `.md` / `.html` / `.csv`
+- Evidencia adicional: `share.html` / `.json`
+- Fallback al navegador: sí/no
+- Cierre limpio: sí/no
+- Procesos colgados: sí/no
+- Workarounds usados:
+- Incidencias observadas:
+
 ## Proximo Paso Operativo
 
 - Linux ya tiene evidencia local fuerte: en Debian/Ubuntu con PEP 668 se requiere `.venv`, el build desktop local genera `dist/SteamToolsDesktop`, la ventana nativa abre en sesion grafica KDE no-root sin requerir `QT_QPA_PLATFORM=xcb` en la prueba mas reciente, y el binario congelado ya emite el primer evento `progress` del generator tras corregir packaging PyInstaller.
@@ -340,6 +400,23 @@ Notas:
 
 ## Bitacora
 
+- 2026-04-21: Quick win de UX en filtros avanzados: `Generar CSV` ahora aclara que sirve para llevar resultados a Excel o Google Sheets, en vez de quedar como una opción técnica sin contexto.
+- 2026-04-21: Quick win de UX en filtros avanzados: `Solo deals nuevos` ahora aclara que compara contra el run anterior y que, sin historial previo, puede aportar poco o nada.
+- 2026-04-21: Quick win de UX en filtros avanzados: los checks de Steam Deck ahora explican mejor la diferencia entre `compatible` y `Verified`, para que el usuario normal entienda qué tanto quiere restringir los resultados.
+- 2026-04-21: Quick win de UX en filtros avanzados: `Max HLTB horas` se humaniza a `Duración máxima (horas)` y ahora aclara que sirve para priorizar juegos más cortos o evitar experiencias demasiado largas.
+- 2026-04-21: Quick win de UX en filtros avanzados: los filtros de reviews ahora usan labels más claros (`Reviews positivas mín.`, `Cantidad mínima de reviews`) y explican mejor qué estás filtrando y por qué puede ayudarte.
+- 2026-04-21: Quick win de UX en `Top picks`: el campo ahora aclara que solo controla cuántos juegos se destacan arriba y que no cambia el total de deals del reporte.
+- 2026-04-21: Quick win de UX en histórico: `Buscar runs` deja de usar términos técnicos en el placeholder (`steam_id`/`vanity`) y ahora se apoya en un hint más claro (`fecha, evento o perfil`).
+- 2026-04-21: Quick win de UX en histórico: `Orden delta` ahora tiene un hint más claro para explicar cuándo conviene ver primero subidas, bajadas o cambios fuertes entre runs.
+- 2026-04-21: Quick win de UX en histórico: `Incluir precios sin cambio` ahora lleva un hint directo para explicar que agrega juegos cuyo precio quedó igual entre ambos runs.
+- 2026-04-21: Quick win de UX en histórico: `Run A (base)` y `Run B (comparar)` se renombran a `Run inicial` y `Run a comparar`, para que el selector suene menos técnico y más claro para usuario normal.
+- 2026-04-21: Quick win de UX en histórico: la opción `Default` dentro de `Orden delta` se renombra a `Orden normal`, para que el usuario entienda mejor que no está priorizando subidas o bajadas especiales.
+- 2026-04-21: Quick win de UX en `Workers de enrichment`: el hint ahora explica en lenguaje más práctico cuándo dejar `12`, cuándo probar `16` y cuándo bajar a `8`, en vez de quedarse en wording demasiado técnico.
+- 2026-04-21: Quick win de UX en `Comparar con`: el hint ahora explica mejor que sirve para ver juegos en común e ideas de regalo, además de recordar que la wishlist del amigo debe ser pública.
+- 2026-04-21: Quick win de UX en Top Picks: se agrega una guía breve para interpretar `Comprar ahora`, `Vale la pena` y `Solo si ya lo traías en radar`, reduciendo la ambigüedad de esas recomendaciones rápidas para usuario normal.
+- 2026-04-21: Quick win de UX en reportes HTML: `Mín. histórico` ahora puede mostrar un acceso rápido `Ver tendencia` cuando existe sparkline local, para saltar visualmente al movimiento de precio del mismo juego sin buscarlo a mano.
+- 2026-04-21: Quick win de UX en histórico: el botón de comparación rápida ahora se muestra apilado con su hint y cambia su copy a `Comparar 2 recientes`, evitando el look apretado/extraño que tenía al competir visualmente con el texto explicativo.
+- 2026-04-21: Quick win de UX/estado en cache: la UI ahora refuerza que `Ignorar cache` arranque desmarcado incluso al recargar o volver a la página (`pageshow`), para evitar que el navegador reviva un estado visual viejo y confunda al usuario.
 - 2026-04-21: Quick win de UX en archivos generados: los enlaces finales ahora distinguen entre `Abrir` (HTML) y `Descargar` (Markdown/JSON/CSV), y explican que los archivos de texto se descargan para evitar la sensación de página en blanco al pasar por `/files/...`.
 - 2026-04-21: Quick win de UX en presupuesto: `Tu Presupuesto Ideal` sale de `Filtros avanzados` y pasa a mostrarse en la configuración principal como feature visible, para que no se sienta escondido como si fuera solo otro filtro.
 - 2026-04-21: Rerun real con cache caliente (`Steam Medieval Fest`) deja evidencia local de cierre parcial: artifacts `.md/.html/share.html/.json` generados correctamente, `Precio original` ya visible en reportes y `Tu Presupuesto Ideal` ya expone variantes/rerolls en HTML/JSON/MD. Quedan abiertos como follow-up el share E2E manual, la diversidad real de rerolls y la inconsistencia de batching/cache (`Caché válida ... sin nuevos` pero luego `Fetching 414 juegos` con `HTTP 400` por batch). También se observa desfase en el conteo visible de pasos (`[1/11]` ... `[12/11]`).
@@ -461,11 +538,13 @@ Notas:
 - [x] Generar link publica para compartir deals individuales (URL con data encodeada). [Implementado y alineado entre Web UI, HTML interactivo y Share HTML; payload share compatible con desktop validado por tests. Falta solo validacion manual E2E para cierre operativo del pendiente general de share.]
 - [ ] Detectar bundles activos de juegos en wishlist (mejorar integracion ITAD)
 - [ ] Mostrar recomendaciones sociales tipo "un amigo te recomendo esto" usando overlap, juegos compartidos y senales sociales simples
+- [ ] Al sugerir regalos para un amigo, priorizar opciones que no sean exactamente los mismos juegos ya mostrados en la sección de overlap/en común, o al menos mezclar ambos grupos de forma más útil para no sentirse redundante.
 
 ### Recomendaciones
 
 - [ ] Sugerir juegos similares segun los ultimos juegos jugados del usuario (por generos o por relaciones marcadas por el usuario: "me gusta" / "similar a")
 - [ ] Sugerir regalos para amigos de Steam segun sus juegos mas jugados, recientes y titulos similares
+- [ ] Recomendar mejores deals para ti segun tu actividad en Steam, considerando no solo lo jugado recientemente sino tambien lo mas jugado / los juegos con mas horas, usando una lógica parecida a la de recomendaciones para amigos pero aplicada a tu propio perfil.
 - [ ] Analisis de biblioteca: tiempo total (HLTB), distribucion por genero, precio promedio
 - [x] Explicar score y recomendacion de compra (por que esta arriba, comprar ahora vs esperar). [Top Picks y Budget Mode ya muestran recomendacion corta + razones visibles en HTML/Markdown; `README.md` actualizado con export JSON, endpoint local y ejemplos mini de automatizacion.]
 - [ ] Explicar recomendaciones sociales/regalos con contexto breve ("juega mucho X", "jugo Y recientemente", "se parece a Z")

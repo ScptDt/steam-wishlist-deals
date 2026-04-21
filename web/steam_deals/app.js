@@ -335,6 +335,20 @@ function applyDefaultTransientFilters() {
   if (pd2NoCacheEl) pd2NoCacheEl.checked = false;
 }
 
+function enforceTransientFilterDefaults() {
+  applyDefaultTransientFilters();
+  const noCacheEl = $('no_cache');
+  if (noCacheEl) {
+    noCacheEl.defaultChecked = false;
+    noCacheEl.removeAttribute('checked');
+  }
+  const pd2NoCacheEl = $('pd2_no_cache');
+  if (pd2NoCacheEl) {
+    pd2NoCacheEl.defaultChecked = false;
+    pd2NoCacheEl.removeAttribute('checked');
+  }
+}
+
 const genresInput = $('genres');
 const genresSuggestions = $('genres-suggestions');
 let genresActiveIndex = -1;
@@ -505,7 +519,7 @@ Promise.all([
   fetch('/api/ui-state').then(r => r.json()),
 ]).then(([cfg, state]) => {
   fillForm(cfg);
-  applyDefaultTransientFilters();
+  enforceTransientFilterDefaults();
   prefillWizard(cfg, false);
   if (state) {
     setModeBanner(!!state.has_cache, !!state.has_config);
@@ -520,7 +534,7 @@ Promise.all([
 }).catch(() => {
   fetch('/api/config').then(r => r.json()).then(cfg => {
     fillForm(cfg);
-    applyDefaultTransientFilters();
+    enforceTransientFilterDefaults();
     prefillWizard(cfg, false);
     setModeBanner(false, !!(cfg && cfg.vanity));
     announceDesktopFallback();
@@ -528,6 +542,10 @@ Promise.all([
     if (cfg && cfg.vanity) closeWizard();
     else openWizard();
   }).catch(() => {});
+});
+
+window.addEventListener('pageshow', () => {
+  enforceTransientFilterDefaults();
 });
 
 const btnRun = $('btn-run');
