@@ -74,7 +74,7 @@ _refresh_lock = threading.Lock()
 def load_from_cache():
     """Load whatever data we have from disk cache for instant display."""
     cfg = pd2.load_user_config()
-    vanity = cfg.get("vanity", "BG00G")
+    vanity = cfg.get("vanity", "gaben")
     key = cfg.get("key")
     itad_key = cfg.get("itad_key")
 

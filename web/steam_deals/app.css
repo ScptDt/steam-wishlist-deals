@@ -1309,11 +1309,5 @@ details .details-body .field:last-child {
 .share-btn-copy-steam { background: var(--bg2); color: var(--text); border: 1px solid var(--card-border); }
 .share-btn-copy-steam:hover { border-color: var(--accent); }
 .share-btn-open { background: var(--bg); color: var(--text2); border: 1px solid var(--card-border); }
-.share-close { margin-top: 0.8rem; text-align: center; color: var(--text2); font-size: 0.85rem; cursor: pointer; }
-.share-close:hover { color: var(--text); }
-.share-close {
-  display: block;
-  width: 100%;
-  background: transparent;
-  border: 0;
-}
+.share-btn-close { background: var(--bg2); color: var(--text); border: 1px solid var(--card-border); margin-top: 0.1rem; }
+.share-btn-close:hover { border-color: var(--accent); }

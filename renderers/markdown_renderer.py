@@ -476,7 +476,7 @@ def generate_md(
             "",
         ]
         if genre_deals:
-            lines += ["| % | Precio | Era | Juego |", "|---|--------|-----|-------|"]
+            lines += ["| % | Precio | Precio original | Juego |", "|---|--------|----------------|-------|"]
             for d in genre_deals:
                 lines.append(
                     f"| -{d['discount']}% | {d['price_final']} | {d['price_original']} | {_link(d['name'], d['appid'])} |"
@@ -741,7 +741,7 @@ def generate_md(
         if metric_notes:
             lines += [f"> {' · '.join(metric_notes)}", ""]
 
-        header = "| | % | Precio | Era | Año | Reviews | MC | Deck/Linux | Modo"
+        header = "| | % | Precio | Precio original | Año | Reviews | MC | Deck/Linux | Modo"
         sep = "|-|---|--------|-----|-----|---------|----|-----------|----|"
         if has_ach:
             header += " | Logros"

@@ -37,6 +37,7 @@ No se mantienen documentos paralelos de planificacion; este archivo es la unica 
 - [ ] Corregir share (compartir deals): reportado primero en Top Picks y luego como falla general en todo el share.
 - [ ] Modo Presupuesto (dinamica "Battle Royale" interna, no genero): permitir reemplazar sugerencias tanto de lista completa ("probar otra lista") como de juego individual ("cambiar este juego"), manteniendo presupuesto y priorizando valor/score.
 - [ ] Modo Presupuesto: ofrecer 3 variantes de seleccion para el mismo presupuesto (lista chica = pocos juegos/ticket alto, lista media = balanceada, lista grande = mas juegos/ticket bajo).
+- [ ] Modo Presupuesto: mejorar la diversidad real del reroll/reemplazos cuando varias opciones terminan sintiéndose demasiado parecidas o repiten casi los mismos juegos.
 - [ ] Agregar acceso rapido (boton tipo flecha) a grafica/historico de precios junto al minimo historico; evaluar mostrar minimo global y minimo en ventana de tiempo.
 - [ ] Revisar/replantear bloque de tendencia (trend): actualmente no se entiende y no aporta valor claro.
 - [ ] Renombrar/ajustar trend para lenguaje mas claro al usuario final (ej. "Tendencia de precios") y simplificar su interpretacion.
@@ -334,6 +335,8 @@ Notas:
 
 ## Bitacora
 
+- 2026-04-20: Se cierra el pendiente de la etiqueta `Era`: HTML/Markdown/reportes relevantes ahora usan `Precio original`, alineado con el resto de la UX para evitar lenguaje ambiguo.
+- 2026-04-20: Quick win de UX en `Tu Presupuesto Ideal` dentro del HTML interactivo: las variantes ahora se presentan como botones de `Rerrollear todos` debajo de la barra del presupuesto, cada juego puede mostrar `Reroll` junto al número y el modal de share usa un botón `Cerrar` consistente con el resto. Sigue pendiente revisar la diversidad real de reemplazos cuando varias opciones se sienten demasiado parecidas.
 - 2026-04-20: Quick win de UX en `Tu Presupuesto Ideal`: el campo de presupuesto en Filtros avanzados ahora explica mejor que genera una lista balanceada y que el reporte puede mostrar variantes chica/media/grande y cambios de juego dentro del tope.
 - 2026-04-20: Avance en share/compartir deals: se corrige el contrato del payload entre Web UI y desktop (`price_original` vs `original_price`) y el parser de `steam_tools_desktop.py` ahora tolera payload base64 URL-encoded y alias legacy; falta validación manual E2E del flujo completo para cerrar el pendiente general de share.
 - 2026-04-20: El dashboard historico suma `title` explicativos en `Comparar últimos 2 runs`, `Comparar runs`, `Recargar runs` y `Restablecer filtros`, reforzando la ayuda visible ya añadida en la sección.

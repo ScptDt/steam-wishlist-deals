@@ -3,8 +3,8 @@
 PAYDAY 2 DLC Tracker — Precios y ofertas de DLCs en tiempo real.
 
 Uso:
-    python3 payday2_dlc_tracker.py --vanity BG00G
-    python3 payday2_dlc_tracker.py --key TU_KEY --vanity BG00G
+    python3 payday2_dlc_tracker.py --vanity gaben
+    python3 payday2_dlc_tracker.py --key TU_KEY --vanity gaben
     python3 payday2_dlc_tracker.py --itad-key TU_KEY --budget 500
     python3 payday2_dlc_tracker.py --mark-owned 12345
     python3 payday2_dlc_tracker.py --min-deal 50
@@ -140,7 +140,7 @@ def get_config():
 
     cfg = load_user_config()
     key = args.key or cfg.get("key")
-    vanity = args.vanity or cfg.get("vanity") or "BG00G"
+    vanity = args.vanity or cfg.get("vanity") or "gaben"
     itad_key = args.itad_key or cfg.get("itad_key")
     output_dir = (
         Path(args.output).expanduser()

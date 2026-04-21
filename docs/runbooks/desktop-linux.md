@@ -76,12 +76,15 @@ Esperado:
 
 ```bash
 source .venv/bin/activate
-STEAM_DEALS_CACHE_DIR="$HOME/.cache/steam_deals" python steam_deals_generator.py --vanity TU_VANITY_URL --warm-cache
+STEAM_DEALS_CACHE_DIR="$HOME/.cache/steam_deals" python3 steam_deals_generator.py --vanity gaben --warm-cache
 ```
+
+> `gaben` es solo un ejemplo público. Reemplázalo por tu vanity real, la URL completa de tu perfil o tu Steam ID de 17 dígitos. No copies placeholders literales como `TU_VANITY_URL`.
 
 Esperado:
 - se actualiza `prices_cache.json` sin abrir la UI
-- se crea un log legible en `~/.cache/steam_deals/logs/` (o `./logs/` si corres desde source sin override)
+- se crea un log legible en `<cache>/logs/` (por ejemplo `~/.cache/steam_deals/logs/` cuando usas `STEAM_DEALS_CACHE_DIR`)
+- sale sin generar `.md`, `.html`, `.json` ni `.csv`
 - el siguiente run desktop reutiliza el cache persistente y no depende de rutas temporales `_MEI`
 
 Dentro de la UI desktop:
@@ -160,11 +163,11 @@ El desktop actualizado ya no debe guardar cache dentro de `_MEI`. Si quieres cal
 
 ```bash
 source .venv/bin/activate
-STEAM_DEALS_CACHE_DIR="$HOME/.cache/steam_deals" python steam_deals_generator.py --vanity TU_VANITY_URL --warm-cache
+STEAM_DEALS_CACHE_DIR="$HOME/.cache/steam_deals" python3 steam_deals_generator.py --vanity gaben --warm-cache
 ```
 
 Opcionalmente puedes separar logs con:
 
 ```bash
-STEAM_DEALS_LOG_DIR="$HOME/logs/steam-deals" python steam_deals_generator.py --vanity TU_VANITY_URL --warm-cache
+STEAM_DEALS_LOG_DIR="$HOME/logs/steam-deals" python3 steam_deals_generator.py --vanity gaben --warm-cache
 ```

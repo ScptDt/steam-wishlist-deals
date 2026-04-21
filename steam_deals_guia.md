@@ -23,7 +23,7 @@ Base URL: `https://api.steampowered.com/`
 
 Necesitas:
 - **API Key**: de https://steamcommunity.com/dev/apikey
-- **Steam ID** (64-bit numérico): si tienes vanity URL (ej. `BG00G`), primero lo resuelves
+- **Steam ID** (64-bit numérico): si tienes vanity URL (ej. `gaben`), primero lo resuelves
 
 **Endpoints usados:**
 
@@ -36,7 +36,7 @@ Necesitas:
 
 ### Vanity URL vs API Key
 
-- **Vanity URL** (`BG00G`): Es pública, solo identifica tu perfil. Con ella se resuelve tu Steam ID numérico.
+- **Vanity URL** (`gaben`): Es pública, solo identifica tu perfil. Con ella se resuelve tu Steam ID numérico.
 - **API Key**: Da acceso a datos privados (wishlist, biblioteca, juegos jugados). Sin ella no funciona el script.
 
 ### Steam Store API (precios, en batches)
@@ -199,7 +199,7 @@ La sección "Quitar de la Wishlist" agrupa todo lo que deberías remover:
 ```json
 {
   "key": "TU_API_KEY",
-  "vanity": "BG00G",
+  "vanity": "gaben",
   "hltb": null,
   "output_dir": "/home/usuario/Documents/Deals",
   "discount": 50,

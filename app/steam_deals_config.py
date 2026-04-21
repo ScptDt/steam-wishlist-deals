@@ -363,12 +363,12 @@ def get_config(
             cfg,
             "vanity",
             "Vanity URL, Steam ID, o link de perfil",
-            "BG00G",
+            "gaben",
             can_prompt=can_prompt,
             interactive_keys=interactive_keys,
             input_fn=input_fn,
         )
-        or "BG00G"
+        or "gaben"
     )
     hltb = _resolve_hltb(
         args,

@@ -124,8 +124,8 @@ tr:hover { background: #1a3a5c; }
 .share-btn-copy-steam { background: #2a475e; color: #c7d5e0; border: 1px solid #2a475e; }
 .share-btn-copy-steam:hover { border-color: #66c0f4; }
 .share-btn-open { background: #1b2838; color: #8f98a0; border: 1px solid #2a475e; }
-.share-close { margin-top: .8rem; text-align: center; color: #8f98a0; font-size: .85rem; cursor: pointer; }
-.share-close:hover { color: #c7d5e0; }
+.share-btn-close { background: #2a475e; color: #c7d5e0; border: 1px solid #2a475e; margin-top: .1rem; }
+.share-btn-close:hover { border-color: #66c0f4; }
 """
 
 _SCRIPT = """
@@ -449,7 +449,7 @@ def generate_share_html(
       <button class="share-btn share-btn-copy-steam" onclick="copySteamLink()">Copiar link de Steam</button>
       <button class="share-btn share-btn-open" onclick="openInSteam()">Abrir en Steam</button>
     </div>
-    <div class="share-close" onclick="closeShareModal()">Cerrar</div>
+    <button type="button" class="share-btn share-btn-close" onclick="closeShareModal()">Cerrar</button>
   </div>
 </div>
 <script>{_SCRIPT}</script>

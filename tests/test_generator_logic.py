@@ -130,6 +130,10 @@ from steam_deals_watchlist import (
     save_watchlist as module_save_watchlist,
 )
 from steam_deals_generator import (
+    _format_cli_user_error,
+    _handle_cli_value_error,
+    _looks_like_placeholder_vanity,
+    _run_entrypoint,
     apply_filters,
     analyze_trends,
     build_warm_cache_emit,
@@ -184,7 +188,7 @@ class ComputeValueScoreTests(unittest.TestCase):
 
 class ConfigTests(unittest.TestCase):
     def test_load_and_save_user_config_roundtrip(self) -> None:
-        config = {"vanity": "BG00G", "discount": 50}
+        config = {"vanity": "gaben", "discount": 50}
 
         with TemporaryDirectory() as temp_dir:
             config_path = Path(temp_dir) / "steam_deals.json"
@@ -208,7 +212,7 @@ class ConfigTests(unittest.TestCase):
             exit_fn=lambda _code: None,
             argv=[
                 "--vanity",
-                "BG00G",
+                "gaben",
                 "--output",
                 "/tmp/out",
                 "--discount",
@@ -233,7 +237,7 @@ class ConfigTests(unittest.TestCase):
             ],
         )
 
-        self.assertEqual(result[3], "BG00G")
+        self.assertEqual(result[3], "gaben")
         self.assertEqual(result[5], Path("/tmp/out"))
         self.assertEqual(result[6], 30)
         self.assertEqual(result[7], ["indie", "roguelike"])
@@ -265,6 +269,83 @@ class ConfigTests(unittest.TestCase):
             )
 
         self.assertEqual(calls, [["list"]])
+
+
+class CliErrorHandlingTests(unittest.TestCase):
+    def test_detects_placeholder_vanity_from_raw_or_url(self) -> None:
+        self.assertEqual(_looks_like_placeholder_vanity("TU_VANITY_URL"), True)
+        self.assertEqual(
+            _looks_like_placeholder_vanity(
+                "https://steamcommunity.com/id/TU_VANITY_URL/"
+            ),
+            True,
+        )
+        self.assertEqual(_looks_like_placeholder_vanity("gaben"), False)
+
+    def test_format_cli_user_error_for_placeholder_vanity_is_actionable(self) -> None:
+        message = _format_cli_user_error(
+            ValueError("No se pudo resolver el perfil: TU_VANITY_URL"),
+            "TU_VANITY_URL",
+        )
+
+        self.assertIn("placeholder `TU_VANITY_URL`", message)
+        self.assertIn("Steam ID de 17 dígitos", message)
+
+    def test_handle_cli_value_error_emits_warm_cache_follow_up(self) -> None:
+        emitted = []
+
+        result = _handle_cli_value_error(
+            ValueError("No se pudo acceder a la wishlist (HTTP 403). ¿Es privada?"),
+            "gaben",
+            warm_cache=True,
+            emit=emitted.append,
+            err_fn=lambda text: f"ERR:{text}",
+            dim_fn=lambda text: f"DIM:{text}",
+        )
+
+        self.assertEqual(result, 1)
+        self.assertEqual(emitted[0], "")
+        self.assertIn("ERR:No se pudo acceder a la wishlist", emitted[1])
+        self.assertIn("wishlist sea pública", emitted[1])
+        self.assertIn("Warm-cache cancelado", emitted[2])
+
+    def test_run_entrypoint_returns_main_status_without_schedule(self) -> None:
+        scheduled = []
+
+        result = _run_entrypoint(
+            ["prog"],
+            main_fn=lambda: 1,
+            run_scheduled_fn=lambda: scheduled.append("scheduled"),
+        )
+
+        self.assertEqual(result, 1)
+        self.assertEqual(scheduled, [])
+
+    def test_run_entrypoint_delegates_to_scheduler_when_schedule_flag_present(
+        self,
+    ) -> None:
+        scheduled = []
+
+        result = _run_entrypoint(
+            ["prog", "--schedule", "1"],
+            main_fn=lambda: 1,
+            run_scheduled_fn=lambda: scheduled.append("scheduled"),
+        )
+
+        self.assertEqual(result, 0)
+        self.assertEqual(scheduled, ["scheduled"])
+
+    def test_run_entrypoint_ignores_invalid_schedule_value(self) -> None:
+        scheduled = []
+
+        result = _run_entrypoint(
+            ["prog", "--schedule", "oops"],
+            main_fn=lambda: 1,
+            run_scheduled_fn=lambda: scheduled.append("scheduled"),
+        )
+
+        self.assertEqual(result, 1)
+        self.assertEqual(scheduled, [])
 
 
 class WarmCacheTests(unittest.TestCase):
@@ -1210,7 +1291,7 @@ class RunOutputTests(unittest.TestCase):
             ],
             backlog_on_sale=[],
             have_on_sale=[],
-            vanity="BG00G",
+            vanity="gaben",
             owned={"20": "Half-Life"},
             wishlist_appids=["10", "20"],
             min_discount=50,
@@ -1219,12 +1300,12 @@ class RunOutputTests(unittest.TestCase):
             previous_appids={"20"},
             top_picks=[{"appid": "10", "name": "Portal 2", "score": 95.4}],
             comparison={"new_deals": {"10"}, "disappeared": [{"appid": "20"}]},
-            profile_display_name="BG00G Display",
+            profile_display_name="gaben Display",
         )
 
         data = json.loads(payload)
 
-        self.assertEqual(data["meta"]["profile"], "BG00G Display")
+        self.assertEqual(data["meta"]["profile"], "gaben Display")
         self.assertEqual(data["summary"]["deals_count"], 1)
         self.assertEqual(data["summary"]["new_deals_count"], 1)
         self.assertEqual(data["inputs"]["wishlist_count"], 2)
@@ -1253,7 +1334,7 @@ class RunOutputTests(unittest.TestCase):
             deals=[],
             backlog_on_sale=[],
             have_on_sale=[],
-            vanity="BG00G",
+            vanity="gaben",
             owned={},
             wishlist_appids=["a"],
             min_discount=50,
@@ -1914,7 +1995,7 @@ class SteamAdapterTests(unittest.TestCase):
     def test_resolve_steam_id_uses_public_xml_fallback_without_key(self) -> None:
         steam_id = module_resolve_steam_id(
             None,
-            "bg00g",
+            "gaben",
             get_json=lambda _url: {},
             fetch_public_profile_xml=lambda _vanity: (
                 "<steamID64>76561198000000000</steamID64>"
@@ -2020,24 +2101,24 @@ class SteamAdapterTests(unittest.TestCase):
             "76561198000000000",
             "https://steamcommunity.com/profiles/76561198000000000/",
             api_key="key",
-            get_json=lambda _url: {"response": {"players": [{"personaname": "BG00G"}]}},
+            get_json=lambda _url: {"response": {"players": [{"personaname": "gaben"}]}},
             fetch_public_profile_xml=lambda _v: "",
         )
 
-        self.assertEqual(display_name, "BG00G")
+        self.assertEqual(display_name, "gaben")
 
     def test_resolve_profile_display_name_falls_back_to_xml_when_no_key(self) -> None:
         display_name = module_resolve_profile_display_name(
             "76561198000000000",
-            "bg00g",
+            "gaben",
             api_key=None,
             get_json=lambda _url: {},
             fetch_public_profile_xml=lambda _v: (
-                "<steamID><![CDATA[BG00G Public]]></steamID>"
+                "<steamID><![CDATA[gaben Public]]></steamID>"
             ),
         )
 
-        self.assertEqual(display_name, "BG00G Public")
+        self.assertEqual(display_name, "gaben Public")
 
 
 class NotificationsTests(unittest.TestCase):
@@ -2473,7 +2554,7 @@ class RankTopPicksTests(unittest.TestCase):
             deals=[],
             backlog_on_sale=[],
             have_on_sale=[],
-            vanity="BG00G",
+            vanity="gaben",
             owned={},
             wishlist_appids=["a"],
             min_discount=50,
@@ -2511,7 +2592,7 @@ class RankTopPicksTests(unittest.TestCase):
             deals=[],
             backlog_on_sale=[],
             have_on_sale=[],
-            vanity="BG00G",
+            vanity="gaben",
             owned={},
             wishlist_appids=["a", "b"],
             min_discount=50,
@@ -2537,19 +2618,19 @@ class RankTopPicksTests(unittest.TestCase):
         )
 
         self.assertTrue(md.startswith("---\n"))
-        self.assertIn('title: "Steam Wishlist Deals — BG00G"', md)
-        self.assertIn('profile: "BG00G"', md)
+        self.assertIn('title: "Steam Wishlist Deals — gaben"', md)
+        self.assertIn('profile: "gaben"', md)
         self.assertIn('sale_name: "Steam Sale"', md)
         self.assertIn("wishlist_count: 2", md)
         self.assertIn("top_picks_count: 1", md)
-        self.assertIn("# Steam Wishlist Deals — BG00G", md)
+        self.assertIn("# Steam Wishlist Deals — gaben", md)
 
     def test_generate_html_includes_score_explanation_for_top_picks(self) -> None:
         html = generate_html(
             deals=[],
             backlog_on_sale=[],
             have_on_sale=[],
-            vanity="BG00G",
+            vanity="gaben",
             owned={},
             wishlist_appids=["a"],
             min_discount=50,
@@ -2587,7 +2668,7 @@ class RankTopPicksTests(unittest.TestCase):
     def test_generate_share_html_labels_top_pick_score_and_metacritic(self) -> None:
         html = generate_share_html(
             deals=[],
-            vanity="BG00G",
+            vanity="gaben",
             min_discount=50,
             top_picks=[
                 {
@@ -2622,7 +2703,7 @@ class RankTopPicksTests(unittest.TestCase):
             ],
             backlog_on_sale=[],
             have_on_sale=[],
-            vanity="BG00G",
+            vanity="gaben",
             owned={},
             wishlist_appids=["a"],
             min_discount=50,
@@ -2657,7 +2738,7 @@ class RankTopPicksTests(unittest.TestCase):
                     "price_original": "$20",
                 }
             ],
-            vanity="BG00G",
+            vanity="gaben",
             min_discount=50,
             top_picks=[
                 {
@@ -2693,7 +2774,7 @@ class RankTopPicksTests(unittest.TestCase):
             ],
             backlog_on_sale=[],
             have_on_sale=[],
-            vanity="BG00G",
+            vanity="gaben",
             owned={},
             wishlist_appids=["a"],
             min_discount=50,
@@ -2729,7 +2810,7 @@ class RankTopPicksTests(unittest.TestCase):
                     "price_original": "$20",
                 }
             ],
-            vanity="BG00G",
+            vanity="gaben",
             min_discount=50,
             top_picks=[
                 {
@@ -2755,7 +2836,7 @@ class RankTopPicksTests(unittest.TestCase):
             deals=[],
             backlog_on_sale=[],
             have_on_sale=[],
-            vanity="BG00G",
+            vanity="gaben",
             owned={},
             wishlist_appids=["a"],
             min_discount=50,
@@ -2792,7 +2873,7 @@ class RankTopPicksTests(unittest.TestCase):
             deals=[],
             backlog_on_sale=[],
             have_on_sale=[],
-            vanity="BG00G",
+            vanity="gaben",
             owned={},
             wishlist_appids=["a"],
             min_discount=50,
@@ -2845,7 +2926,7 @@ class RankTopPicksTests(unittest.TestCase):
             deals=[],
             backlog_on_sale=[],
             have_on_sale=[],
-            vanity="BG00G",
+            vanity="gaben",
             owned={},
             wishlist_appids=["a"],
             min_discount=50,
@@ -2882,7 +2963,7 @@ class RankTopPicksTests(unittest.TestCase):
             deals=[],
             backlog_on_sale=[],
             have_on_sale=[],
-            vanity="BG00G",
+            vanity="gaben",
             owned={},
             wishlist_appids=["a"],
             min_discount=50,
@@ -2890,13 +2971,14 @@ class RankTopPicksTests(unittest.TestCase):
             budget_result=budget_result,
         )
 
-        self.assertIn("Probar otra lista", html)
+        self.assertIn("Rerrollear todos", html)
         self.assertIn("Lista chica", html)
         self.assertIn("Lista media", html)
         self.assertIn("Lista grande", html)
-        self.assertIn("Cambiar este juego", html)
-        self.assertIn("Delta", html)
-        self.assertIn("Nuevo total: $14", html)
+        self.assertIn("cambiar este juego", html.lower())
+        self.assertIn("data-budget-variant-btn=", html)
+        self.assertIn("data-budget-options=", html)
+        self.assertIn("share-btn-close", html)
 
 
 if __name__ == "__main__":

@@ -112,26 +112,32 @@ Desktop agrega dependencias solo para la ventana nativa / empaquetado. El flujo 
 
 ```bash
 # Básico (wishlist debe ser pública)
-python3 steam_deals_generator.py --vanity TU_VANITY_URL
+python3 steam_deals_generator.py --vanity gaben
+
+# También acepta URL completa o Steam ID
+python3 steam_deals_generator.py --vanity "https://steamcommunity.com/id/gaben/"
+python3 steam_deals_generator.py --vanity 76561198012345678
 
 # Con API key (habilita juegos propios + más datos)
-python3 steam_deals_generator.py --vanity TU_VANITY_URL --key TU_STEAM_API_KEY
+python3 steam_deals_generator.py --vanity gaben --key TU_STEAM_API_KEY
 
 # Con ITAD (mínimo histórico + multi-tienda)
-python3 steam_deals_generator.py --vanity TU_VANITY_URL --itad-key TU_ITAD_KEY
+python3 steam_deals_generator.py --vanity gaben --itad-key TU_ITAD_KEY
 
 # Filtros
-python3 steam_deals_generator.py --vanity TU_VANITY_URL --discount 60 --max-price 300 --deck-only --sort score
+python3 steam_deals_generator.py --vanity gaben --discount 60 --max-price 300 --deck-only --sort score
 
 # Wishlist grande (ajuste conservador de paralelismo en enrichment)
-python3 steam_deals_generator.py --vanity TU_VANITY_URL --max-workers 16
+python3 steam_deals_generator.py --vanity gaben --max-workers 16
 
 # Precalentar caché de precios sin abrir Web/Desktop ni generar reportes
-python3 steam_deals_generator.py --vanity TU_VANITY_URL --warm-cache
+python3 steam_deals_generator.py --vanity gaben --warm-cache
 
 # Export Markdown con frontmatter YAML (Obsidian/Notion)
-python3 steam_deals_generator.py --vanity TU_VANITY_URL --md-frontmatter
+python3 steam_deals_generator.py --vanity gaben --md-frontmatter
 ```
+
+`gaben` es solo un ejemplo público. Reemplázalo por tu vanity real, la URL completa de tu perfil o tu Steam ID de 17 dígitos. No copies placeholders literales como `TU_VANITY_URL`.
 
 `--max-workers` controla el paralelismo de fetch en enrichment. Recomendación práctica: empezar en `12` (default), probar `16` si tu red/API responde bien y evitar valores muy altos para reducir riesgo de rate limit. Este ajuste ya está expuesto también en **Filtros avanzados** de la UI compartida (web + desktop), y los presets ahora sugieren valores rápidos (`rapido=12`, `completo=16`, `ahorro=8`).
 
@@ -140,8 +146,10 @@ python3 steam_deals_generator.py --vanity TU_VANITY_URL --md-frontmatter
 Si quieres dejar una corrida de preparación en segundo plano sin abrir la Web UI o Desktop, usa:
 
 ```bash
-python3 steam_deals_generator.py --vanity TU_VANITY_URL --warm-cache
+python3 steam_deals_generator.py --vanity gaben --warm-cache
 ```
+
+> Usa tu vanity real, la URL completa de tu perfil o tu Steam ID. Si copias el ejemplo, cambia `gaben` por tu dato real antes de ejecutar.
 
 Este modo:
 
@@ -163,13 +171,13 @@ Los logs de `--warm-cache` se guardan automáticamente en una carpeta `logs/`:
 Si quieres forzar una ruta específica para logs, puedes usar:
 
 ```bash
-STEAM_DEALS_LOG_DIR="$HOME/logs/steam-deals" python3 steam_deals_generator.py --vanity TU_VANITY_URL --warm-cache
+STEAM_DEALS_LOG_DIR="$HOME/logs/steam-deals" python3 steam_deals_generator.py --vanity gaben --warm-cache
 ```
 
 Si quieres forzar una ruta específica para compartir caché entre distintos modos, puedes usar:
 
 ```bash
-STEAM_DEALS_CACHE_DIR="$HOME/.cache/steam_deals" python3 steam_deals_generator.py --vanity TU_VANITY_URL --warm-cache
+STEAM_DEALS_CACHE_DIR="$HOME/.cache/steam_deals" python3 steam_deals_generator.py --vanity gaben --warm-cache
 ```
 
 ## Web UI
@@ -216,7 +224,7 @@ Si todavía no existe un reporte JSON, responde `404`.
 Si quieres importar tu reporte Markdown en herramientas como Obsidian/Notion con metadatos estructurados, usa:
 
 ```bash
-python3 steam_deals_generator.py --vanity TU_VANITY_URL --md-frontmatter
+python3 steam_deals_generator.py --vanity gaben --md-frontmatter
 ```
 
 Esto agrega un bloque YAML al inicio del `.md` con campos base como `title`, `profile`, `sale_name`, `generated_date`, `wishlist_count`, `deals_count` y `top_picks_count`.
@@ -245,7 +253,7 @@ Sugerencia práctica:
 1. Generar reporte con frontmatter:
 
 ```bash
-python3 steam_deals_generator.py --vanity TU_VANITY_URL --md-frontmatter
+python3 steam_deals_generator.py --vanity gaben --md-frontmatter
 ```
 
 2. Abrir el `.md` y confirmar que inicia con bloque YAML (`---` ... `---`).
@@ -443,7 +451,7 @@ Runbooks detallados por plataforma:
 6. Verificación funcional mínima:
     - Ejecutar preflight, correr run de prueba, generar MD/HTML/CSV y cerrar app.
     - Esperado: sin crash, outputs presentes, sin procesos colgados.
-    - Si la wishlist es muy grande, conviene primero precalentar cache con `STEAM_DEALS_CACHE_DIR="$HOME/.cache/steam_deals" python3 steam_deals_generator.py --vanity TU_VANITY_URL --warm-cache` y conservar el log generado en `<cache>/logs/`.
+    - Si la wishlist es muy grande, conviene primero precalentar cache con `STEAM_DEALS_CACHE_DIR="$HOME/.cache/steam_deals" python3 steam_deals_generator.py --vanity gaben --warm-cache` y conservar el log generado en `<cache>/logs/`.
     - Si aparece un error largo durante la corrida manual, usa los botones **Copiar log** / **Descargar log (.txt)** antes de cerrar la app.
 7. Fallback mitigación (si la ventana nativa no abre):
    - `python3 steam_deals_web.py --no-open --port 8080`
@@ -653,7 +661,7 @@ python3 steam_deals_generator.py --watchlist remove 730
 
 ```bash
 # ¿Qué compro con $500?
-python3 steam_deals_generator.py --vanity TU_VANITY_URL --budget 500
+python3 steam_deals_generator.py --vanity gaben --budget 500
 ```
 
 ### Validación UX/output del modo presupuesto
@@ -735,18 +743,18 @@ Checks mínimos para cerrar el flujo de compartir:
 
 ```bash
 # Ver overlap y gift ideas con un amigo
-python3 steam_deals_generator.py --vanity TU_VANITY_URL --compare VANITY_AMIGO
+python3 steam_deals_generator.py --vanity gaben --compare VANITY_AMIGO
 ```
 
 ## Notificaciones
 
 ```bash
 # Telegram
-python3 steam_deals_generator.py --vanity TU_VANITY_URL \
+python3 steam_deals_generator.py --vanity gaben \
   --telegram-token BOT_TOKEN --telegram-chat CHAT_ID
 
 # Discord
-python3 steam_deals_generator.py --vanity TU_VANITY_URL \
+python3 steam_deals_generator.py --vanity gaben \
   --discord-webhook WEBHOOK_URL
 ```
 
@@ -754,7 +762,7 @@ python3 steam_deals_generator.py --vanity TU_VANITY_URL \
 
 ```bash
 # Ejecutar cada 6 horas con notificaciones
-python3 steam_deals_generator.py --vanity TU_VANITY_URL \
+python3 steam_deals_generator.py --vanity gaben \
   --telegram-token BOT_TOKEN --telegram-chat CHAT_ID \
   --schedule 6
 ```
@@ -822,7 +830,7 @@ Dashboard interactivo con:
 ### CLI
 
 ```bash
-python3 payday2_dlc_tracker.py --vanity TU_VANITY_URL
+python3 payday2_dlc_tracker.py --vanity gaben
 python3 payday2_dlc_tracker.py --budget 500
 python3 payday2_dlc_tracker.py --min-deal 75          # umbral de descuento para recomendar
 python3 payday2_dlc_tracker.py --itad-key TU_KEY      # mínimos históricos

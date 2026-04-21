@@ -184,78 +184,140 @@ def _html_budget_pick_context(pick: dict) -> str:
     )
 
 
-def _html_budget_variant_cards(variants: list[dict], *, selected_variant: str | None) -> str:
+def _budget_option_payload(pick: dict, *, total_spent: float, remaining: float) -> dict:
+    return {
+        "appid": str(pick.get("appid", "")),
+        "name": str(pick.get("name", "")),
+        "price_final": str(pick.get("price_final", "—")),
+        "discount": int(pick.get("discount") or 0),
+        "score": pick.get("score", "—"),
+        "recommendation": str(pick.get("recommendation", "")),
+        "score_reasons": list(pick.get("score_reasons") or []),
+        "swap_total_spent": round(float(total_spent or 0), 2),
+        "swap_remaining": round(float(remaining or 0), 2),
+        "url": STORE_URL.format(appid=pick.get("appid", "")),
+        "is_original": True,
+    }
+
+
+def _budget_replacement_payload(replacement: dict) -> dict:
+    return {
+        "appid": str(replacement.get("appid", "")),
+        "name": str(replacement.get("name", "")),
+        "price_final": str(replacement.get("price_final", "—")),
+        "discount": int(replacement.get("discount") or 0),
+        "score": replacement.get("score", "—"),
+        "recommendation": str(replacement.get("recommendation", "")),
+        "score_reasons": list(replacement.get("score_reasons") or []),
+        "swap_total_spent": round(
+            float(replacement.get("swap_total_spent", 0) or 0), 2
+        ),
+        "swap_remaining": round(
+            float(replacement.get("swap_remaining", 0) or 0), 2
+        ),
+        "url": STORE_URL.format(appid=replacement.get("appid", "")),
+        "is_original": False,
+    }
+
+
+def _html_budget_reroll_button(pick: dict, *, variant: dict) -> str:
+    replacements = pick.get("replacement_candidates") or []
+    if not replacements:
+        return ""
+    options = [
+        _budget_option_payload(
+            pick,
+            total_spent=variant.get("total_spent", 0),
+            remaining=variant.get("remaining", 0),
+        )
+    ]
+    options.extend(_budget_replacement_payload(replacement) for replacement in replacements)
+    row_key = f'{variant.get("id", "variant")}::{pick.get("appid", "")}'
+    return (
+        f'<button type="button" class="btn-reset budget-reroll-inline" '
+        f'data-budget-row-key="{_html_esc(row_key)}" '
+        f'data-budget-options="{_share_payload_attr(options)}" '
+        f'title="Prueba otra opción para este lugar sin romper el presupuesto">Reroll</button>'
+    )
+
+
+def _html_budget_variant_controls(variants: list[dict], *, selected_variant: str | None) -> str:
     if not variants:
         return ""
-    cards = []
+    buttons = []
     for variant in variants:
         label = _html_esc(variant.get("label") or variant.get("id") or "Variante")
         description = _html_esc(variant.get("description", ""))
-        selected_names = [
-            _html_esc(item.get("name", ""))
-            for item in variant.get("selected", [])[:4]
-        ]
-        names_text = ", ".join(name for name in selected_names if name)
-        extra_count = max(0, len(variant.get("selected", [])) - len(selected_names))
-        if extra_count:
-            names_text += f" +{extra_count} más"
-        selected_badge = (
-            '<span style="font-size:.7rem;padding:.12rem .45rem;border-radius:999px;background:var(--accent-blue);color:#000;font-weight:700">Actual</span>'
+        button_class = (
+            "btn-reset budget-variant-btn is-active"
             if variant.get("id") == selected_variant
-            else ""
+            else "btn-reset budget-variant-btn"
         )
-        border_color = (
-            "var(--accent-blue)"
-            if variant.get("id") == selected_variant
-            else "var(--border)"
+        buttons.append(
+            f'''<button type="button" class="{button_class}"
+  data-budget-variant-btn="{_html_esc(str(variant.get("id") or ""))}"
+  data-budget-label="{label}"
+  data-budget-budget="{float(variant.get("budget", 0) or 0):.2f}"
+  data-budget-games="{int(variant.get("games_count", 0) or 0)}"
+  data-budget-total="{float(variant.get("total_spent", 0) or 0):.2f}"
+  data-budget-remaining="{float(variant.get("remaining", 0) or 0):.2f}"
+  data-budget-savings="{float(variant.get("total_savings", 0) or 0):.2f}"
+  title="Cambiar toda la lista manteniendo el mismo presupuesto">
+  <strong>{label}</strong>
+  <span>{description}</span>
+</button>'''
         )
-        cards.append(
-            f'''<div style="background:var(--bg-card);border:1px solid {border_color};border-radius:8px;padding:.75rem .85rem">
-  <div style="display:flex;justify-content:space-between;gap:.6rem;align-items:flex-start;margin-bottom:.35rem">
-    <strong style="color:var(--text-primary)">{label}</strong>
-    {selected_badge}
-  </div>
-  <div style="font-size:.76rem;color:var(--text-secondary);line-height:1.4;margin-bottom:.45rem">{description}</div>
-  <div style="font-size:.76rem;color:var(--text-primary)">{variant.get('games_count', 0)} juegos &middot; ${variant.get('total_spent', 0):.0f} gastados &middot; ${variant.get('remaining', 0):.0f} restante</div>
-  <div style="font-size:.74rem;color:var(--text-secondary);margin-top:.35rem">Incluye: {names_text or 'Sin selección disponible'}</div>
-</div>'''
-        )
-    return f'''<div style="margin-top:.95rem">
-  <h3 style="font-size:.95rem;margin:0 0 .35rem">&#128257; Probar otra lista</h3>
-  <p class="section-desc">El modo presupuesto ahora prepara tres variantes para el mismo tope: lista chica, media y grande.</p>
-  <div style="display:grid;grid-template-columns:repeat(auto-fit,minmax(210px,1fr));gap:.65rem">{"".join(cards)}</div>
+    return f'''<div class="budget-reroll-all">
+  <h3 style="font-size:.95rem;margin:0 0 .35rem">&#128257; Rerrollear todos</h3>
+  <p class="section-desc">Prueba otra lista con variantes chica, media y grande. Todas respetan el mismo presupuesto.</p>
+  <div class="budget-variant-switcher">{"".join(buttons)}</div>
 </div>'''
 
 
-def _html_budget_replacements(selected: list[dict]) -> str:
-    replacement_groups = []
-    for pick in selected:
-        replacements = pick.get("replacement_candidates") or []
-        if not replacements:
-            continue
-        options = []
-        for replacement in replacements:
-            options.append(
-                f'<li style="margin:.2rem 0"><strong>{_html_link(replacement["name"], replacement["appid"])}</strong> '
-                f'&middot; {_html_esc(replacement.get("price_final", "—"))} '
-                f'&middot; Score {_html_esc(str(replacement.get("score", "—")))} '
-                f'&middot; Nuevo total: ${replacement.get("swap_total_spent", 0):.0f} '
-                f'&middot; Restante: ${replacement.get("swap_remaining", 0):.0f}</li>'
-            )
-        replacement_groups.append(
-            f'''<div style="background:var(--bg-card);border:1px solid var(--border);border-radius:8px;padding:.7rem .8rem">
-  <div style="font-size:.82rem;color:var(--text-primary);margin-bottom:.35rem"><strong>{_html_esc(pick.get("name", ""))}</strong></div>
-  <div style="font-size:.75rem;color:var(--text-secondary);margin-bottom:.3rem">Opciones para cambiar este juego sin romper el presupuesto:</div>
-  <ul style="margin:0;padding-left:1.1rem;font-size:.75rem;color:var(--text-secondary)">{"".join(options)}</ul>
+def _html_budget_variant_panel(variant: dict, *, is_selected: bool) -> str:
+    budget_rows = ""
+    for idx, pick in enumerate(variant.get("selected", []), 1):
+        capsule = CAPSULE_URL.format(appid=pick["appid"])
+        pick_context = _html_budget_pick_context(pick)
+        reroll_button = _html_budget_reroll_button(pick, variant=variant)
+        row_key = f'{variant.get("id", "variant")}::{pick.get("appid", "")}'
+        budget_rows += f'''<tr data-budget-row="{_html_esc(row_key)}">
+  <td><div class="budget-row-index"><span>{idx}</span>{reroll_button}</div></td>
+  <td class="budget-value-score">{_html_esc(str(pick.get("score", "—")))}</td>
+  <td class="budget-value-discount">-{pick["discount"]}%</td>
+  <td class="budget-value-price">{_html_esc(pick["price_final"])}</td>
+  <td>
+    <div class="game-cell">
+      <img class="game-thumb" src="{capsule}" alt="" loading="lazy" onerror="this.style.display='none'">
+      <span>
+        <a class="budget-value-link" href="{STORE_URL.format(appid=pick['appid'])}" target="_blank">{_html_esc(pick['name'])}</a>
+        <span class="budget-value-context">{pick_context}</span>
+        <div class="budget-reroll-preview hidden"></div>
+      </span>
+    </div>
+  </td>
+</tr>'''
+    panel_class = "budget-variant-panel" if is_selected else "budget-variant-panel hidden"
+    summary = (
+        f'{variant.get("games_count", 0)} juegos &middot; ${variant.get("total_spent", 0):.0f} gastados '
+        f'&middot; ${variant.get("remaining", 0):.0f} restante'
+    )
+    return f'''<div class="{panel_class}" data-budget-panel="{_html_esc(str(variant.get("id") or ""))}">
+  <p class="section-desc budget-panel-desc">{summary}</p>
+  <div class="budget-reroll-help">Usa <strong>Reroll</strong> junto al número para cambiar este juego sin romper el presupuesto.</div>
+  <div class="table-wrap"><table class="deals-table"><thead><tr><th>#</th><th>Score</th><th>%</th><th>Precio</th><th>Juego</th></tr></thead><tbody>{budget_rows}</tbody></table></div>
 </div>'''
-        )
-    if not replacement_groups:
+
+
+def _html_budget_variant_panels(variants: list[dict], *, selected_variant: str | None) -> str:
+    if not variants:
         return ""
-    return f'''<div style="margin-top:.95rem">
-  <h3 style="font-size:.95rem;margin:0 0 .35rem">&#128260; Cambiar este juego</h3>
-  <p class="section-desc">Cada bloque propone reemplazos que siguen respetando el mismo presupuesto total.</p>
-  <div style="display:grid;gap:.6rem">{"".join(replacement_groups)}</div>
-</div>'''
+    return "".join(
+        _html_budget_variant_panel(
+            variant, is_selected=variant.get("id") == selected_variant
+        )
+        for variant in variants
+    )
 
 
 _HTML_CSS = """
@@ -387,8 +449,22 @@ a.pick-card:hover { border-color: var(--accent-blue); transform: translateY(-2px
 .share-btn-copy-steam { background: var(--bg-secondary); color: var(--text-primary); border: 1px solid var(--border); }
 .share-btn-copy-steam:hover { border-color: var(--accent-blue); }
 .share-btn-open { background: var(--bg-primary); color: var(--text-secondary); border: 1px solid var(--border); }
-.share-close { margin-top: 0.8rem; text-align: center; color: var(--text-secondary); font-size: 0.85rem; cursor: pointer; }
-.share-close:hover { color: var(--text-primary); }
+.share-btn-close { background: var(--bg-secondary); color: var(--text-primary); border: 1px solid var(--border); margin-top: 0.1rem; }
+.share-btn-close:hover { border-color: var(--accent-blue); }
+.budget-reroll-all { margin: .9rem 0 .85rem; }
+.budget-variant-switcher { display: grid; grid-template-columns: repeat(auto-fit, minmax(190px, 1fr)); gap: .6rem; }
+.budget-variant-btn { text-align: left; min-height: 96px; }
+.budget-variant-btn.is-active { border-color: var(--accent-blue); box-shadow: 0 0 0 1px rgba(102,192,244,.18) inset; }
+.budget-variant-btn strong, .budget-variant-btn span { display: block; }
+.budget-variant-btn strong { margin-bottom: .22rem; color: var(--text-primary); font-size: .82rem; }
+.budget-variant-btn span { color: var(--text-secondary); font-size: .75rem; line-height: 1.4; }
+.budget-variant-panel { margin-top: .8rem; }
+.budget-panel-desc { margin-bottom: .45rem; }
+.budget-reroll-help { margin-bottom: .7rem; color: var(--text-secondary); font-size: .78rem; line-height: 1.45; }
+.budget-row-index { display: flex; align-items: center; gap: .4rem; }
+.budget-reroll-inline { padding: .2rem .55rem; font-size: .72rem; }
+.budget-value-context { display: block; }
+.budget-reroll-preview { margin-top: .28rem; color: var(--accent-yellow); font-size: .73rem; line-height: 1.4; }
 """
 
 _HTML_JS = """
@@ -455,6 +531,7 @@ function resetFilters() {
 document.addEventListener('DOMContentLoaded', () => {
   applyFilters();
   bindShareModalInteractions();
+  bindBudgetHtmlInteractions();
 });
 function copyForSheets() {
   const rows = [];
@@ -628,6 +705,101 @@ function bindShareModalInteractions() {
       closeShareModal();
     }
   });
+}
+function formatBudgetCurrency(value) {
+  const amount = Number(value) || 0;
+  return '$' + amount.toFixed(0);
+}
+function escapeBudgetHtml(value) {
+  return String(value ?? '')
+    .replace(/&/g, '&amp;')
+    .replace(/</g, '&lt;')
+    .replace(/>/g, '&gt;')
+    .replace(/"/g, '&quot;')
+    .replace(/'/g, '&#39;');
+}
+function renderBudgetContext(option) {
+  const recommendation = option && option.recommendation ? `<div class="pick-recommendation" style="margin-top:.25rem">${escapeBudgetHtml(option.recommendation)}</div>` : '';
+  const reasons = option && Array.isArray(option.score_reasons) && option.score_reasons.length
+    ? `<div class="pick-why">${escapeBudgetHtml(option.score_reasons.join(' · '))}</div>`
+    : '';
+  return recommendation + reasons;
+}
+function renderBudgetPreview(option) {
+  if (!option || option.is_original) return '';
+  return `Preview · Nuevo total: ${escapeBudgetHtml(formatBudgetCurrency(option.swap_total_spent))} · Restante: ${escapeBudgetHtml(formatBudgetCurrency(option.swap_remaining))}`;
+}
+function applyBudgetOption(row, option) {
+  if (!row || !option) return;
+  const scoreEl = row.querySelector('.budget-value-score');
+  const discountEl = row.querySelector('.budget-value-discount');
+  const priceEl = row.querySelector('.budget-value-price');
+  const linkEl = row.querySelector('.budget-value-link');
+  const contextEl = row.querySelector('.budget-value-context');
+  const previewEl = row.querySelector('.budget-reroll-preview');
+  if (scoreEl) scoreEl.textContent = String(option.score ?? '—');
+  if (discountEl) discountEl.textContent = `-${Number(option.discount || 0)}%`;
+  if (priceEl) priceEl.textContent = option.price_final || '—';
+  if (linkEl) {
+    linkEl.textContent = option.name || 'Juego';
+    linkEl.href = option.url || '#';
+  }
+  if (contextEl) contextEl.innerHTML = renderBudgetContext(option);
+  if (previewEl) {
+    const previewText = renderBudgetPreview(option);
+    previewEl.innerHTML = previewText;
+    previewEl.classList.toggle('hidden', !previewText);
+  }
+}
+function activateBudgetVariant(variantId) {
+  const buttons = Array.from(document.querySelectorAll('[data-budget-variant-btn]'));
+  const panels = Array.from(document.querySelectorAll('[data-budget-panel]'));
+  const activeButton = buttons.find(btn => btn.dataset.budgetVariantBtn === variantId) || buttons[0];
+  if (!activeButton) return;
+  buttons.forEach((btn) => btn.classList.toggle('is-active', btn === activeButton));
+  panels.forEach((panel) => panel.classList.toggle('hidden', panel.dataset.budgetPanel !== activeButton.dataset.budgetVariantBtn));
+  const summaryCopy = document.getElementById('budget-summary-copy');
+  const progressFill = document.getElementById('budget-progress-fill');
+  const progressText = document.getElementById('budget-progress-text');
+  const badge = document.getElementById('budget-current-variant');
+  const budget = Number(activeButton.dataset.budgetBudget || 0);
+  const total = Number(activeButton.dataset.budgetTotal || 0);
+  const remaining = Number(activeButton.dataset.budgetRemaining || 0);
+  const savings = Number(activeButton.dataset.budgetSavings || 0);
+  const games = Number(activeButton.dataset.budgetGames || 0);
+  const pct = budget > 0 ? Math.round((total / budget) * 100) : 0;
+  if (summaryCopy) summaryCopy.innerHTML = `Con ${escapeBudgetHtml(formatBudgetCurrency(budget))} MXN puedes comprar ${escapeBudgetHtml(games)} juegos &middot; Ahorro: ${escapeBudgetHtml(formatBudgetCurrency(savings))} &middot; Restante: ${escapeBudgetHtml(formatBudgetCurrency(remaining))}`;
+  if (progressFill) progressFill.style.width = pct + '%';
+  if (progressText) progressText.textContent = `${formatBudgetCurrency(total)} / ${formatBudgetCurrency(budget)} (${pct}%)`;
+  if (badge) badge.textContent = activeButton.dataset.budgetLabel || 'Lista actual';
+}
+function bindBudgetRowRerolls() {
+  document.querySelectorAll('[data-budget-options]').forEach((btn) => {
+    if (btn.dataset.bound === '1') return;
+    btn.dataset.bound = '1';
+    btn.dataset.currentIndex = '0';
+    btn.addEventListener('click', () => {
+      const options = JSON.parse(btn.dataset.budgetOptions || '[]');
+      if (!options.length) return;
+      const nextIndex = (Number(btn.dataset.currentIndex || '0') + 1) % options.length;
+      btn.dataset.currentIndex = String(nextIndex);
+      const row = document.querySelector(`[data-budget-row="${btn.dataset.budgetRowKey}"]`);
+      applyBudgetOption(row, options[nextIndex]);
+      btn.textContent = nextIndex === 0 ? 'Reroll' : `Reroll ${nextIndex}/${options.length - 1}`;
+    });
+  });
+}
+function bindBudgetHtmlInteractions() {
+  const buttons = Array.from(document.querySelectorAll('[data-budget-variant-btn]'));
+  if (!buttons.length) return;
+  buttons.forEach((btn) => {
+    if (btn.dataset.bound === '1') return;
+    btn.dataset.bound = '1';
+    btn.addEventListener('click', () => activateBudgetVariant(btn.dataset.budgetVariantBtn));
+  });
+  bindBudgetRowRerolls();
+  const activeButton = buttons.find((btn) => btn.classList.contains('is-active')) || buttons[0];
+  activateBudgetVariant(activeButton.dataset.budgetVariantBtn);
 }
 """
 
@@ -951,29 +1123,33 @@ def generate_html(
             if budget_data["budget"] > 0
             else 0
         )
-        budget_rows = ""
-        for idx, pick in enumerate(budget_data["selected"], 1):
-            capsule = CAPSULE_URL.format(appid=pick["appid"])
-            pick_context = _html_budget_pick_context(pick)
-            budget_rows += f'''<tr>
-  <td>{idx}</td><td>{pick.get("score", "—")}</td><td>-{pick["discount"]}%</td>
-  <td>{_html_esc(pick["price_final"])}</td>
-  <td><div class="game-cell"><img class="game-thumb" src="{capsule}" alt="" loading="lazy" onerror="this.style.display='none'"><span>{_html_link(pick["name"], pick["appid"])}{pick_context}</span></div></td>
-</tr>'''
-        variant_cards_html = _html_budget_variant_cards(
+        variant_controls_html = _html_budget_variant_controls(
             variants, selected_variant=selected_variant
         )
-        replacements_html = _html_budget_replacements(budget_data.get("selected", []))
+        variant_panels_html = _html_budget_variant_panels(
+            variants or [budget_data], selected_variant=selected_variant
+        )
+        current_variant = next(
+            (
+                variant
+                for variant in (variants or [])
+                if variant.get("id") == selected_variant
+            ),
+            None,
+        )
+        current_variant_label = _html_esc(
+            (current_variant or {}).get("label") or "Lista actual"
+        )
         parts.append(f"""<section style="margin-bottom:1.5rem">
   <h2>&#128176; Tu Presupuesto Ideal &mdash; ${budget_data["budget"]:.0f} MXN</h2>
-  <p class="section-desc">Con ${budget_data["budget"]:.0f} MXN puedes comprar {budget_data["games_count"]} juegos &middot; Ahorro: ${budget_data["total_savings"]:.0f} &middot; Restante: ${budget_data["remaining"]:.0f}</p>
+  <p class="section-desc" id="budget-summary-copy">Con ${budget_data["budget"]:.0f} MXN puedes comprar {budget_data["games_count"]} juegos &middot; Ahorro: ${budget_data["total_savings"]:.0f} &middot; Restante: ${budget_data["remaining"]:.0f}</p>
   <div style="background:var(--bg-secondary);border-radius:6px;height:24px;margin-bottom:.8rem;overflow:hidden;position:relative">
-    <div style="height:100%;width:{pct_used:.0f}%;background:linear-gradient(90deg,var(--accent-blue),#4b9cd3);border-radius:6px"></div>
-    <div style="position:absolute;inset:0;display:flex;align-items:center;justify-content:center;font-size:.75rem;font-weight:600;color:var(--text-primary)">${budget_data["total_spent"]:.0f} / ${budget_data["budget"]:.0f} ({pct_used:.0f}%)</div>
+    <div id="budget-progress-fill" style="height:100%;width:{pct_used:.0f}%;background:linear-gradient(90deg,var(--accent-blue),#4b9cd3);border-radius:6px"></div>
+    <div id="budget-progress-text" style="position:absolute;inset:0;display:flex;align-items:center;justify-content:center;font-size:.75rem;font-weight:600;color:var(--text-primary)">${budget_data["total_spent"]:.0f} / ${budget_data["budget"]:.0f} ({pct_used:.0f}%)</div>
   </div>
-  <div class="table-wrap"><table class="deals-table"><thead><tr><th>#</th><th>Score</th><th>%</th><th>Precio</th><th>Juego</th></tr></thead><tbody>{budget_rows}</tbody></table></div>
-  {variant_cards_html}
-  {replacements_html}
+  <p class="section-desc">Variante activa: <strong id="budget-current-variant">{current_variant_label}</strong></p>
+  {variant_controls_html}
+  {variant_panels_html}
 </section>""")
 
     if compare_data:
@@ -1027,7 +1203,7 @@ def generate_html(
             ("", "text"),
             ("%", "num"),
             ("Precio", "price"),
-            ("Era", "price"),
+            ("Precio original", "price"),
             ("Reviews", "num"),
             ("MC", "num"),
             ("Deck", "text"),
@@ -1159,7 +1335,7 @@ def generate_html(
       <button type="button" class="share-btn share-btn-copy-steam" onclick="copySteamLink()">Copiar link de Steam</button>
       <button type="button" class="share-btn share-btn-open" onclick="openInSteam()">Abrir en Steam</button>
     </div>
-    <button type="button" class="share-close" onclick="closeShareModal()">Cerrar</button>
+    <button type="button" class="share-btn share-btn-close" onclick="closeShareModal()">Cerrar</button>
   </div>
 </div>
 <script>{_HTML_JS}</script>

@@ -4,9 +4,9 @@ Steam Wishlist Deals Generator
 Genera un MD con los deals de tu wishlist cruzados con tu HLTB.
 
 Uso:
-    python3 steam_deals_generator.py --vanity BG00G
-    python3 steam_deals_generator.py --vanity https://steamcommunity.com/id/BG00G/
-    python3 steam_deals_generator.py --key TU_KEY --vanity BG00G --discount 60
+    python3 steam_deals_generator.py --vanity gaben
+    python3 steam_deals_generator.py --vanity https://steamcommunity.com/id/gaben/
+    python3 steam_deals_generator.py --key TU_KEY --vanity gaben --discount 60
     python3 steam_deals_generator.py --genre roguelike --genre indie
     python3 steam_deals_generator.py --no-cache        # re-fetch aunque haya caché
     python3 steam_deals_generator.py --family-json ~/familia.json
@@ -3056,7 +3056,7 @@ def generate_html(
             ("", "text"),
             ("%", "num"),
             ("Precio", "price"),
-            ("Era", "price"),
+            ("Precio original", "price"),
             ("Reviews", "num"),
             ("MC", "num"),
             ("Deck", "text"),
@@ -3542,20 +3542,20 @@ def main():
         emit(f"{_err(f'Family JSON no encontrado: {FAMILY_JSON}')}")
         FAMILY_JSON = None
 
-    # [1] Steam ID
-    step("Resolviendo Steam ID...")
-    steam_id = resolve_steam_id(KEY, VANITY)
-    emit(f"  {_ok(steam_id)}")
-    profile_display_name = resolve_profile_display_name(steam_id, VANITY, KEY)
+    try:
+        # [1] Steam ID
+        step("Resolviendo Steam ID...")
+        steam_id = resolve_steam_id(KEY, VANITY)
+        emit(f"  {_ok(steam_id)}")
+        profile_display_name = resolve_profile_display_name(steam_id, VANITY, KEY)
 
-    # [2] Wishlist (con prioridad)
-    step("Obteniendo wishlist...")
-    wishlist_appids, priorities = get_wishlist(KEY, steam_id)
-    ranked = sum(1 for p in priorities.values() if p > 0)
-    emit(f"  {_ok(f'{len(wishlist_appids):,} juegos ({ranked:,} con prioridad)')}")
+        # [2] Wishlist (con prioridad)
+        step("Obteniendo wishlist...")
+        wishlist_appids, priorities = get_wishlist(KEY, steam_id)
+        ranked = sum(1 for p in priorities.values() if p > 0)
+        emit(f"  {_ok(f'{len(wishlist_appids):,} juegos ({ranked:,} con prioridad)')}")
 
-    if WARM_CACHE_ONLY:
-        try:
+        if WARM_CACHE_ONLY:
             run_warm_cache_mode(
                 wishlist_appids,
                 steam_id,
@@ -3566,10 +3566,19 @@ def main():
                 step_fn=step,
                 emit_fn=emit,
             )
-        finally:
-            if warm_cache_log_handle is not None:
-                warm_cache_log_handle.close()
-        return
+            return
+    except ValueError as exc:
+        return _handle_cli_value_error(
+            exc,
+            VANITY,
+            warm_cache=WARM_CACHE_ONLY,
+            emit=emit,
+            err_fn=_err,
+            dim_fn=_dim,
+        )
+    finally:
+        if WARM_CACHE_ONLY and warm_cache_log_handle is not None:
+            warm_cache_log_handle.close()
 
         # [3] Biblioteca propia (requiere API key)
     owned: dict[str, str] = {}
@@ -4079,5 +4088,70 @@ def run_scheduled():
     )
 
 
+def _looks_like_placeholder_vanity(vanity: str) -> bool:
+    raw = str(vanity or "").strip().rstrip("/")
+    if not raw:
+        return False
+    normalized = raw.split("/")[-1].lower()
+    return normalized in {"tu_vanity_url", "your_vanity_url"}
+
+
+def _format_cli_user_error(exc: Exception, vanity: str) -> str:
+    message = str(exc).strip()
+    if _looks_like_placeholder_vanity(vanity):
+        return (
+            "No se pudo resolver el perfil porque `--vanity` sigue usando el "
+            "placeholder `TU_VANITY_URL`. Reemplázalo por tu vanity real, la URL "
+            "completa del perfil o tu Steam ID de 17 dígitos."
+        )
+    if message.startswith("No se pudo resolver el perfil") or message.startswith(
+        "No se pudo resolver el vanity URL"
+    ):
+        return (
+            f"{message}. Revisa `--vanity` y usa tu vanity real, la URL del perfil "
+            "o tu Steam ID de 17 dígitos."
+        )
+    if message.startswith("No se pudo acceder a la wishlist"):
+        return (
+            f"{message} Revisa que la wishlist sea pública o intenta con la URL/Steam ID correcto."
+        )
+    return message
+
+
+def _handle_cli_value_error(
+    exc: Exception,
+    vanity: str,
+    *,
+    warm_cache: bool,
+    emit,
+    err_fn,
+    dim_fn,
+) -> int:
+    emit("")
+    emit(f"  {err_fn(_format_cli_user_error(exc, vanity))}")
+    if warm_cache:
+        emit(
+            f"  {dim_fn('Warm-cache cancelado. Corrige --vanity o permisos y vuelve a intentar.')}"
+        )
+    return 1
+
+
+def _run_entrypoint(argv: list[str], *, main_fn, run_scheduled_fn) -> int:
+    for index, arg in enumerate(argv[1:], start=1):
+        if arg != "--schedule":
+            continue
+        if index + 1 >= len(argv):
+            break
+        try:
+            float(argv[index + 1])
+        except ValueError:
+            break
+        run_scheduled_fn()
+        return 0
+    return int(main_fn() or 0)
+
+
 if __name__ == "__main__":
-    run_scheduled()
+    raise SystemExit(
+        _run_entrypoint(sys.argv, main_fn=main, run_scheduled_fn=run_scheduled)
+    )
