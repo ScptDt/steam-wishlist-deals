@@ -152,6 +152,7 @@ from steam_deals_generator import (
     is_same_game,
     load_previous_deal_appids,
     parse_hltb,
+    resolve_price_fetch_tuning,
     run_price_cache_stage,
     run_warm_cache_mode,
     rank_top_picks,
@@ -349,6 +350,33 @@ class CliErrorHandlingTests(unittest.TestCase):
 
 
 class WarmCacheTests(unittest.TestCase):
+    @staticmethod
+    def _price_cache_entry(
+        *,
+        name: str,
+        discount_percent: int,
+        price_final: str,
+        price_original: str,
+        price_final_raw: int,
+        fetched_at: float,
+    ) -> dict:
+        return {
+            "name": name,
+            "type": "game",
+            "discount_percent": discount_percent,
+            "price_final": price_final,
+            "price_original": price_original,
+            "price_final_raw": price_final_raw,
+            "genres": [],
+            "release_year": 2024,
+            "description": "",
+            "linux_native": False,
+            "metacritic_score": None,
+            "metacritic_url": "",
+            "categories": [2],
+            "_fetched_at": fetched_at,
+        }
+
     def test_run_price_cache_stage_updates_cache_when_fetching_new_data(self) -> None:
         emitted = []
         saved = []
@@ -448,6 +476,276 @@ class WarmCacheTests(unittest.TestCase):
                 for line in emitted
             )
         )
+
+    def test_run_price_cache_stage_reports_refresh_count_and_hands_off_ids(self) -> None:
+        emitted = []
+        received = {}
+        now_ts = 1_700_000_000.0
+        fetched_cache = {
+            "10": self._price_cache_entry(
+                name="Alpha",
+                discount_percent=70,
+                price_final="$10",
+                price_original="$20",
+                price_final_raw=1000,
+                fetched_at=now_ts,
+            ),
+            "20": self._price_cache_entry(
+                name="Bravo",
+                discount_percent=60,
+                price_final="$8",
+                price_original="$20",
+                price_final_raw=800,
+                fetched_at=now_ts - (25 * 3600),
+            ),
+        }
+
+        def fake_get_deals(_wishlist, _cache, _steam_id, **kwargs):
+            received["refresh_ids"] = tuple(kwargs.get("refresh_ids") or ())
+            return ([{"appid": "10"}, {"appid": "20"}, {"appid": "30"}], 2)
+
+        result = run_price_cache_stage(
+            ["10", "20", "30"],
+            "steam-id",
+            no_cache=False,
+            min_discount=50,
+            rate_limit=1.5,
+            load_price_cache_fn=lambda _steam_id: (fetched_cache, 2.0),
+            select_cache_fn=module_select_scoped_cache,
+            clear_cache_files_fn=lambda _paths: (),
+            get_deals_from_wishlist_fn=fake_get_deals,
+            save_price_cache_fn=lambda *_args, **_kwargs: None,
+            emit_fn=emitted.append,
+            current_time_fn=lambda: now_ts,
+        )
+
+        self.assertEqual(received["refresh_ids"], ("20", "30"))
+        self.assertEqual(result["n_fetched"], 2)
+        self.assertTrue(any("2 por fetchear" in line for line in emitted))
+
+    def test_run_price_cache_stage_emits_observability_counts_and_tuning_info(
+        self,
+    ) -> None:
+        emitted = []
+        received = {}
+        now_ts = 1_700_000_000.0
+        fetched_cache = {
+            "10": self._price_cache_entry(
+                name="Alpha",
+                discount_percent=70,
+                price_final="$10",
+                price_original="$20",
+                price_final_raw=1000,
+                fetched_at=now_ts,
+            ),
+            "20": self._price_cache_entry(
+                name="Bravo",
+                discount_percent=60,
+                price_final="$8",
+                price_original="$20",
+                price_final_raw=800,
+                fetched_at=now_ts - (25 * 3600),
+            ),
+        }
+
+        def fake_get_deals(_wishlist, _cache, _steam_id, **kwargs):
+            stats = kwargs.get("stats_out") or {}
+            stats["degraded_batch_count"] = 3
+            stats["individual_fallback_count"] = 20
+            stats["individual_fallback_batches"] = 2
+            received["batch_size"] = kwargs.get("batch_size")
+            received["max_batch_halving"] = kwargs.get("max_batch_halving")
+            return ([{"appid": "10"}, {"appid": "20"}, {"appid": "30"}], 2)
+
+        result = run_price_cache_stage(
+            ["10", "20", "30"],
+            "steam-id",
+            no_cache=False,
+            min_discount=50,
+            rate_limit=1.5,
+            load_price_cache_fn=lambda _steam_id: (fetched_cache, 2.0),
+            select_cache_fn=module_select_scoped_cache,
+            clear_cache_files_fn=lambda _paths: (),
+            get_deals_from_wishlist_fn=fake_get_deals,
+            save_price_cache_fn=lambda *_args, **_kwargs: None,
+            emit_fn=emitted.append,
+            current_time_fn=lambda: now_ts,
+            env={
+                "STEAM_DEALS_PRICE_BATCH_SIZE": "8",
+                "STEAM_DEALS_PRICE_BATCH_HALVING_LIMIT": "5",
+            },
+        )
+
+        self.assertEqual(received["batch_size"], 8)
+        self.assertEqual(received["max_batch_halving"], 5)
+        self.assertEqual(result["refresh_candidate_count"], 2)
+        self.assertEqual(result["missing_count"], 1)
+        self.assertEqual(result["stale_count"], 1)
+        self.assertEqual(result["degraded_batch_count"], 3)
+        self.assertEqual(result["individual_fallback_count"], 20)
+        self.assertEqual(result["batch_size"], 8)
+        self.assertEqual(result["batch_halving_limit"], 5)
+        self.assertTrue(
+            any("Refresh candidates: 2 (1 nuevos, 1 stale)" in line for line in emitted)
+        )
+        self.assertTrue(
+            any("Tuning precios activo: batch_size=8 · halving_limit=5" in line for line in emitted)
+        )
+        self.assertTrue(
+            any("Batches degradados por HTTP 400: 3" in line for line in emitted)
+        )
+        self.assertTrue(
+            any("Fallback individual aplicado a 20 juegos en 2 tandas" in line for line in emitted)
+        )
+
+    def test_get_deals_from_wishlist_skips_fetch_when_all_entries_are_fresh(
+        self,
+    ) -> None:
+        now_ts = 1_700_000_000.0
+        emitted = []
+        cache_entry = self._price_cache_entry(
+            name="Alpha",
+            discount_percent=70,
+            price_final="$10",
+            price_original="$20",
+            price_final_raw=1000,
+            fetched_at=now_ts,
+        )
+
+        deals, n_fetched = module_get_deals_from_wishlist(
+            ["10"],
+            {"10": cache_entry},
+            "steam-id",
+            min_discount=50,
+            rate_limit=0.0,
+            get_json=lambda *_args, **_kwargs: (_ for _ in ()).throw(
+                AssertionError("No debería iniciar fetch por batch")
+            ),
+            sleep_fn=lambda _delay: None,
+            monotonic_fn=lambda: 0.0,
+            save_price_cache_fn=lambda *_args, **_kwargs: None,
+            fetch_single_fn=lambda *_args, **_kwargs: (_ for _ in ()).throw(
+                AssertionError("No debería iniciar fetch individual")
+            ),
+            process_app_entry_fn=module_process_app_entry,
+            emit=emitted.append,
+            warn=lambda text: text,
+            dim=lambda text: text,
+            bar_fill="#",
+            bar_empty="-",
+            color_green="",
+            color_dim="",
+            color_reset="",
+            batch_size=20,
+            entry_ttl_hours=24.0,
+            current_time_fn=lambda: now_ts + 60,
+        )
+
+        self.assertEqual(n_fetched, 0)
+        self.assertEqual([deal["appid"] for deal in deals], ["10"])
+        self.assertFalse(any("Fetching" in line for line in emitted))
+
+    def test_get_deals_from_wishlist_reports_fetch_count_for_missing_and_stale(
+        self,
+    ) -> None:
+        now_ts = 1_700_000_000.0
+        emitted = []
+        fetched_cache = {
+            "10": self._price_cache_entry(
+                name="Alpha",
+                discount_percent=70,
+                price_final="$10",
+                price_original="$20",
+                price_final_raw=1000,
+                fetched_at=now_ts,
+            ),
+            "20": self._price_cache_entry(
+                name="Bravo",
+                discount_percent=60,
+                price_final="$8",
+                price_original="$20",
+                price_final_raw=800,
+                fetched_at=now_ts - (25 * 3600),
+            ),
+        }
+
+        def fake_get_json(_url, headers=None):
+            self.assertEqual(headers, {"User-Agent": "Mozilla/5.0"})
+            return {
+                "20": {
+                    "success": True,
+                    "data": {
+                        "name": "Bravo",
+                        "type": "game",
+                        "price_overview": {
+                            "discount_percent": 60,
+                            "final_formatted": "$8",
+                            "initial_formatted": "$20",
+                            "final": 800,
+                        },
+                        "genres": [],
+                        "platforms": {"linux": False},
+                        "release_date": {"coming_soon": False, "date": "Jan 1, 2023"},
+                        "metacritic": {},
+                        "categories": [{"id": 2}],
+                    },
+                },
+                "30": {
+                    "success": True,
+                    "data": {
+                        "name": "Charlie",
+                        "type": "game",
+                        "price_overview": {
+                            "discount_percent": 55,
+                            "final_formatted": "$6",
+                            "initial_formatted": "$12",
+                            "final": 600,
+                        },
+                        "genres": [],
+                        "platforms": {"linux": False},
+                        "release_date": {"coming_soon": False, "date": "Jan 1, 2022"},
+                        "metacritic": {},
+                        "categories": [{"id": 2}],
+                    },
+                },
+            }
+
+        refresh_counts = module_count_refresh_candidates(
+            ["10", "20", "30"],
+            dict(fetched_cache),
+            now_ts=now_ts,
+            entry_ttl_hours=24.0,
+        )
+
+        deals, n_fetched = module_get_deals_from_wishlist(
+            ["10", "20", "30"],
+            fetched_cache,
+            "steam-id",
+            min_discount=50,
+            rate_limit=0.0,
+            get_json=fake_get_json,
+            sleep_fn=lambda _delay: None,
+            monotonic_fn=lambda: 0.0,
+            save_price_cache_fn=lambda *_args, **_kwargs: None,
+            fetch_single_fn=lambda *_args, **_kwargs: None,
+            process_app_entry_fn=module_process_app_entry,
+            emit=emitted.append,
+            warn=lambda text: text,
+            dim=lambda text: text,
+            bar_fill="#",
+            bar_empty="-",
+            color_green="",
+            color_dim="",
+            color_reset="",
+            batch_size=20,
+            entry_ttl_hours=24.0,
+            current_time_fn=lambda: now_ts,
+        )
+
+        self.assertEqual(refresh_counts, (1, 1))
+        self.assertEqual(n_fetched, 2)
+        self.assertTrue(any("Fetching 2 juegos en 1 batches" in line for line in emitted))
+        self.assertEqual([deal["appid"] for deal in deals], ["10", "20", "30"])
 
     def test_build_warm_cache_emit_keeps_terminal_output_and_strips_ansi_in_log(
         self,
@@ -838,6 +1136,29 @@ class EnrichmentTests(unittest.TestCase):
 
 
 class PriceCacheTests(unittest.TestCase):
+    def test_resolve_price_fetch_tuning_uses_defaults_and_env_overrides(self) -> None:
+        self.assertEqual(
+            resolve_price_fetch_tuning(env={}),
+            {
+                "batch_size": 20,
+                "batch_halving_limit": 3,
+                "is_custom": False,
+            },
+        )
+        self.assertEqual(
+            resolve_price_fetch_tuning(
+                env={
+                    "STEAM_DEALS_PRICE_BATCH_SIZE": "8",
+                    "STEAM_DEALS_PRICE_BATCH_HALVING_LIMIT": "5",
+                }
+            ),
+            {
+                "batch_size": 8,
+                "batch_halving_limit": 5,
+                "is_custom": True,
+            },
+        )
+
     def test_select_scoped_cache_reports_missing_ids_for_valid_cache(self) -> None:
         decision = module_select_scoped_cache(
             ["10", "20"],
@@ -850,6 +1171,26 @@ class PriceCacheTests(unittest.TestCase):
         self.assertEqual(decision.status, "valid")
         self.assertEqual(decision.cache, {"10": {"discount_percent": 70}})
         self.assertEqual(decision.missing_ids, ("20",))
+        self.assertEqual(decision.refresh_ids, ("10", "20"))
+
+    def test_select_scoped_cache_reports_stale_and_missing_refresh_ids(self) -> None:
+        now_ts = 1_700_000_000.0
+        decision = module_select_scoped_cache(
+            ["10", "20", "30"],
+            {
+                "10": {"discount_percent": 70, "_fetched_at": now_ts},
+                "20": {"discount_percent": 60, "_fetched_at": now_ts - (25 * 3600)},
+            },
+            2.0,
+            no_cache=False,
+            ttl_hours=24,
+            current_time_fn=lambda: now_ts,
+            entry_ttl_hours=24,
+        )
+
+        self.assertEqual(decision.status, "valid")
+        self.assertEqual(decision.missing_ids, ("30",))
+        self.assertEqual(decision.refresh_ids, ("20", "30"))
 
     def test_select_scoped_cache_clears_expired_payload(self) -> None:
         decision = module_select_scoped_cache(
@@ -1151,6 +1492,108 @@ class PriceCacheTests(unittest.TestCase):
         self.assertNotIn("_fetched_at", fetched_cache["10"])
         self.assertEqual(missing, 0)
         self.assertEqual(stale, 1)
+
+    def test_get_deals_from_wishlist_reports_http_400_batch_degradation_and_keeps_entries_retryable(
+        self,
+    ) -> None:
+        now_ts = 200000.0
+        emitted = []
+        fetched_cache = {}
+        single_calls = []
+
+        def fake_get_json(_url, headers=None):
+            raise urllib.error.HTTPError(
+                _url, 400, "Bad Request", hdrs=None, fp=None
+            )
+
+        def fake_fetch_single(appid, _country, _delay):
+            single_calls.append(appid)
+            return None
+
+        deals, total = module_get_deals_from_wishlist(
+            ["10", "20", "30", "40"],
+            fetched_cache,
+            "steam-id",
+            min_discount=50,
+            get_json=fake_get_json,
+            sleep_fn=lambda _seconds: None,
+            monotonic_fn=lambda: 0.0,
+            current_time_fn=lambda: now_ts,
+            save_price_cache_fn=lambda _steam_id, _cache: None,
+            fetch_single_fn=fake_fetch_single,
+            process_app_entry_fn=lambda appid, data: module_process_app_entry(
+                appid, data, parse_release_year_fn=module_parse_release_year
+            ),
+            emit=emitted.append,
+            warn=lambda text: f"WARN:{text}",
+            dim=lambda text: f"DIM:{text}",
+            batch_size=2,
+        )
+
+        missing, stale = module_count_refresh_candidates(
+            ["10", "20", "30", "40"],
+            fetched_cache,
+            now_ts=now_ts + 60,
+            entry_ttl_hours=24,
+        )
+
+        self.assertEqual(total, 4)
+        self.assertEqual(deals, [])
+        self.assertEqual(single_calls, ["10", "20", "30", "40"])
+        self.assertTrue(
+            any("WARN:HTTP 400 en batch de 2 juegos; reduciendo lote" in line for line in emitted)
+        )
+        self.assertTrue(
+            any("DIM:Batch falló, intentando individualmente..." in line for line in emitted)
+        )
+        self.assertEqual(missing, 0)
+        self.assertEqual(stale, 4)
+        self.assertTrue(all(entry == {} for entry in fetched_cache.values()))
+
+    def test_get_deals_from_wishlist_halves_http_400_batches_before_individual_fallback(
+        self,
+    ) -> None:
+        emitted = []
+        fetched_cache = {}
+        requested_batches = []
+        single_calls = []
+
+        def fake_get_json(url, headers=None):
+            self.assertEqual(headers, {"User-Agent": "Mozilla/5.0"})
+            requested_batches.append(url.split("appids=", 1)[1].split("&", 1)[0])
+            raise urllib.error.HTTPError(url, 400, "Bad Request", hdrs=None, fp=None)
+
+        def fake_fetch_single(appid, _country, _delay):
+            single_calls.append(appid)
+            return None
+
+        deals, total = module_get_deals_from_wishlist(
+            ["10", "20", "30", "40"],
+            fetched_cache,
+            "steam-id",
+            min_discount=50,
+            get_json=fake_get_json,
+            sleep_fn=lambda _seconds: None,
+            monotonic_fn=lambda: 0.0,
+            current_time_fn=lambda: 200000.0,
+            save_price_cache_fn=lambda _steam_id, _cache: None,
+            fetch_single_fn=fake_fetch_single,
+            process_app_entry_fn=lambda appid, data: module_process_app_entry(
+                appid, data, parse_release_year_fn=module_parse_release_year
+            ),
+            emit=emitted.append,
+            warn=lambda text: f"WARN:{text}",
+            dim=lambda text: f"DIM:{text}",
+            batch_size=4,
+        )
+
+        self.assertEqual(total, 4)
+        self.assertEqual(deals, [])
+        self.assertEqual(requested_batches, ["10,20,30,40", "10,20", "10", "20", "30,40", "30", "40"])
+        self.assertEqual(single_calls, ["10", "20", "30", "40"])
+        self.assertTrue(
+            any("reduciendo lote" in line for line in emitted)
+        )
 
 
 class RunOutputTests(unittest.TestCase):

@@ -113,6 +113,24 @@ a:hover { text-decoration: underline; }
   margin-bottom: 0.4rem;
 }
 
+.budget-feature-card {
+  margin: 0.8rem 0 1rem;
+  padding: 0.9rem 1rem;
+  border-radius: 10px;
+  border: 1px solid rgba(102, 192, 244, 0.28);
+  background: linear-gradient(180deg, rgba(42, 71, 94, 0.6), rgba(22, 32, 45, 0.95));
+}
+
+.budget-feature-card label {
+  display: block;
+  margin-bottom: 0.35rem;
+}
+
+.budget-feature-card .hint {
+  color: #b8c9d4 !important;
+  opacity: 1 !important;
+}
+
 .hint-compact {
   font-size: 0.72rem !important;
   margin-top: 0.3rem !important;
@@ -127,8 +145,19 @@ a:hover { text-decoration: underline; }
   align-items: flex-end;
 }
 
+.field-align-end .hint {
+  margin-top: 0.35rem;
+}
+
 .btn-full {
   width: 100%;
+}
+
+.history-quick-btn {
+  min-height: 44px;
+  padding-inline: 1rem;
+  font-size: 0.92rem;
+  white-space: nowrap;
 }
 
 .actions-spaced-top {
@@ -583,6 +612,13 @@ details .details-body .field:last-child {
 /* File links */
 .file-links {
   display: flex; flex-wrap: wrap; gap: 0.5rem; margin-top: 0.75rem;
+}
+.file-links-hint {
+  width: 100%;
+  color: var(--text2);
+  font-size: 0.78rem;
+  line-height: 1.45;
+  margin-bottom: 0.1rem;
 }
 .file-link {
   display: inline-flex; align-items: center; gap: 0.4rem;

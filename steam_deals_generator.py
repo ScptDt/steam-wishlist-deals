@@ -1189,6 +1189,7 @@ else:
     )
 CACHE_FILE = CACHE_DIR / "prices_cache.json"
 CACHE_MAX_HOURS = 24
+PRICE_BATCH_HALVING_LIMIT = 3
 REVIEWS_CACHE_FILE = CACHE_DIR / "reviews_cache.json"
 DECK_CACHE_FILE = CACHE_DIR / "deck_cache.json"
 EXTRA_CACHE_TTL = 168  # 7 days in hours
@@ -1208,6 +1209,45 @@ def resolve_logs_dir(*, env=None, frozen: bool = False) -> Path:
     if _resolve_logs_dir_impl is None:
         return PROJECT_DIR / "logs"
     return _resolve_logs_dir_impl(PROJECT_DIR, env=env, frozen=frozen)
+
+
+def _resolve_positive_int_env(
+    name: str,
+    default: int,
+    *,
+    env=None,
+    minimum: int = 1,
+) -> int:
+    source_env = os.environ if env is None else env
+    raw = source_env.get(name)
+    if raw is None or str(raw).strip() == "":
+        return default
+    try:
+        value = int(str(raw).strip())
+    except ValueError:
+        return default
+    return value if value >= minimum else default
+
+
+def resolve_price_fetch_tuning(*, env=None) -> dict[str, int | bool]:
+    batch_size = _resolve_positive_int_env(
+        "STEAM_DEALS_PRICE_BATCH_SIZE",
+        BATCH_SIZE,
+        env=env,
+        minimum=1,
+    )
+    batch_halving_limit = _resolve_positive_int_env(
+        "STEAM_DEALS_PRICE_BATCH_HALVING_LIMIT",
+        PRICE_BATCH_HALVING_LIMIT,
+        env=env,
+        minimum=0,
+    )
+    return {
+        "batch_size": batch_size,
+        "batch_halving_limit": batch_halving_limit,
+        "is_custom": batch_size != BATCH_SIZE
+        or batch_halving_limit != PRICE_BATCH_HALVING_LIMIT,
+    }
 
 
 def build_warm_cache_log_path(logs_dir: Path, *, now_fn=datetime.now) -> Path:
@@ -1277,6 +1317,8 @@ def select_scoped_cache(
     *,
     no_cache: bool,
     ttl_hours: float,
+    current_time_fn=time.time,
+    entry_ttl_hours: float | None = None,
 ):
     if _cache_policy_module is None:
         raise RuntimeError("Cache policy module is not available")
@@ -1286,6 +1328,8 @@ def select_scoped_cache(
         cache_age,
         no_cache=no_cache,
         ttl_hours=ttl_hours,
+        current_time_fn=current_time_fn,
+        entry_ttl_hours=entry_ttl_hours,
     )
 
 
@@ -1513,12 +1557,21 @@ def format_price_cache_status(price_cache_policy, cache_age: float) -> str:
     if status == "bypass":
         return _warn("--no-cache: ignorando caché existente")
     if status == "valid":
-        new_appids = getattr(price_cache_policy, "missing_ids", ())
-        status_msg = (
-            f"{len(new_appids)} nuevos por fetchear"
-            if new_appids
-            else _dim("sin nuevos, skip fetch")
+        missing_ids = tuple(getattr(price_cache_policy, "missing_ids", ()) or ())
+        refresh_ids = tuple(
+            getattr(price_cache_policy, "refresh_ids", missing_ids) or ()
         )
+        stale_count = sum(1 for appid in refresh_ids if appid not in missing_ids)
+        if refresh_ids:
+            details = []
+            if missing_ids:
+                details.append(f"{len(missing_ids)} nuevos")
+            if stale_count:
+                details.append(f"{stale_count} stale")
+            details_msg = f" ({', '.join(details)})" if details else ""
+            status_msg = f"{len(refresh_ids)} por fetchear{details_msg}"
+        else:
+            status_msg = _dim("sin nuevos, skip fetch")
         return f"{_ok(f'Caché válida ({cache_age:.1f}h)')} — {status_msg}"
     if status == "expired":
         return _warn(f"Caché expirada ({cache_age:.0f}h) — re-fetching todo")
@@ -1545,6 +1598,8 @@ def run_price_cache_stage(
     get_deals_from_wishlist_fn=None,
     save_price_cache_fn=save_price_cache,
     emit_fn=print,
+    current_time_fn=time.time,
+    env=None,
 ) -> dict:
     if get_deals_from_wishlist_fn is None:
         get_deals_from_wishlist_fn = get_deals_from_wishlist
@@ -1556,12 +1611,43 @@ def run_price_cache_stage(
         cache_age,
         no_cache=no_cache,
         ttl_hours=CACHE_MAX_HOURS,
+        current_time_fn=current_time_fn,
+        entry_ttl_hours=ENTRY_REFRESH_TTL_HOURS,
     )
     fetched_cache = price_cache_policy.cache
 
     if price_cache_policy.status == "bypass":
         clear_cache_files_fn(list(build_price_related_cache_files()))
     emit_fn(f"  {format_price_cache_status(price_cache_policy, cache_age)}")
+
+    refresh_ids = tuple(getattr(price_cache_policy, "refresh_ids", ()) or ())
+    missing_count = len(tuple(getattr(price_cache_policy, "missing_ids", ()) or ()))
+    stale_count = max(0, len(refresh_ids) - missing_count)
+    if refresh_ids:
+        emit_fn(
+            f"  {_dim(f'Refresh candidates: {len(refresh_ids):,} ({missing_count} nuevos, {stale_count} stale)')}"
+        )
+
+    price_tuning = resolve_price_fetch_tuning(env=env)
+    if price_tuning["is_custom"]:
+        tuning_msg = (
+            "Tuning precios activo: "
+            f"batch_size={price_tuning['batch_size']} · "
+            f"halving_limit={price_tuning['batch_halving_limit']}"
+        )
+        emit_fn(
+            f"  {_dim(tuning_msg)}"
+        )
+
+    price_fetch_stats = {
+        "refresh_candidate_count": len(refresh_ids),
+        "missing_count": missing_count,
+        "stale_count": stale_count,
+        "degraded_batch_count": 0,
+        "individual_fallback_count": 0,
+        "individual_fallback_batches": 0,
+        "null_batch_count": 0,
+    }
 
     try:
         deals, n_fetched = get_deals_from_wishlist_fn(
@@ -1572,6 +1658,11 @@ def run_price_cache_stage(
             min_discount=min_discount,
             rate_limit=rate_limit,
             emit_fn=emit_fn,
+            refresh_ids=refresh_ids,
+            current_time_fn=current_time_fn,
+            batch_size=int(price_tuning["batch_size"]),
+            max_batch_halving=int(price_tuning["batch_halving_limit"]),
+            stats_out=price_fetch_stats,
         )
     except KeyboardInterrupt as exc:
         emit_fn(f"\n  {_warn('Interrumpido — guardando caché parcial...')}")
@@ -1583,6 +1674,22 @@ def run_price_cache_stage(
 
     if n_fetched > 0:
         save_price_cache_fn(steam_id, fetched_cache)
+    if price_fetch_stats["degraded_batch_count"]:
+        degraded_msg = (
+            f"Batches degradados por HTTP 400: {price_fetch_stats['degraded_batch_count']}"
+        )
+        emit_fn(
+            f"  {_dim(degraded_msg)}"
+        )
+    if price_fetch_stats["individual_fallback_count"]:
+        fallback_msg = (
+            "Fallback individual aplicado a "
+            f"{price_fetch_stats['individual_fallback_count']:,} juegos en "
+            f"{price_fetch_stats['individual_fallback_batches']} tandas"
+        )
+        emit_fn(
+            f"  {_dim(fallback_msg)}"
+        )
     emit_fn(f"  {build_price_cache_completion_message(deals, min_discount, n_fetched)}")
     return {
         "deals": deals,
@@ -1590,6 +1697,15 @@ def run_price_cache_stage(
         "cache_age": cache_age,
         "cache_status": price_cache_policy.status,
         "cache_path": CACHE_FILE,
+        "refresh_candidate_count": price_fetch_stats["refresh_candidate_count"],
+        "missing_count": price_fetch_stats["missing_count"],
+        "stale_count": price_fetch_stats["stale_count"],
+        "degraded_batch_count": price_fetch_stats["degraded_batch_count"],
+        "individual_fallback_count": price_fetch_stats["individual_fallback_count"],
+        "individual_fallback_batches": price_fetch_stats["individual_fallback_batches"],
+        "null_batch_count": price_fetch_stats["null_batch_count"],
+        "batch_size": int(price_tuning["batch_size"]),
+        "batch_halving_limit": int(price_tuning["batch_halving_limit"]),
     }
 
 
@@ -1665,6 +1781,11 @@ def get_deals_from_wishlist(
     rate_limit: float = 1.5,
     *,
     emit_fn=print,
+    refresh_ids=None,
+    current_time_fn=time.time,
+    batch_size: int = BATCH_SIZE,
+    max_batch_halving: int = PRICE_BATCH_HALVING_LIMIT,
+    stats_out: dict | None = None,
 ) -> tuple[list[dict], int]:
     if _prices_module is None:
         raise RuntimeError("Prices module is not available")
@@ -1689,9 +1810,12 @@ def get_deals_from_wishlist(
         color_green=C.GRN,
         color_dim=C.DIM,
         color_reset=C.RST,
-        batch_size=BATCH_SIZE,
+        batch_size=batch_size,
         entry_ttl_hours=ENTRY_REFRESH_TTL_HOURS,
-        current_time_fn=time.time,
+        current_time_fn=current_time_fn,
+        refresh_ids=refresh_ids,
+        max_batch_halving=max_batch_halving,
+        stats_out=stats_out,
     )
 
 

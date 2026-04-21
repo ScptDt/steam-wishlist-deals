@@ -180,6 +180,41 @@ Si quieres forzar una ruta específica para compartir caché entre distintos mod
 STEAM_DEALS_CACHE_DIR="$HOME/.cache/steam_deals" python3 steam_deals_generator.py --vanity gaben --warm-cache
 ```
 
+### Verificación larga recomendada para wishlists grandes
+
+Si quieres validar rendimiento real y preparar un smoke largo Linux/desktop, usa este orden:
+
+1. **Precalentar cache**
+
+```bash
+source .venv/bin/activate
+STEAM_DEALS_CACHE_DIR="$HOME/.cache/steam_deals" python3 steam_deals_generator.py --vanity gaben --warm-cache
+```
+
+2. **Validar cobertura automatizada del frente de performance**
+
+```bash
+.venv/bin/python -m pytest tests/test_generator_logic.py -k "WarmCacheTests or PriceCacheTests"
+```
+
+3. **Correr un run largo real**
+   - desde `python3 steam_deals_web.py` si quieres validar generator/web con una wishlist real grande
+   - desde `./dist/SteamToolsDesktop` si quieres además cerrar evidencia desktop Linux
+
+4. **Qué observar en el log/progreso**
+   - `Refresh candidates: ...`
+   - si hubo `stale` vs `nuevos`
+   - si hubo `Batches degradados por HTTP 400`
+   - si hubo `Fallback individual aplicado ...`
+
+5. **Evidencia mínima a guardar**
+   - comando de warm-cache usado
+   - ruta del log generado en `<cache>/logs/`
+   - wishlist/deals del run largo real
+   - artifacts generados (`.md`, `.html`, `share.html`, `.json`; y `.csv` cuando el smoke final sea desktop)
+
+> Nota: una corrida larga desde Web UI/source sirve como evidencia funcional fuerte del generator y del Track Performance, pero el cierre de Linux desktop sigue requiriendo repetir la corrida dentro del binario y con `.csv` activado.
+
 ## Web UI
 
 ```bash

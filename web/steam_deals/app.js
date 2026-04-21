@@ -893,18 +893,18 @@ function getHistoryTrendSignal(trendDelta) {
   if (magnitude === 0) {
     return {
       className: 'history-trend-signal-neutral',
-      label: 'Estable frente al primer run',
+      label: 'Volumen similar al inicio',
     };
   }
   if (safeDelta > 0) {
     return {
       className: 'history-trend-signal-up',
-      label: `Más ofertas detectadas (+${magnitude} vs primer run)`,
+      label: `Más ofertas que al inicio (+${magnitude})`,
     };
   }
   return {
     className: 'history-trend-signal-down',
-    label: `Menos ofertas detectadas (-${magnitude} vs primer run)`,
+    label: `Menos ofertas que al inicio (-${magnitude})`,
   };
 }
 
@@ -912,7 +912,7 @@ function renderHistoryTrend(runs) {
   if (!historyTrend) return;
   const source = Array.isArray(runs) ? runs : [];
   if (source.length < 2) {
-    historyTrend.innerHTML = '<div class="history-trend-title">Tendencia general del histórico</div><div class="history-trend-subtitle">Cuenta cuántas ofertas se detectaron en cada run. Sirve para ver si el volumen general sube o baja; no muestra el precio de un juego individual.</div><div class="history-trend-empty">Se necesitan al menos 2 runs para calcular la tendencia general.</div>';
+    historyTrend.innerHTML = '<div class="history-trend-title">Tendencia general de ofertas</div><div class="history-trend-subtitle">Te muestra si en las últimas corridas aparecieron más o menos ofertas en total. No es el precio de un juego individual.</div><div class="history-trend-empty">Se necesitan al menos 2 runs para comparar la tendencia.</div>';
     historyTrend.classList.remove('hidden');
     return;
   }
@@ -961,8 +961,8 @@ function renderHistoryTrend(runs) {
   const trendSignal = getHistoryTrendSignal(trendDelta);
 
   historyTrend.innerHTML = `
-    <div class="history-trend-title">Tendencia general del histórico (últimos ${normalized.length} runs)</div>
-    <div class="history-trend-subtitle">Cuenta cuántas ofertas se detectaron por run. Si quieres revisar juegos concretos, usa la tabla y Top cambios.</div>
+    <div class="history-trend-title">Tendencia general de ofertas (últimos ${normalized.length} runs)</div>
+    <div class="history-trend-subtitle">Te ayuda a ver si últimamente aparecieron más o menos ofertas en total. Si quieres revisar juegos concretos, usa la tabla y Top cambios.</div>
     <svg class="history-trend-svg" viewBox="0 0 ${width} ${height}" preserveAspectRatio="none" role="img" aria-label="Tendencia general del volumen de ofertas por run">
       <line x1="${padX}" y1="${height - padY}" x2="${width - padX}" y2="${height - padY}" stroke="var(--card-border)" stroke-width="1" />
       <line x1="${padX}" y1="${padY}" x2="${padX}" y2="${height - padY}" stroke="var(--card-border)" stroke-width="1" />
@@ -970,8 +970,8 @@ function renderHistoryTrend(runs) {
       ${dots}
     </svg>
     <div class="history-trend-meta">
-      <span>Rango: ${escapeHtml(minValue)} a ${escapeHtml(maxValue)} ofertas</span>
-      <span class="${trendSignal.className}">Señal general: ${escapeHtml(trendSignal.label)}</span>
+      <span>Rango reciente: ${escapeHtml(minValue)} a ${escapeHtml(maxValue)} ofertas</span>
+      <span class="${trendSignal.className}">Lectura rápida: ${escapeHtml(trendSignal.label)}</span>
     </div>
   `;
   historyTrend.classList.remove('hidden');
@@ -1656,25 +1656,97 @@ function handleEvent(ev) {
     }
     if (ev.files && ev.files.length) {
       showFiles(ev.files);
-      appendQuickOpenButtons(ev.files);
     }
     syncLatestReportEmptyState(ev.files);
     syncLatestReportCard(ev.files);
   }
 }
 
+function buildGeneratedFileAction(filePath) {
+  const name = (filePath || '').split('/').pop() || '';
+  const ext = name.slice(name.lastIndexOf('.')).toLowerCase();
+  const href = '/files/' + encodeURIComponent(name);
+  if (ext === '.html' && isShareHtmlFile(name)) {
+    return {
+      name,
+      href,
+      label: 'Abrir Share HTML',
+      icon: '&#128279;',
+      openInTab: true,
+      title: 'Abre la versión ligera lista para compartir',
+    };
+  }
+  if (ext === '.html') {
+    return {
+      name,
+      href,
+      label: 'Abrir reporte interactivo',
+      icon: '&#128202;',
+      openInTab: true,
+      title: 'Abre el reporte completo con filtros y acciones',
+    };
+  }
+  if (ext === '.md') {
+    return {
+      name,
+      href,
+      label: 'Descargar Markdown',
+      icon: '&#128196;',
+      openInTab: false,
+      title: 'Descarga el reporte en texto para abrirlo donde quieras',
+    };
+  }
+  if (ext === '.json') {
+    return {
+      name,
+      href,
+      label: 'Descargar JSON',
+      icon: '&#123;&#125;',
+      openInTab: false,
+      title: 'Descarga el JSON del run para automatización o revisión',
+    };
+  }
+  if (ext === '.csv') {
+    return {
+      name,
+      href,
+      label: 'Descargar CSV',
+      icon: '&#128203;',
+      openInTab: false,
+      title: 'Descarga el CSV para Excel o Google Sheets',
+    };
+  }
+  return {
+    name,
+    href,
+    label: name,
+    icon: '&#128196;',
+    openInTab: true,
+    title: 'Abrir archivo generado',
+  };
+}
+
 function showFiles(files) {
   fileLinks.innerHTML = '';
-  const icons = {'.html': '&#128202;', '.md': '&#128196;', '.csv': '&#128203;', '.json': '&#123;&#125;'};
-  files.forEach(f => {
-    const name = f.split('/').pop();
-    const ext = name.slice(name.lastIndexOf('.'));
-    const icon = icons[ext] || '&#128196;';
+  const actions = (Array.isArray(files) ? files : []).map(buildGeneratedFileAction);
+  if (actions.length) {
+    const hint = document.createElement('div');
+    hint.className = 'file-links-hint';
+    hint.textContent = 'Los HTML se abren aparte. Markdown, JSON y CSV se descargan para evitar páginas en blanco o confusas.';
+    fileLinks.appendChild(hint);
+  }
+  actions.forEach(action => {
     const a = document.createElement('a');
     a.className = 'file-link';
-    a.href = '/files/' + encodeURIComponent(name);
-    a.target = '_blank';
-    a.innerHTML = icon + ' ' + name;
+    a.href = action.href;
+    a.title = action.title;
+    if (action.openInTab) {
+      a.target = '_blank';
+      a.rel = 'noopener noreferrer';
+    } else {
+      a.setAttribute('download', action.name);
+    }
+    a.innerHTML = action.icon + ' ' + action.label;
     fileLinks.appendChild(a);
   });
   fileLinks.classList.remove('hidden');

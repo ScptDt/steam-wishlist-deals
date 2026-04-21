@@ -118,6 +118,169 @@ def _emit(emit, message: str, **kwargs) -> None:
         emit(message)
 
 
+def _handle_individual_fallback(
+    batch: list[str],
+    fetched_cache: dict,
+    *,
+    country: str,
+    delay: float,
+    now_ts: float,
+    fetch_single_fn,
+    process_app_entry_fn,
+    stats_out: dict | None = None,
+) -> None:
+    if isinstance(stats_out, dict):
+        stats_out["individual_fallback_batches"] = (
+            int(stats_out.get("individual_fallback_batches", 0) or 0) + 1
+        )
+        stats_out["individual_fallback_count"] = (
+            int(stats_out.get("individual_fallback_count", 0) or 0) + len(batch)
+        )
+    for appid in batch:
+        single = fetch_single_fn(appid, country, delay)
+        parsed = process_app_entry_fn(appid, single) if single else None
+        fetched_cache[appid] = _cache_result_entry(parsed, now_ts=now_ts)
+
+
+def _split_batch(batch: list[str]) -> tuple[list[str], list[str]]:
+    midpoint = max(1, len(batch) // 2)
+    return batch[:midpoint], batch[midpoint:]
+
+
+def _resolve_batch_with_guardrails(
+    batch: list[str],
+    fetched_cache: dict,
+    *,
+    country: str,
+    delay: float,
+    now_ts: float,
+    get_json,
+    sleep_fn,
+    fetch_single_fn,
+    process_app_entry_fn,
+    emit,
+    warn,
+    dim,
+    max_batch_halving: int = 3,
+    stats_out: dict | None = None,
+) -> None:
+    pending_batches: list[tuple[list[str], int]] = [(list(batch), 0)]
+    while pending_batches:
+        current_batch, depth = pending_batches.pop(0)
+        if not current_batch:
+            continue
+
+        url = _batch_url(current_batch, country)
+        data = None
+        should_split = False
+        backoff = 30
+
+        for attempt in range(4):
+            try:
+                data = get_json(url, headers={"User-Agent": "Mozilla/5.0"})
+                break
+            except urllib.error.HTTPError as exc:
+                if exc.code == 429:
+                    _emit(
+                        emit,
+                        f"\n  {warn(f'Rate limit — esperando {backoff}s (intento {attempt + 1}/4)')}",
+                        flush=True,
+                    )
+                    sleep_fn(backoff)
+                    backoff = min(backoff * 2, 120)
+                    delay = min(delay * 1.5, 5.0)
+                    _emit(
+                        emit,
+                        f"  {dim(f'Delay ajustado a {delay:.1f}s entre batches')}",
+                        flush=True,
+                    )
+                    continue
+                if exc.code == 400 and len(current_batch) > 1 and depth < max_batch_halving:
+                    if isinstance(stats_out, dict):
+                        stats_out["degraded_batch_count"] = (
+                            int(stats_out.get("degraded_batch_count", 0) or 0) + 1
+                        )
+                    _emit(
+                        emit,
+                        f"\n  {warn(f'HTTP 400 en batch de {len(current_batch)} juegos; reduciendo lote')}",
+                        flush=True,
+                    )
+                    should_split = True
+                    break
+                _emit(
+                    emit,
+                    f"\n  {warn(f'HTTP {exc.code} en batch, saltando')}",
+                    flush=True,
+                )
+                sleep_fn(delay)
+                break
+            except Exception as exc:
+                _emit(
+                    emit,
+                    f"\n  {warn(f'Error en batch: {exc}')}",
+                    flush=True,
+                )
+                sleep_fn(delay * 3)
+                break
+
+        if should_split:
+            left, right = _split_batch(current_batch)
+            pending_batches = [(left, depth + 1), (right, depth + 1), *pending_batches]
+            continue
+
+        if data is None:
+            _emit(
+                emit,
+                f"\n  {dim('Batch falló, intentando individualmente...')}",
+                flush=True,
+            )
+            _handle_individual_fallback(
+                current_batch,
+                fetched_cache,
+                country=country,
+                delay=delay,
+                now_ts=now_ts,
+                fetch_single_fn=fetch_single_fn,
+                process_app_entry_fn=process_app_entry_fn,
+                stats_out=stats_out,
+            )
+            continue
+
+        null_count = sum(
+            1
+            for appid in current_batch
+            if not data.get(appid) or not isinstance(data.get(appid), dict)
+        )
+        if null_count == len(current_batch):
+            if isinstance(stats_out, dict):
+                stats_out["null_batch_count"] = (
+                    int(stats_out.get("null_batch_count", 0) or 0) + 1
+                )
+            _emit(
+                emit,
+                f"\n  {dim('Batch devolvió todo null, reintentando individualmente...')}",
+                flush=True,
+            )
+            _handle_individual_fallback(
+                current_batch,
+                fetched_cache,
+                country=country,
+                delay=delay,
+                now_ts=now_ts,
+                fetch_single_fn=fetch_single_fn,
+                process_app_entry_fn=process_app_entry_fn,
+                stats_out=stats_out,
+            )
+            continue
+
+        for appid in current_batch:
+            fetched_cache[appid] = _cache_result_entry(
+                process_app_entry_fn(appid, data),
+                now_ts=now_ts,
+            )
+        sleep_fn(delay)
+
+
 def _batch_url(batch: list[str], country: str) -> str:
     ids_str = ",".join(batch)
     return (
@@ -223,16 +386,29 @@ def get_deals_from_wishlist(
     batch_size: int = 20,
     entry_ttl_hours: float = 24.0,
     current_time_fn=time.time,
+    refresh_ids: list[str] | tuple[str, ...] | None = None,
+    max_batch_halving: int = 3,
+    stats_out: dict | None = None,
 ) -> tuple[list[dict], int]:
     now_ts = float(current_time_fn())
-    to_fetch = [
-        appid
-        for appid in appids
-        if appid not in fetched_cache
-        or _is_stale_entry(fetched_cache.get(appid), now_ts, entry_ttl_hours)
-    ]
+    to_fetch = (
+        list(refresh_ids)
+        if refresh_ids is not None
+        else [
+            appid
+            for appid in appids
+            if appid not in fetched_cache
+            or _is_stale_entry(fetched_cache.get(appid), now_ts, entry_ttl_hours)
+        ]
+    )
     total = len(to_fetch)
     delay = rate_limit
+    if isinstance(stats_out, dict):
+        stats_out.setdefault("refresh_candidate_count", total)
+        stats_out.setdefault("degraded_batch_count", 0)
+        stats_out.setdefault("individual_fallback_count", 0)
+        stats_out.setdefault("individual_fallback_batches", 0)
+        stats_out.setdefault("null_batch_count", 0)
 
     if total > 0:
         batches = [
@@ -271,81 +447,22 @@ def get_deals_from_wishlist(
                 flush=True,
             )
 
-            url = _batch_url(batch, country)
-            backoff = 30
-            data = None
-            for attempt in range(4):
-                try:
-                    data = get_json(url, headers={"User-Agent": "Mozilla/5.0"})
-                    break
-                except urllib.error.HTTPError as exc:
-                    if exc.code == 429:
-                        _emit(
-                            emit,
-                            f"\n  {warn(f'Rate limit — esperando {backoff}s (intento {attempt + 1}/4)')}",
-                            flush=True,
-                        )
-                        sleep_fn(backoff)
-                        backoff = min(backoff * 2, 120)
-                        delay = min(delay * 1.5, 5.0)
-                        _emit(
-                            emit,
-                            f"  {dim(f'Delay ajustado a {delay:.1f}s entre batches')}",
-                            flush=True,
-                        )
-                    else:
-                        _emit(
-                            emit,
-                            f"\n  {warn(f'HTTP {exc.code} en batch {batch_index + 1}, saltando')}",
-                            flush=True,
-                        )
-                        sleep_fn(delay)
-                        break
-                except Exception as exc:
-                    _emit(
-                        emit,
-                        f"\n  {warn(f'Error en batch {batch_index + 1}: {exc}')}",
-                        flush=True,
-                    )
-                    sleep_fn(delay * 3)
-                    break
-
-            if data is None:
-                _emit(
-                    emit,
-                    f"\n  {dim('Batch falló, intentando individualmente...')}",
-                    flush=True,
-                )
-                for appid in batch:
-                    single = fetch_single_fn(appid, country, delay)
-                    parsed = process_app_entry_fn(appid, single) if single else None
-                    fetched_cache[appid] = _cache_result_entry(parsed, now_ts=now_ts)
-                fetched_count += len(batch)
-                continue
-
-            null_count = sum(
-                1
-                for appid in batch
-                if not data.get(appid) or not isinstance(data.get(appid), dict)
+            _resolve_batch_with_guardrails(
+                batch,
+                fetched_cache,
+                country=country,
+                delay=delay,
+                now_ts=now_ts,
+                get_json=get_json,
+                sleep_fn=sleep_fn,
+                fetch_single_fn=fetch_single_fn,
+                process_app_entry_fn=process_app_entry_fn,
+                emit=emit,
+                warn=warn,
+                dim=dim,
+                max_batch_halving=max_batch_halving,
+                stats_out=stats_out,
             )
-            if null_count == len(batch):
-                _emit(
-                    emit,
-                    f"\n  {dim('Batch devolvió todo null, reintentando individualmente...')}",
-                    flush=True,
-                )
-                for appid in batch:
-                    single = fetch_single_fn(appid, country, delay)
-                    parsed = process_app_entry_fn(appid, single) if single else None
-                    fetched_cache[appid] = _cache_result_entry(parsed, now_ts=now_ts)
-                fetched_count += len(batch)
-                continue
-
-            for appid in batch:
-                fetched_cache[appid] = _cache_result_entry(
-                    process_app_entry_fn(appid, data),
-                    now_ts=now_ts,
-                )
 
             fetched_count += len(batch)
             if (
@@ -354,7 +471,6 @@ def get_deals_from_wishlist(
                 and batch_index % 10 == 0
             ):
                 save_price_cache_fn(steam_id, fetched_cache)
-            sleep_fn(delay)
 
         _emit(emit, f"\r  {'':70}\r", end="", flush=True)
 

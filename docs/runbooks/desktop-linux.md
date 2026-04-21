@@ -104,6 +104,17 @@ Esperado:
 Tip operativo:
 - si aparece un traceback largo o warning dificil de copiar, usa los botones **Copiar log** / **Descargar log (.txt)** dentro de la UI antes de cerrar la app
 
+### Señales a observar en un run largo real
+
+Durante un caso grande (wishlist real / smoke largo), conviene guardar evidencia de:
+
+- `Refresh candidates: X (N nuevos, M stale)`
+- `Batches degradados por HTTP 400: ...` si aparece degradacion del batching
+- `Fallback individual aplicado a ... juegos en ... tandas`
+- artifacts generados al final (`.md`, `.html`, `.csv` para cierre desktop; `share.html/.json` como evidencia adicional)
+
+> Una corrida larga desde Web UI/source cuenta como evidencia funcional del generator y del Track Performance, pero no sustituye el cierre final del desktop Linux: para cerrar P2 sigue haciendo falta repetir la corrida dentro del binario y confirmar `.csv` + cierre limpio.
+
 ## 6. Fallback web (mitigacion)
 
 Si la ventana nativa no abre o cae el backend Qt:

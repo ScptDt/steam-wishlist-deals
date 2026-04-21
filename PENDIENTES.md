@@ -1,6 +1,6 @@
 # Pendientes (Fuente Unica)
 
-Ultima actualizacion: 2026-04-20
+Ultima actualizacion: 2026-04-21
 
 ## Regla de Oro
 
@@ -16,7 +16,7 @@ No se mantienen documentos paralelos de planificacion; este archivo es la unica 
 
 - Objetivo: llevar Steam Tools a una experiencia ultra user friendly y preparada para ejecutable desktop.
 - Fase actual: P2 en validacion cross-platform (cierre manual pendiente por host nativo).
-- Item activo: cerrar el smoke largo Linux con apoyo de warm-cache/logs y seguir pendientes no bloqueados mientras macOS sigue en espera de host nativo.
+- Item activo: relanzar el smoke largo Linux con cache ya precalentado, capturar evidencia final (`.md/.html/.csv` + cierre limpio) y seguir pendientes no bloqueados mientras macOS sigue en espera de host nativo.
 
 ## Pendientes Priorizados
 
@@ -25,6 +25,7 @@ No se mantienen documentos paralelos de planificacion; este archivo es la unica 
 - [x] Empaquetado con PyInstaller (build inicial) validado en Windows.
 - [x] Checklist de release y smoke tests (primera version).
 - [ ] Corregir botón `Detener` en Steam Deals desktop/web: hoy puede quedarse solo en "Solicitando detener ejecucion..." sin frenar el proceso de forma confiable; si el usuario hace varios clicks, el mensaje se duplica y aumenta la confusion.
+- [ ] Revisar inconsistencia de caché/batches en precios Steam: el run puede reportar `Caché válida (...) — sin nuevos, skip fetch` y aun así lanzar `Fetching N juegos`, además de caer en `HTTP 400` por batch y degradarse a fallback individual muy lento. Decidir si se resuelve como quick win de mensajes/guardrails o como track más amplio de fetch batching/cache behavior.
 
 ### P1 - UX Ultra Friendly
 
@@ -34,25 +35,27 @@ No se mantienen documentos paralelos de planificacion; este archivo es la unica 
 - [x] Renombrar "Budget Mode" a un nombre mas claro para usuarios no tecnicos.
 - [x] Renombrar "Steam Tags" a "Etiquetas" en UI.
 - [x] Cambiar la metrica "edad" por un termino mas claro (ej. "antiguedad") y explicar que mide.
-- [ ] Corregir share (compartir deals): reportado primero en Top Picks y luego como falla general en todo el share.
-- [ ] Modo Presupuesto (dinamica "Battle Royale" interna, no genero): permitir reemplazar sugerencias tanto de lista completa ("probar otra lista") como de juego individual ("cambiar este juego"), manteniendo presupuesto y priorizando valor/score.
-- [ ] Modo Presupuesto: ofrecer 3 variantes de seleccion para el mismo presupuesto (lista chica = pocos juegos/ticket alto, lista media = balanceada, lista grande = mas juegos/ticket bajo).
+- [ ] Corregir share (compartir deals): reportado primero en Top Picks y luego como falla general en todo el share. [Parcial avanzado: Web UI + HTML interactivo + Share HTML ya comparten payload normalizado, botones/modal de share y compatibilidad desktop validada por tests/artifacts; falta validacion manual E2E final desde superficies generadas y live UI.]
+- [x] Modo Presupuesto (dinamica "Battle Royale" interna, no genero): permitir reemplazar sugerencias tanto de lista completa ("probar otra lista") como de juego individual ("cambiar este juego"), manteniendo presupuesto y priorizando valor/score. [Implementado base y evidenciado en artifacts HTML/JSON/MD; queda pendiente separado solo el refinamiento de diversidad real.]
+- [x] Modo Presupuesto: ofrecer 3 variantes de seleccion para el mismo presupuesto (lista chica = pocos juegos/ticket alto, lista media = balanceada, lista grande = mas juegos/ticket bajo). [Implementado base y evidenciado en artifacts HTML/JSON/MD.]
 - [ ] Modo Presupuesto: mejorar la diversidad real del reroll/reemplazos cuando varias opciones terminan sintiéndose demasiado parecidas o repiten casi los mismos juegos.
 - [ ] Agregar acceso rapido (boton tipo flecha) a grafica/historico de precios junto al minimo historico; evaluar mostrar minimo global y minimo en ventana de tiempo.
-- [ ] Revisar/replantear bloque de tendencia (trend): actualmente no se entiende y no aporta valor claro.
-- [ ] Renombrar/ajustar trend para lenguaje mas claro al usuario final (ej. "Tendencia de precios") y simplificar su interpretacion.
-- [ ] Dashboard historico: agregar notas/highlights breves a los botones debajo de los selectores de runs (`Comparar runs`, `Recargar runs`, `Restablecer filtros`) para que se entienda rapido cuando usar cada accion.
+- [ ] Revisar/replantear bloque de tendencia (trend): actualmente no se entiende y no aporta valor claro. [Parcial: copy/explicacion ahora aclaran que resume volumen general de ofertas y no precio individual; pendiente decidir si la señal actual se mantiene o se reemplaza por algo mas util.]
+- [x] Renombrar/ajustar trend para lenguaje mas claro al usuario final (ej. "Tendencia de precios") y simplificar su interpretacion.
+- [x] Dashboard historico: agregar notas/highlights breves a los botones debajo de los selectores de runs (`Comparar runs`, `Recargar runs`, `Restablecer filtros`) para que se entienda rapido cuando usar cada accion.
+- [ ] Dashboard historico: ajustar el copy y la apariencia del botón `Comparar últimos 2 runs`, porque hoy se ve extraño visualmente y el texto se siente demasiado largo/apretado para un usuario normal.
 - [ ] [Futuro] Agregar selector de moneda en UI para cambiar divisa de precios.
-- [ ] Agregar hints explicativos de metricas/criterios usados en UI para que el usuario entienda que se esta utilizando en cada seccion.
+- [ ] Agregar hints explicativos de metricas/criterios usados en UI para que el usuario entienda que se esta utilizando en cada seccion. [Parcial: UI principal + reportes/share ya explican score, minimo historico, antiguedad y tendencia general; pendiente extenderlo de forma mas uniforme a otras secciones.]
 - [ ] Filtros avanzados: agregar filtro por tipo de recomendacion/mensaje (ej. "vale la pena", "considerar", "esperar") aplicado sobre los mensajes de Top Picks.
 - [ ] Agregar apartado "Shuffle 1 juego": recomendar un solo juego de la wishlist segun presupuesto + critica/score, con boton para rerollear ("dame otro").
 - [ ] Definir estrategia de outputs para evitar archivos desperdigados: (A) guardar por defecto en estructura `output/YYYY-MM-DD/` o (B) generar archivos solo bajo accion explicita (boton/comando), a decidir en iteracion futura.
-- [ ] Cambiar etiqueta "Era" por termino mas claro en UI/reportes (ej. "Precio original").
+- [ ] Corregir UX de apertura de archivos generados (`/files/...`): hoy algunos botones/enlaces de reportes pueden dar la impresión de no hacer nada o abrir una página en blanco al intentar ver `.md/.html/.json`; aclarar el comportamiento esperado y evitar confusión para el usuario normal.
+- [x] Cambiar etiqueta "Era" por termino mas claro en UI/reportes (ej. "Precio original").
 - [x] Ajustar el `<title>` de los reportes HTML para mostrar el nombre visible del perfil de Steam (en lugar de URL/steamid cuando aplique). [Sugerencia tester R1CK]
 
 ### P2 - Cross-platform
 
-- [ ] Validar build desktop en Linux (Ubuntu LTS). [Parcial alto: doctor READY en `.venv`, build local OK, ventana nativa + server local confirmados en sesion grafica KDE no-root, packaging PyInstaller corregido, primer evento `progress` validado dentro del binario congelado y corrida larga real avanzada hasta `[8/11]` con artifacts `.md/.html/share.html/.json` antes de un bug de closeout final ya corregido; la UI ahora permite copiar/descargar logs, el desktop usa cache persistente y existe `--warm-cache` headless con logs. Falta rerun final con outputs `.md/.html/.csv` completos y cierre limpio.]
+- [ ] Validar build desktop en Linux (Ubuntu LTS). [Parcial alto: doctor READY en `.venv`, build local OK, ventana nativa + server local confirmados en sesion grafica KDE no-root, packaging PyInstaller corregido, primer evento `progress` validado dentro del binario congelado y corrida larga real avanzada hasta `[8/11]` con artifacts `.md/.html/share.html/.json` antes de un bug de closeout final ya corregido; la UI ahora permite copiar/descargar logs, el desktop usa cache persistente y existe `--warm-cache` headless con logs, y el precalentado manual ya quedo completado. Falta rerun final con outputs `.md/.html/.csv` completos y cierre limpio.]
 - [ ] Validar build desktop en macOS (app bundle + apertura local).
 - [x] Documentar dependencias nativas por plataforma para pywebview.
 - [ ] Validar cross-platform el fallback web: si `pywebview` no es compatible o no inicia backend nativo, abrir la Web UI en el navegador por defecto con aviso visible en la interfaz. [Linux parcial OK: fallback confirmado en primer intento sin backend, luego ventana nativa OK con Qt/X11; falta host nativo/macOS.]
@@ -297,10 +300,11 @@ P2 se considera **cerrado** cuando se cumpla TODO:
 ## Proximo Paso Operativo
 
 - Linux ya tiene evidencia local fuerte: en Debian/Ubuntu con PEP 668 se requiere `.venv`, el build desktop local genera `dist/SteamToolsDesktop`, la ventana nativa abre en sesion grafica KDE no-root sin requerir `QT_QPA_PLATFORM=xcb` en la prueba mas reciente, y el binario congelado ya emite el primer evento `progress` del generator tras corregir packaging PyInstaller.
-- Nueva mitigacion operativa Linux: el desktop ya guarda cache en ruta persistente fuera de `_MEI`, existe `--warm-cache` headless para precalentar `prices_cache.json` sin abrir UI y ese modo ahora guarda logs legibles en carpeta `logs/` (o `<cache>/logs` cuando aplica).
+- Nueva mitigacion operativa Linux: el desktop ya guarda cache en ruta persistente fuera de `_MEI`, existe `--warm-cache` headless para precalentar `prices_cache.json` sin abrir UI y ese modo ahora guarda logs legibles en carpeta `logs/` (o `<cache>/logs` cuando aplica). El warm-cache local ya quedo completado.
 - Validacion manual macOS queda **pospuesta intencionalmente** hasta contar con host nativo disponible.
 - El runbook para cierre de P2 ya esta documentado en `README.md` y en `docs/runbooks/desktop-{linux,macos,windows}.md`; el criterio de evidencia queda definido en este archivo.
-- Siguiente reactivacion: dejar terminar `--warm-cache`, relanzar el smoke funcional largo de Linux con el binario actualizado para confirmar `.md/.html/.csv` + cierre limpio, y luego ejecutar checklist manual macOS cuando exista host nativo disponible.
+- El Track Performance ya documenta una ruta realista de verificacion: warm-cache previo, tests dirigidos (`WarmCacheTests` / `PriceCacheTests`) y luego corrida larga con observacion de `Refresh candidates`, degradacion por `HTTP 400` y fallback individual.
+- Siguiente reactivacion: con `--warm-cache` ya completado, relanzar el smoke funcional largo de Linux con el binario actualizado para confirmar `.md/.html/.csv` + cierre limpio, y luego ejecutar checklist manual macOS cuando exista host nativo disponible.
 
 ## Plan inmediato (Windows / No bloqueado)
 
@@ -327,6 +331,7 @@ Notas:
 
 | Fecha | Plataforma | Estado | Incidencias | Proximo paso |
 |---|---|---|---|---|
+| 2026-04-21 | Linux (entorno local) | pre-smoke final listo | `--warm-cache` headless completado con cache persistente y logs legibles en `~/.cache/steam_deals/logs/`; README y runbook Linux ya reflejan el flujo real y aclaran mejor `--vanity`. | Relanzar smoke largo del desktop con cache caliente y registrar `.md/.html/.csv` + cierre limpio. |
 | 2026-04-17 | Linux (entorno local) | validacion manual avanzada | Sesion KDE nativa confirmada. `steam_tools_desktop.py --doctor` quedo READY en `.venv`; build local actualizado OK. Corrida larga real del desktop avanzo hasta `[8/11]` (`tags`) y ya habia escrito `.md`, `.html`, `share.html` y `.json`, pero detecto un bug real en el closeout final por mismatch de `smart_alerts`; el fix ya quedo validado con tests dirigidos. Se agregaron acciones UI para copiar/descargar logs, el desktop paso a usar cache persistente fuera de `_MEI` y se sumo `--warm-cache` headless con logs en carpeta `logs/`. | Dejar terminar warm-cache, rerun Linux final con cache caliente y confirmar `.csv` + cierre limpio sin procesos colgados. |
 | 2026-04-16 | Decision operativa | Linux muy avanzado / macOS pospuesto | Se ejecuto validacion local fuerte en Linux durante esta iteracion; macOS sigue pendiente por no contar aun con host nativo disponible. CI cross-platform permanece OK como evidencia parcial base (`24487556896`). El smoke funcional Linux queda diferido porque la wishlist real supera 2K juegos y requiere una ventana amplia. | Ejecutar smoke funcional largo Linux cuando haya ventana suficiente; luego reactivar runbook macOS para cierre P2. |
 | 2026-04-16 | Linux (entorno local) | validacion manual avanzada | `python3`/`pip` OK. `python3 -m pip install -r requirements-desktop.txt` fallo en system Python por PEP 668 (`externally-managed-environment`), por lo que se uso `.venv`. Build local OK con `dist/SteamToolsDesktop`. Primer arranque del artefacto: fallback web confirmado por falta de backend nativo (`qtpy`/`gi`). Tras instalar `pywebview[qt]` y rehacer build, se confirmo ventana nativa + server local en sesion grafica no-root usando `runuser` + `QT_QPA_PLATFORM=xcb`. El smoke funcional completo encontro un bug real de packaging (`ModuleNotFoundError: shared`) dentro del binario congelado; se corrigio `build_desktop.py`/spec agregando `--paths` + `collect_submodules(shared/renderers/app)` + hidden imports, y luego un check liviano del binario valido el primer evento `progress` (`Resolviendo Steam ID...`) del generator ya empaquetado. Warning actual a revisar: `libtiff.so.5` en empaquetado Qt. | Ejecutar run largo con wishlist real para confirmar outputs `.md/.html/.csv` y cierre limpio; decidir luego si `libtiff.so.5` requiere nota/paquete adicional. |
@@ -335,6 +340,16 @@ Notas:
 
 ## Bitacora
 
+- 2026-04-21: Quick win de UX en archivos generados: los enlaces finales ahora distinguen entre `Abrir` (HTML) y `Descargar` (Markdown/JSON/CSV), y explican que los archivos de texto se descargan para evitar la sensación de página en blanco al pasar por `/files/...`.
+- 2026-04-21: Quick win de UX en presupuesto: `Tu Presupuesto Ideal` sale de `Filtros avanzados` y pasa a mostrarse en la configuración principal como feature visible, para que no se sienta escondido como si fuera solo otro filtro.
+- 2026-04-21: Rerun real con cache caliente (`Steam Medieval Fest`) deja evidencia local de cierre parcial: artifacts `.md/.html/share.html/.json` generados correctamente, `Precio original` ya visible en reportes y `Tu Presupuesto Ideal` ya expone variantes/rerolls en HTML/JSON/MD. Quedan abiertos como follow-up el share E2E manual, la diversidad real de rerolls y la inconsistencia de batching/cache (`Caché válida ... sin nuevos` pero luego `Fetching 414 juegos` con `HTTP 400` por batch). También se observa desfase en el conteo visible de pasos (`[1/11]` ... `[12/11]`).
+- 2026-04-21: `--warm-cache` local ya termino correctamente con cache persistente y logs en `~/.cache/steam_deals/logs/`; el siguiente paso operativo queda reducido al rerun largo Linux para capturar `.md/.html/.csv` + cierre limpio.
+- 2026-04-21: La CLI headless ya maneja mejor errores de usuario en warm-cache (`TU_VANITY_URL`, vanity invalido, wishlist privada) con mensajes accionables en vez de traceback crudo, manteniendo exit code de error y cierre correcto del log.
+- 2026-04-21: README, runbook Linux y ejemplos user-facing ahora usan `gaben` como vanity publico neutral para evitar exponer vanitys personales y reducir confusiones por copy/paste.
+- 2026-04-21: El flujo de share queda mucho mas alineado entre Web UI, HTML interactivo y Share HTML: payload normalizado con aliases (`price_original`/`original_price`, `min_hist`/`min_historical`), botones/modal consistentes y validacion automatica reforzada; queda pendiente solo la verificacion manual E2E final.
+- 2026-04-21: Se cierran los pendientes base de `Tu Presupuesto Ideal` para variantes chica/media/grande y cambios de lista/juego; queda abierto solo el refinamiento de diversidad real del reroll/reemplazos.
+- 2026-04-21: Quick win de UX en histórico: el botón `Comparar últimos 2 runs` se acorta a `Últimos 2 runs`, mejora su spacing y deja un hint más directo para que se entienda sin verse apretado.
+- 2026-04-20: Quick win de UX en tendencia/histórico: el bloque `Trend` ahora usa copy más claro para usuario normal (`Tendencia general de ofertas`, `Lectura rápida`, `Volumen similar al inicio`, etc.) para explicar que resume el volumen total de ofertas y no el precio de un juego individual.
 - 2026-04-20: Se cierra el pendiente de la etiqueta `Era`: HTML/Markdown/reportes relevantes ahora usan `Precio original`, alineado con el resto de la UX para evitar lenguaje ambiguo.
 - 2026-04-20: Quick win de UX en `Tu Presupuesto Ideal` dentro del HTML interactivo: las variantes ahora se presentan como botones de `Rerrollear todos` debajo de la barra del presupuesto, cada juego puede mostrar `Reroll` junto al número y el modal de share usa un botón `Cerrar` consistente con el resto. Sigue pendiente revisar la diversidad real de reemplazos cuando varias opciones se sienten demasiado parecidas.
 - 2026-04-20: Quick win de UX en `Tu Presupuesto Ideal`: el campo de presupuesto en Filtros avanzados ahora explica mejor que genera una lista balanceada y que el reporte puede mostrar variantes chica/media/grande y cambios de juego dentro del tope.
@@ -443,7 +458,7 @@ Notas:
 
 ### Social/Community
 
-- [x] Generar link publica para compartir deals individuales (URL con data encodeada) - implementado, falta probar
+- [x] Generar link publica para compartir deals individuales (URL con data encodeada). [Implementado y alineado entre Web UI, HTML interactivo y Share HTML; payload share compatible con desktop validado por tests. Falta solo validacion manual E2E para cierre operativo del pendiente general de share.]
 - [ ] Detectar bundles activos de juegos en wishlist (mejorar integracion ITAD)
 - [ ] Mostrar recomendaciones sociales tipo "un amigo te recomendo esto" usando overlap, juegos compartidos y senales sociales simples
 

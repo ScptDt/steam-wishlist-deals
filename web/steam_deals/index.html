@@ -208,6 +208,11 @@
       </div>
       <div class="hint">Ajusta automáticamente filtros comunes; puedes modificar cualquier campo después.</div>
     </div>
+    <div class="budget-feature-card">
+      <label>Tu Presupuesto Ideal <span class="optional">(feature rápida)</span></label>
+      <input type="number" id="budget" min="0" step="50" placeholder="Sin limite">
+      <div class="hint">Define tu tope y el reporte te propondrá una lista balanceada. También podrás ver variantes chica, media y grande, además de opciones para cambiar un juego sin romper el presupuesto.</div>
+    </div>
     <div class="field">
       <label>Descuento mínimo</label>
       <div class="range-wrap">
@@ -305,17 +310,10 @@
             <input type="number" id="max_hours" min="0" placeholder="Sin limite">
           </div>
         </div>
-        <div class="row">
-          <div class="field">
-            <label>Presupuesto (MXN) <span class="optional">(Tu Presupuesto Ideal)</span></label>
-            <input type="number" id="budget" min="0" step="50" placeholder="Sin limite">
-            <div class="hint">Te propone una lista balanceada dentro de tu tope. En el reporte también verás variantes chica, media y grande, además de opciones para cambiar un juego sin romper el presupuesto.</div>
-          </div>
-          <div class="field">
-            <label>Comparar con <span class="optional">(opcional)</span></label>
-            <input type="text" id="compare" placeholder="Vanity URL del amigo">
-            <div class="hint">La wishlist de tu amigo debe ser pública</div>
-          </div>
+        <div class="field">
+          <label>Comparar con <span class="optional">(opcional)</span></label>
+          <input type="text" id="compare" placeholder="Vanity URL del amigo">
+          <div class="hint">La wishlist de tu amigo debe ser pública</div>
         </div>
         <div class="field">
           <label>Workers de enrichment <span class="optional">(opcional)</span></label>
@@ -417,8 +415,8 @@
         <input type="text" id="history-search" placeholder="fecha, sale, steam_id o vanity">
       </div>
       <div class="field field-align-end">
-        <button class="btn btn-ghost btn-full" type="button" id="btn-history-quick-compare" title="Selecciona automáticamente los 2 runs más recientes y los compara por ti">Comparar últimos 2 runs</button>
-        <div class="hint">Ideal para revisar lo más reciente sin elegir runs manualmente.</div>
+        <button class="btn btn-ghost history-quick-btn" type="button" id="btn-history-quick-compare" title="Selecciona automáticamente los 2 runs más recientes y los compara por ti">Últimos 2 runs</button>
+        <div class="hint">Compara rápido los 2 runs más recientes sin elegirlos a mano.</div>
       </div>
     </div>
     <div class="history-pagination" id="history-pagination">
