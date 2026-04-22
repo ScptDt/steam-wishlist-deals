@@ -55,6 +55,7 @@ No se mantienen documentos paralelos de planificacion; este archivo es la unica 
 - [ ] Agregar apartado "Shuffle 1 juego": recomendar un solo juego de la wishlist segun presupuesto + critica/score, con boton para rerollear ("dame otro").
 - [ ] Definir estrategia de outputs para evitar archivos desperdigados: (A) guardar por defecto en estructura `output/YYYY-MM-DD/` o (B) generar archivos solo bajo accion explicita (boton/comando), a decidir en iteracion futura. [Incluye evaluar mover runs/reportes generados a una carpeta dedicada en vez de dejarlos en la raíz; tratarlo como track de reestructuración, no como quick win.]
 - [ ] Corregir UX de apertura de archivos generados (`/files/...`): hoy algunos botones/enlaces de reportes pueden dar la impresión de no hacer nada o abrir una página en blanco al intentar ver `.md/.html/.json`; aclarar el comportamiento esperado y evitar confusión para el usuario normal.
+- [ ] Revisar detección/naming de eventos Steam cuando coinciden varias promos el mismo día (ej. `Launch Sale` + sale de publisher/festival como Capcom o Square Enix). Evitar que el reporte dependa de un solo `sale_name` ambiguo y evaluar soporte para contexto múltiple o un nombre más claro.
 - [x] Cambiar etiqueta "Era" por termino mas claro en UI/reportes (ej. "Precio original").
 - [x] Ajustar el `<title>` de los reportes HTML para mostrar el nombre visible del perfil de Steam (en lugar de URL/steamid cuando aplique). [Sugerencia tester R1CK]
 
@@ -64,6 +65,7 @@ No se mantienen documentos paralelos de planificacion; este archivo es la unica 
 - [ ] Validar build desktop en macOS (app bundle + apertura local).
 - [x] Documentar dependencias nativas por plataforma para pywebview.
 - [ ] Validar cross-platform el fallback web: si `pywebview` no es compatible o no inicia backend nativo, abrir la Web UI en el navegador por defecto con aviso visible en la interfaz. [Linux parcial OK: fallback confirmado en primer intento sin backend, luego ventana nativa OK con Qt/X11; falta host nativo/macOS.]
+- [ ] Automatizar con un script el flujo repetitivo de validación desktop/cross-platform (doctor, warm-cache, build, smoke y recolección de evidencia) para no ejecutar manualmente siempre los mismos pasos. [Tratarlo como Track operativo/técnico, no como quick win.]
 
 ### P3 - Base tecnica y mantenibilidad
 
