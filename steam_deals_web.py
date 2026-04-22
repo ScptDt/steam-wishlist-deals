@@ -58,6 +58,10 @@ STEAM_DEALS_JS_FILE = WEB_DIR / "app.js"
 _running_proc = None
 _proc_lock = threading.Lock()
 
+
+def _build_stop_response(status: str, message: str) -> dict[str, str]:
+    return {"status": status, "message": message}
+
 LOCAL_CACHE_DIR = resolve_cache_dir(
     PROJECT_DIR,
     frozen=getattr(sys, "frozen", False),
@@ -1442,6 +1446,27 @@ const progressText = $('progress-text');
 const fileLinks = $('file-links');
 let abortCtrl = null;
 let shownErrorHints = new Set();
+let stopRequestInFlight = false;
+let stopMessageShown = false;
+
+function resetStopUiState() {
+  stopRequestInFlight = false;
+  stopMessageShown = false;
+  if (btnStop) btnStop.disabled = true;
+}
+
+function beginStopUiState() {
+  stopRequestInFlight = true;
+  if (btnStop) btnStop.disabled = true;
+  if (!stopMessageShown) {
+    appendLine('Solicitando detener ejecucion...', 'warn');
+    stopMessageShown = true;
+  }
+}
+
+function completeStopUiState() {
+  stopRequestInFlight = false;
+}
 
 function setModeBanner(hasCache, hasConfig) {
   const title = $('mode-title');
@@ -1714,6 +1739,7 @@ btnRun.addEventListener('click', async () => {
   fileLinks.innerHTML = '';
   fileLinks.classList.add('hidden');
   btnRun.disabled = true;
+  resetStopUiState();
   btnStop.disabled = false;
 
   // Preflight
@@ -1754,7 +1780,7 @@ btnRun.addEventListener('click', async () => {
     if (resp.status === 409) {
       appendLine('Ya hay una ejecucion en curso.', 'warn');
       btnRun.disabled = false;
-      btnStop.disabled = true;
+      resetStopUiState();
       return;
     }
 
@@ -1788,15 +1814,35 @@ btnRun.addEventListener('click', async () => {
   }
 
   btnRun.disabled = false;
-  btnStop.disabled = true;
+  resetStopUiState();
   abortCtrl = null;
 });
 
 btnStop.addEventListener('click', async () => {
-  try { await fetch('/api/stop', {method: 'POST'}); } catch(e) {}
-  appendLine('--- Cancelado por el usuario ---', 'warn');
-  btnStop.disabled = true;
-  if (abortCtrl) abortCtrl.abort();
+  if (stopRequestInFlight) return;
+  beginStopUiState();
+  try {
+    const resp = await fetch('/api/stop', {method: 'POST'});
+    let payload = {};
+    try {
+      payload = await resp.json();
+    } catch (e) {}
+    if (!resp.ok) {
+      appendLine((payload && payload.message) || ('No se pudo detener la ejecucion: HTTP ' + resp.status), 'err');
+    } else if (payload && payload.status === 'stopped') {
+      appendLine(payload.message || '--- Cancelado por el usuario ---', 'warn');
+      if (abortCtrl) abortCtrl.abort();
+    } else if (payload && payload.status === 'not_running') {
+      appendLine(payload.message || 'No habia una ejecucion activa para detener.', 'dim');
+      if (abortCtrl) abortCtrl.abort();
+    } else {
+      appendLine((payload && payload.message) || 'Estado de detener desconocido.', 'warn');
+    }
+  } catch(e) {
+    appendLine('No se pudo detener la ejecucion: ' + e.message, 'err');
+  } finally {
+    completeStopUiState();
+  }
 });
 
 // PD2 Tracker button
@@ -1811,6 +1857,7 @@ $('btn-run-pd2').addEventListener('click', async () => {
   fileLinks.classList.add('hidden');
   btnRun.disabled = true;
   $('btn-run-pd2').disabled = true;
+  resetStopUiState();
   btnStop.disabled = false;
   abortCtrl = new AbortController();
   try {
@@ -1853,7 +1900,7 @@ $('btn-run-pd2').addEventListener('click', async () => {
   } catch(e) { if (e.name !== 'AbortError') appendLine('Error: ' + e.message, 'err'); }
   btnRun.disabled = false;
   $('btn-run-pd2').disabled = false;
-  btnStop.disabled = true;
+  resetStopUiState();
   abortCtrl = null;
 });
 
@@ -1867,6 +1914,7 @@ function handleEvent(ev) {
     progressText.textContent = '[' + ev.current + '/' + ev.total + '] ' + ev.label;
   }
   else if (ev.type === 'done') {
+    resetStopUiState();
     progressBar.style.width = '100%';
     if (ev.exit_code === 0) {
       progressText.textContent = 'Completado';
@@ -2790,11 +2838,41 @@ class Handler(BaseHTTPRequestHandler):
     def _serve_stop(self):
         global _running_proc
         with _proc_lock:
-            if _running_proc and _running_proc.poll() is None:
-                stop_process(_running_proc)
-                self._send_json({"status": "stopped"})
-            else:
-                self._send_json({"status": "not_running"})
+            proc = _running_proc
+            if proc is None:
+                self._send_json(
+                    _build_stop_response(
+                        "not_running", "No había una ejecución activa para detener."
+                    )
+                )
+                return
+
+            if proc.poll() is not None:
+                _running_proc = None
+                self._send_json(
+                    _build_stop_response(
+                        "not_running", "La ejecución ya había terminado."
+                    )
+                )
+                return
+
+            stop_process(proc)
+            if proc.poll() is None:
+                self._send_json(
+                    _build_stop_response(
+                        "stop_timeout",
+                        "Se intentó detener la ejecución, pero el proceso sigue activo.",
+                    ),
+                    status=500,
+                )
+                return
+
+            _running_proc = None
+            self._send_json(
+                _build_stop_response(
+                    "stopped", "La ejecución se detuvo correctamente."
+                )
+            )
 
 
 # ─── Main ────────────────────────────────────────

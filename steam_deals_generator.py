@@ -3019,7 +3019,7 @@ def generate_html(
         f'<span class="pill">{verified} Deck Verified</span>',
     ]
     if new_count:
-        pills.append(f'<span class="pill pill-new">{new_count} nuevos</span>')
+        pills.append(f'<span class="pill pill-new">{new_count} ofertas nuevas</span>')
     parts.append(f"""<header class="stats-bar">
   <h1>Steam Deals &mdash; {_html_esc(vanity)}</h1>
   <div class="stats-meta">{sale_html}{today} | Precios en MXN</div>
@@ -3072,7 +3072,7 @@ def generate_html(
   <button class="share-btn-mini" onclick="openShareModal({tp_data})" title="Compartir">&#128279;</button>
 </div>''')
         parts.append(f"""<section class="top-picks">
-  <h2>&#127942; Top {len(top_picks)} Picks</h2>
+  <h2>&#127942; {len(top_picks)} juegos destacados</h2>
   <p class="section-desc">Ranking: reviews (26%) + descuento (22%) + prioridad (18%) + $/hora HLTB (14%) + Deck (10%) + Metacritic (5%) + antigüedad (5%).</p>
   <div class="picks-grid">{"".join(cards)}</div>
 </section>""")
@@ -3340,7 +3340,7 @@ def generate_share_html(
                 else ""
             )
             pick_cards += f'<a href="{store}" target="_blank" style="text-decoration:none;color:inherit;background:#16202d;border:1px solid #2a475e;border-radius:6px;overflow:hidden;display:flex;flex-direction:column"><img src="{header}" style="width:100%;aspect-ratio:460/215;object-fit:cover" loading="lazy"><div style="padding:.4rem .6rem"><div style="font-size:1.2rem;font-weight:bold;color:#66c0f4">Score {tp["score"]}</div><div style="font-size:.8rem;margin:.2rem 0">{_html_esc(tp["name"])}</div><div style="font-size:.8rem"><span style="color:#6cc644">-{tp["discount"]}%</span> {_html_esc(tp["price_final"])}{metacritic_html}</div></div></a>'
-        picks_html = f'<h2 style="margin:1rem 0 .5rem">Top Picks</h2><div style="display:grid;grid-template-columns:repeat(auto-fill,minmax(160px,1fr));gap:.5rem">{pick_cards}</div>'
+        picks_html = f'<h2 style="margin:1rem 0 .5rem">Juegos destacados</h2><div style="display:grid;grid-template-columns:repeat(auto-fill,minmax(160px,1fr));gap:.5rem">{pick_cards}</div>'
 
     sale_line = f" — {_html_esc(sale_name)}" if sale_name else ""
     return f"""<!DOCTYPE html>

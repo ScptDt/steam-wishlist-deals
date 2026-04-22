@@ -667,11 +667,11 @@ function resetHistoryFilters({announce = false} = {}) {
 }
 
 function formatHistoryRunLabel(run) {
-  if (!run) return 'Run desconocido';
+  if (!run) return 'Ejecución desconocida';
   const datePart = run.timestamp || run.date || run.id;
   const dealCount = Number(run.deal_count || 0);
-  const saleName = run.sale_name ? String(run.sale_name) : 'Steam Deals';
-  return `${datePart} · ${saleName} · ${dealCount} deals`;
+  const eventName = run.sale_name ? String(run.sale_name) : 'Steam Deals';
+  return `${datePart} · ${eventName} · ${dealCount} ofertas`;
 }
 
 function findHistoryRunById(runId) {
@@ -684,8 +684,8 @@ function renderHistorySelectionSummary(leftRun, rightRun, {quick = false} = {}) 
   historySelectionSummary.innerHTML = `
     <div class="history-selection-summary-title">${quick ? 'Quick compare activo' : 'Comparacion activa'}</div>
     <div class="history-selection-summary-lines">
-      <div><strong>Run A:</strong> ${escapeHtml(formatHistoryRunLabel(leftRun))}</div>
-      <div><strong>Run B:</strong> ${escapeHtml(formatHistoryRunLabel(rightRun))}</div>
+      <div><strong>Ejecución inicial:</strong> ${escapeHtml(formatHistoryRunLabel(leftRun))}</div>
+      <div><strong>Ejecución comparada:</strong> ${escapeHtml(formatHistoryRunLabel(rightRun))}</div>
     </div>
   `;
   historySelectionSummary.classList.remove('hidden');
@@ -718,7 +718,7 @@ function setRunSelectorsFromList(runs) {
   if (!historyLeft || !historyRight) return;
   const list = Array.isArray(runs) ? runs : [];
   if (list.length < 2) {
-    const message = list.length === 0 ? 'No hay runs para este filtro' : 'Se requieren 2 runs';
+    const message = list.length === 0 ? 'No hay ejecuciones para este filtro' : 'Se requieren 2 ejecuciones';
     historyLeft.innerHTML = `<option value="">${message}</option>`;
     historyRight.innerHTML = `<option value="">${message}</option>`;
     return;
@@ -749,7 +749,7 @@ function getHistoryPageSlice(runs) {
 
 function updateHistoryPaginationUi(totalItems, totalPages) {
   if (historyPageInfo) {
-    historyPageInfo.textContent = `Pagina ${historyPage} de ${totalPages} · ${totalItems} runs`;
+    historyPageInfo.textContent = `Pagina ${historyPage} de ${totalPages} · ${totalItems} ejecuciones`;
   }
   if (btnHistoryPrevPage) btnHistoryPrevPage.disabled = historyPage <= 1;
   if (btnHistoryNextPage) btnHistoryNextPage.disabled = historyPage >= totalPages;
@@ -767,7 +767,7 @@ function applyHistoryRunSearch() {
   historyPage = 1;
   refreshRunSelectorsFromState();
   if (!latestFilteredRuns.length) {
-    appendLine('Busqueda de runs sin resultados.', 'warn');
+    appendLine('Búsqueda de ejecuciones sin resultados.', 'warn');
   }
 }
 
@@ -826,8 +826,8 @@ function renderHistorySummary(summary) {
   if (!historySummary) return;
   const safe = summary || {};
   historySummary.innerHTML = [
-    ['Run A', safe.left_total ?? 0],
-    ['Run B', safe.right_total ?? 0],
+    ['Ejecución inicial', safe.left_total ?? 0],
+    ['Ejecución comparada', safe.right_total ?? 0],
     ['Cambios', safe.changed ?? 0],
     ['Nuevos', safe.new ?? 0],
     ['Salieron', safe.removed ?? 0],
@@ -969,7 +969,7 @@ function renderHistoryTrend(runs) {
 
   const polyline = points.map(p => `${p.x.toFixed(1)},${p.y.toFixed(1)}`).join(' ');
   const dots = points.map((p, idx) => {
-    const title = `Run ${idx + 1}: ${p.value} deals`;
+    const title = `Ejecución ${idx + 1}: ${p.value} deals`;
     return `<circle cx="${p.x.toFixed(1)}" cy="${p.y.toFixed(1)}" r="2.8" fill="var(--accent)"><title>${escapeHtml(title)}</title></circle>`;
   }).join('');
 
@@ -979,7 +979,7 @@ function renderHistoryTrend(runs) {
   const trendSignal = getHistoryTrendSignal(trendDelta);
 
   historyTrend.innerHTML = `
-    <div class="history-trend-title">Tendencia general de ofertas (últimos ${normalized.length} runs)</div>
+    <div class="history-trend-title">Tendencia general de ofertas (últimas ${normalized.length} ejecuciones)</div>
     <div class="history-trend-subtitle">Te ayuda a ver si últimamente aparecieron más o menos ofertas en total. Si quieres revisar juegos concretos, usa la tabla y Top cambios.</div>
     <svg class="history-trend-svg" viewBox="0 0 ${width} ${height}" preserveAspectRatio="none" role="img" aria-label="Tendencia general del volumen de ofertas por run">
       <line x1="${padX}" y1="${height - padY}" x2="${width - padX}" y2="${height - padY}" stroke="var(--card-border)" stroke-width="1" />
@@ -1036,7 +1036,7 @@ function renderHistoryTopDeltas(rows) {
   };
 
   historyTopDeltas.innerHTML = `
-    <div class="history-top-deltas-title">Top cambios de precio (runs comparados)</div>
+    <div class="history-top-deltas-title">Top cambios de precio (ejecuciones comparadas)</div>
     <div class="history-top-deltas-grid">
       ${renderColumn('Mayores bajadas', topDown, true)}
       ${renderColumn('Mayores subidas', topUp, false)}
@@ -1049,7 +1049,7 @@ async function loadHistoryRuns() {
   if (!historyLeft || !historyRight) return;
   const response = await fetch('/api/history/runs?limit=50');
   if (!response.ok) {
-    throw new Error('No se pudo cargar el historico de runs.');
+    throw new Error('No se pudo cargar el histórico de ejecuciones.');
   }
   const payload = await response.json();
   const runs = Array.isArray(payload.runs) ? payload.runs : [];
@@ -1070,11 +1070,11 @@ async function compareHistoryRuns(options = {}) {
   const left = historyLeft.value;
   const right = historyRight.value;
   if (!left || !right) {
-    appendLine('Selecciona dos runs validos para comparar.', 'warn');
+    appendLine('Selecciona dos ejecuciones válidas para comparar.', 'warn');
     return;
   }
   if (left === right) {
-    appendLine('Selecciona runs distintos para la comparacion.', 'warn');
+    appendLine('Selecciona ejecuciones distintas para la comparación.', 'warn');
     return;
   }
 
@@ -1094,7 +1094,7 @@ async function compareHistoryRuns(options = {}) {
 
   const response = await fetch('/api/history/compare?' + query.toString());
   if (!response.ok) {
-    throw new Error('No se pudo comparar los runs seleccionados.');
+    throw new Error('No se pudieron comparar las ejecuciones seleccionadas.');
   }
   const payload = await response.json();
   const summary = payload.summary || {};
@@ -1501,6 +1501,7 @@ btnRun.addEventListener('click', async () => {
   fileLinks.innerHTML = '';
   fileLinks.classList.add('hidden');
   btnRun.disabled = true;
+  resetStopUiState();
   btnStop.disabled = false;
 
   try {
@@ -1540,7 +1541,7 @@ btnRun.addEventListener('click', async () => {
     if (resp.status === 409) {
       appendLine('Ya hay una ejecucion en curso.', 'warn');
       btnRun.disabled = false;
-      btnStop.disabled = true;
+      resetStopUiState();
       return;
     }
 
@@ -1574,25 +1575,35 @@ btnRun.addEventListener('click', async () => {
   }
 
   btnRun.disabled = false;
-  btnStop.disabled = true;
+  resetStopUiState();
   abortCtrl = null;
 });
 
 btnStop.addEventListener('click', async () => {
-  appendLine('Solicitando detener ejecucion...', 'warn');
+  if (stopRequestInFlight) return;
+  beginStopUiState();
   try {
     const resp = await fetch('/api/stop', {method: 'POST'});
     let payload = {};
     try {
       payload = await resp.json();
     } catch (e) {}
-    if (payload && payload.status === 'stopped') appendLine('--- Cancelado por el usuario ---', 'warn');
-    else appendLine('No habia una ejecucion activa para detener.', 'dim');
+    if (!resp.ok) {
+      appendLine((payload && payload.message) || ('No se pudo detener la ejecucion: HTTP ' + resp.status), 'err');
+    } else if (payload && payload.status === 'stopped') {
+      appendLine(payload.message || '--- Cancelado por el usuario ---', 'warn');
+      if (abortCtrl) abortCtrl.abort();
+    } else if (payload && payload.status === 'not_running') {
+      appendLine(payload.message || 'No habia una ejecucion activa para detener.', 'dim');
+      if (abortCtrl) abortCtrl.abort();
+    } else {
+      appendLine((payload && payload.message) || 'Estado de detener desconocido.', 'warn');
+    }
   } catch(e) {
     appendLine('No se pudo detener la ejecucion: ' + e.message, 'err');
+  } finally {
+    completeStopUiState();
   }
-  btnStop.disabled = true;
-  if (abortCtrl) abortCtrl.abort();
 });
 
 if (btnRunPd2) btnRunPd2.addEventListener('click', async () => {
@@ -1608,6 +1619,7 @@ if (btnRunPd2) btnRunPd2.addEventListener('click', async () => {
   fileLinks.classList.add('hidden');
   btnRun.disabled = true;
   btnRunPd2.disabled = true;
+  resetStopUiState();
   btnStop.disabled = false;
   abortCtrl = new AbortController();
   try {
@@ -1650,7 +1662,7 @@ if (btnRunPd2) btnRunPd2.addEventListener('click', async () => {
   } catch(e) { if (e.name !== 'AbortError') appendLine('Error: ' + e.message, 'err'); }
   btnRun.disabled = false;
   btnRunPd2.disabled = false;
-  btnStop.disabled = true;
+  resetStopUiState();
   abortCtrl = null;
 });
 
@@ -1664,6 +1676,7 @@ function handleEvent(ev) {
     progressText.textContent = '[' + ev.current + '/' + ev.total + '] ' + ev.label;
   }
   else if (ev.type === 'done') {
+    resetStopUiState();
     progressBar.style.width = '100%';
     if (ev.exit_code === 0) {
       progressText.textContent = 'Completado';
@@ -2448,6 +2461,27 @@ async function removeWatchlist(appid) {
 
 let currentShareData = null;
 let currentSteamUrl = '';
+let stopRequestInFlight = false;
+let stopMessageShown = false;
+
+function resetStopUiState() {
+  stopRequestInFlight = false;
+  stopMessageShown = false;
+  if (btnStop) btnStop.disabled = true;
+}
+
+function beginStopUiState() {
+  stopRequestInFlight = true;
+  if (btnStop) btnStop.disabled = true;
+  if (!stopMessageShown) {
+    appendLine('Solicitando detener ejecucion...', 'warn');
+    stopMessageShown = true;
+  }
+}
+
+function completeStopUiState() {
+  stopRequestInFlight = false;
+}
 
 function encodeSharePayload(data) {
   const json = JSON.stringify(data || {});
@@ -2588,9 +2622,9 @@ if (btnHistoryRefresh) {
     btnHistoryRefresh.disabled = true;
     try {
       await loadHistoryRuns();
-      appendLine('Historico recargado.', 'ok');
+      appendLine('Histórico recargado.', 'ok');
     } catch (e) {
-      appendLine('No se pudo recargar historico: ' + e.message, 'err');
+      appendLine('No se pudo recargar histórico: ' + e.message, 'err');
     } finally {
       btnHistoryRefresh.disabled = false;
     }
@@ -2608,9 +2642,9 @@ if (btnHistoryCompare) {
     btnHistoryCompare.disabled = true;
     try {
       await compareHistoryRuns();
-      appendLine('Comparacion de runs completada.', 'ok');
+      appendLine('Comparación de ejecuciones completada.', 'ok');
     } catch (e) {
-      appendLine('No se pudo comparar runs: ' + e.message, 'err');
+      appendLine('No se pudieron comparar ejecuciones: ' + e.message, 'err');
     } finally {
       btnHistoryCompare.disabled = false;
     }
@@ -2627,7 +2661,7 @@ if (btnHistoryQuickCompare) {
   btnHistoryQuickCompare.addEventListener('click', async () => {
     const source = latestFilteredRuns.length >= 2 ? latestFilteredRuns : latestHistoryRuns;
     if (!source || source.length < 2) {
-      appendLine('No hay suficientes runs para quick compare.', 'warn');
+      appendLine('No hay suficientes ejecuciones para la comparación rápida.', 'warn');
       return;
     }
     historyPage = 1;
@@ -2638,7 +2672,7 @@ if (btnHistoryQuickCompare) {
     }
     try {
       await compareHistoryRuns({quick: true});
-      appendLine('Quick compare: ultimos 2 runs.', 'ok');
+      appendLine('Comparación rápida: últimas 2 ejecuciones.', 'ok');
     } catch (e) {
       appendLine('No se pudo ejecutar quick compare: ' + e.message, 'err');
     }

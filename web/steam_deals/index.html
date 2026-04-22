@@ -219,10 +219,11 @@
         <input type="range" id="discount" min="10" max="95" step="5" value="50" oninput="document.getElementById('disc-val').textContent=this.value+'%'">
         <span class="range-val" id="disc-val">50%</span>
       </div>
+      <div class="hint">Subirlo deja fuera ofertas pequeñas y te muestra solo descuentos más fuertes.</div>
     </div>
     <div class="row">
       <div class="field">
-        <label>Top picks</label>
+        <label>Juegos destacados</label>
         <input type="number" id="top" value="10" min="1" max="50">
         <div class="hint">Define cuántos juegos quieres ver destacados arriba. No cambia el total de deals del reporte.</div>
       </div>
@@ -231,11 +232,11 @@
         <select id="sort">
           <option value="discount">Descuento</option>
           <option value="price">Precio</option>
-          <option value="reviews">Reviews</option>
+          <option value="reviews">Reseñas</option>
           <option value="priority">Prioridad wishlist</option>
           <option value="score">Score (recomendación compuesta)</option>
         </select>
-        <div class="hint">Score te ayuda a decidir por dónde empezar. Mezcla calidad, descuento, prioridad en tu wishlist, valor por hora y señales extra como Deck, Metacritic y antigüedad.</div>
+        <div class="hint">Cambia qué criterio se usa para acomodar los resultados. Si no estás seguro, deja `Score` para empezar con una mezcla más útil de señales.</div>
       </div>
     </div>
     <div class="metrics-guide" aria-label="Ayuda rápida para entender las métricas principales">
@@ -295,16 +296,17 @@
           <div class="field">
             <label>Precio máximo (MXN)</label>
             <input type="number" id="max_price" min="0" placeholder="Sin limite">
+            <div class="hint">Deja fuera juegos que superen ese tope. Úsalo si no quieres ver opciones más caras.</div>
           </div>
           <div class="field">
-            <label>Reviews positivas mín. (%)</label>
+            <label>Reseñas positivas mín. (%)</label>
             <input type="number" id="min_reviews" min="0" max="100" placeholder="Cualquiera">
             <div class="hint">Muestra solo juegos con al menos ese porcentaje de reseñas positivas.</div>
           </div>
         </div>
         <div class="row">
           <div class="field">
-            <label>Cantidad mínima de reviews</label>
+            <label>Cantidad mínima de reseñas</label>
             <input type="number" id="min_review_count" min="0" placeholder="Cualquiera">
             <div class="hint">Úsalo para evitar juegos con muy pocas reseñas y resultados menos confiables.</div>
           </div>
@@ -325,14 +327,14 @@
           <div class="hint">Si no estás seguro, déjalo en 12. Prueba 16 solo si tu conexión va bien; si ves errores raros o lentitud, vuelve a 12 u 8.</div>
         </div>
         <div class="checks checks-spaced">
-          <label><input type="checkbox" id="deck_only"> Solo Deck compatible</label>
-          <label><input type="checkbox" id="deck_verified"> Solo Deck Verified</label>
-          <label><input type="checkbox" id="new_only"> Solo deals nuevos</label>
+          <label><input type="checkbox" id="deck_only"> Solo juegos que corren en Steam Deck</label>
+          <label><input type="checkbox" id="deck_verified"> Solo juegos verificados para Steam Deck</label>
+          <label><input type="checkbox" id="new_only"> Solo ofertas nuevas</label>
           <label><input type="checkbox" id="csv"> Generar CSV</label>
           <label><input type="checkbox" id="no_cache"> Ignorar cache</label>
         </div>
         <div class="hint">Deck compatible = corre en Steam Deck aunque quizá necesite ajustes. Deck Verified = suele correr mejor y pedir menos ajustes.</div>
-        <div class="hint">`Solo deals nuevos` muestra juegos que entraron en oferta frente al run anterior. Si no hay historial previo, puede aportar poco o nada.</div>
+        <div class="hint">`Solo ofertas nuevas` muestra juegos que entraron en oferta frente al run anterior. Si no hay historial previo, puede aportar poco o nada.</div>
         <div class="hint">`Generar CSV` sirve si quieres llevar los resultados a Excel o Google Sheets sin depender solo del HTML.</div>
       </div>
     </details>
@@ -380,15 +382,15 @@
   </div>
 
   <div class="card" id="history-card">
-    <h2>&#128200; Histórico de runs (MVP)</h2>
-    <p class="history-card-intro">Compara dos ejecuciones para entender qué cambió en la wishlist. Si solo quieres una lectura rápida, empieza con <strong>Comparar últimos 2 runs</strong>.</p>
+    <h2>&#128200; Histórico de ejecuciones (MVP)</h2>
+    <p class="history-card-intro">Compara dos ejecuciones para entender qué cambió en la wishlist. Si solo quieres una lectura rápida, empieza con <strong>Comparar 2 recientes</strong>.</p>
     <div class="row">
       <div class="field">
-        <label>Run inicial</label>
+        <label>Ejecución inicial</label>
         <select id="history-left"></select>
       </div>
       <div class="field">
-        <label>Run a comparar</label>
+        <label>Ejecución a comparar</label>
         <select id="history-right"></select>
       </div>
     </div>
@@ -406,6 +408,7 @@
           <option value="removed">Solo salieron</option>
           <option value="same">Solo iguales</option>
         </select>
+        <div class="hint">Nuevo = apareció ahora. Salieron = ya no siguen en oferta. Iguales = el precio no cambió entre ambos runs.</div>
       </div>
       <div class="field">
         <label>Orden delta</label>
@@ -420,13 +423,13 @@
     </div>
     <div class="row row-spaced">
       <div class="field">
-        <label>Buscar runs</label>
+        <label>Buscar ejecuciones</label>
         <input type="text" id="history-search" placeholder="fecha, evento o perfil">
-        <div class="hint">Puedes buscar por fecha, nombre del evento o el perfil usado en ese run.</div>
+        <div class="hint">Puedes buscar por fecha, nombre del evento o el perfil usado en esa ejecución. Ejemplos: `2026-04-21`, `Medieval Fest`, `gaben`.</div>
       </div>
       <div class="field field-align-end">
-        <button class="btn btn-ghost history-quick-btn" type="button" id="btn-history-quick-compare" title="Selecciona automáticamente los 2 runs más recientes y los compara por ti">Comparar 2 recientes</button>
-        <div class="hint">Toma los 2 runs más recientes y los compara sin elegirlos a mano.</div>
+        <button class="btn btn-ghost history-quick-btn" type="button" id="btn-history-quick-compare" title="Selecciona automáticamente las 2 ejecuciones más recientes y las compara por ti">Comparar 2 recientes</button>
+        <div class="hint">Toma las 2 ejecuciones más recientes y las compara sin elegirlas a mano.</div>
       </div>
     </div>
     <div class="history-pagination" id="history-pagination">
@@ -435,17 +438,17 @@
       <button class="btn btn-ghost" type="button" id="btn-history-next-page">Siguiente ▶</button>
     </div>
     <div class="actions actions-spaced-top">
-      <button class="btn btn-primary" type="button" id="btn-history-compare" title="Compara los runs seleccionados con los filtros actuales">Comparar runs</button>
-      <button class="btn btn-ghost" type="button" id="btn-history-refresh" title="Actualiza la lista de runs disponibles sin recargar toda la página">&#128260; Recargar runs</button>
+      <button class="btn btn-primary" type="button" id="btn-history-compare" title="Compara las ejecuciones seleccionadas con los filtros actuales">Comparar ejecuciones</button>
+      <button class="btn btn-ghost" type="button" id="btn-history-refresh" title="Actualiza la lista de ejecuciones disponibles sin recargar toda la página">&#128260; Recargar ejecuciones</button>
       <button class="btn btn-ghost" type="button" id="btn-history-reset" title="Limpia búsqueda, filtros y orden para volver al estado base">&#10227; Restablecer filtros</button>
     </div>
     <div class="history-actions-guide" aria-label="Ayuda rápida para las acciones del histórico">
       <div class="history-actions-guide-item">
-        <strong>Comparar runs</strong>
-        <span>Usa Run A y Run B con los filtros actuales para ver cambios detallados de precio.</span>
+        <strong>Comparar ejecuciones</strong>
+        <span>Usa la ejecución inicial y la ejecución a comparar con los filtros actuales para ver cambios detallados de precio.</span>
       </div>
       <div class="history-actions-guide-item">
-        <strong>Recargar runs</strong>
+        <strong>Recargar ejecuciones</strong>
         <span>Actualiza la lista cuando acabas de generar un reporte nuevo o cambió el histórico.</span>
       </div>
       <div class="history-actions-guide-item">

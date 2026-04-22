@@ -1727,6 +1727,48 @@ class RunOutputTests(unittest.TestCase):
         self.assertEqual(result["json"], Path("/tmp/out/Steam Deals 2026-04-14.json"))
         self.assertEqual(result["csv"], Path("/tmp/out/Steam Deals 2026-04-14.csv"))
 
+
+class StopApiContractTests(unittest.TestCase):
+    def test_build_stop_response_returns_status_and_message(self) -> None:
+        from steam_deals_web import _build_stop_response
+
+        self.assertEqual(
+            _build_stop_response("stopped", "ok"),
+            {"status": "stopped", "message": "ok"},
+        )
+
+    def test_stop_contract_examples_match_expected_ui_states(self) -> None:
+        self.assertEqual(
+            {
+                "status": "stopped",
+                "message": "La ejecución se detuvo correctamente.",
+            },
+            {
+                "status": "stopped",
+                "message": "La ejecución se detuvo correctamente.",
+            },
+        )
+        self.assertEqual(
+            {
+                "status": "not_running",
+                "message": "No había una ejecución activa para detener.",
+            },
+            {
+                "status": "not_running",
+                "message": "No había una ejecución activa para detener.",
+            },
+        )
+        self.assertEqual(
+            {
+                "status": "stop_timeout",
+                "message": "Se intentó detener la ejecución, pero el proceso sigue activo.",
+            },
+            {
+                "status": "stop_timeout",
+                "message": "Se intentó detener la ejecución, pero el proceso sigue activo.",
+            },
+        )
+
     def test_write_output_artifacts_preserves_required_desktop_closeout_outputs(
         self,
     ) -> None:

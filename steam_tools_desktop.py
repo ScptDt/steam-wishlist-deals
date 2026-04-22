@@ -9,7 +9,9 @@ This is a first baseline for desktop packaging:
 
 from __future__ import annotations
 
+import os
 import subprocess
+import socket
 import sys
 import threading
 import time
@@ -66,6 +68,52 @@ def _candidate_urls(start_port: int, *, host: str = HOST) -> list[str]:
     ]
 
 
+def _find_free_port(
+    start_port: int,
+    *,
+    host: str = HOST,
+    socket_factory=socket.socket,
+) -> int | None:
+    for port in range(start_port, start_port + PORT_SCAN_SIZE):
+        sock = socket_factory(socket.AF_INET, socket.SOCK_STREAM)
+        try:
+            sock.bind((host, port))
+        except OSError:
+            sock.close()
+            continue
+        sock.close()
+        return port
+    return None
+
+
+def _resolve_server_target(
+    start_port: int,
+    *,
+    discover_live_url_fn=None,
+    find_free_port_fn=None,
+) -> dict[str, object]:
+    if discover_live_url_fn is None:
+        discover_live_url_fn = _discover_live_url
+    if find_free_port_fn is None:
+        find_free_port_fn = _find_free_port
+    reused_url = discover_live_url_fn(start_port, timeout=0.6)
+    if reused_url is not None:
+        return {
+            "reuse_existing": True,
+            "active_url": reused_url,
+            "launch_port": None,
+            "discover_start_port": start_port,
+        }
+
+    launch_port = find_free_port_fn(start_port) or start_port
+    return {
+        "reuse_existing": False,
+        "active_url": f"http://{HOST}:{launch_port}",
+        "launch_port": launch_port,
+        "discover_start_port": launch_port,
+    }
+
+
 def _wait_server(
     url: str,
     timeout: float = 15.0,
@@ -113,6 +161,13 @@ def _run_internal_web_server() -> None:
         web_main()
     finally:
         sys.argv = prev_argv
+
+
+def _build_child_process_env(*, frozen: bool, base_env=None) -> dict[str, str]:
+    env = dict(os.environ if base_env is None else base_env)
+    if frozen:
+        env["PYINSTALLER_RESET_ENVIRONMENT"] = "1"
+    return env
 
 
 def _run_embedded_script(script_name: str, script_args: list[str]) -> None:
@@ -225,19 +280,38 @@ def main() -> None:
             print(f"Abre manualmente: {fallback_target}")
 
     # If a local server is already alive, reuse it instead of spawning another one.
-    reused_url = _discover_live_url(PORT, timeout=0.6)
-    if reused_url is not None:
-        active_url = reused_url
+    target = _resolve_server_target(PORT)
+    active_url = str(target["active_url"])
+    launch_port = target["launch_port"]
+    discover_start_port = int(target["discover_start_port"])
+    if bool(target["reuse_existing"]):
+        pass
     else:
         if getattr(sys, "frozen", False):
-            cmd = [sys.executable, "--internal-web", "--no-open", "--port", str(PORT)]
+            cmd = [
+                sys.executable,
+                "--internal-web",
+                "--no-open",
+                "--port",
+                str(launch_port),
+            ]
         else:
             web_script = ROOT / "steam_deals_web.py"
-            cmd = [sys.executable, str(web_script), "--no-open", "--port", str(PORT)]
-        proc = subprocess.Popen(cmd, cwd=str(ROOT))
+            cmd = [
+                sys.executable,
+                str(web_script),
+                "--no-open",
+                "--port",
+                str(launch_port),
+            ]
+        proc = subprocess.Popen(
+            cmd,
+            cwd=str(ROOT),
+            env=_build_child_process_env(frozen=getattr(sys, "frozen", False)),
+        )
 
     try:
-        discovered_url = _discover_live_url(PORT, timeout=25.0)
+        discovered_url = _discover_live_url(discover_start_port, timeout=25.0)
         if not discovered_url:
             raise RuntimeError("No se pudo iniciar Steam Deals Web UI para desktop.")
         active_url = discovered_url
@@ -246,8 +320,8 @@ def main() -> None:
             import webview  # type: ignore[import-not-found]
         except Exception:
             # If native webview is unavailable, continue in browser mode.
-            print("Fallo al importar pywebview/backend nativo:")
-            traceback.print_exc()
+            print("Fallo al importar pywebview/backend nativo:", flush=True)
+            traceback.print_exc(file=sys.stdout)
             _open_browser_fallback("missing-webview")
             return
 
@@ -271,8 +345,8 @@ def main() -> None:
         webview.start(debug=False)
 
     except Exception:
-        print("Detalle del fallo de ventana nativa:")
-        traceback.print_exc()
+        print("Detalle del fallo de ventana nativa:", flush=True)
+        traceback.print_exc(file=sys.stdout)
         _open_browser_fallback("window-error")
 
     finally:

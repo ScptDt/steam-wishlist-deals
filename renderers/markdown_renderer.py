@@ -286,7 +286,7 @@ def generate_md(
             "",
             "> Score = recomendación compuesta para priorizar qué revisar primero. Combina reviews (26%) + descuento (22%) + prioridad (18%) + $/hora HLTB (14%) + Deck (10%) + Metacritic (5%) + antigüedad (5%).",
             "",
-            "| # | Score | % | Precio | Año | Reviews | MC | Deck/Linux | Modo | Juego |",
+            "| # | Score | % | Precio | Año | Reseñas | Metacritic | Compatibilidad | Tipo de juego | Juego |",
             "|---|-------|---|--------|-----|---------|----|-----------|----|-------|",
         ]
         for idx, tp in enumerate(top_picks, 1):
@@ -605,7 +605,7 @@ def generate_md(
             "",
             "> Estos juegos tienen reviews negativas, ¿seguro que los quieres?",
             "",
-            "| % | Precio | Reviews | Juego |",
+            "| % | Precio | Reseñas | Juego |",
             "|---|--------|---------|-------|",
         ]
         for d, rev in cleanup_neg:
@@ -738,10 +738,13 @@ def generate_md(
             metric_notes.append(
                 "Tendencia local = cómo se movió el precio del juego en tus corridas previas."
             )
+        metric_notes.append(
+            "Tipo de juego = si se juega solo, cooperativo, PvP o multijugador."
+        )
         if metric_notes:
             lines += [f"> {' · '.join(metric_notes)}", ""]
 
-        header = "| | % | Precio | Precio original | Año | Reviews | MC | Deck/Linux | Modo"
+        header = "| | % | Precio | Precio original | Año | Reseñas | Metacritic | Compatibilidad | Tipo de juego"
         sep = "|-|---|--------|-----|-----|---------|----|-----------|----|"
         if has_ach:
             header += " | Logros"

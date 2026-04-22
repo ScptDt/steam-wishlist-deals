@@ -37,9 +37,9 @@ def _html_link(name: str, appid: str) -> str:
 
 def _html_deck_badge(category: int) -> str:
     labels = {
-        3: ("Verified", "verified"),
-        2: ("Playable", "playable"),
-        1: ("Unsupported", "unsupported"),
+        3: ("Verificado", "verified"),
+        2: ("Jugable", "playable"),
+        1: ("No compatible", "unsupported"),
     }
     if category not in labels:
         return '<span class="badge deck-unknown">—</span>'
@@ -904,9 +904,9 @@ def _build_dashboard_html(
         deck_category = deck_compat_data.get(d["appid"], 0)
         dk_counts[deck_category] = dk_counts.get(deck_category, 0) + 1
     dk_colors = {
-        3: ("#6cc644", "Verified"),
-        2: ("#f0b232", "Playable"),
-        1: ("#c7322e", "Unsupported"),
+        3: ("#6cc644", "Verificado"),
+        2: ("#f0b232", "Jugable"),
+        1: ("#c7322e", "No compatible"),
         0: ("#555", "Unknown"),
     }
     dk_segs = ""
@@ -941,7 +941,7 @@ def _build_dashboard_html(
             pdb_segs += f'<div class="stacked-seg" style="width:{pct}%;background:{pdb_colors[tier]}">{count if pct > 5 else ""}</div>'
             pdb_legend += f'<span class="legend-item"><span class="legend-dot" style="background:{pdb_colors[tier]}"></span>{tier.title()} ({count})</span>'
 
-    compat_html = f"""<div class="dash-card"><h3>&#127918; Deck / ProtonDB</h3>
+    compat_html = f"""<div class="dash-card"><h3>&#127918; Compatibilidad Steam Deck y Linux</h3>
   <div style="margin-bottom:.6rem"><div style="font-size:.75rem;color:var(--text-secondary);margin-bottom:.2rem">Steam Deck</div><div class="stacked-bar">{dk_segs}</div><div class="stacked-legend">{dk_legend}</div></div>
   <div><div style="font-size:.75rem;color:var(--text-secondary);margin-bottom:.2rem">ProtonDB</div><div class="stacked-bar">{pdb_segs}</div><div class="stacked-legend">{pdb_legend}</div></div>
 </div>"""
@@ -1054,10 +1054,10 @@ def generate_html(
         f'<span class="pill pill-accent" id="stat-deals">{total_deals:,} deals (&ge;{min_discount}%)</span>',
         f'<span class="pill" id="stat-avg-disc">Promedio: -{avg_disc:.0f}%</span>',
         f'<span class="pill" id="stat-avg-price">Precio medio: ${avg_price:.0f}</span>',
-        f'<span class="pill">{verified} Deck Verified</span>',
+        f'<span class="pill">{verified} verificados para Steam Deck</span>',
     ]
     if new_count:
-        pills.append(f'<span class="pill pill-new">{new_count} nuevos</span>')
+        pills.append(f'<span class="pill pill-new">{new_count} ofertas nuevas</span>')
     parts.append(f"""<header class="stats-bar">
   <h1>Steam Deals &mdash; {_html_esc(vanity)}</h1>
   <div class="stats-meta">{sale_html}{today} | Precios en MXN</div>
@@ -1133,7 +1133,7 @@ def generate_html(
   {_html_share_button(share_payload)}
 </div>''')
         parts.append(f"""<section class="top-picks">
-  <h2>&#127942; Top {len(top_picks)} Picks</h2>
+  <h2>&#127942; {len(top_picks)} juegos destacados</h2>
   <p class="section-desc">Score = recomendación compuesta para priorizar qué revisar primero. Combina reviews (26%) + descuento (22%) + prioridad (18%) + $/hora HLTB (14%) + Deck (10%) + Metacritic (5%) + antigüedad (5%).</p>
   {_html_recommendation_guide()}
   <div class="picks-grid">{"".join(cards)}</div>
@@ -1233,8 +1233,8 @@ def generate_html(
     <div class="filter-group"><label>Buscar juego</label><input type="text" id="f-search" placeholder="Nombre..." oninput="applyFilters()"></div>
     <div class="filter-group"><label>Descuento min: <output id="f-disc-val">{min_discount}%</output></label><input type="range" id="f-discount" min="50" max="100" value="{min_discount}" oninput="document.getElementById('f-disc-val').textContent=this.value+'%';applyFilters()"></div>
     <div class="filter-group"><label>Precio max: <output id="f-price-val">Sin limite</output></label><input type="range" id="f-price-max" min="0" max="2000" value="2000" step="10" oninput="document.getElementById('f-price-val').textContent=this.value>=2000?'Sin limite':'$'+this.value;applyFilters()"></div>
-    <div class="filter-group"><label>Steam Deck</label><select id="f-deck" onchange="applyFilters()"><option value="all">Todos</option><option value="3">Verified</option><option value="2">Playable</option><option value="1">Unsupported</option></select></div>
-    <div class="filter-group"><label>Reviews min: <output id="f-rev-val">0%</output></label><input type="range" id="f-reviews" min="0" max="100" value="0" oninput="document.getElementById('f-rev-val').textContent=this.value+'%';applyFilters()"></div>
+    <div class="filter-group"><label>Steam Deck</label><select id="f-deck" onchange="applyFilters()"><option value="all">Todos</option><option value="3">Verificado</option><option value="2">Jugable</option><option value="1">No compatible</option></select></div>
+    <div class="filter-group"><label>Reseñas mín.: <output id="f-rev-val">0%</output></label><input type="range" id="f-reviews" min="0" max="100" value="0" oninput="document.getElementById('f-rev-val').textContent=this.value+'%';applyFilters()"></div>
     <div class="filter-group"><label><input type="checkbox" id="f-new-only" onchange="applyFilters()"> Solo nuevos</label></div>
     <div class="filter-group"><button onclick="resetFilters()" class="btn-reset">Limpiar filtros</button> <button onclick="copyForSheets()" class="btn-reset" title="Copiar datos visibles como TSV para pegar en Google Sheets/Excel">&#128203; Copiar para Sheets</button></div>
   </div>
@@ -1253,10 +1253,10 @@ def generate_html(
             ("%", "num"),
             ("Precio", "price"),
             ("Precio original", "price"),
-            ("Reviews", "num"),
-            ("MC", "num"),
-            ("Deck", "text"),
-            ("Modo", "text"),
+            ("Reseñas", "num"),
+            ("Metacritic", "num"),
+            ("Compatibilidad", "text"),
+            ("Tipo de juego", "text"),
         ]
         if has_ach:
             cols.append(("Logros", "num"))
@@ -1361,6 +1361,9 @@ def generate_html(
             note_parts.append(
                 "Mín. histórico = mejor precio detectado antes en Steam."
             )
+        note_parts.append(
+            "Tipo de juego = si se juega solo, cooperativo, PvP o multijugador."
+        )
         if has_itad and has_sparklines:
             note_parts.append(
                 "Usa ➡ Ver tendencia junto a Mín. histórico para saltar rápido al movimiento local del precio."

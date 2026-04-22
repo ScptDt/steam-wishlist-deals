@@ -25,6 +25,7 @@ No se mantienen documentos paralelos de planificacion; este archivo es la unica 
 - [x] Empaquetado con PyInstaller (build inicial) validado en Windows.
 - [x] Checklist de release y smoke tests (primera version).
 - [ ] Corregir botón `Detener` en Steam Deals desktop/web: hoy puede quedarse solo en "Solicitando detener ejecucion..." sin frenar el proceso de forma confiable; si el usuario hace varios clicks, el mensaje se duplica y aumenta la confusion.
+- [ ] Revisar el flujo `/files/...` en Windows: hoy puede disparar `403` + `ConnectionAbortedError [WinError 10053]` en el server local; confirmar si es solo ruido por conexión abortada o un bug real en apertura/descarga de archivos.
 - [ ] Revisar inconsistencia de caché/batches en precios Steam: el run puede reportar `Caché válida (...) — sin nuevos, skip fetch` y aun así lanzar `Fetching N juegos`, además de caer en `HTTP 400` por batch y degradarse a fallback individual muy lento. Decidir si se resuelve como quick win de mensajes/guardrails o como track más amplio de fetch batching/cache behavior.
 - [ ] Invalidar o refrescar el cache de precios cuando cambien las Weeklong/Midweek/Weekend Deals; detectar automaticamente cuando reinician o cuanto les falta para evitar reutilizar datos viejos.
 
@@ -37,9 +38,11 @@ No se mantienen documentos paralelos de planificacion; este archivo es la unica 
 - [x] Renombrar "Steam Tags" a "Etiquetas" en UI.
 - [x] Cambiar la metrica "edad" por un termino mas claro (ej. "antiguedad") y explicar que mide.
 - [ ] Corregir share (compartir deals): reportado primero en Top Picks y luego como falla general en todo el share. [Parcial avanzado: Web UI + HTML interactivo + Share HTML ya comparten payload normalizado, botones/modal de share y compatibilidad desktop validada por tests/artifacts; falta validacion manual E2E final desde superficies generadas y live UI.]
+- [ ] Simplificar la tarjeta `Último reporte`: hoy quedó demasiado cargada (share top picks + presupuesto + stats) y perdió el formato de resumen compacto; volverla más clara y escaneable.
 - [x] Modo Presupuesto (dinamica "Battle Royale" interna, no genero): permitir reemplazar sugerencias tanto de lista completa ("probar otra lista") como de juego individual ("cambiar este juego"), manteniendo presupuesto y priorizando valor/score. [Implementado base y evidenciado en artifacts HTML/JSON/MD; queda pendiente separado solo el refinamiento de diversidad real.]
 - [x] Modo Presupuesto: ofrecer 3 variantes de seleccion para el mismo presupuesto (lista chica = pocos juegos/ticket alto, lista media = balanceada, lista grande = mas juegos/ticket bajo). [Implementado base y evidenciado en artifacts HTML/JSON/MD.]
 - [ ] Modo Presupuesto: mejorar la diversidad real del reroll/reemplazos cuando varias opciones terminan sintiéndose demasiado parecidas o repiten casi los mismos juegos.
+- [ ] Corregir el reroll/reemplazo en `Tu Presupuesto Ideal`: al cambiar un juego se actualizan texto/precio pero la imagen puede quedarse en la opción anterior.
 - [ ] Agregar acceso rapido (boton tipo flecha) a grafica/historico de precios junto al minimo historico; evaluar mostrar minimo global y minimo en ventana de tiempo.
 - [ ] Revisar/replantear bloque de tendencia (trend): actualmente no se entiende y no aporta valor claro. [Parcial: copy/explicacion ahora aclaran que resume volumen general de ofertas y no precio individual; pendiente decidir si la señal actual se mantiene o se reemplaza por algo mas util.]
 - [x] Renombrar/ajustar trend para lenguaje mas claro al usuario final (ej. "Tendencia de precios") y simplificar su interpretacion.
@@ -400,6 +403,25 @@ Notas:
 
 ## Bitacora
 
+- 2026-04-21: Quick win de consistencia UX: `Solo deals nuevos` se renombra a `Solo ofertas nuevas`, manteniendo el mismo comportamiento pero con lenguaje más natural para usuario normal.
+- 2026-04-21: Quick win de consistencia UX en Steam Deck: estados visibles como `Verified`, `Playable` y `Unsupported` se traducen a `Verificado`, `Jugable` y `No compatible` en reportes/labels visibles.
+- 2026-04-21: Quick win de consistencia UX en histórico: el resumen de cada ejecución deja de mostrar `deals` y pasa a `ofertas`, manteniendo el evento/festival visible con wording más natural.
+- 2026-04-21: Quick win de consistencia UX en resúmenes: el pill `nuevos` se aclara a `ofertas nuevas`, alineado con el wording de `Solo ofertas nuevas` para evitar términos demasiado ambiguos.
+- 2026-04-21: Quick win de consistencia UX en resúmenes: el pill `Deck Verified` se humaniza a `verificados para Steam Deck`, alineado con el resto del lenguaje ya traducido.
+- 2026-04-21: Quick win de consistencia UX en reportes/tablas: `Steam Deck / Linux` y `Steam Deck` se simplifican hacia `Compatibilidad`, y el dashboard resume mejor la sección como `Compatibilidad Steam Deck y Linux`.
+- 2026-04-21: Quick win de UX en reportes: `Tipo de juego` ahora se acompaña de una nota breve para aclarar que resume si el juego es solo, cooperativo, PvP o multijugador.
+- 2026-04-21: Quick win de consistencia UX en reportes/tablas: `Deck`/`Deck/Linux` y `Modo` se humanizan hacia `Steam Deck` / `Steam Deck / Linux` y `Tipo de juego`, para que los headers suenen menos técnicos y más claros.
+- 2026-04-21: Quick win de consistencia UX: `MC` pasa a mostrarse como `Metacritic` en tablas/reportes visibles, evitando abreviaturas poco claras para usuario normal.
+- 2026-04-21: Quick win de consistencia UX: labels visibles de `Reviews` pasan a `Reseñas` en UI/reportes principales, reduciendo la mezcla innecesaria de inglés y español.
+- 2026-04-21: Quick win de lenguaje UX en histórico: `Run` se humaniza a `Ejecución` en labels, hints, títulos y mensajes visibles para que la sección suene menos técnica.
+- 2026-04-21: Quick win de consistencia UX: `Top Picks` pasa a mostrarse como `Juegos destacados` también en HTML interactivo y Share HTML, alineado con la UI principal.
+- 2026-04-21: Quick win de UX en configuración principal: `Top picks` se renombra a `Juegos destacados`, para sonar menos técnico y más natural para usuario normal.
+- 2026-04-21: Quick win de UX en histórico: `Buscar runs` ahora añade ejemplos concretos (`2026-04-21`, `Medieval Fest`, `gaben`) para que el usuario entienda más rápido qué puede escribir ahí.
+- 2026-04-21: Quick win de UX en histórico: `Filtrar estado` ahora explica mejor qué significa `Nuevo`, `Salieron` e `Iguales`, para que el usuario no tenga que deducirlo por contexto.
+- 2026-04-21: Quick win de UX en filtros avanzados: los checks de Steam Deck también se humanizan en el texto (`Solo juegos que corren en Steam Deck`, `Solo juegos verificados para Steam Deck`), para que se entiendan incluso sin leer el hint adicional.
+- 2026-04-21: Quick win de UX en filtros avanzados: `Precio máximo (MXN)` ahora aclara que deja fuera juegos por arriba de ese tope, para que el usuario entienda mejor cuándo conviene usarlo.
+- 2026-04-21: Quick win de UX en configuración principal: `Ordenar por` ahora explica mejor que cambia el criterio de acomodo del reporte y sugiere dejar `Score` si no sabes cuál usar.
+- 2026-04-21: Quick win de UX en configuración principal: `Descuento mínimo` ahora aclara que subirlo deja fuera ofertas pequeñas y concentra el reporte en descuentos más fuertes.
 - 2026-04-21: Quick win de UX en filtros avanzados: `Generar CSV` ahora aclara que sirve para llevar resultados a Excel o Google Sheets, en vez de quedar como una opción técnica sin contexto.
 - 2026-04-21: Quick win de UX en filtros avanzados: `Solo deals nuevos` ahora aclara que compara contra el run anterior y que, sin historial previo, puede aportar poco o nada.
 - 2026-04-21: Quick win de UX en filtros avanzados: los checks de Steam Deck ahora explican mejor la diferencia entre `compatible` y `Verified`, para que el usuario normal entienda qué tanto quiere restringir los resultados.

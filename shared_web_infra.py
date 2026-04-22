@@ -270,6 +270,9 @@ def stop_process(
     os_name: str = os.name,
     getpgid=None,
     killpg=None,
+    terminate_fn=None,
+    kill_fn=None,
+    wait_fn=None,
 ) -> None:
     if proc.poll() is not None:
         return
@@ -278,6 +281,12 @@ def stop_process(
         getpgid = os.getpgid
     if killpg is None:
         killpg = os.killpg
+    if terminate_fn is None:
+        terminate_fn = proc.terminate
+    if kill_fn is None:
+        kill_fn = proc.kill
+    if wait_fn is None:
+        wait_fn = proc.wait
 
     process_group_id = None
     if os_name != "nt":
@@ -285,17 +294,17 @@ def stop_process(
             process_group_id = getpgid(proc.pid)
             killpg(process_group_id, signal.SIGTERM)
         except (AttributeError, ProcessLookupError, OSError):
-            proc.terminate()
+            terminate_fn()
     else:
-        proc.terminate()
+        terminate_fn()
 
     try:
-        proc.wait(timeout=timeout_seconds)
+        wait_fn(timeout=timeout_seconds)
     except subprocess.TimeoutExpired:
         if os_name != "nt" and process_group_id is not None:
             try:
                 killpg(process_group_id, signal.SIGKILL)
             except (AttributeError, ProcessLookupError, OSError):
-                proc.kill()
+                kill_fn()
         else:
-            proc.kill()
+            kill_fn()

@@ -70,3 +70,35 @@ class StopProcessTests(unittest.TestCase):
         self.assertEqual(proc.wait_calls, [])
         self.assertEqual(proc.terminate_called, 0)
         self.assertEqual(proc.kill_called, 0)
+
+    def test_stop_process_uses_terminate_kill_wait_injected_hooks_on_windows(self) -> None:
+        proc = _FakeProc()
+        calls = []
+
+        stop_process(
+            proc,
+            os_name="nt",
+            terminate_fn=lambda: calls.append("terminate"),
+            kill_fn=lambda: calls.append("kill"),
+            wait_fn=lambda timeout=None: calls.append(("wait", timeout)),
+        )
+
+        self.assertEqual(calls, ["terminate", ("wait", 3.0)])
+
+    def test_stop_process_uses_injected_kill_when_windows_wait_times_out(self) -> None:
+        proc = _FakeProc(timeout=True)
+        calls = []
+
+        def fake_wait(timeout=None):
+            calls.append(("wait", timeout))
+            raise subprocess.TimeoutExpired(cmd="fake", timeout=timeout)
+
+        stop_process(
+            proc,
+            os_name="nt",
+            terminate_fn=lambda: calls.append("terminate"),
+            kill_fn=lambda: calls.append("kill"),
+            wait_fn=fake_wait,
+        )
+
+        self.assertEqual(calls, ["terminate", ("wait", 3.0), "kill"])

@@ -309,7 +309,7 @@ def _render_deal_row(
     appid = deal["appid"]
     review = reviews.get(appid)
     review_text = f"{review['desc']} ({review['pct']}%)" if review else ""
-    deck_text = {3: "Verified", 2: "Playable"}.get(deck_compat.get(appid, 0), "")
+    deck_text = {3: "Verificado", 2: "Jugable"}.get(deck_compat.get(appid, 0), "")
     capsule = CAPSULE_URL.format(appid=appid)
     store = STORE_URL.format(appid=appid)
     low = historical_lows.get(appid)
@@ -416,7 +416,7 @@ def generate_share_html(
             for top_pick in top_picks[:5]
         )
         picks_html = (
-            '<h2 style="margin:1rem 0 .5rem">Top Picks</h2>'
+            '<h2 style="margin:1rem 0 .5rem">Juegos destacados</h2>'
             f'<p style="color:#8f98a0;font-size:.78rem;margin:0 0 .55rem">{html_escape(_SCORE_EXPLANATION)}</p>'
             '<div style="display:grid;grid-template-columns:repeat(auto-fill,minmax(160px,1fr));gap:.5rem">'
             f"{pick_cards}</div>"
@@ -432,7 +432,7 @@ def generate_share_html(
 <div class="meta">{today} | {len(deals)} deals (&ge;{min_discount}%) | Precios en MXN</div>
 {picks_html}
 <h2 style="margin:1rem 0 .5rem">Todos los Deals</h2>
-<table><thead><tr><th>%</th><th>Precio</th><th>Reviews</th><th>Deck</th><th>Juego</th></tr></thead><tbody>{rows}</tbody></table>
+<table><thead><tr><th>%</th><th>Precio</th><th>Reseñas</th><th>Compatibilidad</th><th>Juego</th></tr></thead><tbody>{rows}</tbody></table>
 <div style="margin-top:1.5rem;text-align:center;color:#8f98a0;font-size:.75rem">Generado con Steam Deals Generator</div>
 
 <!-- Share Modal -->

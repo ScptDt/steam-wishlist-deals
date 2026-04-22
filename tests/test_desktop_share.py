@@ -11,11 +11,14 @@ import time
 
 from steam_tools_desktop import (
     FALLBACK_REASON_MESSAGES,
+    _build_child_process_env,
     _candidate_urls,
     _config_probe_url,
     _discover_live_url,
+    _find_free_port,
     _fallback_url,
     _probe_steam_deals_server,
+    _resolve_server_target,
     _wait_server,
     decode_share_payload,
 )
@@ -88,6 +91,46 @@ class DesktopLauncherFallbackTests(unittest.TestCase):
                 "http://127.0.0.1:8080",
                 "http://127.0.0.1:8081",
                 "http://127.0.0.1:8082",
+            ],
+        )
+
+    def test_build_child_process_env_sets_pyinstaller_reset_only_for_frozen(
+        self,
+    ) -> None:
+        self.assertEqual(
+            _build_child_process_env(frozen=False, base_env={"A": "1"}),
+            {"A": "1"},
+        )
+        self.assertEqual(
+            _build_child_process_env(frozen=True, base_env={"A": "1"}),
+            {"A": "1", "PYINSTALLER_RESET_ENVIRONMENT": "1"},
+        )
+
+    def test_find_free_port_returns_first_bindable_port(self) -> None:
+        class _FakeSocket:
+            attempts = []
+
+            def __init__(self, *_args):
+                self.port = None
+
+            def bind(self, address):
+                _FakeSocket.attempts.append(address)
+                self.port = address[1]
+                if self.port in (8080, 8081):
+                    raise OSError("busy")
+
+            def close(self):
+                return None
+
+        result = _find_free_port(8080, socket_factory=_FakeSocket)
+
+        self.assertEqual(result, 8082)
+        self.assertEqual(
+            _FakeSocket.attempts,
+            [
+                ("127.0.0.1", 8080),
+                ("127.0.0.1", 8081),
+                ("127.0.0.1", 8082),
             ],
         )
 
@@ -171,6 +214,42 @@ class DesktopLauncherFallbackTests(unittest.TestCase):
 
         self.assertEqual(result, "http://127.0.0.1:8083")
         self.assertIn("http://127.0.0.1:8083/api/config", checked)
+
+    def test_resolve_server_target_uses_launch_port_as_discovery_base_when_spawning(
+        self,
+    ) -> None:
+        result = _resolve_server_target(
+            8080,
+            discover_live_url_fn=lambda _port, timeout=0.0: None,
+            find_free_port_fn=lambda _port: 8084,
+        )
+
+        self.assertEqual(
+            result,
+            {
+                "reuse_existing": False,
+                "active_url": "http://127.0.0.1:8084",
+                "launch_port": 8084,
+                "discover_start_port": 8084,
+            },
+        )
+
+    def test_resolve_server_target_reuses_existing_server_when_available(self) -> None:
+        result = _resolve_server_target(
+            8080,
+            discover_live_url_fn=lambda _port, timeout=0.0: "http://127.0.0.1:8080",
+            find_free_port_fn=lambda _port: 8084,
+        )
+
+        self.assertEqual(
+            result,
+            {
+                "reuse_existing": True,
+                "active_url": "http://127.0.0.1:8080",
+                "launch_port": None,
+                "discover_start_port": 8080,
+            },
+        )
 
 
 class DesktopCleanShutdownContractTests(unittest.TestCase):
