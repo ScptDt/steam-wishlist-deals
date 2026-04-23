@@ -13,7 +13,7 @@ import threading
 import urllib.parse
 import webbrowser
 from datetime import datetime
-from http.server import HTTPServer, BaseHTTPRequestHandler
+from http.server import HTTPServer, BaseHTTPRequestHandler, ThreadingHTTPServer
 from pathlib import Path
 
 try:
@@ -228,6 +228,78 @@ def _row_delta_sort_value(row: dict, *, fallback: int) -> int:
     return fallback
 
 
+def _load_history_window(history_dir: Path, *, max_runs: int = 20) -> list[tuple[Path, dict]]:
+    runs: list[tuple[Path, dict]] = []
+    if not history_dir.exists():
+        return runs
+    for file_path in sorted(history_dir.glob("run_*.json"), reverse=True):
+        run_data = _load_history_run(file_path)
+        if run_data is None:
+            continue
+        runs.append((file_path, run_data))
+        if len(runs) >= max_runs:
+            break
+    runs.reverse()
+    return runs
+
+
+def _build_game_history(appids: set[str], history_runs: list[tuple[Path, dict]]) -> dict[str, list[dict]]:
+    game_history: dict[str, list[dict]] = {appid: [] for appid in appids}
+    for file_path, run_data in history_runs:
+        deals = run_data.get("deals", {})
+        for appid in appids:
+            deal = deals.get(appid)
+            if not isinstance(deal, dict):
+                continue
+            game_history[appid].append(
+                {
+                    "run_id": file_path.name,
+                    "timestamp": run_data.get("timestamp", ""),
+                    "date": run_data.get("date", ""),
+                    "sale_name": run_data.get("sale_name", ""),
+                    "price": deal.get("price_final", "?"),
+                    "price_raw": deal.get("price_raw", 0),
+                    "discount": deal.get("discount", 0),
+                }
+            )
+    return {appid: snapshots for appid, snapshots in game_history.items() if snapshots}
+
+
+def _summarize_history_analytics(rows: list[dict], history_runs: list[tuple[Path, dict]]) -> dict:
+    state_counts = {"changed": 0, "new": 0, "removed": 0, "same": 0}
+    for row in rows:
+        status = row.get("status")
+        if status in state_counts:
+            state_counts[status] += 1
+
+    changed_rows = [
+        row for row in rows if row.get("status") == "changed" and isinstance(row.get("delta_raw"), (int, float))
+    ]
+    top_price_drops = sorted(
+        [row for row in changed_rows if row.get("direction") == "down"],
+        key=lambda row: row.get("delta_raw", 0),
+    )[:5]
+    top_price_rises = sorted(
+        [row for row in changed_rows if row.get("direction") == "up"],
+        key=lambda row: row.get("delta_raw", 0),
+        reverse=True,
+    )[:5]
+
+    return {
+        "state_counts": state_counts,
+        "history_runs": [
+            _build_history_run_summary(file_path, run_data)
+            for file_path, run_data in history_runs
+        ],
+        "game_history": _build_game_history(
+            {str(row.get("appid", "")) for row in rows if row.get("appid")},
+            history_runs,
+        ),
+        "top_price_drops": top_price_drops,
+        "top_price_rises": top_price_rises,
+    }
+
+
 def compare_history_runs(
     *,
     history_dir: Path,
@@ -290,6 +362,9 @@ def compare_history_runs(
             reverse=True,
         )
 
+    same_count = sum(1 for row in rows if row.get("status") == "same")
+    history_runs = _load_history_window(history_dir, max_runs=20)
+
     return {
         "left": _build_history_run_summary(left_path, left_data),
         "right": _build_history_run_summary(right_path, right_data),
@@ -299,8 +374,10 @@ def compare_history_runs(
             "changed": changed_count,
             "new": new_count,
             "removed": removed_count,
+            "same": same_count,
         },
         "rows": rows,
+        "analytics": _summarize_history_analytics(rows, history_runs),
     }
 
 
@@ -2330,6 +2407,17 @@ class Handler(BaseHTTPRequestHandler):
     def log_message(self, format, *args):
         pass  # Silenciar logs del server
 
+    def end_headers(self):
+        path = urllib.parse.urlparse(getattr(self, "path", "")).path
+        if path in {"/", "/app.js", "/app.css"}:
+            self.send_header(
+                "Cache-Control",
+                "no-store, no-cache, must-revalidate, max-age=0",
+            )
+            self.send_header("Pragma", "no-cache")
+            self.send_header("Expires", "0")
+        super().end_headers()
+
     def _send_json(self, data, status=200):
         send_json(self, data, status=status)
 
@@ -2894,7 +2982,7 @@ def main():
     server = None
     for p in range(port, port + 10):
         try:
-            server = HTTPServer(("127.0.0.1", p), Handler)
+            server = ThreadingHTTPServer(("127.0.0.1", p), Handler)
             port = p
             break
         except OSError:

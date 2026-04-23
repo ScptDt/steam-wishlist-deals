@@ -344,7 +344,7 @@ def _html_min_hist_jump_button(appid: str) -> str:
     return (
         f'<button type="button" class="min-hist-jump-btn" '
         f'onclick="focusTrendCell(\'{_html_esc(appid)}\')" '
-        'title="Ir rápido a la tendencia local de este juego">&#10148; Ver tendencia</button>'
+        'title="Ir rápido al historial local de este juego">&#10148; Ver historial</button>'
     )
 
 
@@ -1059,7 +1059,7 @@ def generate_html(
     if new_count:
         pills.append(f'<span class="pill pill-new">{new_count} ofertas nuevas</span>')
     parts.append(f"""<header class="stats-bar">
-  <h1>Steam Deals &mdash; {_html_esc(vanity)}</h1>
+  <h1>Ofertas de Steam &mdash; {_html_esc(vanity)}</h1>
   <div class="stats-meta">{sale_html}{today} | Precios en MXN</div>
   <div class="stats-pills">{"".join(pills)}</div>
 </header>""")

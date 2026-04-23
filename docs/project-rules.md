@@ -4,7 +4,8 @@ Guía mínima para darle rumbo al repo sin convertirlo en burocracia.
 
 ## Fuente de verdad
 
-- `PENDIENTES.md` es la fuente única de verdad para backlog, bitácora operativa, deuda técnica y siguientes pasos.
+- `PENDIENTES.md` es la fuente única de verdad para backlog, prioridades, deuda técnica, estado actual y siguientes pasos.
+- `BITACORA.md` concentra la bitácora operativa detallada, evidencia cronológica y workarounds históricos; no reemplaza a `PENDIENTES.md`.
 - `README.md` documenta uso real, entrypoints y flujos para usuarios o contribuidores.
 - `docs/runbooks/` guarda checklists manuales y validaciones operativas reproducibles.
 
@@ -33,6 +34,7 @@ Guía mínima para darle rumbo al repo sin convertirlo en burocracia.
 - Antes de implementar, ubica el cambio en una de estas categorías: producto, UX, infraestructura o documentación.
 - Si el cambio afecta comportamiento visible, valida al menos el slice tocado.
 - Si el cambio altera roadmap, deuda o decisiones operativas, refleja el contexto en `PENDIENTES.md`.
+- Si el cambio deja evidencia cronológica detallada, validaciones largas o workarounds históricos, regístralo en `BITACORA.md` y deja en `PENDIENTES.md` solo el resumen que afecte estado/prioridad.
 - Si el cambio modifica uso, setup o flujo de trabajo, actualiza `README.md` o el runbook correspondiente.
 
 ## Regla práctica de decisión

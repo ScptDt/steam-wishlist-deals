@@ -42,8 +42,8 @@
   <div class="step active" id="wiz-step-0">
     <div class="step-card">
       <span class="step-num">Paso 1 de 4</span>
-      <h2>&#128100; Tu perfil de Steam</h2>
-      <p>Necesitamos tu <strong>Vanity URL</strong> o <strong>Steam ID</strong> para encontrar tu wishlist.</p>
+      <h2>&#128100; Tu cuenta de Steam</h2>
+      <p>Necesitamos tu <strong>perfil de Steam</strong> o tu <strong>Steam ID</strong> para encontrar tu wishlist.</p>
       <p>Lo encuentras en tu perfil de Steam &rarr; la parte final de la URL:</p>
       <div class="example">https://steamcommunity.com/id/<strong>TU_VANITY_URL</strong>/</div>
       <p>También puede ser tu Steam ID (17 dígitos):</p>
@@ -63,8 +63,8 @@
   <div class="step" id="wiz-step-1">
     <div class="step-card">
       <span class="step-num">Paso 2 de 4</span>
-      <h2>&#128273; Steam API Key <span class="optional-tag">opcional</span></h2>
-      <p>Con una API Key obtienes datos extra:</p>
+       <h2>&#128273; Clave de Steam API <span class="optional-tag">opcional</span></h2>
+      <p>Con esta clave obtienes datos extra:</p>
       <ul class="wiz-list">
         <li>Ver juegos que ya tienes (para limpiar la wishlist)</li>
         <li>Mejor detección de biblioteca familiar</li>
@@ -78,7 +78,7 @@
         <li>Copia la key que te da</li>
       </ol>
       <div class="field">
-        <label>Steam API Key</label>
+        <label>Clave de Steam API</label>
         <div class="pw-wrap">
           <input type="password" id="wiz-key" placeholder="Déjalo vacío si no tienes">
           <button type="button" class="pw-toggle" onclick="togglePw(this)" aria-label="Mostrar u ocultar Steam API Key">&#128065;</button>
@@ -95,7 +95,7 @@
   <div class="step" id="wiz-step-2">
     <div class="step-card">
       <span class="step-num">Paso 3 de 4</span>
-      <h2>&#128176; IsThereAnyDeal API Key <span class="optional-tag">opcional</span></h2>
+      <h2>&#128176; Clave de ITAD <span class="optional-tag">opcional</span></h2>
       <p>ITAD agrega datos de otras tiendas:</p>
       <ul class="wiz-list">
         <li><strong>Mínimo histórico</strong> &mdash; el precio más bajo que ha tenido en Steam</li>
@@ -109,7 +109,7 @@
         <li>Crea una app y copia la API key</li>
       </ol>
       <div class="field">
-        <label>ITAD API Key</label>
+        <label>Clave de ITAD</label>
         <div class="pw-wrap">
           <input type="password" id="wiz-itad" placeholder="Déjalo vacío si no tienes">
           <button type="button" class="pw-toggle" onclick="togglePw(this)" aria-label="Mostrar u ocultar ITAD API Key">&#128065;</button>
@@ -168,17 +168,17 @@
       <h2 class="card-title-row">
         <span>Cuenta de Steam</span>
         <button type="button" class="btn btn-ghost btn-compact" onclick="openWizard()">
-          Abrir wizard
+          Abrir asistente
         </button>
       </h2>
     <div class="field">
       <label>Perfil de Steam</label>
       <input type="text" id="vanity" placeholder="tu_vanity_url, Steam ID, o URL del perfil">
-      <div class="hint">Vanity URL, Steam ID (17 dígitos), o link completo del perfil</div>
+      <div class="hint">Puedes pegar tu perfil de Steam, tu Steam ID (17 dígitos) o la URL completa del perfil.</div>
     </div>
     <div class="row">
       <div class="field">
-        <label>Steam API Key <span class="optional">(opcional)</span></label>
+        <label>Clave de Steam API <span class="optional">(opcional)</span></label>
         <div class="pw-wrap">
           <input type="password" id="key" placeholder="Tu Steam API Key">
           <button type="button" class="pw-toggle" onclick="togglePw(this)" aria-label="Mostrar u ocultar Steam API Key">&#128065;</button>
@@ -186,7 +186,7 @@
         <div class="hint hint-compact">Obtenla en <a href="https://steamcommunity.com/dev/apikey" target="_blank" rel="noopener noreferrer">steamcommunity.com/dev/apikey</a> — habilita juegos propios y biblioteca familiar</div>
       </div>
       <div class="field">
-        <label>ITAD API Key <span class="optional">(opcional)</span></label>
+        <label>Clave de ITAD <span class="optional">(opcional)</span></label>
         <div class="pw-wrap">
           <input type="password" id="itad_key" placeholder="IsThereAnyDeal Key">
           <button type="button" class="pw-toggle" onclick="togglePw(this)" aria-label="Mostrar u ocultar ITAD API Key">&#128065;</button>
@@ -200,9 +200,9 @@
   <div class="card">
     <h2>Configuración</h2>
     <div class="field field-compact">
-      <label>Presets de ejecución</label>
+      <label>Modos rápidos</label>
       <div class="preset-row" id="preset-row">
-        <button type="button" class="preset-btn" data-preset="rapido" onclick="applyPreset('rapido')">Rapido</button>
+        <button type="button" class="preset-btn" data-preset="rapido" onclick="applyPreset('rapido')">Rápido</button>
         <button type="button" class="preset-btn" data-preset="completo" onclick="applyPreset('completo')">Completo</button>
         <button type="button" class="preset-btn" data-preset="ahorro" onclick="applyPreset('ahorro')">Ahorro</button>
       </div>
@@ -210,7 +210,7 @@
     </div>
     <div class="budget-feature-card">
       <label>Tu Presupuesto Ideal <span class="optional">(feature rápida)</span></label>
-      <input type="number" id="budget" min="0" step="50" placeholder="Sin limite">
+      <input type="number" id="budget" min="0" step="50" placeholder="Sin límite">
       <div class="hint">Define tu tope y el reporte te propondrá una lista balanceada. También podrás ver variantes chica, media y grande, además de opciones para cambiar un juego sin romper el presupuesto.</div>
     </div>
     <div class="field">
@@ -271,20 +271,22 @@
 
   <div class="card">
     <details>
-      <summary>Fuentes de datos</summary>
+      <summary>Archivos opcionales</summary>
       <div class="details-body">
         <div class="field">
-          <label>HLTB CSV <span class="optional">(opcional)</span></label>
+          <label>Export de HowLongToBeat (CSV) <span class="optional">(opcional)</span></label>
           <input type="text" id="hltb" placeholder="~/hltb-export.csv">
-          <div class="hint">Exporta desde tu perfil de HowLongToBeat</div>
+          <div class="hint">Exporta tu backlog desde HowLongToBeat para cruzarlo con ofertas y priorizar según duración.</div>
         </div>
         <div class="field">
-          <label>Family JSON <span class="optional">(opcional)</span></label>
+          <label>Biblioteca familiar (JSON) <span class="optional">(opcional)</span></label>
           <input type="text" id="family_json" placeholder="~/familia.json">
+          <div class="hint">Sirve para marcar juegos que ya están en tu biblioteca familiar y no contarlos igual que uno pendiente.</div>
         </div>
         <div class="field">
-          <label>Directorio de salida</label>
-          <input type="text" id="output" placeholder="(mismo directorio del script)">
+          <label>Dónde guardar los reportes</label>
+          <input type="text" id="output" placeholder="Usar carpeta actual">
+          <div class="hint">Define dónde se guardan los reportes generados si no quieres usar la ruta actual por defecto.</div>
         </div>
       </div>
     </details>
@@ -295,7 +297,7 @@
         <div class="row">
           <div class="field">
             <label>Precio máximo (MXN)</label>
-            <input type="number" id="max_price" min="0" placeholder="Sin limite">
+            <input type="number" id="max_price" min="0" placeholder="Sin límite">
             <div class="hint">Deja fuera juegos que superen ese tope. Úsalo si no quieres ver opciones más caras.</div>
           </div>
           <div class="field">
@@ -312,13 +314,13 @@
           </div>
           <div class="field">
             <label>Duración máxima (horas)</label>
-            <input type="number" id="max_hours" min="0" placeholder="Sin limite">
+            <input type="number" id="max_hours" min="0" placeholder="Sin límite">
             <div class="hint">Úsalo si prefieres juegos más cortos o no quieres meter algo demasiado largo en este run.</div>
           </div>
         </div>
         <div class="field">
           <label>Comparar con <span class="optional">(opcional)</span></label>
-          <input type="text" id="compare" placeholder="Vanity URL del amigo">
+          <input type="text" id="compare" placeholder="Pega aquí el perfil de tu amigo">
           <div class="hint">Úsalo para ver juegos en común y posibles ideas de regalo. La wishlist de tu amigo debe ser pública.</div>
         </div>
         <div class="field">
@@ -340,39 +342,43 @@
     </details>
 
     <details>
-      <summary>Notificaciones</summary>
+      <summary>Notificaciones automáticas</summary>
       <div class="details-body">
         <div class="field">
-          <label>Telegram Bot Token <span class="optional">(opcional)</span></label>
+          <label>Token del bot de Telegram <span class="optional">(opcional)</span></label>
           <div class="pw-wrap">
-            <input type="password" id="telegram_token" placeholder="123456:ABC-DEF...">
+            <input type="password" id="telegram_token" placeholder="Pega aquí el token del bot">
             <button type="button" class="pw-toggle" onclick="togglePw(this)" aria-label="Mostrar u ocultar token de Telegram">&#128065;</button>
           </div>
+          <div class="hint">Es el token del bot que enviará el aviso. Pégalo aquí solo si ya tienes un bot creado en Telegram.</div>
         </div>
         <div class="row">
           <div class="field">
-            <label>Telegram Chat ID</label>
-            <input type="text" id="telegram_chat" placeholder="-100123456789">
+            <label>ID del chat de Telegram</label>
+            <input type="text" id="telegram_chat" placeholder="Pega aquí el ID del chat o canal">
+            <div class="hint">Es el chat o canal donde quieres recibir el aviso del bot.</div>
           </div>
           <div class="field">
-            <label>Discord Webhook</label>
+            <label>Webhook de Discord</label>
             <div class="pw-wrap">
-              <input type="password" id="discord_webhook" placeholder="https://discord.com/api/webhooks/...">
+              <input type="password" id="discord_webhook" placeholder="Pega aquí el webhook del canal">
               <button type="button" class="pw-toggle" onclick="togglePw(this)" aria-label="Mostrar u ocultar webhook de Discord">&#128065;</button>
             </div>
+            <div class="hint">Pega aquí el webhook del canal de Discord donde quieres recibir el resumen.</div>
           </div>
         </div>
-        <div class="hint">Envía un resumen cuando hay deals nuevos o cambios de precio</div>
+        <div class="hint">Te avisa cuando aparecen ofertas nuevas o cambian precios importantes.</div>
       </div>
     </details>
   </div>
 
   <!-- Watchlist -->
   <div class="card">
-    <h2>&#127919; Watchlist (Price Alerts)</h2>
+    <h2>&#127919; Alertas de precio</h2>
+    <div class="hint">Guarda juegos con un precio objetivo para detectarlos rápido cuando bajen a ese nivel.</div>
     <div class="field">
       <div class="row">
-        <div class="field"><label>AppID</label><input type="text" id="wl-appid" placeholder="730"></div>
+        <div class="field"><label>ID del juego</label><input type="text" id="wl-appid" placeholder="730"></div>
         <div class="field"><label>Nombre</label><input type="text" id="wl-name" placeholder="Counter-Strike 2"></div>
         <div class="field"><label>Precio objetivo (MXN)</label><input type="number" id="wl-price" placeholder="200" min="0"></div>
       </div>
@@ -382,8 +388,8 @@
   </div>
 
   <div class="card" id="history-card">
-    <h2>&#128200; Histórico de ejecuciones (MVP)</h2>
-    <p class="history-card-intro">Compara dos ejecuciones para entender qué cambió en la wishlist. Si solo quieres una lectura rápida, empieza con <strong>Comparar 2 recientes</strong>.</p>
+    <h2>&#128200; Histórico de ejecuciones</h2>
+    <p class="history-card-intro">Compara ejecuciones para entender qué cambió en la wishlist. Si quieres una lectura rápida, usa el atajo de <strong>Comparar últimas 2</strong> y deja la comparación manual para cuando necesites más control.</p>
     <div class="row">
       <div class="field">
         <label>Ejecución inicial</label>
@@ -426,10 +432,14 @@
         <label>Buscar ejecuciones</label>
         <input type="text" id="history-search" placeholder="fecha, evento o perfil">
         <div class="hint">Puedes buscar por fecha, nombre del evento o el perfil usado en esa ejecución. Ejemplos: `2026-04-21`, `Medieval Fest`, `gaben`.</div>
+        <div id="history-search-empty" class="history-search-empty hidden" aria-live="polite"></div>
       </div>
-      <div class="field field-align-end">
-        <button class="btn btn-ghost history-quick-btn" type="button" id="btn-history-quick-compare" title="Selecciona automáticamente las 2 ejecuciones más recientes y las compara por ti">Comparar 2 recientes</button>
-        <div class="hint">Toma las 2 ejecuciones más recientes y las compara sin elegirlas a mano.</div>
+      <div class="field field-align-end history-quick-field">
+        <div class="history-quick-card">
+          <div class="history-quick-label">Atajo rápido</div>
+          <button class="btn btn-ghost history-quick-btn" type="button" id="btn-history-quick-compare" title="Selecciona automáticamente las 2 ejecuciones más recientes y las compara por ti">Comparar últimas 2</button>
+          <div class="hint">Toma las 2 ejecuciones más recientes y las compara sin elegirlas a mano.</div>
+        </div>
       </div>
     </div>
     <div class="history-pagination" id="history-pagination">
@@ -461,6 +471,8 @@
     <div id="history-status-chart" class="history-status-chart hidden"></div>
     <div id="history-top-deltas" class="history-top-deltas hidden"></div>
     <div id="history-trend" class="history-trend hidden"></div>
+    <div id="history-analytics-summary" class="history-analytics-summary hidden"></div>
+    <div id="history-game-drilldown" class="history-game-drilldown hidden"></div>
     <div class="history-table-wrap hidden" id="history-table-wrap">
       <table class="history-table" id="history-table">
         <thead>
@@ -487,7 +499,7 @@
       <div class="field">
         <label>Presupuesto MXN <span class="optional">(opcional)</span></label>
         <div class="range-wrap">
-          <input type="range" id="pd2_budget" min="0" max="5000" step="50" value="0" oninput="document.getElementById('pd2-bval').textContent=this.value>0?('$'+this.value):'Sin limite'">
+          <input type="range" id="pd2_budget" min="0" max="5000" step="50" value="0" oninput="document.getElementById('pd2-bval').textContent=this.value>0?('$'+this.value):'Sin límite'">
           <span class="range-val" id="pd2-bval">Sin límite</span>
         </div>
       </div>
@@ -520,7 +532,7 @@
     <button class="btn btn-ghost" id="btn-desktop-doctor" title="Diagnostica si el modo desktop está listo en este equipo">&#129658; Doctor desktop</button>
     <button class="btn btn-ghost" id="btn-desktop-autofix" title="Intenta aplicar arreglos seguros del entorno desktop">&#128295; Autofix desktop</button>
     <button class="btn btn-ghost" id="btn-clear-cache" title="Borra caché local para forzar una nueva descarga de datos">&#128465; Limpiar cache</button>
-    <button class="btn btn-ghost" id="btn-open-last" title="Abre el último reporte generado sin volver a ejecutar">&#128194; Abrir ultimo reporte</button>
+    <button class="btn btn-ghost" id="btn-open-last" title="Abre el último reporte generado sin volver a ejecutar">&#128194; Ver último reporte</button>
   </div>
   <div class="actions-help" aria-label="Ayuda rápida para botones utilitarios">
     <div class="actions-help-item">
@@ -540,7 +552,7 @@
       <span>Borra datos temporales locales para forzar una descarga nueva en la siguiente corrida.</span>
     </div>
     <div class="actions-help-item">
-      <strong>Abrir ultimo reporte</strong>
+      <strong>Ver último reporte</strong>
       <span>Abre el último reporte generado para revisarlo sin volver a ejecutar.</span>
     </div>
   </div>

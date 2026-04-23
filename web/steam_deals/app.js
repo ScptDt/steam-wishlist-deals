@@ -569,11 +569,14 @@ const btnHistoryQuickCompare = $('btn-history-quick-compare');
 const btnHistoryPrevPage = $('btn-history-prev-page');
 const btnHistoryNextPage = $('btn-history-next-page');
 const historyPageInfo = $('history-page-info');
+const historySearchEmpty = $('history-search-empty');
 const historySummary = $('history-summary');
 const historySelectionSummary = $('history-selection-summary');
 const historyStatusChart = $('history-status-chart');
 const historyTopDeltas = $('history-top-deltas');
 const historyTrend = $('history-trend');
+const historyAnalyticsSummary = $('history-analytics-summary');
+const historyGameDrilldown = $('history-game-drilldown');
 const historyTableWrap = $('history-table-wrap');
 const historyTableBody = $('history-table-body');
 const consoleEl = $('console');
@@ -588,6 +591,8 @@ let latestHistoryRuns = [];
 let latestFilteredRuns = [];
 let executionLogEntries = [];
 let historyPage = 1;
+let latestHistoryComparisonPayload = null;
+let selectedHistoryAppid = '';
 const HISTORY_PAGE_SIZE = 20;
 const PRESET_MAX_WORKERS = Object.freeze({
   rapido: 12,
@@ -601,6 +606,7 @@ const HISTORY_DEFAULT_FILTERS = Object.freeze({
   status: 'all',
   sort_delta: 'default',
 });
+const HISTORY_NAV_STATE_STORAGE_KEY = 'steam_deals_history_nav_state_v1';
 
 function saveHistoryFilters() {
   try {
@@ -610,6 +616,69 @@ function saveHistoryFilters() {
       sort_delta: historySortDelta ? historySortDelta.value : HISTORY_DEFAULT_FILTERS.sort_delta,
     };
     window.localStorage.setItem(HISTORY_FILTERS_STORAGE_KEY, JSON.stringify(payload));
+  } catch (e) {}
+}
+
+function saveHistoryNavState() {
+  try {
+    const payload = {
+      page: historyPage,
+      search: historySearch ? historySearch.value : '',
+      left: historyLeft ? historyLeft.value : '',
+      right: historyRight ? historyRight.value : '',
+      appid: selectedHistoryAppid,
+    };
+    window.localStorage.setItem(HISTORY_NAV_STATE_STORAGE_KEY, JSON.stringify(payload));
+  } catch (e) {}
+}
+
+function loadHistoryNavState() {
+  try {
+    const raw = window.localStorage.getItem(HISTORY_NAV_STATE_STORAGE_KEY);
+    if (!raw) return null;
+    const parsed = JSON.parse(raw);
+    if (!parsed || typeof parsed !== 'object') return null;
+    return {
+      page: Number(parsed.page || 1) || 1,
+      search: typeof parsed.search === 'string' ? parsed.search : '',
+      left: typeof parsed.left === 'string' ? parsed.left : '',
+      right: typeof parsed.right === 'string' ? parsed.right : '',
+      appid: typeof parsed.appid === 'string' ? parsed.appid : '',
+    };
+  } catch (e) {
+    return null;
+  }
+}
+
+function getHistoryUrlState() {
+  try {
+    const params = new URLSearchParams(window.location.search || '');
+    return {
+      search: params.get('history_search') || '',
+      left: params.get('history_left') || '',
+      right: params.get('history_right') || '',
+      appid: params.get('history_appid') || '',
+      quick: params.get('history_quick') === '1',
+    };
+  } catch (e) {
+    return {search: '', left: '', right: '', appid: '', quick: false};
+  }
+}
+
+function replaceHistoryUrlState({search = '', left = '', right = '', appid = '', quick = false} = {}) {
+  try {
+    const url = new URL(window.location.href);
+    if (search) url.searchParams.set('history_search', search);
+    else url.searchParams.delete('history_search');
+    if (left) url.searchParams.set('history_left', left);
+    else url.searchParams.delete('history_left');
+    if (right) url.searchParams.set('history_right', right);
+    else url.searchParams.delete('history_right');
+    if (appid) url.searchParams.set('history_appid', appid);
+    else url.searchParams.delete('history_appid');
+    if (quick) url.searchParams.set('history_quick', '1');
+    else url.searchParams.delete('history_quick');
+    window.history.replaceState({}, '', url.toString());
   } catch (e) {}
 }
 
@@ -658,6 +727,8 @@ function resetHistoryFilters({announce = false} = {}) {
   historyPage = 1;
   applyHistoryFilterControls();
   saveHistoryFilters();
+  saveHistoryNavState();
+  replaceHistoryUrlState();
   latestFilteredRuns = filterHistoryRuns(latestHistoryRuns, '');
   refreshRunSelectorsFromState();
   clearHistoryComparison();
@@ -670,7 +741,7 @@ function formatHistoryRunLabel(run) {
   if (!run) return 'Ejecución desconocida';
   const datePart = run.timestamp || run.date || run.id;
   const dealCount = Number(run.deal_count || 0);
-  const eventName = run.sale_name ? String(run.sale_name) : 'Steam Deals';
+  const eventName = run.sale_name ? String(run.sale_name) : 'Sin evento detectado';
   return `${datePart} · ${eventName} · ${dealCount} ofertas`;
 }
 
@@ -682,7 +753,7 @@ function findHistoryRunById(runId) {
 function renderHistorySelectionSummary(leftRun, rightRun, {quick = false} = {}) {
   if (!historySelectionSummary) return;
   historySelectionSummary.innerHTML = `
-    <div class="history-selection-summary-title">${quick ? 'Quick compare activo' : 'Comparacion activa'}</div>
+    <div class="history-selection-summary-title">${quick ? 'Comparación rápida activa' : 'Comparación activa'}</div>
     <div class="history-selection-summary-lines">
       <div><strong>Ejecución inicial:</strong> ${escapeHtml(formatHistoryRunLabel(leftRun))}</div>
       <div><strong>Ejecución comparada:</strong> ${escapeHtml(formatHistoryRunLabel(rightRun))}</div>
@@ -718,7 +789,9 @@ function setRunSelectorsFromList(runs) {
   if (!historyLeft || !historyRight) return;
   const list = Array.isArray(runs) ? runs : [];
   if (list.length < 2) {
-    const message = list.length === 0 ? 'No hay ejecuciones para este filtro' : 'Se requieren 2 ejecuciones';
+    const message = list.length === 0
+      ? 'No hay ejecuciones que coincidan con esta búsqueda.'
+      : 'Solo hay 1 ejecución visible; necesitas al menos 2 para comparar.';
     historyLeft.innerHTML = `<option value="">${message}</option>`;
     historyRight.innerHTML = `<option value="">${message}</option>`;
     return;
@@ -729,10 +802,16 @@ function setRunSelectorsFromList(runs) {
     const label = escapeHtml(formatHistoryRunLabel(run));
     return `<option value="${value}">${label}</option>`;
   }).join('');
+  const previousLeft = historyLeft.value;
+  const previousRight = historyRight.value;
   historyLeft.innerHTML = optionsHtml;
   historyRight.innerHTML = optionsHtml;
-  historyLeft.selectedIndex = 1;
-  historyRight.selectedIndex = 0;
+  const leftExists = list.some(run => run && run.id === previousLeft);
+  const rightExists = list.some(run => run && run.id === previousRight);
+  if (leftExists) historyLeft.value = previousLeft;
+  else historyLeft.selectedIndex = 1;
+  if (rightExists) historyRight.value = previousRight;
+  else historyRight.selectedIndex = 0;
 }
 
 function getHistoryPageSlice(runs) {
@@ -760,14 +839,73 @@ function refreshRunSelectorsFromState() {
   const { totalPages, pageItems } = getHistoryPageSlice(list);
   setRunSelectorsFromList(pageItems);
   updateHistoryPaginationUi(list.length, totalPages);
+  saveHistoryNavState();
+}
+
+function updateHistorySearchEmptyState(totalMatches) {
+  if (!historySearchEmpty) return;
+  const query = historySearch ? String(historySearch.value || '').trim() : '';
+  if (!query) {
+    historySearchEmpty.textContent = '';
+    historySearchEmpty.classList.add('hidden');
+    return;
+  }
+  if (totalMatches === 0) {
+    historySearchEmpty.textContent = 'No hubo coincidencias para esa búsqueda. Prueba con una fecha, un evento o parte del perfil.';
+    historySearchEmpty.classList.remove('hidden');
+    return;
+  }
+  if (totalMatches === 1) {
+    historySearchEmpty.textContent = 'Solo aparece 1 ejecución. Ajusta la búsqueda o usa menos filtros para poder comparar.';
+    historySearchEmpty.classList.remove('hidden');
+    return;
+  }
+  historySearchEmpty.textContent = `${totalMatches} ejecuciones coinciden con tu búsqueda.`;
+  historySearchEmpty.classList.remove('hidden');
 }
 
 function applyHistoryRunSearch() {
   latestFilteredRuns = filterHistoryRuns(latestHistoryRuns, historySearch ? historySearch.value : '');
   historyPage = 1;
   refreshRunSelectorsFromState();
-  if (!latestFilteredRuns.length) {
-    appendLine('Búsqueda de ejecuciones sin resultados.', 'warn');
+  updateHistorySearchEmptyState(latestFilteredRuns.length);
+  replaceHistoryUrlState({
+    search: historySearch ? historySearch.value : '',
+    left: historyLeft ? historyLeft.value : '',
+    right: historyRight ? historyRight.value : '',
+    quick: false,
+  });
+}
+
+function applyHistoryRestoredState() {
+  const urlState = getHistoryUrlState();
+  const storedState = loadHistoryNavState();
+  const mergedState = {
+    search: urlState.search || (storedState && storedState.search) || '',
+    left: urlState.left || (storedState && storedState.left) || '',
+    right: urlState.right || (storedState && storedState.right) || '',
+    appid: urlState.appid || (storedState && storedState.appid) || '',
+    page: (storedState && storedState.page) || 1,
+    quick: urlState.quick,
+  };
+
+  if (historySearch) historySearch.value = mergedState.search;
+  historyPage = Math.max(1, Number(mergedState.page || 1) || 1);
+  latestFilteredRuns = filterHistoryRuns(latestHistoryRuns, mergedState.search);
+  refreshRunSelectorsFromState();
+  updateHistorySearchEmptyState(latestFilteredRuns.length);
+
+  if (historyLeft && mergedState.left) historyLeft.value = mergedState.left;
+  if (historyRight && mergedState.right) historyRight.value = mergedState.right;
+  selectedHistoryAppid = mergedState.appid;
+
+  if (mergedState.quick && historyLeft && historyRight && historyLeft.value && historyRight.value) {
+    compareHistoryRuns({quick: true}).catch(() => {});
+    return;
+  }
+
+  if (historyLeft && historyRight && historyLeft.value && historyRight.value && mergedState.left && mergedState.right) {
+    compareHistoryRuns().catch(() => {});
   }
 }
 
@@ -811,7 +949,7 @@ function renderHistoryRows(rows) {
       : 'Igual';
     return `
       <tr>
-        <td title="AppID ${escapeHtml(row.appid)}">${escapeHtml(row.name || row.appid)}</td>
+        <td title="AppID ${escapeHtml(row.appid)}"><div class="history-game-cell"><span>${escapeHtml(row.name || row.appid)}</span><button type="button" class="btn btn-ghost history-inline-btn" data-history-appid="${escapeHtml(row.appid)}">Ver historial</button></div></td>
         <td><span class="${statusClass}">${statusText}</span></td>
         <td>${escapeHtml(row.left_price || '?')}</td>
         <td>${escapeHtml(row.right_price || '?')}</td>
@@ -820,6 +958,132 @@ function renderHistoryRows(rows) {
     `;
   }).join('');
   historyTableWrap.classList.remove('hidden');
+}
+
+function formatHistorySnapshotLabel(snapshot) {
+  const eventName = snapshot && snapshot.sale_name ? ` · ${snapshot.sale_name}` : '';
+  const dateText = snapshot && (snapshot.date || snapshot.timestamp) ? (snapshot.date || snapshot.timestamp) : 'Sin fecha';
+  return `${dateText}${eventName}`;
+}
+
+function normalizeHistorySnapshots(snapshots) {
+  const list = Array.isArray(snapshots) ? snapshots.slice() : [];
+  return list.sort((a, b) => Date.parse((a && (a.timestamp || a.date)) || '') - Date.parse((b && (b.timestamp || b.date)) || ''));
+}
+
+function resolveHistoryDrilldownCandidates(payload) {
+  const analytics = payload && payload.analytics ? payload.analytics : {};
+  const candidates = [];
+  const seen = new Set();
+  const pushRows = (rows) => {
+    (Array.isArray(rows) ? rows : []).forEach((row) => {
+      const appid = row && row.appid ? String(row.appid) : '';
+      if (!appid || seen.has(appid)) return;
+      seen.add(appid);
+      candidates.push({appid, name: row.name || appid});
+    });
+  };
+  pushRows(analytics.top_price_drops);
+  pushRows(analytics.top_price_rises);
+  pushRows(payload && payload.rows);
+  return candidates;
+}
+
+function renderHistoryAnalyticsSummary(payload) {
+  if (!historyAnalyticsSummary) return;
+  const analytics = payload && payload.analytics ? payload.analytics : {};
+  const historyRuns = Array.isArray(analytics.history_runs) ? analytics.history_runs : [];
+  const stateCounts = analytics.state_counts || {};
+  if (!historyRuns.length) {
+    historyAnalyticsSummary.innerHTML = '';
+    historyAnalyticsSummary.classList.add('hidden');
+    return;
+  }
+  historyAnalyticsSummary.innerHTML = `
+    <div class="history-analytics-title">Contexto ampliado del historial</div>
+    <div class="history-analytics-grid">
+      <div class="history-analytics-card"><span>Ejecuciones analizadas</span><strong>${escapeHtml(historyRuns.length)}</strong></div>
+      <div class="history-analytics-card"><span>Cambios</span><strong>${escapeHtml(stateCounts.changed || 0)}</strong></div>
+      <div class="history-analytics-card"><span>Nuevos</span><strong>${escapeHtml(stateCounts.new || 0)}</strong></div>
+      <div class="history-analytics-card"><span>Iguales</span><strong>${escapeHtml(stateCounts.same || 0)}</strong></div>
+    </div>
+    <div class="history-analytics-note">La tendencia general resume el volumen de ofertas por ejecución; el panel de abajo te deja bajar al historial de precio de un juego concreto.</div>
+  `;
+  historyAnalyticsSummary.classList.remove('hidden');
+}
+
+function renderHistoryGameDrilldown(payload, preferredAppid = '') {
+  if (!historyGameDrilldown) return;
+  latestHistoryComparisonPayload = payload;
+  const analytics = payload && payload.analytics ? payload.analytics : {};
+  const gameHistory = analytics.game_history || {};
+  const candidates = resolveHistoryDrilldownCandidates(payload).filter((item) => Array.isArray(gameHistory[item.appid]) && gameHistory[item.appid].length > 0);
+  if (!candidates.length) {
+    historyGameDrilldown.innerHTML = '';
+    historyGameDrilldown.classList.add('hidden');
+    selectedHistoryAppid = '';
+    saveHistoryNavState();
+    replaceHistoryUrlState({
+      search: historySearch ? historySearch.value : '',
+      left: historyLeft ? historyLeft.value : '',
+      right: historyRight ? historyRight.value : '',
+      quick: false,
+    });
+    return;
+  }
+
+  const selected = candidates.find((item) => item.appid === preferredAppid)
+    || candidates.find((item) => item.appid === selectedHistoryAppid)
+    || candidates[0];
+  const snapshots = normalizeHistorySnapshots(gameHistory[selected.appid]);
+  const firstSnapshot = snapshots[0];
+  const lastSnapshot = snapshots[snapshots.length - 1];
+  const trendText = firstSnapshot && lastSnapshot && Number(firstSnapshot.price_raw) !== Number(lastSnapshot.price_raw)
+    ? (Number(lastSnapshot.price_raw) < Number(firstSnapshot.price_raw)
+      ? `Bajó de ${formatCurrencyFromRaw(firstSnapshot.price_raw)} a ${formatCurrencyFromRaw(lastSnapshot.price_raw)} entre ejecuciones recientes.`
+      : `Subió de ${formatCurrencyFromRaw(firstSnapshot.price_raw)} a ${formatCurrencyFromRaw(lastSnapshot.price_raw)} entre ejecuciones recientes.`)
+    : 'No hay suficiente cambio reciente para resumir un movimiento claro de precio.';
+
+  selectedHistoryAppid = selected.appid;
+  saveHistoryNavState();
+  replaceHistoryUrlState({
+    search: historySearch ? historySearch.value : '',
+    left: historyLeft ? historyLeft.value : '',
+    right: historyRight ? historyRight.value : '',
+    appid: selectedHistoryAppid,
+    quick: false,
+  });
+
+  historyGameDrilldown.innerHTML = `
+    <div class="history-drilldown-head">
+      <div>
+        <div class="history-drilldown-title">Historial por juego</div>
+        <div class="history-drilldown-subtitle">Selecciona un juego con cambios destacados para ver su precio en ejecuciones recientes.</div>
+      </div>
+      <div class="history-drilldown-pill">${escapeHtml(selected.name)}</div>
+    </div>
+    <div class="history-drilldown-candidates">
+      ${candidates.map((item) => `
+        <button type="button" class="history-drilldown-btn${item.appid === selected.appid ? ' is-active' : ''}" data-history-drilldown="${escapeHtml(item.appid)}">${escapeHtml(item.name)}</button>
+      `).join('')}
+    </div>
+    <div class="history-drilldown-summary">${escapeHtml(trendText)}</div>
+    <div class="history-drilldown-list">
+      ${snapshots.map((snapshot) => `
+        <div class="history-drilldown-item">
+          <strong>${escapeHtml(formatHistorySnapshotLabel(snapshot))}</strong>
+          <span>${escapeHtml(snapshot.price || '?')} · -${escapeHtml(snapshot.discount || 0)}%</span>
+        </div>
+      `).join('')}
+    </div>
+  `;
+  historyGameDrilldown.classList.remove('hidden');
+  historyGameDrilldown.querySelectorAll('[data-history-drilldown]').forEach((btn) => {
+    btn.addEventListener('click', () => renderHistoryGameDrilldown(latestHistoryComparisonPayload, btn.dataset.historyDrilldown || ''));
+  });
+  historyTableBody.querySelectorAll('[data-history-appid]').forEach((btn) => {
+    btn.addEventListener('click', () => renderHistoryGameDrilldown(latestHistoryComparisonPayload, btn.dataset.historyAppid || ''));
+  });
 }
 
 function renderHistorySummary(summary) {
@@ -874,6 +1138,8 @@ function renderHistoryStatusChart(summary) {
 }
 
 function clearHistoryComparison() {
+  latestHistoryComparisonPayload = null;
+  selectedHistoryAppid = '';
   if (historySelectionSummary) {
     historySelectionSummary.innerHTML = '';
     historySelectionSummary.classList.add('hidden');
@@ -895,6 +1161,14 @@ function clearHistoryComparison() {
   if (historyTrend) {
     historyTrend.innerHTML = '';
     historyTrend.classList.add('hidden');
+  }
+  if (historyAnalyticsSummary) {
+    historyAnalyticsSummary.innerHTML = '';
+    historyAnalyticsSummary.classList.add('hidden');
+  }
+  if (historyGameDrilldown) {
+    historyGameDrilldown.innerHTML = '';
+    historyGameDrilldown.classList.add('hidden');
   }
 }
 
@@ -930,7 +1204,7 @@ function renderHistoryTrend(runs) {
   if (!historyTrend) return;
   const source = Array.isArray(runs) ? runs : [];
   if (source.length < 2) {
-    historyTrend.innerHTML = '<div class="history-trend-title">Tendencia general de ofertas</div><div class="history-trend-subtitle">Te muestra si en las últimas corridas aparecieron más o menos ofertas en total. No es el precio de un juego individual.</div><div class="history-trend-empty">Se necesitan al menos 2 runs para comparar la tendencia.</div>';
+    historyTrend.innerHTML = '<div class="history-trend-title">Tendencia general de ofertas</div><div class="history-trend-subtitle">Resume si el volumen total de ofertas sube, baja o se mantiene entre corridas. No representa el precio de un juego individual.</div><div class="history-trend-empty">Todavía no hay suficientes ejecuciones para leer una tendencia general.</div>';
     historyTrend.classList.remove('hidden');
     return;
   }
@@ -969,7 +1243,7 @@ function renderHistoryTrend(runs) {
 
   const polyline = points.map(p => `${p.x.toFixed(1)},${p.y.toFixed(1)}`).join(' ');
   const dots = points.map((p, idx) => {
-    const title = `Ejecución ${idx + 1}: ${p.value} deals`;
+    const title = `Ejecución ${idx + 1}: ${p.value} ofertas`;
     return `<circle cx="${p.x.toFixed(1)}" cy="${p.y.toFixed(1)}" r="2.8" fill="var(--accent)"><title>${escapeHtml(title)}</title></circle>`;
   }).join('');
 
@@ -980,7 +1254,7 @@ function renderHistoryTrend(runs) {
 
   historyTrend.innerHTML = `
     <div class="history-trend-title">Tendencia general de ofertas (últimas ${normalized.length} ejecuciones)</div>
-    <div class="history-trend-subtitle">Te ayuda a ver si últimamente aparecieron más o menos ofertas en total. Si quieres revisar juegos concretos, usa la tabla y Top cambios.</div>
+    <div class="history-trend-subtitle">Te ayuda a ver si últimamente aparecieron más o menos ofertas en total. Si quieres revisar juegos concretos, usa la tabla y los cambios destacados.</div>
     <svg class="history-trend-svg" viewBox="0 0 ${width} ${height}" preserveAspectRatio="none" role="img" aria-label="Tendencia general del volumen de ofertas por run">
       <line x1="${padX}" y1="${height - padY}" x2="${width - padX}" y2="${height - padY}" stroke="var(--card-border)" stroke-width="1" />
       <line x1="${padX}" y1="${padY}" x2="${padX}" y2="${height - padY}" stroke="var(--card-border)" stroke-width="1" />
@@ -1036,7 +1310,7 @@ function renderHistoryTopDeltas(rows) {
   };
 
   historyTopDeltas.innerHTML = `
-    <div class="history-top-deltas-title">Top cambios de precio (ejecuciones comparadas)</div>
+    <div class="history-top-deltas-title">Cambios destacados de precio (ejecuciones comparadas)</div>
     <div class="history-top-deltas-grid">
       ${renderColumn('Mayores bajadas', topDown, true)}
       ${renderColumn('Mayores subidas', topUp, false)}
@@ -1055,14 +1329,10 @@ async function loadHistoryRuns() {
   const runs = Array.isArray(payload.runs) ? payload.runs : [];
   latestHistoryRuns = runs;
   renderHistoryTrend(latestHistoryRuns);
-  latestFilteredRuns = filterHistoryRuns(runs, historySearch ? historySearch.value : '');
-  historyPage = 1;
+  applyHistoryRestoredState();
   if (latestFilteredRuns.length < 2) {
-    refreshRunSelectorsFromState();
     clearHistoryComparison();
-    return;
   }
-  refreshRunSelectorsFromState();
 }
 
 async function compareHistoryRuns(options = {}) {
@@ -1101,11 +1371,14 @@ async function compareHistoryRuns(options = {}) {
   if (summary.same == null && payload && payload.rows && Array.isArray(payload.rows)) {
     summary.same = payload.rows.filter(row => row && row.status === 'same').length;
   }
+  latestHistoryComparisonPayload = payload;
   renderHistorySelectionSummary(leftRun, rightRun, {quick: !!options.quick});
   renderHistorySummary(summary);
   renderHistoryStatusChart(summary);
   renderHistoryRows(payload.rows || []);
   renderHistoryTopDeltas(payload.rows || []);
+  renderHistoryAnalyticsSummary(payload);
+  renderHistoryGameDrilldown(payload, selectedHistoryAppid);
 }
 
 function setModeBanner(hasCache, hasConfig) {
@@ -1596,6 +1869,8 @@ btnStop.addEventListener('click', async () => {
     } else if (payload && payload.status === 'not_running') {
       appendLine(payload.message || 'No habia una ejecucion activa para detener.', 'dim');
       if (abortCtrl) abortCtrl.abort();
+    } else if (payload && payload.status === 'stop_timeout') {
+      appendLine(payload.message || 'La ejecucion no se pudo detener a tiempo.', 'err');
     } else {
       appendLine((payload && payload.message) || 'Estado de detener desconocido.', 'warn');
     }
@@ -2256,7 +2531,7 @@ function renderLatestReportCard(report) {
   subtitleParts.push(escapeHtml(formatLatestReportTimestamp(meta.generated_at)));
   const saleBadge = meta.sale_name ? `<span class="latest-report-badge">${escapeHtml(meta.sale_name)}</span>` : '';
   const stats = [
-    ['Deals', summary.deals_count ?? 0],
+    ['Ofertas', summary.deals_count ?? 0],
     ['Top picks', summary.top_picks_count ?? 0],
     ['Alerts', summary.watchlist_alerts_count ?? 0],
     ['Regalos', summary.gift_ideas_count ?? 0],
@@ -2264,7 +2539,7 @@ function renderLatestReportCard(report) {
   el.innerHTML = `
     <div class="latest-report-head">
       <div>
-        <div class="latest-report-title">Ultimo reporte</div>
+        <div class="latest-report-title">Resumen de tu última ejecución</div>
         <div class="latest-report-subtitle">${subtitleParts.join(' · ')}</div>
       </div>
       ${saleBadge}
@@ -2674,7 +2949,7 @@ if (btnHistoryQuickCompare) {
       await compareHistoryRuns({quick: true});
       appendLine('Comparación rápida: últimas 2 ejecuciones.', 'ok');
     } catch (e) {
-      appendLine('No se pudo ejecutar quick compare: ' + e.message, 'err');
+      appendLine('No se pudo ejecutar la comparación rápida: ' + e.message, 'err');
     }
   });
 }

@@ -82,8 +82,9 @@ Dentro de la UI desktop:
 1. correr **Doctor desktop**
 2. correr **Probar config**
 3. ejecutar un run real
-4. verificar `.md`, `.html`, `.csv`
-5. cerrar la app
+4. durante un run suficientemente largo, probar **Detener** una vez para confirmar que no duplica mensajes y que no deja procesos colgados
+5. verificar `.md`, `.html`, `.csv`
+6. cerrar la app
 
 ## 7. Fallback web (mitigacion)
 
@@ -111,7 +112,7 @@ Cuando no hay host nativo Linux/macOS disponible, usa este runbook para mantener
 2. Correr build desktop y confirmar `dist\\SteamToolsDesktop.exe`.
 3. Ejecutar `smoke_test_windows.ps1` y guardar `SMOKE_OK`/`SMOKE_FAIL`.
 4. Hacer smoke funcional minimo manual en UI (preflight + run + outputs + cierre limpio).
-5. Registrar evidencia en `PENDIENTES.md` (Bitacora) con fecha, resultado y siguiente paso.
+5. Registrar evidencia detallada en `BITACORA.md` con fecha, resultado y siguiente paso; si cambia prioridad/estado actual, resumirlo también en `PENDIENTES.md`.
 
 Esto mantiene el proyecto en movimiento mientras la validacion manual Linux/macOS queda en espera de host nativo.
 

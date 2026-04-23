@@ -151,6 +151,25 @@ a:hover { text-decoration: underline; }
   margin-top: 0.35rem;
 }
 
+.history-quick-field {
+  align-items: stretch;
+}
+
+.history-quick-card {
+  width: 100%;
+  padding: 0.75rem 0.8rem;
+  border-radius: 8px;
+  border: 1px solid var(--card-border);
+  background: linear-gradient(180deg, rgba(255,255,255,0.02), rgba(255,255,255,0.01));
+}
+
+.history-quick-label {
+  margin-bottom: 0.35rem;
+  color: var(--accent);
+  font-size: 0.76rem;
+  font-weight: 700;
+}
+
 .btn-full {
   width: 100%;
 }
@@ -1237,8 +1256,13 @@ details .details-body .field:last-child {
 
 .history-search-empty {
   margin-top: 0.5rem;
+  padding: 0.55rem 0.65rem;
+  border-radius: 8px;
+  border: 1px dashed var(--card-border);
+  background: rgba(255,255,255,0.02);
   font-size: 0.78rem;
   color: var(--text2);
+  line-height: 1.45;
 }
 
 .history-pagination {
@@ -1257,6 +1281,19 @@ details .details-body .field:last-child {
 .history-pagination .btn {
   padding: 0.4rem 0.7rem;
   font-size: 0.8rem;
+}
+
+@media (max-width: 640px) {
+  .history-pagination {
+    flex-wrap: wrap;
+    justify-content: center;
+  }
+
+  .history-pagination span {
+    width: 100%;
+    text-align: center;
+    order: -1;
+  }
 }
 
 @media (max-width: 640px) {
@@ -1297,6 +1334,18 @@ details .details-body .field:last-child {
 }
 
 .history-table tr:last-child td { border-bottom: none; }
+.history-game-cell {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 0.5rem;
+}
+.history-inline-btn {
+  padding: 0.25rem 0.55rem;
+  font-size: 0.74rem;
+  min-height: 34px;
+  flex-shrink: 0;
+}
 .history-status { display: inline-flex; padding: 0.2rem 0.45rem; border-radius: 999px; font-size: 0.75rem; font-weight: 600; }
 .history-status-changed { background: rgba(102,192,244,.15); color: var(--accent); }
 .history-status-new { background: rgba(108,198,68,.17); color: var(--green); }
@@ -1306,6 +1355,141 @@ details .details-body .field:last-child {
 .history-delta-up { color: var(--red); font-weight: 600; }
 .history-delta-down { color: var(--green); font-weight: 600; }
 .history-delta-same { color: var(--text2); }
+
+.history-analytics-summary,
+.history-game-drilldown {
+  margin-top: 0.75rem;
+  padding: 0.8rem 0.9rem;
+  border-radius: 8px;
+  border: 1px solid var(--card-border);
+  background: var(--bg);
+}
+
+.history-analytics-title,
+.history-drilldown-title {
+  font-size: 0.84rem;
+  color: var(--text);
+  font-weight: 700;
+  margin-bottom: 0.3rem;
+}
+
+.history-analytics-grid {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(130px, 1fr));
+  gap: 0.55rem;
+}
+
+.history-analytics-card {
+  padding: 0.7rem 0.75rem;
+  border-radius: 8px;
+  border: 1px solid var(--card-border);
+  background: rgba(255,255,255,0.02);
+}
+
+.history-analytics-card span,
+.history-analytics-card strong {
+  display: block;
+}
+
+.history-analytics-card span {
+  color: var(--text2);
+  font-size: 0.74rem;
+  margin-bottom: 0.22rem;
+}
+
+.history-analytics-card strong {
+  color: var(--text);
+  font-size: 0.9rem;
+}
+
+.history-analytics-note,
+.history-drilldown-subtitle,
+.history-drilldown-summary {
+  color: var(--text2);
+  font-size: 0.76rem;
+  line-height: 1.45;
+}
+
+.history-analytics-note {
+  margin-top: 0.55rem;
+}
+
+.history-drilldown-head {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: flex-start;
+  justify-content: space-between;
+  gap: 0.75rem;
+}
+
+.history-drilldown-pill {
+  display: inline-flex;
+  align-items: center;
+  padding: 0.25rem 0.6rem;
+  border-radius: 999px;
+  background: rgba(102,192,244,.12);
+  border: 1px solid rgba(102,192,244,.22);
+  color: var(--accent);
+  font-size: 0.75rem;
+  font-weight: 700;
+}
+
+.history-drilldown-candidates {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 0.45rem;
+  margin-top: 0.65rem;
+}
+
+.history-drilldown-btn {
+  background: var(--bg2);
+  border: 1px solid var(--card-border);
+  color: var(--text);
+  border-radius: 999px;
+  padding: 0.35rem 0.7rem;
+  font-size: 0.76rem;
+  font-weight: 600;
+  cursor: pointer;
+}
+
+.history-drilldown-btn.is-active,
+.history-drilldown-btn:hover {
+  border-color: var(--accent);
+  color: var(--accent);
+}
+
+.history-drilldown-summary {
+  margin-top: 0.7rem;
+}
+
+.history-drilldown-list {
+  display: grid;
+  gap: 0.45rem;
+  margin-top: 0.65rem;
+}
+
+.history-drilldown-item {
+  padding: 0.65rem 0.75rem;
+  border-radius: 8px;
+  border: 1px solid var(--card-border);
+  background: rgba(255,255,255,0.02);
+}
+
+.history-drilldown-item strong,
+.history-drilldown-item span {
+  display: block;
+}
+
+.history-drilldown-item strong {
+  color: var(--text);
+  font-size: 0.78rem;
+  margin-bottom: 0.2rem;
+}
+
+.history-drilldown-item span {
+  color: var(--text2);
+  font-size: 0.75rem;
+}
 
 /* Wizard */
 .wizard-overlay { display: none; position: fixed; inset: 0; background: var(--bg); z-index: 1000; overflow-y: auto; }

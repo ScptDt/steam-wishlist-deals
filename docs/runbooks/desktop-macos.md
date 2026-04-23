@@ -70,8 +70,9 @@ Dentro de la app:
 1. correr **Doctor desktop** si quieres una segunda validacion desde la UI
 2. correr **Probar config**
 3. lanzar un run real
-4. verificar `.md`, `.html`, `.csv`
-5. cerrar la app
+4. durante un run suficientemente largo, probar **Detener** una vez para confirmar que no duplica mensajes y que no deja procesos colgados
+5. verificar `.md`, `.html`, `.csv`
+6. cerrar la app
 
 Esperado:
 - preflight OK

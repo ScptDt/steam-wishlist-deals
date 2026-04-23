@@ -23,7 +23,7 @@ Analiza tu wishlist de Steam y genera reportes detallados con deals, comparacion
 - **Comparar Wishlists** — Overlap con amigos + gift ideas
 - **Notificaciones** — Telegram y Discord webhook con resumen de cambios
 - **Scheduler** — Ejecución automática cada N horas
-- **Comparación entre runs** — Detecta deals nuevos, terminados, y bajadas de precio; incluye quick compare de los últimos 2 runs y controles rápidos para restablecer filtros
+- **Comparación entre runs** — Detecta deals nuevos, terminados y bajadas de precio; incluye quick compare de los últimos 2 runs, búsqueda/paginación de historial, filtros persistentes, deep links por URL y drilldown `Ver historial` por juego
 - **Alertas inteligentes v2** — Umbrales configurables por subida (`--alert-rise-pct`), margen sobre mínimo global (`--alert-global-margin-pct`) y priorización por score mínimo (`--alert-score-min`)
 
 ### Salida
@@ -63,13 +63,14 @@ Este repo tiene **dos superficies de UX** y una superficie operativa por CLI:
 - `steam_tools_desktop.py` **no implementa otro frontend**: levanta el mismo server local y abre la misma UI en una ventana nativa.
 - `payday2_web.py` sigue disponible como dashboard standalone para PAYDAY 2.
 - La lógica pesada vive en los scripts CLI (`steam_deals_generator.py` y `payday2_dlc_tracker.py`); la capa web coordina ejecución, validación y progreso.
-- Para trabajo operativo, roadmap y deuda técnica, la fuente de verdad sigue siendo `PENDIENTES.md`.
+- Para trabajo operativo, roadmap y deuda técnica viva, la fuente de verdad sigue siendo `PENDIENTES.md`; la evidencia cronológica detallada y el historial operativo viven en `BITACORA.md`.
 
 ## Reglas de trabajo del repo
 
 Resumen corto para mantener rumbo y evitar ruido en el repo:
 
-- **`PENDIENTES.md` es la fuente única de verdad operativa**: backlog, bitácora y pendientes vivos.
+- **`PENDIENTES.md` es la fuente única de verdad operativa**: backlog, prioridades, estado actual y pendientes vivos.
+- **`BITACORA.md` guarda la evidencia cronológica detallada**: validaciones, workarounds, avances históricos y notas operativas largas.
 - **La Web UI es la UX principal**; desktop debe seguir reutilizando la misma UI y no abrir otro frontend separado.
 - **`CLI` es la superficie operativa** para automatización, flags avanzados y corridas reproducibles.
 - **Artefactos temporales o generados no se versionan**: `.tmp/`, `.pytest_cache/`, `logs/` y reportes `Steam Deals*.md/.html/.json/.csv` son locales.
@@ -254,6 +255,34 @@ Casos útiles:
 
 Si todavía no existe un reporte JSON, responde `404`.
 
+### Historial local
+
+El dashboard histórico también usa estos endpoints locales:
+
+#### `GET /api/history/runs?limit=50`
+
+Devuelve las ejecuciones recientes disponibles para el comparador histórico.
+
+- `limit` se normaliza a un rango seguro de `1..100`
+- cada item resume `id`, `timestamp`, `date`, `sale_name`, `min_discount`, `deal_count`, `steam_id` y `vanity`
+
+#### `GET /api/history/compare?left=...&right=...`
+
+Compara dos runs guardados y devuelve un payload enriquecido para la UI histórica.
+
+Parámetros opcionales:
+
+- `include_same=1` para incluir filas sin cambio
+- `status=all|changed|new|removed|same`
+- `sort_delta=default|delta_desc|delta_asc|abs_desc`
+
+Respuesta principal:
+
+- `left` / `right`: resumen de cada run seleccionado
+- `summary`: conteos de `changed`, `new`, `removed` y `same`
+- `rows`: filas comparadas entre ambos runs
+- `analytics`: `state_counts`, `top_price_drops`, `top_price_rises`, `history_runs` y `game_history` por appid
+
 ### Markdown con frontmatter (Obsidian/Notion)
 
 Si quieres importar tu reporte Markdown en herramientas como Obsidian/Notion con metadatos estructurados, usa:
@@ -299,7 +328,7 @@ python3 steam_deals_generator.py --vanity gaben --md-frontmatter
 4. Importar en **Notion** y verificar:
    - contenido renderiza sin romper tablas/listas
    - propiedades clave se pueden mapear desde frontmatter
-5. Marcar validación como completa en `PENDIENTES.md` (bitácora + backlog).
+5. Marcar validación como completa en `PENDIENTES.md` y, si la corrida deja evidencia útil o notas largas, registrarla en `BITACORA.md`.
 
 ### Ejemplos mini de automatización
 
@@ -534,9 +563,9 @@ Runbooks detallados por plataforma:
 
 > Si necesitas el flujo completo paso a paso por plataforma, usa primero los runbooks en `docs/runbooks/`.
 
-Usa esta secuencia en host nativo Linux y macOS. Copia/pega los resultados en `PENDIENTES.md` (Bitácora Cross-Platform por OS).
+Usa esta secuencia en host nativo Linux y macOS. Copia/pega los resultados detallados en `BITACORA.md` y deja en `PENDIENTES.md` solo el resumen que cambie estado, prioridad o próximo paso.
 
-> Estado actual: este runbook queda **preparado para ejecución posterior**. En la iteración actual no se ejecutó validación manual en host nativo Linux/macOS por no contar con ese host; la evidencia disponible es CI parcial (run `24487556896`) y validación avanzada Linux en entorno local documentada en `PENDIENTES.md`.
+> Estado actual: este runbook queda **preparado para ejecución posterior**. En la iteración actual no se ejecutó validación manual en host nativo Linux/macOS por no contar con ese host; la evidencia disponible es CI parcial (run `24487556896`) y validación avanzada Linux en entorno local documentada en `BITACORA.md`, con resumen operativo en `PENDIENTES.md`.
 
 > Nota de capacidad: si tu wishlist real es muy grande (por ejemplo 2K+ juegos), el smoke funcional Linux no debe tratarse como prueba corta; conviene reservar una ventana amplia antes de ejecutarlo.
 

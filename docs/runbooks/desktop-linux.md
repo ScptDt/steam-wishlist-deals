@@ -99,14 +99,18 @@ Dentro de la UI desktop:
 1. correr **Doctor desktop** si quieres confirmar estado desde la UI
 2. correr **Probar config**
 3. lanzar un run real
-4. esperar outputs `.md`, `.html`, `.csv`
-5. cerrar la app
+4. durante un run suficientemente largo, probar **Detener** una vez para confirmar que no duplica mensajes y que no deja procesos colgados
+5. esperar outputs `.md`, `.html`, `.csv`
+6. cerrar la app
 
 Esperado:
 - preflight OK
 - run sin crash
+- si usas **Detener**, solo aparece una vez `Solicitando detener ejecucion...` y luego un estado veraz de parada
 - outputs generados
 - cierre limpio sin procesos colgados
+
+> Nota actual del Track Stop: la validación manual en browser ya confirmó que `Detener` deja de duplicar mensajes y sí para el run. La confirmación equivalente dentro del desktop binario queda pendiente mientras el launcher/fallback sigue estabilizándose.
 
 Tip operativo:
 - si aparece un traceback largo o warning dificil de copiar, usa los botones **Copiar log** / **Descargar log (.txt)** dentro de la UI antes de cerrar la app
@@ -135,7 +139,7 @@ Usa esta lista solo para la evidencia que realmente cierra la **Fase 1**:
 - [ ] Sin fallback no deseado al navegador (o fallback documentado si ocurrio)
 - [ ] Cierre limpio de la app
 - [ ] Sin procesos colgados despues del cierre
-- [ ] Bitácora actualizada en `PENDIENTES.md` con comando, resultado y workaround si hizo falta
+- [ ] Evidencia detallada registrada en `BITACORA.md` con comando, resultado y workaround si hizo falta; dejar en `PENDIENTES.md` solo el resumen que afecte estado o próximo paso
 
 > `--warm-cache` y una corrida larga desde Web UI/source cuentan como preparación y evidencia funcional del generator/Track Performance, pero no sustituyen el cierre final del desktop Linux: para cerrar P2 sigue haciendo falta repetir la corrida dentro del binario y confirmar `.csv` + cierre limpio.
 
