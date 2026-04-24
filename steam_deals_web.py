@@ -72,6 +72,28 @@ LOCAL_LOGS_DIR = resolve_logs_dir(
 )
 HISTORY_DIR = LOCAL_CACHE_DIR / "history"
 
+GENERATED_FILE_CONTENT_TYPES = {
+    ".html": "text/html",
+    ".md": "text/plain",
+    ".csv": "text/csv",
+    ".json": "application/json",
+}
+
+
+def _safe_content_disposition_filename(name: str) -> str:
+    return re.sub(r'[\r\n"]+', "_", name)
+
+
+def generated_file_content_disposition(name: str, suffix: str) -> str:
+    disposition = "inline" if suffix.lower() == ".html" else "attachment"
+    safe_name = _safe_content_disposition_filename(name)
+    encoded_name = urllib.parse.quote(name)
+    return f"{disposition}; filename=\"{safe_name}\"; filename*=UTF-8''{encoded_name}"
+
+
+def generated_file_content_type(suffix: str) -> str:
+    return GENERATED_FILE_CONTENT_TYPES.get(suffix.lower(), "application/octet-stream")
+
 # ─── Config I/O ──────────────────────────────────
 
 
@@ -2772,16 +2794,15 @@ class Handler(BaseHTTPRequestHandler):
         if not fpath.exists():
             self.send_error(404)
             return
-        content_types = {
-            ".html": "text/html",
-            ".md": "text/plain",
-            ".csv": "text/csv",
-            ".json": "application/json",
-        }
-        ct = content_types.get(fpath.suffix, "application/octet-stream")
+        ct = generated_file_content_type(fpath.suffix)
         data = fpath.read_bytes()
         self.send_response(200)
         self.send_header("Content-Type", f"{ct}; charset=utf-8")
+        self.send_header(
+            "Content-Disposition",
+            generated_file_content_disposition(fpath.name, fpath.suffix),
+        )
+        self.send_header("X-Content-Type-Options", "nosniff")
         self.send_header("Content-Length", str(len(data)))
         self.end_headers()
         self.wfile.write(data)

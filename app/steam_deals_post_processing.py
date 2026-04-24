@@ -77,6 +77,7 @@ def run_post_processing(
     previous_appids: set[str],
     comparison: dict | None,
     contract: PostProcessingContract,
+    active_promo_context: dict | None = None,
 ) -> PostProcessingOutputs:
     hltb_hours: dict[str, float] = {}
     for entry in backlog_on_sale + have_on_sale:
@@ -105,6 +106,7 @@ def run_post_processing(
         hltb_hours,
         deck_data,
         n=filters.get("top", 10),
+        active_promo_context=active_promo_context,
     )
 
     return PostProcessingOutputs(

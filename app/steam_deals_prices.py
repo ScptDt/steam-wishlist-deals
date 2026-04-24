@@ -9,6 +9,10 @@ from shared.cache_utils import save_timestamped_cache as _default_save_timestamp
 
 
 ENTRY_FETCHED_AT_KEY = "_fetched_at"
+ENTRY_FAILED_AT_KEY = "_failed_at"
+ENTRY_FAILURE_REASON_KEY = "_failure_reason"
+PRICE_DATA_FAILURE_REASON = "no_price_data"
+DEFAULT_FAILURE_RETRY_HOURS = 2.0
 
 
 def load_price_cache(
@@ -139,6 +143,13 @@ def _handle_individual_fallback(
     for appid in batch:
         single = fetch_single_fn(appid, country, delay)
         parsed = process_app_entry_fn(appid, single) if single else None
+        if isinstance(stats_out, dict):
+            counter_key = (
+                "individual_fallback_resolved_count"
+                if isinstance(parsed, dict) and parsed
+                else "individual_fallback_failed_count"
+            )
+            stats_out[counter_key] = int(stats_out.get(counter_key, 0) or 0) + 1
         fetched_cache[appid] = _cache_result_entry(parsed, now_ts=now_ts)
 
 
@@ -318,11 +329,37 @@ def _build_deals(
     return deals
 
 
-def _is_stale_entry(entry: dict | None, now_ts: float, ttl_hours: float) -> bool:
+def _is_recent_failed_entry(
+    entry: dict | None,
+    now_ts: float,
+    failure_retry_hours: float = DEFAULT_FAILURE_RETRY_HOURS,
+) -> bool:
+    if not isinstance(entry, dict):
+        return False
+    failed_at = entry.get(ENTRY_FAILED_AT_KEY)
+    if not isinstance(failed_at, (int, float)):
+        return False
+    age_hours = (now_ts - float(failed_at)) / 3600.0
+    return age_hours < failure_retry_hours
+
+
+def _is_stale_entry(
+    entry: dict | None,
+    now_ts: float,
+    ttl_hours: float,
+    failure_retry_hours: float = DEFAULT_FAILURE_RETRY_HOURS,
+) -> bool:
     if not isinstance(entry, dict):
         return True
     fetched_at = entry.get(ENTRY_FETCHED_AT_KEY)
     if not isinstance(fetched_at, (int, float)):
+        failed_at = entry.get(ENTRY_FAILED_AT_KEY)
+        if isinstance(failed_at, (int, float)):
+            return not _is_recent_failed_entry(
+                entry,
+                now_ts,
+                failure_retry_hours=failure_retry_hours,
+            )
         return True
     age_hours = (now_ts - float(fetched_at)) / 3600.0
     return age_hours >= ttl_hours
@@ -334,6 +371,7 @@ def count_refresh_candidates(
     *,
     now_ts: float,
     entry_ttl_hours: float,
+    failure_retry_hours: float = DEFAULT_FAILURE_RETRY_HOURS,
 ) -> tuple[int, int]:
     missing = 0
     stale = 0
@@ -341,7 +379,12 @@ def count_refresh_candidates(
         if appid not in fetched_cache:
             missing += 1
             continue
-        if _is_stale_entry(fetched_cache.get(appid), now_ts, entry_ttl_hours):
+        if _is_stale_entry(
+            fetched_cache.get(appid),
+            now_ts,
+            entry_ttl_hours,
+            failure_retry_hours=failure_retry_hours,
+        ):
             stale += 1
     return missing, stale
 
@@ -357,7 +400,10 @@ def _stamp_entry(entry: dict | None, *, now_ts: float) -> dict:
 
 def _cache_result_entry(entry: dict | None, *, now_ts: float) -> dict:
     if not isinstance(entry, dict) or not entry:
-        return {}
+        return {
+            ENTRY_FAILED_AT_KEY: now_ts,
+            ENTRY_FAILURE_REASON_KEY: PRICE_DATA_FAILURE_REASON,
+        }
     return _stamp_entry(entry, now_ts=now_ts)
 
 
@@ -388,6 +434,7 @@ def get_deals_from_wishlist(
     current_time_fn=time.time,
     refresh_ids: list[str] | tuple[str, ...] | None = None,
     max_batch_halving: int = 3,
+    failure_retry_hours: float = DEFAULT_FAILURE_RETRY_HOURS,
     stats_out: dict | None = None,
 ) -> tuple[list[dict], int]:
     now_ts = float(current_time_fn())
@@ -398,16 +445,36 @@ def get_deals_from_wishlist(
             appid
             for appid in appids
             if appid not in fetched_cache
-            or _is_stale_entry(fetched_cache.get(appid), now_ts, entry_ttl_hours)
+            or _is_stale_entry(
+                fetched_cache.get(appid),
+                now_ts,
+                entry_ttl_hours,
+                failure_retry_hours=failure_retry_hours,
+            )
         ]
     )
     total = len(to_fetch)
     delay = rate_limit
     if isinstance(stats_out, dict):
         stats_out.setdefault("refresh_candidate_count", total)
+        stats_out.setdefault(
+            "deferred_failure_count",
+            sum(
+                1
+                for appid in appids
+                if appid in fetched_cache
+                and _is_recent_failed_entry(
+                    fetched_cache.get(appid),
+                    now_ts,
+                    failure_retry_hours=failure_retry_hours,
+                )
+            ),
+        )
         stats_out.setdefault("degraded_batch_count", 0)
         stats_out.setdefault("individual_fallback_count", 0)
         stats_out.setdefault("individual_fallback_batches", 0)
+        stats_out.setdefault("individual_fallback_resolved_count", 0)
+        stats_out.setdefault("individual_fallback_failed_count", 0)
         stats_out.setdefault("null_batch_count", 0)
 
     if total > 0:

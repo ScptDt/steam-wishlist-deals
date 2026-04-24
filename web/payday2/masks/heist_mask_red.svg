@@ -1,0 +1,9 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 160 160" role="img" aria-label="Mascara roja original estilo atraco">
+  <rect width="160" height="160" rx="34" fill="#070b12"/>
+  <path d="M17 32 80 12l63 20v94l-63 22-63-22V32Z" fill="#141c2a" stroke="#ff4d5e" stroke-width="4"/>
+  <path d="M80 20 123 42 114 109 95 140H65L46 109 37 42 80 20Z" fill="#f2f6ff"/>
+  <path d="M39 47 80 30l41 17-6 19c-25-13-45-13-70 0l-6-19Z" fill="#ff4d5e"/>
+  <path d="M49 76h27l-10 14H48l-12-8 13-6Zm62 0H84l10 14h18l12-8-13-6Z" fill="#07101c"/>
+  <path d="M71 113h18l-9 18-9-18Z" fill="#07101c"/>
+  <path d="M55 103c16 8 34 8 50 0" fill="none" stroke="#ff4d5e" stroke-width="5" stroke-linecap="round"/>
+</svg>

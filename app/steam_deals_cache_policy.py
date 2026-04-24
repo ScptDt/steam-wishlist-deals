@@ -6,13 +6,25 @@ import time
 from typing import Iterable
 
 
+FAILED_AT_KEY = "_failed_at"
+DEFAULT_FAILURE_RETRY_HOURS = 2.0
+
+
 def _is_stale_entry(
-    entry: dict | None, *, now_ts: float, ttl_hours: float
+    entry: dict | None,
+    *,
+    now_ts: float,
+    ttl_hours: float,
+    failure_retry_hours: float = DEFAULT_FAILURE_RETRY_HOURS,
 ) -> bool:
     if not isinstance(entry, dict):
         return True
     fetched_at = entry.get("_fetched_at")
     if not isinstance(fetched_at, (int, float)):
+        failed_at = entry.get(FAILED_AT_KEY)
+        if isinstance(failed_at, (int, float)):
+            age_hours = (float(now_ts) - float(failed_at)) / 3600.0
+            return age_hours >= failure_retry_hours
         return True
     age_hours = (float(now_ts) - float(fetched_at)) / 3600.0
     return age_hours >= ttl_hours
@@ -24,13 +36,40 @@ def _refresh_ids(
     *,
     now_ts: float,
     ttl_hours: float,
+    failure_retry_hours: float = DEFAULT_FAILURE_RETRY_HOURS,
 ) -> tuple[str, ...]:
     return tuple(
         appid
         for appid in target_ids
         if appid not in cached
-        or _is_stale_entry(cached.get(appid), now_ts=now_ts, ttl_hours=ttl_hours)
+        or _is_stale_entry(
+            cached.get(appid),
+            now_ts=now_ts,
+            ttl_hours=ttl_hours,
+            failure_retry_hours=failure_retry_hours,
+        )
     )
+
+
+def _deferred_failure_ids(
+    target_ids: list[str],
+    cached: dict,
+    *,
+    now_ts: float,
+    failure_retry_hours: float = DEFAULT_FAILURE_RETRY_HOURS,
+) -> tuple[str, ...]:
+    ids: list[str] = []
+    for appid in target_ids:
+        entry = cached.get(appid)
+        if not isinstance(entry, dict):
+            continue
+        failed_at = entry.get(FAILED_AT_KEY)
+        if not isinstance(failed_at, (int, float)):
+            continue
+        age_hours = (float(now_ts) - float(failed_at)) / 3600.0
+        if age_hours < failure_retry_hours:
+            ids.append(appid)
+    return tuple(ids)
 
 
 @dataclass(frozen=True)
@@ -39,6 +78,7 @@ class CacheDecision:
     cache: dict
     missing_ids: tuple[str, ...] = ()
     refresh_ids: tuple[str, ...] = ()
+    deferred_failure_ids: tuple[str, ...] = ()
 
 
 def _clone_cache(cached: dict) -> dict:
@@ -58,6 +98,7 @@ def select_scoped_cache(
     ttl_hours: float,
     current_time_fn=time.time,
     entry_ttl_hours: float | None = None,
+    failure_retry_hours: float = DEFAULT_FAILURE_RETRY_HOURS,
 ) -> CacheDecision:
     target_ids = list(target_ids)
     if no_cache:
@@ -72,11 +113,19 @@ def select_scoped_cache(
 
     missing_ids = _missing_ids(target_ids, normalized_cache)
     refresh_ttl = ttl_hours if entry_ttl_hours is None else entry_ttl_hours
+    now_ts = float(current_time_fn())
     refresh_ids = _refresh_ids(
         target_ids,
         normalized_cache,
-        now_ts=float(current_time_fn()),
+        now_ts=now_ts,
         ttl_hours=refresh_ttl,
+        failure_retry_hours=failure_retry_hours,
+    )
+    deferred_failure_ids = _deferred_failure_ids(
+        target_ids,
+        normalized_cache,
+        now_ts=now_ts,
+        failure_retry_hours=failure_retry_hours,
     )
 
     return CacheDecision(
@@ -84,6 +133,7 @@ def select_scoped_cache(
         normalized_cache,
         missing_ids,
         refresh_ids,
+        deferred_failure_ids,
     )
 
 

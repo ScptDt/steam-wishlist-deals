@@ -37,8 +37,9 @@ def _run_entry(
     deals: list[dict],
     *,
     now: datetime,
+    active_promo_context: dict | None = None,
 ) -> dict:
-    return {
+    entry = {
         "steam_id": steam_id,
         "vanity": vanity,
         "date": date.today().isoformat(),
@@ -55,6 +56,9 @@ def _run_entry(
             for deal in deals
         },
     }
+    if active_promo_context:
+        entry["active_promo_context"] = active_promo_context
+    return entry
 
 
 def _prune_history(history_dir: Path, history_max_files: int) -> None:
@@ -76,12 +80,21 @@ def save_run_history(
     history_dir: Path,
     history_max_files: int,
     now: datetime | None = None,
+    active_promo_context: dict | None = None,
 ) -> Path:
     """Guarda snapshot del run actual en historial JSON."""
     history_dir.mkdir(parents=True, exist_ok=True)
     timestamp = now or datetime.now()
     filename = f"run_{timestamp.strftime('%Y-%m-%d_%H%M%S')}.json"
-    entry = _run_entry(steam_id, vanity, sale_name, min_discount, deals, now=timestamp)
+    entry = _run_entry(
+        steam_id,
+        vanity,
+        sale_name,
+        min_discount,
+        deals,
+        now=timestamp,
+        active_promo_context=active_promo_context,
+    )
     path = history_dir / filename
     path.write_text(json.dumps(entry, ensure_ascii=False), encoding="utf-8")
     _prune_history(history_dir, history_max_files)
@@ -301,4 +314,4 @@ def format_trend(trend: dict) -> str:
         return "💰 1ra vez a este precio"
     times = trend.get("times_on_sale", 0)
     average = trend.get("avg_fmt", "?")
-    return f"📊 {times}x · prom {average}"
+    return f"Historial local: {times}x · prom {average}"

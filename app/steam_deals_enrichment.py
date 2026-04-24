@@ -8,7 +8,7 @@ from shared.cache_utils import load_timestamped_cache as _default_load_timestamp
 from shared.cache_utils import save_timestamped_cache as _default_save_timestamped_cache
 
 
-MAX_WORKERS = 12
+MAX_WORKERS = 16
 RATE_LIMIT_INTERVAL = 0.15
 
 

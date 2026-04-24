@@ -55,6 +55,7 @@ def generate_json(
     compare_data: dict | None = None,
     gift_ideas: list[dict] | None = None,
     profile_display_name: str | None = None,
+    active_promo_context: dict | None = None,
 ) -> str:
     previous_appids = previous_appids or set()
     family_appids = family_appids or set()
@@ -119,4 +120,6 @@ def generate_json(
         "anticheat_data": _json_safe(anticheat_data),
         "achievements_data": _json_safe(achievements_data),
     }
+    if active_promo_context:
+        payload["meta"]["active_promo_context"] = _json_safe(active_promo_context)
     return json.dumps(payload, ensure_ascii=False, indent=2)

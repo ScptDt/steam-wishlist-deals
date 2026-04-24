@@ -1,0 +1,105 @@
+from __future__ import annotations
+
+import io
+import json
+import unittest
+from pathlib import Path
+
+from steam_deals_warm_cache_summary import (
+    format_warm_cache_summary,
+    main as warm_cache_summary_main,
+    parse_warm_cache_log_file,
+    parse_warm_cache_log_text,
+)
+
+
+FIXTURES = Path(__file__).parent / "fixtures" / "warm_cache_logs"
+
+
+class WarmCacheSummaryTests(unittest.TestCase):
+    def test_parse_warm_cache_log_extracts_comparable_metrics(self) -> None:
+        summary = parse_warm_cache_log_file(FIXTURES / "full.log")
+
+        self.assertEqual(summary.cache_status, "valid")
+        self.assertEqual(summary.cache_age_hours, 22.9)
+        self.assertEqual(summary.refresh_candidates, 2204)
+        self.assertEqual(summary.missing_count, 2110)
+        self.assertEqual(summary.stale_count, 94)
+        self.assertEqual(summary.deferred_failure_count, 12)
+        self.assertEqual(summary.degraded_batch_count, 3)
+        self.assertEqual(summary.individual_fallback_count, 20)
+        self.assertEqual(summary.individual_fallback_batches, 2)
+        self.assertEqual(summary.individual_fallback_resolved_count, 7)
+        self.assertEqual(summary.individual_fallback_failed_count, 13)
+        self.assertEqual(summary.batch_size, 8)
+        self.assertEqual(summary.batch_halving_limit, 5)
+        self.assertEqual(summary.deals_count, 411)
+        self.assertEqual(summary.min_discount, 50)
+        self.assertEqual(summary.wishlist_count, 2941)
+        self.assertEqual(summary.elapsed_seconds, 84.2)
+        self.assertEqual(
+            summary.cache_path,
+            "/home/adolfo/.cache/steam_deals/prices_cache.json",
+        )
+
+    def test_parse_warm_cache_log_defaults_missing_optional_counts_to_zero(self) -> None:
+        summary = parse_warm_cache_log_file(FIXTURES / "minimal.log")
+
+        self.assertEqual(summary.cache_status, "valid")
+        self.assertEqual(summary.refresh_candidates, 0)
+        self.assertEqual(summary.missing_count, 0)
+        self.assertEqual(summary.stale_count, 0)
+        self.assertEqual(summary.deferred_failure_count, 0)
+        self.assertEqual(summary.degraded_batch_count, 0)
+        self.assertEqual(summary.individual_fallback_count, 0)
+        self.assertIsNone(summary.batch_size)
+        self.assertIsNone(summary.batch_halving_limit)
+
+    def test_parse_warm_cache_log_text_ignores_ansi_sequences(self) -> None:
+        text = "\x1b[32m  Warm cache listo en 3.5s\x1b[0m\n"
+
+        summary = parse_warm_cache_log_text(text)
+
+        self.assertEqual(summary.elapsed_seconds, 3.5)
+
+    def test_format_warm_cache_summary_outputs_bitacora_friendly_markdown(self) -> None:
+        summary = parse_warm_cache_log_file(FIXTURES / "full.log")
+
+        output = format_warm_cache_summary(summary)
+
+        self.assertIn("## Warm-cache summary", output)
+        self.assertIn("- Duración: 84.2s", output)
+        self.assertIn("- Wishlist/deals: 2,941 / 411", output)
+        self.assertIn(
+            "- Refresh candidates: 2,204 (2,110 nuevos, 94 stale, 12 cooldown)",
+            output,
+        )
+        self.assertIn(
+            "- Fallback individual: 20 juegos en 2 tandas (7 resueltos, 13 sin oferta/datos)",
+            output,
+        )
+
+    def test_cli_prints_markdown_summary_for_log_path(self) -> None:
+        stdout = io.StringIO()
+
+        exit_code = warm_cache_summary_main([str(FIXTURES / "minimal.log")], stdout=stdout)
+
+        self.assertEqual(exit_code, 0)
+        self.assertIn("## Warm-cache summary", stdout.getvalue())
+        self.assertIn("- Batches degradados HTTP 400: 0", stdout.getvalue())
+
+    def test_cli_can_emit_json_summary_for_one_log(self) -> None:
+        stdout = io.StringIO()
+
+        exit_code = warm_cache_summary_main(
+            [str(FIXTURES / "full.log"), "--json"], stdout=stdout
+        )
+
+        self.assertEqual(exit_code, 0)
+        payload = json.loads(stdout.getvalue())
+        self.assertEqual(payload["refresh_candidates"], 2204)
+        self.assertEqual(payload["individual_fallback_failed_count"], 13)
+
+
+if __name__ == "__main__":
+    unittest.main()

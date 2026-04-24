@@ -1,0 +1,8 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 64 64" role="img" aria-label="PAYDAY 2 DLC Dashboard">
+  <rect width="64" height="64" rx="14" fill="#070b12"/>
+  <path d="M8 50V14l10 8 14-10 14 10 10-8v36l-12 6H20L8 50Z" fill="#101a29" stroke="#56a8ff" stroke-width="3"/>
+  <path d="M32 8 51 17 48 43 39 56H25L16 43 13 17 32 8Z" fill="#f2f6ff"/>
+  <path d="M20 28h10l-3 7h-8l-4-5 5-2Zm24 0H34l3 7h8l4-5-5-2Z" fill="#07101c"/>
+  <path d="M27 44h10l-5 6-5-6Z" fill="#ff4d5e"/>
+  <text x="32" y="18" text-anchor="middle" font-family="Arial, sans-serif" font-size="10" font-weight="900" fill="#f5c542">2</text>
+</svg>

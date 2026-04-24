@@ -1,0 +1,15 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 160 160" role="img" aria-label="Mascara dorada original estilo atraco">
+  <defs>
+    <linearGradient id="goldFace" x1="0" x2="1" y1="0" y2="1">
+      <stop offset="0" stop-color="#fff7d1"/>
+      <stop offset="1" stop-color="#d8a72d"/>
+    </linearGradient>
+  </defs>
+  <rect width="160" height="160" rx="34" fill="#080b12"/>
+  <path d="M24 36h112v90H24z" fill="#101a29" transform="rotate(-5 80 81)"/>
+  <path d="M80 18 125 38 116 112 96 142H64L44 112 35 38 80 18Z" fill="url(#goldFace)" stroke="#f5c542" stroke-width="3"/>
+  <path d="M49 68h24l-9 18H47l-10-8 12-10Zm62 0H87l9 18h17l10-8-12-10Z" fill="#07101c"/>
+  <path d="M55 46c12-8 24-12 25-12s13 4 25 12" fill="none" stroke="#07101c" stroke-width="6" stroke-linecap="round" opacity=".65"/>
+  <path d="M63 111h34l-8 16H71l-8-16Z" fill="#07101c"/>
+  <path d="M73 113h14" stroke="#ff4d5e" stroke-width="5" stroke-linecap="round"/>
+</svg>

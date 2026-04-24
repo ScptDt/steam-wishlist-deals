@@ -44,6 +44,13 @@ WEB_DIR = Path(__file__).resolve().parent / "web" / "payday2"
 PAYDAY2_HTML_FILE = WEB_DIR / "index.html"
 PAYDAY2_CSS_FILE = WEB_DIR / "app.css"
 PAYDAY2_JS_FILE = WEB_DIR / "app.js"
+PAYDAY2_FAVICON_FILE = WEB_DIR / "favicon.svg"
+PAYDAY2_MASK_ROUTES = {
+    "/masks/heist_mask_blue.svg": WEB_DIR / "masks" / "heist_mask_blue.svg",
+    "/masks/heist_mask_gold.svg": WEB_DIR / "masks" / "heist_mask_gold.svg",
+    "/masks/heist_mask_red.svg": WEB_DIR / "masks" / "heist_mask_red.svg",
+    "/masks/heist_mask_shadow.svg": WEB_DIR / "masks" / "heist_mask_shadow.svg",
+}
 
 # ─── In-memory data store ─────────────────────────
 
@@ -406,6 +413,13 @@ def load_payday2_asset(asset_file: Path) -> str | None:
     return load_text_asset(asset_file)
 
 
+def load_payday2_mask(route_path: str) -> str | None:
+    asset_file = PAYDAY2_MASK_ROUTES.get(route_path)
+    if asset_file is None:
+        return None
+    return load_payday2_asset(asset_file)
+
+
 # ─── HTTP Handler ─────────────────────────────────
 
 
@@ -427,6 +441,9 @@ class Handler(BaseHTTPRequestHandler):
     def _js(self, script: str):
         send_text(self, script, "application/javascript; charset=utf-8")
 
+    def _svg(self, svg: str):
+        send_text(self, svg, "image/svg+xml; charset=utf-8")
+
     def _body(self) -> dict | None:
         return read_json_body(self, max_json_body_bytes=self.max_json_body_bytes)
 
@@ -446,6 +463,18 @@ class Handler(BaseHTTPRequestHandler):
                 self.send_error(404)
                 return
             self._js(script)
+        elif path == "/favicon.svg":
+            svg = load_payday2_asset(PAYDAY2_FAVICON_FILE)
+            if svg is None:
+                self.send_error(404)
+                return
+            self._svg(svg)
+        elif path in PAYDAY2_MASK_ROUTES:
+            svg = load_payday2_mask(path)
+            if svg is None:
+                self.send_error(404)
+                return
+            self._svg(svg)
         elif path == "/api/data":
             self._json(get_data_json())
         elif path == "/api/config":

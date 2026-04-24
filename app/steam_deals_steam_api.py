@@ -10,6 +10,8 @@ PROFILE_ID_RE = re.compile(r"https?://steamcommunity\.com/profiles/(\d+)")
 PROFILE_VANITY_RE = re.compile(r"https?://steamcommunity\.com/id/([^/]+)")
 STEAM_ID64_RE = re.compile(r"<steamID64>(\d+)</steamID64>")
 STEAM_ID_RE = re.compile(r"<steamID><!\[CDATA\[(.*?)\]\]></steamID>")
+PROMO_PRIMARY_TYPES = (1, 11)
+MAJOR_SALE_KEYWORDS = ("summer sale", "winter sale", "autumn sale", "spring sale")
 
 
 def _normalized_vanity(vanity: str) -> str:
@@ -170,24 +172,79 @@ def load_family_games(json_path: Path) -> set[str]:
     raise ValueError(f"Formato de family JSON no reconocido: {type(raw)}")
 
 
-def get_active_sale(*, get_json) -> str:
-    """Detecta la oferta/evento activo en Steam via marketing messages API."""
+def _promo_title(message: dict) -> str:
+    return str(message.get("title", "") or "").strip()
+
+
+def classify_steam_promo_message(message: dict) -> dict:
+    """Classify one Steam marketing message into a stable promo category."""
+    title = _promo_title(message)
+    lower_title = title.lower()
+    category = "unknown"
+    if "weeklong" in lower_title:
+        category = "weeklong"
+    elif "midweek" in lower_title or "mid-week" in lower_title:
+        category = "midweek"
+    elif "weekend" in lower_title:
+        category = "weekend"
+    elif any(keyword in lower_title for keyword in MAJOR_SALE_KEYWORDS):
+        category = "major_sale"
+    elif "fest" in lower_title or "festival" in lower_title:
+        category = "fest"
+    elif any(
+        keyword in lower_title
+        for keyword in ("sale", "deals", "deal", "specials", "discount")
+    ):
+        category = "themed"
+
+    message_type = message.get("type")
+    return {
+        "title": title,
+        "type": message_type,
+        "category": category,
+        "is_primary_type": message_type in PROMO_PRIMARY_TYPES,
+    }
+
+
+def _select_primary_promo(promos: list[dict]) -> dict | None:
+    for preferred_type in PROMO_PRIMARY_TYPES:
+        for promo in promos:
+            if promo.get("type") == preferred_type and promo.get("title"):
+                return promo
+    for promo in promos:
+        if promo.get("title"):
+            return promo
+    return None
+
+
+def build_active_promo_context(messages: list[dict]) -> dict:
+    promos = [
+        classify_steam_promo_message(message)
+        for message in messages
+        if _promo_title(message)
+    ]
+    primary = _select_primary_promo(promos)
+    categories = sorted({promo["category"] for promo in promos if promo.get("category")})
+    return {
+        "sale_name": primary.get("title", "") if primary else "",
+        "primary": primary,
+        "promos": promos,
+        "categories": categories,
+    }
+
+
+def get_active_promo_context(*, get_json) -> dict:
+    """Return structured active Steam promo context from marketing messages."""
     try:
         data = get_json(
             "https://api.steampowered.com/IMarketingMessagesService/GetActiveMarketingMessages/v1/"
         )
         messages = data.get("response", {}).get("messages", [])
-        for preferred_type in (1, 11):
-            for message in messages:
-                if message.get("type") != preferred_type:
-                    continue
-                title = message.get("title", "").strip()
-                if title:
-                    return title
-        for message in messages:
-            title = message.get("title", "").strip()
-            if title:
-                return title
+        return build_active_promo_context(messages if isinstance(messages, list) else [])
     except Exception:
-        pass
-    return ""
+        return build_active_promo_context([])
+
+
+def get_active_sale(*, get_json) -> str:
+    """Detecta la oferta/evento activo en Steam via marketing messages API."""
+    return get_active_promo_context(get_json=get_json).get("sale_name", "")

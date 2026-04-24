@@ -3,13 +3,27 @@ let DATA = null;
 let sortKey = 'discount', sortAsc = false;
 const STORE = 'https://store.steampowered.com/app/';
 const CAP = 'https://cdn.akamai.steamstatic.com/steam/apps/';
+const PD2_MASKS = Object.freeze([
+  '/masks/heist_mask_blue.svg',
+  '/masks/heist_mask_gold.svg',
+  '/masks/heist_mask_red.svg',
+  '/masks/heist_mask_shadow.svg',
+]);
 
 function $(id) { return document.getElementById(id); }
 function esc(s) { const d = document.createElement('div'); d.textContent = s; return d.innerHTML; }
 function fmt(n) { return n.toLocaleString('en', { maximumFractionDigits: 0 }); }
 function togglePw(btn) { const i = btn.previousElementSibling; i.type = i.type === 'password' ? 'text' : 'password'; }
 
+function renderRandomMask() {
+  const img = $('pd2-mask-img');
+  if (!img || PD2_MASKS.length === 0) return;
+  const index = Math.floor(Math.random() * PD2_MASKS.length);
+  img.src = PD2_MASKS[index];
+}
+
 async function loadData() {
+  renderRandomMask();
   try {
     const r = await fetch('/api/data');
     DATA = await r.json();

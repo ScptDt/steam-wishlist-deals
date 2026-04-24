@@ -17,10 +17,12 @@ from steam_deals_itad import (
     itad_lookup_games as module_itad_lookup_games,
 )
 from steam_deals_config import (
+    build_parser as module_build_parser,
     get_config as module_get_config,
     load_user_config as module_load_user_config,
     save_user_config as module_save_user_config,
 )
+from steam_deals_alerts import build_smart_alert_counts as module_build_smart_alert_counts
 from steam_deals_cache_policy import (
     clear_cache_files as module_clear_cache_files,
     select_global_cache as module_select_global_cache,
@@ -79,7 +81,10 @@ from steam_deals_prices import (
     save_price_cache as module_save_price_cache,
 )
 from steam_deals_steam_api import (
+    build_active_promo_context as module_build_active_promo_context,
+    classify_steam_promo_message as module_classify_steam_promo_message,
     compare_wishlists as module_compare_wishlists,
+    get_active_promo_context as module_get_active_promo_context,
     get_active_sale as module_get_active_sale,
     get_owned_games as module_get_owned_games,
     get_wishlist as module_get_wishlist,
@@ -114,6 +119,7 @@ from steam_deals_run_output import (
     write_output_artifacts as module_write_output_artifacts,
     write_artifact as module_write_artifact,
 )
+from steam_deals_history import save_run_history as module_save_run_history
 from steam_deals_runtime_reporting import (
     emit_event as module_emit_event,
     report_step as module_report_step,
@@ -133,11 +139,13 @@ from steam_deals_generator import (
     _format_cli_user_error,
     _handle_cli_value_error,
     _looks_like_placeholder_vanity,
+    _resolve_max_workers,
     _run_entrypoint,
     apply_filters,
     analyze_trends,
     build_warm_cache_emit,
     build_final_summary as generator_build_final_summary,
+    build_smart_alert_counts as generator_build_smart_alert_counts,
     build_gift_ideas,
     compute_budget_picks,
     compute_deal_comparison,
@@ -250,6 +258,19 @@ class ConfigTests(unittest.TestCase):
         self.assertEqual(result[11]["alert_rise_pct"], 12.5)
         self.assertEqual(result[11]["alert_global_margin_pct"], 3.0)
         self.assertEqual(result[11]["alert_score_min"], 80.0)
+
+    def test_build_parser_documents_max_workers_default_as_16(self) -> None:
+        parser = module_build_parser()
+        action = next(
+            action for action in parser._actions if "--max-workers" in action.option_strings
+        )
+
+        self.assertEqual(action.help, "Workers de fetch paralelo para enrichment (default: 16)")
+
+    def test_resolve_max_workers_falls_back_to_new_default_of_16(self) -> None:
+        self.assertEqual(_resolve_max_workers(None, 16), 16)
+        self.assertEqual(_resolve_max_workers("0", 16), 16)
+        self.assertEqual(_resolve_max_workers("bad", 16), 16)
 
     def test_get_config_handles_watchlist_and_exits_early(self) -> None:
         calls = []
@@ -553,6 +574,8 @@ class WarmCacheTests(unittest.TestCase):
             stats["degraded_batch_count"] = 3
             stats["individual_fallback_count"] = 20
             stats["individual_fallback_batches"] = 2
+            stats["individual_fallback_resolved_count"] = 7
+            stats["individual_fallback_failed_count"] = 13
             received["batch_size"] = kwargs.get("batch_size")
             received["max_batch_halving"] = kwargs.get("max_batch_halving")
             return ([{"appid": "10"}, {"appid": "20"}, {"appid": "30"}], 2)
@@ -583,6 +606,8 @@ class WarmCacheTests(unittest.TestCase):
         self.assertEqual(result["stale_count"], 1)
         self.assertEqual(result["degraded_batch_count"], 3)
         self.assertEqual(result["individual_fallback_count"], 20)
+        self.assertEqual(result["individual_fallback_resolved_count"], 7)
+        self.assertEqual(result["individual_fallback_failed_count"], 13)
         self.assertEqual(result["batch_size"], 8)
         self.assertEqual(result["batch_halving_limit"], 5)
         self.assertTrue(
@@ -595,7 +620,10 @@ class WarmCacheTests(unittest.TestCase):
             any("Batches degradados por HTTP 400: 3" in line for line in emitted)
         )
         self.assertTrue(
-            any("Fallback individual aplicado a 20 juegos en 2 tandas" in line for line in emitted)
+            any(
+                "Fallback individual aplicado a 20 juegos en 2 tandas (7 resueltos, 13 sin oferta/datos)" in line
+                for line in emitted
+            )
         )
 
     def test_get_deals_from_wishlist_skips_fetch_when_all_entries_are_fresh(
@@ -643,6 +671,44 @@ class WarmCacheTests(unittest.TestCase):
 
         self.assertEqual(n_fetched, 0)
         self.assertEqual([deal["appid"] for deal in deals], ["10"])
+        self.assertFalse(any("Fetching" in line for line in emitted))
+
+    def test_get_deals_from_wishlist_defers_recent_failed_entries_without_refetching(
+        self,
+    ) -> None:
+        now_ts = 1_700_000_000.0
+        emitted = []
+        stats = {}
+        fetched_cache = {
+            "10": {"_failed_at": now_ts - 60, "_failure_reason": "no_price_data"}
+        }
+
+        deals, n_fetched = module_get_deals_from_wishlist(
+            ["10"],
+            fetched_cache,
+            "steam-id",
+            min_discount=50,
+            rate_limit=0.0,
+            get_json=lambda *_args, **_kwargs: (_ for _ in ()).throw(
+                AssertionError("No debería iniciar fetch por batch")
+            ),
+            sleep_fn=lambda _delay: None,
+            monotonic_fn=lambda: 0.0,
+            save_price_cache_fn=lambda *_args, **_kwargs: None,
+            fetch_single_fn=lambda *_args, **_kwargs: (_ for _ in ()).throw(
+                AssertionError("No debería iniciar fetch individual")
+            ),
+            process_app_entry_fn=module_process_app_entry,
+            emit=emitted.append,
+            warn=lambda text: text,
+            dim=lambda text: text,
+            current_time_fn=lambda: now_ts,
+            stats_out=stats,
+        )
+
+        self.assertEqual(n_fetched, 0)
+        self.assertEqual(deals, [])
+        self.assertEqual(stats["deferred_failure_count"], 1)
         self.assertFalse(any("Fetching" in line for line in emitted))
 
     def test_get_deals_from_wishlist_reports_fetch_count_for_missing_and_stale(
@@ -1192,6 +1258,26 @@ class PriceCacheTests(unittest.TestCase):
         self.assertEqual(decision.missing_ids, ("30",))
         self.assertEqual(decision.refresh_ids, ("20", "30"))
 
+    def test_select_scoped_cache_defers_recent_failed_entries_until_retry_window(self) -> None:
+        now_ts = 1_700_000_000.0
+        decision = module_select_scoped_cache(
+            ["10", "20"],
+            {
+                "10": {"_failed_at": now_ts - 3600, "_failure_reason": "no_price_data"},
+                "20": {"_failed_at": now_ts - (3 * 3600), "_failure_reason": "no_price_data"},
+            },
+            2.0,
+            no_cache=False,
+            ttl_hours=24,
+            current_time_fn=lambda: now_ts,
+            entry_ttl_hours=24,
+            failure_retry_hours=2,
+        )
+
+        self.assertEqual(decision.status, "valid")
+        self.assertEqual(decision.refresh_ids, ("20",))
+        self.assertEqual(decision.deferred_failure_ids, ("10",))
+
     def test_select_scoped_cache_clears_expired_payload(self) -> None:
         decision = module_select_scoped_cache(
             ["10", "20"],
@@ -1297,6 +1383,7 @@ class PriceCacheTests(unittest.TestCase):
         self,
     ) -> None:
         fetched_cache = {}
+        stats = {}
 
         def fake_batch_get_json(_url, headers=None):
             return {"10": None, "20": None}
@@ -1340,11 +1427,15 @@ class PriceCacheTests(unittest.TestCase):
             emit=lambda *_args, **_kwargs: None,
             warn=lambda text: text,
             dim=lambda text: text,
+            stats_out=stats,
         )
 
         self.assertEqual(total, 2)
         self.assertEqual([deal["appid"] for deal in deals], ["10"])
         self.assertEqual(deals[0]["price_raw"], 600)
+        self.assertEqual(stats["individual_fallback_count"], 2)
+        self.assertEqual(stats["individual_fallback_resolved_count"], 2)
+        self.assertEqual(stats["individual_fallback_failed_count"], 0)
 
     def test_count_refresh_candidates_reports_missing_and_stale_entries(self) -> None:
         now_ts = 200000.0
@@ -1485,13 +1576,22 @@ class PriceCacheTests(unittest.TestCase):
             now_ts=now_ts + 60,
             entry_ttl_hours=24,
         )
+        missing_after_retry, stale_after_retry = module_count_refresh_candidates(
+            ["10"],
+            fetched_cache,
+            now_ts=now_ts + (3 * 3600),
+            entry_ttl_hours=24,
+        )
 
         self.assertEqual(total, 1)
         self.assertEqual(deals, [])
-        self.assertEqual(fetched_cache["10"], {})
+        self.assertEqual(fetched_cache["10"].get("_failed_at"), now_ts)
+        self.assertEqual(fetched_cache["10"].get("_failure_reason"), "no_price_data")
         self.assertNotIn("_fetched_at", fetched_cache["10"])
         self.assertEqual(missing, 0)
-        self.assertEqual(stale, 1)
+        self.assertEqual(stale, 0)
+        self.assertEqual(missing_after_retry, 0)
+        self.assertEqual(stale_after_retry, 1)
 
     def test_get_deals_from_wishlist_reports_http_400_batch_degradation_and_keeps_entries_retryable(
         self,
@@ -1536,6 +1636,12 @@ class PriceCacheTests(unittest.TestCase):
             now_ts=now_ts + 60,
             entry_ttl_hours=24,
         )
+        missing_after_retry, stale_after_retry = module_count_refresh_candidates(
+            ["10", "20", "30", "40"],
+            fetched_cache,
+            now_ts=now_ts + (3 * 3600),
+            entry_ttl_hours=24,
+        )
 
         self.assertEqual(total, 4)
         self.assertEqual(deals, [])
@@ -1547,8 +1653,11 @@ class PriceCacheTests(unittest.TestCase):
             any("DIM:Batch falló, intentando individualmente..." in line for line in emitted)
         )
         self.assertEqual(missing, 0)
-        self.assertEqual(stale, 4)
-        self.assertTrue(all(entry == {} for entry in fetched_cache.values()))
+        self.assertEqual(stale, 0)
+        self.assertEqual(missing_after_retry, 0)
+        self.assertEqual(stale_after_retry, 4)
+        self.assertTrue(all(entry.get("_failed_at") == now_ts for entry in fetched_cache.values()))
+        self.assertTrue(all("_fetched_at" not in entry for entry in fetched_cache.values()))
 
     def test_get_deals_from_wishlist_halves_http_400_batches_before_individual_fallback(
         self,
@@ -1828,6 +1937,105 @@ class StopApiContractTests(unittest.TestCase):
         self.assertEqual(data["comparison"]["new_deals"], ["10"])
         self.assertEqual(data["top_picks"][0]["score"], 95.4)
 
+    def test_generate_json_includes_active_promo_context_when_provided(self) -> None:
+        promo_context = {
+            "sale_name": "Steam Farming Fest",
+            "primary": {"title": "Steam Farming Fest", "type": 1, "category": "fest"},
+            "promos": [
+                {"title": "Steam Farming Fest", "type": 1, "category": "fest"},
+                {"title": "Weeklong Deals", "type": 11, "category": "weeklong"},
+            ],
+            "categories": {"fest", "weeklong"},
+        }
+
+        payload = generate_json(
+            deals=[],
+            backlog_on_sale=[],
+            have_on_sale=[],
+            vanity="gaben",
+            owned={},
+            wishlist_appids=[],
+            min_discount=50,
+            genres=[],
+            sale_name="Steam Farming Fest",
+            active_promo_context=promo_context,
+        )
+
+        data = json.loads(payload)
+
+        self.assertEqual(data["meta"]["sale_name"], "Steam Farming Fest")
+        self.assertEqual(data["meta"]["active_promo_context"]["primary"]["category"], "fest")
+        self.assertEqual(data["meta"]["active_promo_context"]["categories"], ["fest", "weeklong"])
+
+    def test_generate_json_omits_active_promo_context_when_absent(self) -> None:
+        payload = generate_json(
+            deals=[],
+            backlog_on_sale=[],
+            have_on_sale=[],
+            vanity="gaben",
+            owned={},
+            wishlist_appids=[],
+            min_discount=50,
+            genres=[],
+        )
+
+        data = json.loads(payload)
+
+        self.assertNotIn("active_promo_context", data["meta"])
+
+    def test_save_run_history_persists_active_promo_context_when_provided(self) -> None:
+        promo_context = {
+            "sale_name": "Steam Farming Fest",
+            "primary": {"title": "Steam Farming Fest", "type": 1, "category": "fest"},
+            "promos": [{"title": "Steam Farming Fest", "type": 1, "category": "fest"}],
+            "categories": ["fest"],
+        }
+
+        with TemporaryDirectory() as temp_dir:
+            path = module_save_run_history(
+                "steam-id",
+                "gaben",
+                "Steam Farming Fest",
+                50,
+                [
+                    {
+                        "appid": "10",
+                        "name": "Alpha",
+                        "discount": 60,
+                        "price_final": "$6",
+                        "price_raw": 600,
+                    }
+                ],
+                history_dir=Path(temp_dir),
+                history_max_files=10,
+                now=datetime(2026, 4, 24, 10, 0, 0),
+                active_promo_context=promo_context,
+            )
+
+            data = json.loads(path.read_text(encoding="utf-8"))
+
+        self.assertEqual(data["sale_name"], "Steam Farming Fest")
+        self.assertEqual(data["active_promo_context"]["primary"]["category"], "fest")
+        self.assertEqual(data["deals"]["10"]["price_raw"], 600)
+
+    def test_save_run_history_keeps_existing_shape_without_promo_context(self) -> None:
+        with TemporaryDirectory() as temp_dir:
+            path = module_save_run_history(
+                "steam-id",
+                "gaben",
+                "Steam Sale",
+                50,
+                [],
+                history_dir=Path(temp_dir),
+                history_max_files=10,
+                now=datetime(2026, 4, 24, 10, 0, 0),
+            )
+
+            data = json.loads(path.read_text(encoding="utf-8"))
+
+        self.assertEqual(data["sale_name"], "Steam Sale")
+        self.assertNotIn("active_promo_context", data)
+
     def test_generate_json_preserves_extended_budget_payload(self) -> None:
         budget_result = compute_budget_picks(
             deals=[
@@ -1998,6 +2206,121 @@ class StopApiContractTests(unittest.TestCase):
         )
 
 
+class SmartAlertsTests(unittest.TestCase):
+    def test_smart_alerts_calibrate_unscored_fixture(self) -> None:
+        result = module_build_smart_alert_counts(
+            deals=[
+                {"appid": "10", "price_raw": 1000},
+                {"appid": "20", "price_raw": 1300},
+                {"appid": "30", "price_raw": 500},
+            ],
+            historical_lows={
+                "10": {"price": 9.80},
+                "20": {"price": 12.00},
+                "30": {"price": None},
+            },
+            active_bundles={
+                "10": [{"title": "Bundle Alpha"}, {"title": "Bundle Shared"}],
+                "20": [{"title": "Bundle Shared"}],
+            },
+            comparison={
+                "price_changes": {
+                    "10": {"direction": "up", "change_pct": 12.5},
+                    "20": {"direction": "up", "change_pct": 9.9},
+                    "30": {"direction": "down", "change_pct": 20.0},
+                }
+            },
+            local_trends={
+                "10": {"is_best_local": True, "is_first_time": False},
+                "20": {"is_best_local": True, "is_first_time": True},
+                "30": {"is_best_local": False, "is_first_time": False},
+            },
+            alert_global_margin_pct=3.0,
+            alert_rise_pct=10.0,
+        )
+
+        self.assertEqual(
+            result,
+            {
+                "best_local_count": 1,
+                "price_up_count": 1,
+                "global_historical_low_count": 1,
+                "active_bundles_count": 2,
+                "active_bundle_games_count": 2,
+            },
+        )
+
+    def test_smart_alerts_apply_score_minimum_to_top_picks(self) -> None:
+        result = module_build_smart_alert_counts(
+            deals=[
+                {"appid": "10", "price_raw": 1000},
+                {"appid": "20", "price_raw": 700},
+                {"appid": "30", "price_raw": 500},
+            ],
+            historical_lows={
+                "10": {"price": 10.00},
+                "20": {"price": 7.00},
+                "30": {"price": 5.00},
+            },
+            active_bundles={
+                "10": [{"title": "Bundle Alpha"}],
+                "20": [{"title": "Bundle Beta"}],
+                "30": [{"title": "Bundle Alpha"}],
+            },
+            comparison={
+                "price_changes": {
+                    "10": {"direction": "up", "change_pct": 15.0},
+                    "20": {"direction": "up", "change_pct": 15.0},
+                    "30": {"direction": "up", "change_pct": 5.0},
+                }
+            },
+            local_trends={
+                "10": {"is_best_local": True, "is_first_time": False},
+                "20": {"is_best_local": True, "is_first_time": False},
+                "30": {"is_best_local": True, "is_first_time": False},
+            },
+            top_picks=[
+                {"appid": "10", "score": 90.0},
+                {"appid": "20", "score": 79.9},
+                {"appid": "30", "score": 85.0},
+            ],
+            alert_global_margin_pct=0.0,
+            alert_rise_pct=10.0,
+            alert_score_min=80.0,
+        )
+
+        self.assertEqual(
+            result,
+            {
+                "best_local_count": 2,
+                "price_up_count": 1,
+                "global_historical_low_count": 2,
+                "active_bundles_count": 1,
+                "active_bundle_games_count": 2,
+            },
+        )
+
+    def test_generator_smart_alerts_wrapper_accepts_empty_sources(self) -> None:
+        result = generator_build_smart_alert_counts(
+            deals=[],
+            historical_lows=None,
+            active_bundles=None,
+            comparison=None,
+            local_trends=None,
+        )
+
+        self.assertEqual(
+            result,
+            {
+                "best_local_count": 0,
+                "price_up_count": 0,
+                "global_historical_low_count": 0,
+                "active_bundles_count": 0,
+                "active_bundle_games_count": 0,
+            },
+        )
+
+
 class RuntimeReportingTests(unittest.TestCase):
     def test_safe_symbol_uses_fallback_for_incompatible_encoding(self) -> None:
         result = module_safe_symbol("🎯", "[ALERT]", stdout_encoding="ascii")
@@ -2097,6 +2420,45 @@ class ApplyFiltersTests(unittest.TestCase):
             [{"appid": "b", "score": 99.0}, {"appid": "c", "score": 99.0}],
         )
         self.assertEqual(emitted, ["  OK:Filtros aplicados: 3 → 2 deals"])
+
+    def test_post_processing_passes_active_promo_context_to_ranker(self) -> None:
+        received = {}
+
+        def fake_rank_top_picks(deals, *_args, **kwargs):
+            received["promo_context"] = kwargs.get("active_promo_context")
+            return [{"appid": deal["appid"], "score": 99.0} for deal in deals]
+
+        contract = module_build_post_processing_contract(
+            messages=module_build_post_processing_message_formatters(
+                ok=lambda text: f"OK:{text}"
+            ),
+            callbacks=module_build_post_processing_callbacks(emit=lambda _text: None),
+            runtime=module_build_post_processing_runtime(
+                apply_filters=lambda deals, *_args: deals,
+                rank_top_picks=fake_rank_top_picks,
+            ),
+        )
+        promo_context = {
+            "sale_name": "Steam Farming Fest",
+            "primary": {"title": "Steam Farming Fest", "category": "fest"},
+            "categories": ["fest"],
+        }
+
+        module_run_post_processing(
+            [{"appid": "a"}],
+            [],
+            [],
+            filters={"top": 5},
+            priorities={},
+            reviews_data={},
+            deck_data={},
+            previous_appids=set(),
+            comparison=None,
+            contract=contract,
+            active_promo_context=promo_context,
+        )
+
+        self.assertEqual(received["promo_context"], promo_context)
 
     def test_filter_by_genres_returns_discount_sorted_matches(self) -> None:
         deals = [
@@ -2216,6 +2578,97 @@ class HistoryAndTrendTests(unittest.TestCase):
 
         self.assertEqual(trends["a"]["is_best_local"], True)
         self.assertEqual(format_trend(trends["a"]), "🔥 Mín. local")
+
+    def test_format_trend_uses_clear_copy_for_generic_history(self) -> None:
+        label = format_trend(
+            {
+                "times_on_sale": 3,
+                "is_first_time": False,
+                "is_best_local": False,
+                "is_first_at_price": False,
+                "avg_fmt": "$10",
+            }
+        )
+
+        self.assertEqual(label, "Historial local: 3x · prom $10")
+
+    def test_generate_md_hides_trend_column_when_only_low_signal_history_exists(self) -> None:
+        md = generate_md(
+            deals=[
+                {
+                    "appid": "a",
+                    "name": "Alpha",
+                    "discount": 50,
+                    "price_final": "$10",
+                    "price_original": "$20",
+                    "price_raw": 1000,
+                    "categories": [],
+                }
+            ],
+            backlog_on_sale=[],
+            have_on_sale=[],
+            vanity="gaben",
+            owned={},
+            wishlist_appids=["a"],
+            min_discount=50,
+            genres=[],
+            local_trends={"a": {"times_on_sale": 1, "is_first_time": True}},
+        )
+
+        self.assertNotIn("Historial local", md)
+        self.assertNotIn("1ra vez", md)
+
+    def test_generate_md_shows_only_useful_local_trend_signals(self) -> None:
+        md = generate_md(
+            deals=[
+                {
+                    "appid": "a",
+                    "name": "Alpha",
+                    "discount": 50,
+                    "price_final": "$10",
+                    "price_original": "$20",
+                    "price_raw": 1000,
+                    "categories": [],
+                },
+                {
+                    "appid": "b",
+                    "name": "Bravo",
+                    "discount": 50,
+                    "price_final": "$11",
+                    "price_original": "$22",
+                    "price_raw": 1100,
+                    "categories": [],
+                },
+            ],
+            backlog_on_sale=[],
+            have_on_sale=[],
+            vanity="gaben",
+            owned={},
+            wishlist_appids=["a", "b"],
+            min_discount=50,
+            genres=[],
+            local_trends={
+                "a": {
+                    "times_on_sale": 2,
+                    "is_first_time": False,
+                    "is_best_local": True,
+                    "is_first_at_price": False,
+                    "avg_fmt": "$12",
+                },
+                "b": {
+                    "times_on_sale": 3,
+                    "is_first_time": False,
+                    "is_best_local": False,
+                    "is_first_at_price": False,
+                    "avg_fmt": "$11",
+                },
+            },
+        )
+
+        self.assertIn("Historial local = señal útil", md)
+        self.assertIn("| Historial local |", md)
+        self.assertIn("🔥 Mín. local", md)
+        self.assertNotIn("Historial local: 3x", md)
 
 
 class ItadAdapterTests(unittest.TestCase):
@@ -2612,6 +3065,50 @@ class SteamAdapterTests(unittest.TestCase):
 
         self.assertEqual(sale_name, "Steam Summer Sale")
 
+    def test_classify_steam_promo_message_detects_known_promo_categories(self) -> None:
+        cases = [
+            ({"type": 11, "title": "Weeklong Deals"}, "weeklong"),
+            ({"type": 11, "title": "Midweek Madness"}, "midweek"),
+            ({"type": 11, "title": "Weekend Deal"}, "weekend"),
+            ({"type": 1, "title": "Steam Summer Sale"}, "major_sale"),
+            ({"type": 1, "title": "Steam Farming Fest"}, "fest"),
+            ({"type": 1, "title": "Puzzle Sale"}, "themed"),
+        ]
+
+        for message, expected_category in cases:
+            with self.subTest(title=message["title"]):
+                self.assertEqual(
+                    module_classify_steam_promo_message(message)["category"],
+                    expected_category,
+                )
+
+    def test_build_active_promo_context_preserves_primary_and_all_promos(self) -> None:
+        context = module_build_active_promo_context(
+            [
+                {"type": 11, "title": "Weeklong Deals"},
+                {"type": 1, "title": "Steam Farming Fest"},
+                {"type": 99, "title": "Publisher Sale"},
+                {"type": 11, "title": ""},
+            ]
+        )
+
+        self.assertEqual(context["sale_name"], "Steam Farming Fest")
+        self.assertEqual(context["primary"]["category"], "fest")
+        self.assertEqual(
+            [promo["category"] for promo in context["promos"]],
+            ["weeklong", "fest", "themed"],
+        )
+        self.assertEqual(context["categories"], ["fest", "themed", "weeklong"])
+
+    def test_get_active_promo_context_handles_api_errors_as_empty_context(self) -> None:
+        context = module_get_active_promo_context(
+            get_json=lambda _url: (_ for _ in ()).throw(RuntimeError("network"))
+        )
+
+        self.assertEqual(context["sale_name"], "")
+        self.assertEqual(context["primary"], None)
+        self.assertEqual(context["promos"], [])
+
     def test_resolve_profile_display_name_prefers_player_summary(self) -> None:
         display_name = module_resolve_profile_display_name(
             "76561198000000000",
@@ -3003,6 +3500,67 @@ class BudgetPickTests(unittest.TestCase):
                         round(result["budget"] - candidate["swap_total_spent"], 2),
                     )
 
+    def test_budget_variants_softly_reduce_overlap_when_alternatives_exist(self) -> None:
+        result = compute_budget_picks(
+            deals=[
+                {"appid": "a", "price_raw": 1500, "discount": 50, "name": "Alpha"},
+                {"appid": "b", "price_raw": 1000, "discount": 50, "name": "Bravo"},
+                {"appid": "c", "price_raw": 500, "discount": 50, "name": "Charlie"},
+                {"appid": "d", "price_raw": 400, "discount": 50, "name": "Delta"},
+                {"appid": "e", "price_raw": 600, "discount": 50, "name": "Echo"},
+                {"appid": "f", "price_raw": 700, "discount": 50, "name": "Foxtrot"},
+            ],
+            budget_mxn=20,
+            top_picks=[
+                {"appid": "a", "score": 95.0},
+                {"appid": "b", "score": 85.0},
+                {"appid": "c", "score": 60.0},
+                {"appid": "d", "score": 58.0},
+                {"appid": "e", "score": 57.0},
+                {"appid": "f", "score": 56.0},
+            ],
+            watchlist_alerts=[],
+        )
+
+        variants = {variant["id"]: variant for variant in result["variants"]}
+        balanced_appids = {deal["appid"] for deal in variants["balanced"]["selected"]}
+        small_appids = {deal["appid"] for deal in variants["small"]["selected"]}
+        large_appids = {deal["appid"] for deal in variants["large"]["selected"]}
+
+        self.assertLess(len(small_appids & balanced_appids), len(balanced_appids))
+        self.assertLess(len(large_appids & balanced_appids), len(balanced_appids))
+        for variant in variants.values():
+            self.assertLessEqual(variant["total_spent"], result["budget"])
+
+    def test_budget_replacements_diversify_primary_suggestions_when_possible(self) -> None:
+        result = compute_budget_picks(
+            deals=[
+                {"appid": "s1", "price_raw": 500, "discount": 50, "name": "Selected One"},
+                {"appid": "s2", "price_raw": 500, "discount": 50, "name": "Selected Two"},
+                {"appid": "x", "price_raw": 500, "discount": 50, "name": "Replacement X"},
+                {"appid": "y", "price_raw": 500, "discount": 50, "name": "Replacement Y"},
+            ],
+            budget_mxn=10,
+            top_picks=[
+                {"appid": "s1", "score": 100.0},
+                {"appid": "s2", "score": 90.0},
+                {"appid": "x", "score": 80.0},
+                {"appid": "y", "score": 70.0},
+            ],
+            watchlist_alerts=[],
+        )
+
+        balanced = next(
+            variant for variant in result["variants"] if variant["id"] == "balanced"
+        )
+        first_replacements = [
+            pick["replacement_candidates"][0]["appid"]
+            for pick in balanced["selected"]
+        ]
+
+        self.assertEqual([deal["appid"] for deal in balanced["selected"]], ["s1", "s2"])
+        self.assertEqual(first_replacements, ["x", "y"])
+
 
 class RankTopPicksTests(unittest.TestCase):
     def test_returns_highest_scoring_deals_first_and_limits_result_count(self) -> None:
@@ -3065,6 +3623,63 @@ class RankTopPicksTests(unittest.TestCase):
         self.assertEqual(ranked[0]["recommendation"], "Comprar ahora")
         self.assertIn("reviews muy positivas", ranked[0]["score_reasons"])
 
+    def test_top_pick_adds_conservative_promo_reason_without_changing_score(self) -> None:
+        ranked = rank_top_picks(
+            deals=[
+                {
+                    "appid": "a",
+                    "name": "Alpha",
+                    "discount": 90,
+                    "price_final": "$10",
+                    "price_raw": 1000,
+                    "release_year": date.today().year,
+                    "metacritic_score": 90,
+                    "categories": [2],
+                }
+            ],
+            priorities={"a": 5},
+            reviews={"a": {"pct": 92, "desc": "Very Positive", "total": 100}},
+            hltb_hours={"a": 10.0},
+            deck_compat={"a": 3},
+            n=1,
+            active_promo_context={
+                "sale_name": "Steam Farming Fest",
+                "primary": {"title": "Steam Farming Fest", "category": "fest"},
+                "categories": ["fest"],
+            },
+        )
+
+        self.assertEqual(ranked[0]["score"], 95.4)
+        self.assertIn(
+            "contexto de festival: revisa si encaja con la temática activa",
+            ranked[0]["score_reasons"],
+        )
+
+    def test_top_pick_keeps_existing_reasons_without_promo_context(self) -> None:
+        ranked = rank_top_picks(
+            deals=[
+                {
+                    "appid": "a",
+                    "name": "Alpha",
+                    "discount": 90,
+                    "price_final": "$10",
+                    "price_raw": 1000,
+                    "release_year": date.today().year,
+                    "metacritic_score": 90,
+                    "categories": [2],
+                }
+            ],
+            priorities={"a": 5},
+            reviews={"a": {"pct": 92, "desc": "Very Positive", "total": 100}},
+            hltb_hours={"a": 10.0},
+            deck_compat={"a": 3},
+            n=1,
+        )
+
+        self.assertFalse(
+            any("contexto" in reason or "promo" in reason for reason in ranked[0]["score_reasons"])
+        )
+
     def test_generate_md_includes_score_explanation_for_top_picks(self) -> None:
         md = generate_md(
             deals=[],
@@ -3102,6 +3717,32 @@ class RankTopPicksTests(unittest.TestCase):
         self.assertIn("Comprar ahora", md)
         self.assertIn("reviews muy positivas", md)
         self.assertIn("Score = recomendación compuesta para priorizar qué revisar primero.", md)
+
+    def test_generate_md_surfaces_active_promo_context(self) -> None:
+        md = generate_md(
+            deals=[],
+            backlog_on_sale=[],
+            have_on_sale=[],
+            vanity="gaben",
+            owned={},
+            wishlist_appids=[],
+            min_discount=50,
+            genres=[],
+            sale_name="Steam Farming Fest",
+            active_promo_context={
+                "sale_name": "Steam Farming Fest",
+                "primary": {"title": "Steam Farming Fest", "type": 1, "category": "fest"},
+                "promos": [
+                    {"title": "Steam Farming Fest", "type": 1, "category": "fest"},
+                    {"title": "Weeklong Deals", "type": 11, "category": "weeklong"},
+                ],
+                "categories": ["fest", "weeklong"],
+            },
+        )
+
+        self.assertIn("Promo activa: **Steam Farming Fest**", md)
+        self.assertIn("Contexto promo: Fest · Weeklong", md)
+        self.assertIn("También activas: Weeklong Deals", md)
 
     def test_generate_md_can_include_obsidian_notion_frontmatter(self) -> None:
         md = generate_md(
@@ -3180,6 +3821,88 @@ class RankTopPicksTests(unittest.TestCase):
         self.assertIn("Score 95.4", html)
         self.assertIn("Metacritic 90", html)
         self.assertIn("Score = recomendación compuesta para priorizar qué revisar primero.", html)
+        self.assertIn('data-top-picks-section', html)
+        self.assertIn('data-top-pick-filter="all" aria-pressed="true"', html)
+        self.assertIn('data-top-pick-filter="Comprar ahora" aria-pressed="false"', html)
+        self.assertIn('data-top-pick-filter="Muy buena oferta" aria-pressed="false"', html)
+        self.assertIn('data-recommendation="Comprar ahora"', html)
+        self.assertIn("applyTopPickRecommendationFilter", html)
+        self.assertIn("data-top-pick-filter-count", html)
+        self.assertIn("No hay Top Picks con esa recomendación.", html)
+
+    def test_generate_html_uses_safe_fallbacks_for_empty_visible_stats(self) -> None:
+        html = generate_html(
+            deals=[],
+            backlog_on_sale=[],
+            have_on_sale=[],
+            vanity="gaben",
+            owned={},
+            wishlist_appids=[],
+            min_discount=50,
+            genres=[],
+        )
+
+        self.assertIn('id="stat-avg-disc">Promedio: sin datos</span>', html)
+        self.assertIn('id="stat-avg-price">Precio medio: sin datos</span>', html)
+        self.assertIn(
+            "setAverageStat('stat-avg-disc', 'Promedio', totalD, discountCount",
+            html,
+        )
+        self.assertIn(
+            "setAverageStat('stat-avg-price', 'Precio medio', totalP, priceCount",
+            html,
+        )
+        self.assertNotIn("Math.round(totalD / totalV)", html)
+        self.assertNotIn("Math.round(totalP / totalV)", html)
+        self.assertNotIn("NaN", html)
+
+    def test_generate_html_header_prefers_profile_display_name(self) -> None:
+        html = generate_html(
+            deals=[],
+            backlog_on_sale=[],
+            have_on_sale=[],
+            vanity="https://steamcommunity.com/id/gaben/",
+            owned={},
+            wishlist_appids=[],
+            min_discount=50,
+            genres=[],
+            profile_display_name="Gabe Newell",
+        )
+
+        self.assertIn("<title>Steam Deals &mdash; Gabe Newell</title>", html)
+        self.assertIn("<h1>Ofertas de Steam &mdash; Gabe Newell</h1>", html)
+        self.assertNotIn(
+            "<h1>Ofertas de Steam &mdash; https://steamcommunity.com/id/gaben/</h1>",
+            html,
+        )
+
+    def test_generate_html_surfaces_active_promo_context(self) -> None:
+        html = generate_html(
+            deals=[],
+            backlog_on_sale=[],
+            have_on_sale=[],
+            vanity="gaben",
+            owned={},
+            wishlist_appids=[],
+            min_discount=50,
+            genres=[],
+            sale_name="Steam Farming Fest",
+            active_promo_context={
+                "sale_name": "Steam Farming Fest",
+                "primary": {"title": "Steam Farming Fest", "type": 1, "category": "fest"},
+                "promos": [
+                    {"title": "Steam Farming Fest", "type": 1, "category": "fest"},
+                    {"title": "Weeklong Deals", "type": 11, "category": "weeklong"},
+                ],
+                "categories": ["fest", "weeklong"],
+            },
+        )
+
+        self.assertIn("promo-context-card", html)
+        self.assertIn("<strong>Promo activa:</strong> Steam Farming Fest", html)
+        self.assertIn("Fest", html)
+        self.assertIn("Weeklong", html)
+        self.assertIn("También activas: Weeklong Deals", html)
 
     def test_generate_share_html_labels_top_pick_score_and_metacritic(self) -> None:
         html = generate_share_html(
@@ -3494,7 +4217,38 @@ class RankTopPicksTests(unittest.TestCase):
         self.assertIn("cambiar este juego", html.lower())
         self.assertIn("data-budget-variant-btn=", html)
         self.assertIn("data-budget-options=", html)
+        self.assertIn("&quot;image_url&quot;", html)
+        self.assertIn("steam/apps/d/capsule_231x87.jpg", html)
+        self.assertIn("const imageEl = row.querySelector('.game-thumb');", html)
+        self.assertIn("imageEl.src = option.image_url;", html)
         self.assertIn("share-btn-close", html)
+
+    def test_generate_html_hides_local_history_column_without_useful_snapshots(self) -> None:
+        html = generate_html(
+            deals=[
+                {
+                    "appid": "a",
+                    "name": "Alpha",
+                    "discount": 90,
+                    "price_final": "$10",
+                    "price_original": "$20",
+                    "price_raw": 1000,
+                    "metacritic_score": 90,
+                    "categories": [2],
+                }
+            ],
+            backlog_on_sale=[],
+            have_on_sale=[],
+            vanity="gaben",
+            owned={},
+            wishlist_appids=["a"],
+            min_discount=50,
+            genres=[],
+            price_history={"games": {"a": {"snapshots": [{"price_raw": 1000}]}}},
+        )
+
+        self.assertNotIn("Historial local", html)
+        self.assertNotIn('data-trend-cell="a"', html)
 
     def test_generate_html_adds_min_historical_trend_jump_when_both_signals_exist(self) -> None:
         html = generate_html(
@@ -3531,9 +4285,177 @@ class RankTopPicksTests(unittest.TestCase):
             },
         )
 
-        self.assertIn("Ver tendencia", html)
+        self.assertIn("Historial local", html)
+        self.assertIn("no es predicción", html)
+        self.assertIn("min-hist-cell", html)
+        self.assertIn("Ir rápido al historial local de este juego", html)
+        self.assertIn("Ver historial", html)
         self.assertIn('data-trend-cell="a"', html)
         self.assertIn("focusTrendCell", html)
+
+    def test_generate_html_fallback_adds_min_historical_trend_jump(self) -> None:
+        original_renderer = generate_html.__globals__.get("_generate_html_renderer")
+        try:
+            generate_html.__globals__["_generate_html_renderer"] = None
+            html = generate_html(
+                deals=[
+                    {
+                        "appid": "a",
+                        "name": "Alpha",
+                        "discount": 90,
+                        "price_final": "$10",
+                        "price_original": "$20",
+                        "price_raw": 1000,
+                        "metacritic_score": 90,
+                        "categories": [2],
+                    }
+                ],
+                backlog_on_sale=[],
+                have_on_sale=[],
+                vanity="gaben",
+                owned={},
+                wishlist_appids=["a"],
+                min_discount=50,
+                genres=[],
+                historical_lows={"a": {"price": 5, "date": "2026-04-20"}},
+                price_history={
+                    "games": {
+                        "a": {
+                            "snapshots": [
+                                {"price_raw": 2000},
+                                {"price_raw": 1500},
+                                {"price_raw": 1000},
+                            ]
+                        }
+                    }
+                },
+            )
+        finally:
+            generate_html.__globals__["_generate_html_renderer"] = original_renderer
+
+        self.assertIn("Historial local", html)
+        self.assertIn("no es predicción", html)
+        self.assertIn("min-hist-cell", html)
+        self.assertIn("Ver historial", html)
+        self.assertIn('data-trend-cell="a"', html)
+        self.assertIn("focusTrendCell", html)
+
+    def test_generate_html_adds_shuffle_one_game_from_top_picks(self) -> None:
+        html = generate_html(
+            deals=[],
+            backlog_on_sale=[],
+            have_on_sale=[],
+            vanity="gaben",
+            owned={},
+            wishlist_appids=["a", "b"],
+            min_discount=50,
+            genres=[],
+            top_picks=[
+                {
+                    "appid": "a",
+                    "name": "Alpha",
+                    "discount": 90,
+                    "price_final": "$10",
+                    "score": 95.0,
+                    "recommendation": "Comprar ahora",
+                    "score_reasons": ["score más alto"],
+                    "categories": [],
+                },
+                {
+                    "appid": "b",
+                    "name": "Bravo",
+                    "discount": 80,
+                    "price_final": "$12",
+                    "score": 82.0,
+                    "recommendation": "Muy buena oferta",
+                    "score_reasons": ["balance sólido"],
+                    "categories": [],
+                },
+            ],
+        )
+
+        self.assertIn("Shuffle 1 juego", html)
+        self.assertIn("data-shuffle-one", html)
+        self.assertIn("data-shuffle-candidates", html)
+        self.assertIn("Dame otro", html)
+        self.assertIn("bindShuffleOneGame", html)
+        self.assertIn("Alpha", html)
+        self.assertIn("Bravo", html)
+        self.assertIn("Score 95.0", html)
+        self.assertIn("Comprar ahora", html)
+        self.assertIn("1/2", html)
+
+    def test_generate_html_adds_shuffle_one_game_from_deals_without_top_picks(self) -> None:
+        html = generate_html(
+            deals=[
+                {
+                    "appid": "a",
+                    "name": "Alpha",
+                    "discount": 70,
+                    "price_final": "$10",
+                    "price_original": "$20",
+                    "price_raw": 1000,
+                    "categories": [],
+                },
+                {
+                    "appid": "b",
+                    "name": "Bravo",
+                    "discount": 90,
+                    "price_final": "$5",
+                    "price_original": "$50",
+                    "price_raw": 500,
+                    "categories": [],
+                },
+            ],
+            backlog_on_sale=[],
+            have_on_sale=[],
+            vanity="gaben",
+            owned={},
+            wishlist_appids=["a", "b"],
+            min_discount=50,
+            genres=[],
+        )
+
+        self.assertIn("Shuffle 1 juego", html)
+        self.assertIn("Bravo", html)
+        self.assertIn("-90% descuento", html)
+        self.assertIn("Buen candidato para revisar sin recorrer toda la lista.", html)
+        self.assertIn("1/2", html)
+
+    def test_generate_html_fallback_adds_shuffle_one_game(self) -> None:
+        original_renderer = generate_html.__globals__.get("_generate_html_renderer")
+        try:
+            generate_html.__globals__["_generate_html_renderer"] = None
+            html = generate_html(
+                deals=[],
+                backlog_on_sale=[],
+                have_on_sale=[],
+                vanity="gaben",
+                owned={},
+                wishlist_appids=["a"],
+                min_discount=50,
+                genres=[],
+                top_picks=[
+                    {
+                        "appid": "a",
+                        "name": "Alpha",
+                        "discount": 90,
+                        "price_final": "$10",
+                        "score": 95.0,
+                        "recommendation": "Comprar ahora",
+                        "score_reasons": ["score más alto"],
+                        "categories": [],
+                    }
+                ],
+            )
+        finally:
+            generate_html.__globals__["_generate_html_renderer"] = original_renderer
+
+        self.assertIn("Shuffle 1 juego", html)
+        self.assertIn("data-shuffle-one", html)
+        self.assertIn("Dame otro", html)
+        self.assertIn("bindShuffleOneGame", html)
+        self.assertIn("Alpha", html)
 
 
 if __name__ == "__main__":

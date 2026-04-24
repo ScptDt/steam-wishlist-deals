@@ -1,0 +1,12 @@
+→ Precalentando caché de precios...
+  Caché válida (22.9h) — 2,204 por fetchear (2,110 nuevos, 94 stale, 12 fallos recientes en cooldown)
+  Refresh candidates: 2,204 (2,110 nuevos, 94 stale)
+  Tuning precios activo: batch_size=8 · halving_limit=5
+  Fetching 2,204 juegos en 276 batches...
+  Batches degradados por HTTP 400: 3
+  Fallback individual aplicado a 20 juegos en 2 tandas (7 resueltos, 13 sin oferta/datos)
+  411 deals (≥50%) — caché actualizada
+
+  Warm cache listo en 84.2s
+  Wishlist: 2,941 juegos · Deals actuales: 411
+  Caché objetivo: /home/adolfo/.cache/steam_deals/prices_cache.json

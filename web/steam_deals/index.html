@@ -50,7 +50,7 @@
       <div class="example">https://steamcommunity.com/profiles/<strong>76561198012345678</strong>/</div>
       <div class="field field-mt-md">
         <label>Tu perfil de Steam</label>
-        <input type="text" id="wiz-vanity" placeholder="tu_vanity_url, Steam ID, o URL completa">
+        <input type="text" id="wiz-vanity" placeholder="Pega aquí tu perfil, Steam ID o URL completa">
       </div>
       <div class="tip">&#128161; Si pegas la URL completa del perfil, se extrae automáticamente.</div>
     </div>
@@ -80,7 +80,7 @@
       <div class="field">
         <label>Clave de Steam API</label>
         <div class="pw-wrap">
-          <input type="password" id="wiz-key" placeholder="Déjalo vacío si no tienes">
+          <input type="password" id="wiz-key" placeholder="Pega aquí tu clave de Steam API">
           <button type="button" class="pw-toggle" onclick="togglePw(this)" aria-label="Mostrar u ocultar Steam API Key">&#128065;</button>
         </div>
       </div>
@@ -111,7 +111,7 @@
       <div class="field">
         <label>Clave de ITAD</label>
         <div class="pw-wrap">
-          <input type="password" id="wiz-itad" placeholder="Déjalo vacío si no tienes">
+          <input type="password" id="wiz-itad" placeholder="Pega aquí tu clave de ITAD">
           <button type="button" class="pw-toggle" onclick="togglePw(this)" aria-label="Mostrar u ocultar ITAD API Key">&#128065;</button>
         </div>
       </div>
@@ -130,8 +130,8 @@
       <p>Tu configuración:</p>
       <div class="wiz-summary-box">
         <div class="wiz-summary-row"><strong>Perfil:</strong> <span id="wiz-summary-vanity" class="wiz-summary-accent"></span></div>
-        <div class="wiz-summary-row"><strong>Steam API Key:</strong> <span id="wiz-summary-key" class="wiz-summary-muted"></span></div>
-        <div><strong>ITAD Key:</strong> <span id="wiz-summary-itad" class="wiz-summary-muted"></span></div>
+        <div class="wiz-summary-row"><strong>Clave de Steam API:</strong> <span id="wiz-summary-key" class="wiz-summary-muted"></span></div>
+        <div><strong>Clave de ITAD:</strong> <span id="wiz-summary-itad" class="wiz-summary-muted"></span></div>
       </div>
       <p>Puedes cambiar esto cuando quieras desde el formulario principal.</p>
       <div class="tip">&#128161; La configuración se guarda automáticamente. No tendrás que hacer esto de nuevo.</div>
@@ -173,14 +173,14 @@
       </h2>
     <div class="field">
       <label>Perfil de Steam</label>
-      <input type="text" id="vanity" placeholder="tu_vanity_url, Steam ID, o URL del perfil">
+      <input type="text" id="vanity" placeholder="Pega aquí tu perfil, Steam ID o URL del perfil">
       <div class="hint">Puedes pegar tu perfil de Steam, tu Steam ID (17 dígitos) o la URL completa del perfil.</div>
     </div>
     <div class="row">
       <div class="field">
         <label>Clave de Steam API <span class="optional">(opcional)</span></label>
         <div class="pw-wrap">
-          <input type="password" id="key" placeholder="Tu Steam API Key">
+          <input type="password" id="key" placeholder="Pega aquí tu clave de Steam API">
           <button type="button" class="pw-toggle" onclick="togglePw(this)" aria-label="Mostrar u ocultar Steam API Key">&#128065;</button>
         </div>
         <div class="hint hint-compact">Obtenla en <a href="https://steamcommunity.com/dev/apikey" target="_blank" rel="noopener noreferrer">steamcommunity.com/dev/apikey</a> — habilita juegos propios y biblioteca familiar</div>
@@ -188,7 +188,7 @@
       <div class="field">
         <label>Clave de ITAD <span class="optional">(opcional)</span></label>
         <div class="pw-wrap">
-          <input type="password" id="itad_key" placeholder="IsThereAnyDeal Key">
+          <input type="password" id="itad_key" placeholder="Pega aquí tu clave de ITAD">
           <button type="button" class="pw-toggle" onclick="togglePw(this)" aria-label="Mostrar u ocultar ITAD API Key">&#128065;</button>
         </div>
       </div>
@@ -427,18 +427,18 @@
         <div class="hint">Te ayuda a decidir si quieres ver primero las subidas, las bajadas o cualquier cambio fuerte entre ambos runs.</div>
       </div>
     </div>
-    <div class="row row-spaced">
-      <div class="field">
-        <label>Buscar ejecuciones</label>
-        <input type="text" id="history-search" placeholder="fecha, evento o perfil">
-        <div class="hint">Puedes buscar por fecha, nombre del evento o el perfil usado en esa ejecución. Ejemplos: `2026-04-21`, `Medieval Fest`, `gaben`.</div>
+    <div class="row row-spaced history-search-row">
+      <div class="field history-search-field">
+        <label>Buscar en el histórico</label>
+        <input type="text" id="history-search" placeholder="Ej. 2026-04-21, Medieval Fest, gaben">
+        <div class="hint">Filtra por fecha, evento o perfil para encontrar rápido las ejecuciones que quieres comparar.</div>
         <div id="history-search-empty" class="history-search-empty hidden" aria-live="polite"></div>
       </div>
-      <div class="field field-align-end history-quick-field">
+      <div class="field history-quick-field">
         <div class="history-quick-card">
-          <div class="history-quick-label">Atajo rápido</div>
-          <button class="btn btn-ghost history-quick-btn" type="button" id="btn-history-quick-compare" title="Selecciona automáticamente las 2 ejecuciones más recientes y las compara por ti">Comparar últimas 2</button>
-          <div class="hint">Toma las 2 ejecuciones más recientes y las compara sin elegirlas a mano.</div>
+          <div class="history-quick-label">Atajo sugerido</div>
+          <button class="btn btn-ghost history-quick-btn" type="button" id="btn-history-quick-compare" title="Selecciona automáticamente las 2 ejecuciones más recientes y las compara por ti">Comparar 2 recientes</button>
+          <div class="hint">Elige las dos ejecuciones más nuevas y muestra los cambios sin configurarlo a mano.</div>
         </div>
       </div>
     </div>
@@ -532,7 +532,7 @@
     <button class="btn btn-ghost" id="btn-desktop-doctor" title="Diagnostica si el modo desktop está listo en este equipo">&#129658; Doctor desktop</button>
     <button class="btn btn-ghost" id="btn-desktop-autofix" title="Intenta aplicar arreglos seguros del entorno desktop">&#128295; Autofix desktop</button>
     <button class="btn btn-ghost" id="btn-clear-cache" title="Borra caché local para forzar una nueva descarga de datos">&#128465; Limpiar cache</button>
-    <button class="btn btn-ghost" id="btn-open-last" title="Abre el último reporte generado sin volver a ejecutar">&#128194; Ver último reporte</button>
+    <button class="btn btn-ghost" id="btn-open-last" title="Abre el último reporte HTML interactivo; Markdown, JSON y CSV quedan como descargas">&#128194; Ver último HTML</button>
   </div>
   <div class="actions-help" aria-label="Ayuda rápida para botones utilitarios">
     <div class="actions-help-item">
@@ -552,8 +552,8 @@
       <span>Borra datos temporales locales para forzar una descarga nueva en la siguiente corrida.</span>
     </div>
     <div class="actions-help-item">
-      <strong>Ver último reporte</strong>
-      <span>Abre el último reporte generado para revisarlo sin volver a ejecutar.</span>
+      <strong>Ver último HTML</strong>
+      <span>Abre el último reporte interactivo. Los Markdown, JSON y CSV se descargan desde los enlaces generados.</span>
     </div>
   </div>
 

@@ -1,6 +1,6 @@
 # Bitácora Operativa
 
-Ultima actualizacion: 2026-04-23
+Ultima actualizacion: 2026-04-24
 
 ## Proposito
 
@@ -45,6 +45,17 @@ Mantener en `PENDIENTES.md`:
 
 ## Bitacora reciente de migracion
 
+- 2026-04-24: `README.md` compacta `Mapa de módulos y entrypoints` hacia una tabla de superficies + resumen interno; `docs/project-rules.md` enlaza explícitamente el índice `docs/runbooks/README.md`.
+- 2026-04-24: Se crea `docs/runbooks/README.md` como índice central de runbooks y `README.md` pasa a enlazar ese índice para desktop, performance y validaciones de features.
+- 2026-04-24: Se crea `docs/runbooks/features-validation.md` para mover checklists de frontmatter Obsidian/Notion, `Tu Presupuesto Ideal` y share E2E fuera del README; `README.md` queda con resúmenes y links.
+- 2026-04-24: `README.md` se alinea con la separación documental: compacta desktop/cross-platform hacia resumen + links a runbooks, corrige `Budget Mode` a `Tu Presupuesto Ideal` y actualiza formatos de salida Steam Deals.
+- 2026-04-24: `PENDIENTES.md` normaliza pendientes abiertos con etiquetas `[Track]`, `[Quick Win]` o `[Futuro]` y notas compactas de Estado/Falta/Evidencia para facilitar cierre futuro.
+- 2026-04-24: `PENDIENTES.md` compacta `Backlog de Features (Estado)` porque sus elementos estaban cerrados; queda un resumen de capacidades base y el detalle histórico permanece en esta bitácora.
+- 2026-04-24: `PENDIENTES.md` compacta `Proximo Paso Operativo` a acción inmediata, bloqueo actual y regla de registro, evitando repetir estado P2/runbooks.
+- 2026-04-24: `PENDIENTES.md` compacta `Bitacora reciente` a un resumen corto de entradas que aún afectan decisiones actuales; el detalle cronológico cerrado permanece en esta bitácora.
+- 2026-04-24: `PENDIENTES.md` reemplaza `Plan inmediato (Windows / No bloqueado)` por `Trabajo no bloqueado`, dejando solo orientación y referencias a tracks activos para evitar duplicar backlog.
+- 2026-04-24: `PENDIENTES.md` compacta `Plan Cross-Platform (Consolidado)` para dejar solo estado, criterio de cierre, fases y referencias; los comandos/checklists detallados permanecen en `docs/runbooks/desktop-*.md` y la evidencia larga en esta bitácora.
+- 2026-04-24: `PENDIENTES.md` compacta la nota extensa de P3/modularización; la evidencia histórica de cortes, validaciones y comandos permanece en esta bitácora para no cargar el backlog vivo.
 - 2026-04-23: Se crea `BITACORA.md` para sacar del backlog vivo la bitácora cronológica detallada y dejar `PENDIENTES.md` más enfocado en pendientes activos, prioridades y próximo paso operativo.
 
 ## Bitacora Cross-Platform por OS

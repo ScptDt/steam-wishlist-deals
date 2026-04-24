@@ -137,7 +137,7 @@ def build_parser() -> argparse.ArgumentParser:
         "--max-workers",
         type=int,
         metavar="N",
-        help="Workers de fetch paralelo para enrichment (default: 12)",
+        help="Workers de fetch paralelo para enrichment (default: 16)",
     )
     parser.add_argument(
         "--md-frontmatter",

@@ -36,6 +36,66 @@ def _yaml_quote(text: str) -> str:
     return f'"{safe}"'
 
 
+_PROMO_CATEGORY_LABELS = {
+    "weeklong": "Weeklong",
+    "midweek": "Midweek",
+    "weekend": "Weekend",
+    "fest": "Fest",
+    "major_sale": "Oferta grande",
+    "themed": "Oferta temática",
+    "unknown": "Otra promo",
+}
+
+
+def _promo_category_label(category: str) -> str:
+    return _PROMO_CATEGORY_LABELS.get(str(category or ""), str(category or "Otra promo"))
+
+
+def _is_useful_local_trend(trend: dict | None) -> bool:
+    if not trend or trend.get("is_first_time"):
+        return False
+    return bool(
+        (trend.get("is_best_local") and trend.get("times_on_sale", 0) > 1)
+        or trend.get("is_first_at_price")
+    )
+
+
+def _build_promo_context_lines(active_promo_context: dict | None) -> list[str]:
+    if not isinstance(active_promo_context, dict):
+        return []
+    primary = active_promo_context.get("primary")
+    primary_title = ""
+    if isinstance(primary, dict):
+        primary_title = str(primary.get("title", "") or "").strip()
+    primary_title = primary_title or str(active_promo_context.get("sale_name", "") or "").strip()
+    if not primary_title:
+        return []
+
+    categories = [
+        _promo_category_label(category)
+        for category in active_promo_context.get("categories", [])
+        if category
+    ]
+    promos = active_promo_context.get("promos", [])
+    extra_titles = []
+    if isinstance(promos, list):
+        for promo in promos:
+            if not isinstance(promo, dict):
+                continue
+            title = str(promo.get("title", "") or "").strip()
+            if title and title != primary_title and title not in extra_titles:
+                extra_titles.append(title)
+
+    lines = [f"> Promo activa: **{_md_esc(primary_title)}**"]
+    if categories:
+        lines.append(f"> Contexto promo: {' · '.join(_md_esc(label) for label in categories)}")
+    if extra_titles:
+        lines.append(
+            f"> También activas: {', '.join(_md_esc(title) for title in extra_titles[:4])}"
+        )
+    return lines
+
+
 def _build_frontmatter(
     *,
     vanity: str,
@@ -189,6 +249,7 @@ def generate_md(
     compare_data: dict | None = None,
     gift_ideas: list[dict] | None = None,
     include_frontmatter: bool = False,
+    active_promo_context: dict | None = None,
     *,
     group_by_tier,
     filter_by_genres,
@@ -264,6 +325,9 @@ def generate_md(
         delta_parts.append(f"⬇️ {price_drops} bajaron de precio")
     if delta_parts:
         lines.append(f"> {' · '.join(delta_parts)}")
+    promo_lines = _build_promo_context_lines(active_promo_context)
+    if promo_lines:
+        lines.extend(promo_lines)
     lines += ["", "---", ""]
 
     if include_frontmatter:
@@ -728,7 +792,7 @@ def generate_md(
 
         has_tags = bool(tags_data)
         has_ach = bool(achievements_data)
-        has_trends = bool(local_trends)
+        has_trends = any(_is_useful_local_trend(trend) for trend in local_trends.values())
         metric_notes = []
         if has_itad:
             metric_notes.append(
@@ -736,7 +800,7 @@ def generate_md(
             )
         if has_trends:
             metric_notes.append(
-                "Tendencia local = cómo se movió el precio del juego en tus corridas previas."
+                "Historial local = señal útil del precio en tus corridas previas; no es predicción."
             )
         metric_notes.append(
             "Tipo de juego = si se juega solo, cooperativo, PvP o multijugador."
@@ -759,7 +823,7 @@ def generate_md(
             header += " | Mejor precio"
             sep += "|--------------"
         if has_trends:
-            header += " | Tendencia local"
+            header += " | Historial local"
             sep += "|-----------"
         header += " | Juego |"
         sep += "|-------|"
@@ -830,7 +894,7 @@ def generate_md(
 
             if has_trends:
                 trend = local_trends.get(d["appid"])
-                row += f" | {format_trend(trend)}" if trend else " | —"
+                row += f" | {format_trend(trend)}" if _is_useful_local_trend(trend) else " | —"
 
             row += f" | {name_col} |"
             lines.append(row)

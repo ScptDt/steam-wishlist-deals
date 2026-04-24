@@ -7,7 +7,7 @@ Guía mínima para darle rumbo al repo sin convertirlo en burocracia.
 - `PENDIENTES.md` es la fuente única de verdad para backlog, prioridades, deuda técnica, estado actual y siguientes pasos.
 - `BITACORA.md` concentra la bitácora operativa detallada, evidencia cronológica y workarounds históricos; no reemplaza a `PENDIENTES.md`.
 - `README.md` documenta uso real, entrypoints y flujos para usuarios o contribuidores.
-- `docs/runbooks/` guarda checklists manuales y validaciones operativas reproducibles.
+- `docs/runbooks/README.md` es el índice de checklists manuales y validaciones operativas reproducibles.
 
 ## Superficies del producto
 

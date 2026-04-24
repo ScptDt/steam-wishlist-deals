@@ -128,7 +128,7 @@ python3 steam_deals_generator.py --vanity gaben --itad-key TU_ITAD_KEY
 # Filtros
 python3 steam_deals_generator.py --vanity gaben --discount 60 --max-price 300 --deck-only --sort score
 
-# Wishlist grande (ajuste conservador de paralelismo en enrichment)
+# Wishlist grande (ajuste manual de paralelismo en enrichment)
 python3 steam_deals_generator.py --vanity gaben --max-workers 16
 
 # Precalentar caché de precios sin abrir Web/Desktop ni generar reportes
@@ -140,7 +140,7 @@ python3 steam_deals_generator.py --vanity gaben --md-frontmatter
 
 `gaben` es solo un ejemplo público. Reemplázalo por tu vanity real, la URL completa de tu perfil o tu Steam ID de 17 dígitos. No copies placeholders literales como `TU_VANITY_URL`.
 
-`--max-workers` controla el paralelismo de fetch en enrichment. Recomendación práctica: empezar en `12` (default), probar `16` si tu red/API responde bien y evitar valores muy altos para reducir riesgo de rate limit. Este ajuste ya está expuesto también en **Filtros avanzados** de la UI compartida (web + desktop), y los presets ahora sugieren valores rápidos (`rapido=12`, `completo=16`, `ahorro=8`).
+`--max-workers` controla el paralelismo de fetch en enrichment. Recomendación práctica: dejar `16` (default actual), bajar a `12` o `8` si notas rate limits/red inestable, y evitar valores muy altos para reducir riesgo de fallos externos. Este ajuste ya está expuesto también en **Filtros avanzados** de la UI compartida (web + desktop), y los presets sugieren valores rápidos (`rapido=12`, `completo=16`, `ahorro=8`).
 
 ### Warm cache headless
 
@@ -205,14 +205,21 @@ STEAM_DEALS_CACHE_DIR="$HOME/.cache/steam_deals" python3 steam_deals_generator.p
 4. **Qué observar en el log/progreso**
    - `Refresh candidates: ...`
    - si hubo `stale` vs `nuevos`
+   - si aparecen `fallos recientes en cooldown` (fallos/no-data recientes se reintentan después de una ventana corta en vez de forzar fallback lento inmediato)
    - si hubo `Batches degradados por HTTP 400`
-   - si hubo `Fallback individual aplicado ...`
+   - si hubo `Fallback individual aplicado ...` y cuántos appids quedaron `resueltos` vs `sin oferta/datos`
 
 5. **Evidencia mínima a guardar**
    - comando de warm-cache usado
    - ruta del log generado en `<cache>/logs/`
    - wishlist/deals del run largo real
    - artifacts generados (`.md`, `.html`, `share.html`, `.json`; y `.csv` cuando el smoke final sea desktop)
+
+Para capturar la evidencia de forma comparable entre corridas, usa `docs/runbooks/performance-warm-cache.md` (índice general: `docs/runbooks/README.md`). Para resumir un log ya generado sin leerlo a mano:
+
+```bash
+python3 steam_deals_warm_cache_summary.py "$HOME/.cache/steam_deals/logs/warm-cache-YYYY-MM-DD_HH-MM-SS.log"
+```
 
 > Nota: una corrida larga desde Web UI/source sirve como evidencia funcional fuerte del generator y del Track Performance, pero el cierre de Linux desktop sigue requiriendo repetir la corrida dentro del binario y con `.csv` activado.
 
@@ -312,23 +319,7 @@ Sugerencia práctica:
 - **Obsidian**: usar `tags` + `generated_date` para vistas por fecha y filtros.
 - **Notion**: importar como Markdown y mapear propiedades clave desde frontmatter (`title`, `sale_name`, `generated_date`, `deals_count`, `top_picks_count`).
 
-#### Checklist de validación manual de import
-
-1. Generar reporte con frontmatter:
-
-```bash
-python3 steam_deals_generator.py --vanity gaben --md-frontmatter
-```
-
-2. Abrir el `.md` y confirmar que inicia con bloque YAML (`---` ... `---`).
-3. Importar en **Obsidian** y verificar:
-   - título de nota correcto
-   - metadatos visibles
-   - tags detectables
-4. Importar en **Notion** y verificar:
-   - contenido renderiza sin romper tablas/listas
-   - propiedades clave se pueden mapear desde frontmatter
-5. Marcar validación como completa en `PENDIENTES.md` y, si la corrida deja evidencia útil o notas largas, registrarla en `BITACORA.md`.
+Checklist manual de import: `docs/runbooks/features-validation.md` (índice general: `docs/runbooks/README.md`).
 
 ### Ejemplos mini de automatización
 
@@ -361,7 +352,7 @@ print("Top picks:", report["summary"]["top_picks_count"])
 
 ## Desktop (pywebview)
 
-Baseline inicial para ejecutable de escritorio:
+El desktop reutiliza la misma Web UI con `pywebview`; no hay frontend separado. Para uso diario, la ruta mínima es:
 
 ```bash
 python3 -m venv .venv
@@ -370,13 +361,20 @@ python -m pip install -r requirements-desktop.txt
 python steam_tools_desktop.py
 ```
 
-Build unificado (todas las plataformas):
+Build unificado:
 
 ```bash
 python build_desktop.py
 ```
 
-### Doctor desktop + autofix seguro
+Wrappers disponibles:
+
+- Windows: `powershell -ExecutionPolicy Bypass -File .\build_desktop.ps1`
+- Linux/macOS: `./build_desktop.sh`
+
+Si `pywebview` o el backend nativo no arrancan, el launcher abre automáticamente la misma Web UI en el navegador por defecto y muestra un aviso visible de fallback.
+
+### Doctor desktop y autofix seguro
 
 ```bash
 python3 -m venv .venv
@@ -385,98 +383,25 @@ python steam_tools_desktop.py --doctor
 python steam_tools_desktop.py --doctor-fix
 ```
 
-El doctor reporta `OK / WARN / FAIL` para checks utiles de readiness desktop, incluyendo:
+El doctor reporta `OK / WARN / FAIL` para readiness desktop:
 
 - `.venv` / PEP 668 en Linux
 - disponibilidad de `pywebview` y backend Qt esperado en Linux
-- herramientas host de PyInstaller en Linux (`ldd`, `objdump`, `objcopy`) y heuristicas Wayland/X11 cuando aplica
 - disponibilidad de `PyInstaller`
-- guardrails de packaging conocidos del repo
-- checks especificos por OS para macOS (PyObjC / tooling local) y Windows (WebView2 / sesion)
-- presencia del artefacto desktop y warnings conocidos del ultimo build
+- checks específicos por OS: macOS (PyObjC/tooling local), Windows (WebView2/sesión) y Linux (Wayland/X11 + tooling host cuando aplica)
+- presencia del artefacto desktop y warnings conocidos del último build
 
-Ademas, cuando encuentra `WARN`/`FAIL`, ahora agrega guidance mas profundo por plataforma, por ejemplo:
+También está disponible desde la Web UI con los botones **Doctor desktop** y **Autofix desktop**. El autofix es opt-in y local: puede crear `.venv`, instalar `requirements-desktop.txt` dentro del entorno y lanzar build local, pero no instala paquetes del sistema ni modifica configuración persistente.
 
-- **Linux**: separa deps Python vs deps nativas del sistema, orienta sobre Wayland/X11 y `QT_QPA_PLATFORM=xcb`, y recuerda validar el artefacto desde una sesion grafica normal.
-- **macOS**: explica que backend/runtime espera PyObjC/Cocoa/WebKit, cuando conviene revisar `xcode-select` / `codesign` / `xattr`, y que la validacion final de la `.app` debe hacerse en una sesion local.
-- **Windows**: explica el rol de WebView2, como validar manualmente el runtime y por que la validacion final del `.exe` debe ser en Console/RDP interactivo.
+La consola compartida (web + desktop) permite **Copiar log** y **Descargar log (.txt)** para conservar errores largos durante validación manual.
 
-Tambien puedes ejecutarlo desde la Web UI con los botones **Doctor desktop** y **Autofix desktop**; reutilizan la misma logica y muestran el diagnostico en la consola local.
+### Dependencias nativas por plataforma
 
-La misma consola compartida (web + desktop) ya permite:
+`requirements-desktop.txt` instala las dependencias Python del desktop. Algunos backends nativos pueden requerir runtime o librerías del sistema:
 
-- **Copiar log**
-- **Descargar log (.txt)**
-
-Esto ayuda a conservar tracebacks largos o warnings dificiles de seleccionar durante validacion manual.
-
-Autofix seguro (opt-in):
-
-- crea `.venv` local si hace falta
-- instala `requirements-desktop.txt` dentro de `.venv`
-- puede lanzar `build_desktop.py --skip-install` cuando el artefacto falta
-
-Limites actuales del autofix:
-
-- no instala paquetes del sistema (`apt`, `brew`, `winget`, etc.)
-- no toca shell profiles, registro de Windows ni variables persistentes
-- no modifica archivos del repo para “arreglar” packaging
-- requiere confirmacion explicita (`--yes` en CLI o confirmacion en Web UI)
-
-Exit code:
-- `0` = sin bloqueos reales (`FAIL`)
-- `1` = hay al menos un bloqueo real a corregir antes de seguir
-
-Para generar un `.exe` en Windows (wrapper):
-
-```powershell
-powershell -ExecutionPolicy Bypass -File .\build_desktop.ps1
-```
-
-Para Linux/macOS (wrapper):
-
-```bash
-chmod +x ./build_desktop.sh
-./build_desktop.sh
-```
-
-Esto abre la misma app web dentro de una ventana nativa. Si `pywebview` o el backend nativo no arrancan, el launcher abre automaticamente la misma Web UI en el navegador por defecto y muestra un aviso visible de fallback.
-
-### Dependencias nativas por plataforma (pywebview)
-
-`pywebview` usa backend nativo distinto por OS. En este repo, la base sigue siendo:
-
-```bash
-python3 -m venv .venv
-source .venv/bin/activate
-python -m pip install -r requirements-desktop.txt
-```
-
-En Linux, `requirements-desktop.txt` instala `pywebview[qt]` automaticamente dentro del entorno Python del proyecto. Eso cubre `QtPy` + `PyQt6` + `PyQt6-WebEngine`, pero no reemplaza dependencias/librerias nativas del sistema cuando el backend Qt o GTK/WebKit las requiera.
-
-Dependencias/requisitos por plataforma:
-
-- **Windows**
-  - Backend esperado: WebView2 (Edge Chromium).
-  - Requisito recomendado en máquina destino: **Microsoft Edge WebView2 Runtime**.
-  - Si no hay backend nativo disponible, el launcher mantiene fallback al navegador (`steam_deals_web.py`) y la UI indica que estas en modo web.
-
-- **Linux (Ubuntu LTS)**
-  - Hallazgo practico validado en este repo: instalar solo `pywebview` no alcanza siempre para levantar backend nativo; en Linux usa `requirements-desktop.txt` dentro de `.venv`.
-  - Si el backend Qt del wheel no levanta o faltan librerias/plugins del sistema, instalar deps distro para Qt o GTK/WebKit2.
-  - Comandos de referencia (Ubuntu, cuando hagan falta deps nativas adicionales):
-
-```bash
-sudo apt install python3-pyqt5 python3-pyqt5.qtwebengine python3-pyqt5.qtwebchannel libqt5webkit5-dev
-sudo apt install python3-gi python3-gi-cairo gir1.2-gtk-3.0 gir1.2-webkit2-4.1
-```
-
-- **macOS**
-  - Backend nativo: Cocoa/WKWebView (PyObjC).
-  - Si usas Python no-sistema, puede requerir paquetes `pyobjc-*` adicionales.
-  - Comando de referencia (cuando aplique): `python3 -m pip install pyobjc-core pyobjc-framework-Cocoa pyobjc-framework-WebKit`
-  - Recomendado: tener Command Line Tools disponibles (`xcode-select --install`) para flujo de build/firma local.
-  - Para distribuir a terceros, preferir `.app` firmado/notarizado (evita fricción con Gatekeeper).
+- **Windows**: Microsoft Edge WebView2 Runtime.
+- **Linux**: backend Qt/GTK/WebKit y librerías nativas según distro/sesión gráfica; usar `.venv` en Debian/Ubuntu con PEP 668.
+- **macOS**: Cocoa/WKWebView vía PyObjC; para distribución a terceros puede requerir firma/notarización.
 
 Referencias oficiales:
 - https://pywebview.flowrl.com/guide/installation
@@ -484,228 +409,55 @@ Referencias oficiales:
 - https://pywebview.flowrl.com/guide/freezing
 - https://pyinstaller.org/en/stable/feature-notes.html#macos-binary-code-signing
 
-### Checklist de validación desktop por OS
+### Validación desktop/cross-platform
 
-> Nota: desde entorno Windows no se puede validar backend nativo Linux/macOS de forma concluyente. Ejecutar en host nativo o runner CI del OS objetivo.
+README solo conserva la orientación rápida. Los checklists completos, comandos por OS, plantillas de evidencia y problemas comunes viven en `docs/runbooks/README.md`:
 
-Runbooks detallados por plataforma:
+- Linux desktop: `docs/runbooks/desktop-linux.md`
+- macOS desktop: `docs/runbooks/desktop-macos.md`
+- Windows desktop: `docs/runbooks/desktop-windows.md`
+- Performance/warm-cache: `docs/runbooks/performance-warm-cache.md`
+- Features específicas: `docs/runbooks/features-validation.md`
 
-- Linux: `docs/runbooks/desktop-linux.md`
-- macOS: `docs/runbooks/desktop-macos.md`
-- Windows: `docs/runbooks/desktop-windows.md`
+Regla de documentación:
 
-#### Linux (Ubuntu LTS)
+- Estado vivo, bloqueos y siguiente paso: `PENDIENTES.md`.
+- Evidencia detallada, comandos ejecutados y workarounds: `BITACORA.md`.
+- Validación reproducible paso a paso: `docs/runbooks/README.md`.
 
-1. Preparar entorno:
-   - `python3 --version && python3 -m pip --version`
-   - Esperado: Python/pip disponibles y funcionales.
-2. Crear/activar entorno virtual local (recomendado; necesario en Debian/Ubuntu con PEP 668):
-   - `python3 -m venv .venv && source .venv/bin/activate`
-   - Esperado: shell usando el Python del proyecto.
-3. Instalar dependencias desktop:
-   - `python -m pip install -r requirements-desktop.txt`
-   - Esperado: instalación sin errores; `pywebview[qt]` resuelto para Linux.
-4. Build desktop:
-   - `python build_desktop.py`
-   - Esperado: artefacto generado en `dist/SteamToolsDesktop` (o `dist/SteamToolsDesktop/` según modo de build).
-5. Ejecutar artefacto nativo:
-   - `./dist/SteamToolsDesktop`
-   - Esperado: ventana nativa abre y la UI responde.
-   - Hallazgo local reciente: en sesion grafica KDE no-root la ventana nativa abrio sin requerir `QT_QPA_PLATFORM=xcb`; si tu stack Wayland/Qt falla, usalo solo como workaround puntual.
-6. Verificación funcional mínima:
-    - Ejecutar preflight, correr run de prueba, generar MD/HTML/CSV y cerrar app.
-    - Esperado: sin crash, outputs presentes, sin procesos colgados.
-    - Si la wishlist es muy grande, conviene primero precalentar cache con `STEAM_DEALS_CACHE_DIR="$HOME/.cache/steam_deals" python3 steam_deals_generator.py --vanity gaben --warm-cache` y conservar el log generado en `<cache>/logs/`.
-    - Si aparece un error largo durante la corrida manual, usa los botones **Copiar log** / **Descargar log (.txt)** antes de cerrar la app.
-7. Fallback mitigación (si la ventana nativa no abre):
-   - `python3 steam_deals_web.py --no-open --port 8080`
-   - Esperado: servidor arriba en `http://127.0.0.1:8080`.
-
-#### macOS
-
-1. Preparar entorno:
-   - `python3 --version && python3 -m pip --version`
-   - Esperado: Python/pip disponibles y funcionales.
-2. Instalar dependencias desktop:
-   - `python3 -m pip install -r requirements-desktop.txt`
-   - Esperado: instalación sin errores; `pywebview` instalado.
-3. Build desktop:
-   - `python3 build_desktop.py`
-   - Esperado: artefacto `.app` generado en `dist/SteamToolsDesktop.app`.
-4. Abrir app local:
-   - `open dist/SteamToolsDesktop.app`
-   - Esperado: app abre localmente y muestra UI.
-5. Verificación funcional mínima:
-   - Ejecutar preflight, correr run de prueba, generar MD/HTML/CSV y cerrar app.
-   - Esperado: sin crash, outputs presentes, sin procesos colgados.
-6. Quarantine/permisos (si aplica):
-   - `xattr -dr com.apple.quarantine dist/SteamToolsDesktop.app`
-   - Esperado: app vuelve a abrir cuando Gatekeeper bloquee artefacto local no firmado.
-7. Verificación de codesign (si aplica distribución):
-   - `codesign --verify --deep --strict --verbose=2 dist/SteamToolsDesktop.app`
-   - Esperado: verificación exitosa del bundle (o error explícito a resolver antes de distribuir).
-8. Fallback mitigación (si la ventana nativa no abre):
-   - `python3 steam_deals_web.py --no-open --port 8080`
-   - Esperado: servidor arriba en `http://127.0.0.1:8080`.
-
-#### Repetición recomendada en CI/runners (fuera de Windows)
-
-- Linux: ejecutar checklist de Linux en host nativo o runner `ubuntu-latest`.
-- macOS: ejecutar checklist de macOS en host nativo o runner `macos-latest`.
-- Registrar por plataforma: resultado por paso, error textual y workaround aplicado.
-- Workflow incluido: `.github/workflows/desktop-cross-platform.yml`.
-  - Ejecuta en `ubuntu-latest` y `macos-latest`.
-  - Instala `requirements-desktop.txt`, corre `python build_desktop.py`, valida `py_compile` y sube `dist/` como artifact.
-  - Validación de fallback: ejecuta `python steam_deals_web.py --no-open --help` para confirmar ruta local de mitigación disponible.
-  - Evidencia inicial: run exitoso `24487556896` en `main` para Linux y macOS.
-
-### Runbook rápido (manual) para cerrar P2
-
-> Si necesitas el flujo completo paso a paso por plataforma, usa primero los runbooks en `docs/runbooks/`.
-
-Usa esta secuencia en host nativo Linux y macOS. Copia/pega los resultados detallados en `BITACORA.md` y deja en `PENDIENTES.md` solo el resumen que cambie estado, prioridad o próximo paso.
-
-> Estado actual: este runbook queda **preparado para ejecución posterior**. En la iteración actual no se ejecutó validación manual en host nativo Linux/macOS por no contar con ese host; la evidencia disponible es CI parcial (run `24487556896`) y validación avanzada Linux en entorno local documentada en `BITACORA.md`, con resumen operativo en `PENDIENTES.md`.
-
-> Nota de capacidad: si tu wishlist real es muy grande (por ejemplo 2K+ juegos), el smoke funcional Linux no debe tratarse como prueba corta; conviene reservar una ventana amplia antes de ejecutarlo.
-
-> Mitigacion practica ya validada: para wishlists grandes, primero corre `--warm-cache` con `STEAM_DEALS_CACHE_DIR="$HOME/.cache/steam_deals"`. Asi el desktop reutiliza el mismo cache persistente y el log del warm-cache queda guardado en `<cache>/logs/`.
-
-#### Linux (Ubuntu LTS)
-
-```bash
-python3 --version && python3 -m pip --version
-python3 -m pip install -r requirements-desktop.txt
-python3 build_desktop.py
-./dist/SteamToolsDesktop
-python3 steam_deals_web.py --no-open --port 8080
-```
-
-Checklist de salida (esperado):
-- build OK con artefacto en `dist/`
-- ventana nativa abre
-- preflight + run de prueba + generación de `.md/.html/.csv`
-- cierre limpio (sin procesos colgados)
-- fallback web accesible en `http://127.0.0.1:8080`
-
-#### macOS
-
-```bash
-python3 --version && python3 -m pip --version
-python3 -m pip install -r requirements-desktop.txt
-python3 build_desktop.py
-open dist/SteamToolsDesktop.app
-python3 steam_deals_web.py --no-open --port 8080
-```
-
-Comandos de soporte (si aplica):
-
-```bash
-xattr -dr com.apple.quarantine dist/SteamToolsDesktop.app
-codesign --verify --deep --strict --verbose=2 dist/SteamToolsDesktop.app
-```
-
-Checklist de salida (esperado):
-- build OK con `.app` en `dist/`
-- app abre localmente
-- preflight + run de prueba + generación de `.md/.html/.csv`
-- cierre limpio (sin procesos colgados)
-- fallback web accesible en `http://127.0.0.1:8080`
-- notas de quarantine/codesign registradas cuando apliquen
-
-Planes y pendientes unificados: `PENDIENTES.md`.
+El cierre formal P2 requiere evidencia manual Linux + macOS según `PENDIENTES.md`; Windows sirve como baseline de apoyo, no como sustituto.
 
 ## Mapa de módulos y entrypoints
 
-### Núcleo y superficies
+### Superficies principales
 
-- `steam_deals_generator.py`
-  - Engine principal de Steam Deals.
-  - Orquesta analisis, exportaciones y flujo CLI.
-- `steam_deals_config.py`
-  - Boundary de config/CLI: carga/guardado de config, argparse y fallback interactivo reutilizable y testeable.
-- `steam_deals_prices.py`
-  - Dominio de precios Steam: cache por `steam_id`, fetch batch con fallback individual y normalizacion del shape de deals.
-- `steam_deals_run_output.py`
-  - Slice de salida/orquestacion: nombres de archivos, contexto previo, escritura de artefactos y resumen final del run.
-- `steam_deals_runtime_reporting.py`
-  - Contrato runtime compartido: symbols Unicode-safe, estilos ANSI, step/progress y eventos consumidos por web/SSE.
-- `steam_deals_enrichment.py`
-  - Fetchers/caches de enrichment: reviews, Steam Deck, ProtonDB, anti-cheat, tags y achievements con helpers reutilizables.
-- `steam_deals_presentation.py`
-  - Helpers puros de presentacion: badges, grouping por tier/tag y formateos reutilizados por los renderers.
-- `steam_deals_scheduler.py`
-  - Bucle programado CLI: parseo de `--schedule`, loop por intervalos y manejo suave de interrupciones/errores.
-- `steam_deals_notifications.py`
-  - Frontera de notificaciones: resumen notable del run y envios soft-fail para Telegram/Discord.
-- `steam_deals_steam_api.py`
-  - Adaptador de Steam account/profile/sale: resolucion de vanity/profile, wishlist, owned games, compare, family JSON y evento activo.
-- `steam_deals_watchlist.py`
-  - Frontera compartida de watchlist: I/O local, comando CLI y seleccion de alertas reutilizable desde generator/web.
-- `steam_deals_itad.py`
-  - Integracion/adaptador de IsThereAnyDeal: lookup, minimos historicos, mejores precios y bundles activos con soft-fail tolerante.
-- `steam_deals_history.py`
-  - Logica de historial/comparacion/tendencias: fallback al MD anterior, snapshots de runs y trend formatting local.
-- `steam_deals_filters.py`
-  - Logica pura de filtros/selection: filtros CLI y seleccion por genero para reutilizar sin tocar orchestration.
-- `steam_deals_hltb.py`
-  - Logica pura de HLTB/matching: parseo del CSV, normalizacion de titulos, fuzzy matching y cruce HLTB × deals.
-- `steam_deals_recommendations.py`
-  - Logica pura de scoring/recommendations: value score, top picks, budget picks y gift ideas.
-- `steam_deals_web.py`
-  - Entry point principal de UX para Steam Deals.
-  - Sirve la UI local, valida requests y coordina ejecuciones largas por SSE.
-- `payday2_dlc_tracker.py`
-  - Engine/CLI de PAYDAY 2.
-  - Genera el plan de compra y mantiene el flujo standalone del tracker.
-- `payday2_web.py`
-  - Dashboard web standalone para PAYDAY 2.
-  - Sirve UI local y ejecuta refresh del tracker con progreso en vivo.
-- `steam_tools_desktop.py`
-  - Wrapper desktop con `pywebview`.
-  - Reutiliza `steam_deals_web.py` y hace fallback al navegador con aviso visible en la UI si falta backend nativo o falla la ventana nativa.
-- `build_desktop.py`
-  - Build unificado para empaquetar la superficie desktop.
+| Superficie | Entry point | Notas |
+|---|---|---|
+| Steam Deals CLI | `steam_deals_generator.py` | Engine principal: análisis, scoring, exports y flags avanzados. |
+| Steam Deals Web | `steam_deals_web.py` | UX principal en `http://127.0.0.1:8080`; coordina runs largos por SSE. |
+| PAYDAY 2 CLI | `payday2_dlc_tracker.py` | Engine standalone para plan de compra de DLCs. |
+| PAYDAY 2 Web | `payday2_web.py` | Dashboard en `http://127.0.0.1:8081`. |
+| Desktop | `steam_tools_desktop.py` | Wrapper pywebview que reutiliza Steam Deals Web y cae a navegador si falla backend nativo. |
+| Build desktop | `build_desktop.py` | Build unificado; wrappers: `build_desktop.ps1`, `build_desktop.sh`. |
 
-### Infraestructura compartida
+### Organización interna resumida
 
-- `shared_web_infra.py`
-  - Helpers compartidos para server local: respuestas HTTP, JSON defensivo, assets de texto, subprocess y SSE.
-  - Evita duplicación entre `steam_deals_web.py` y `payday2_web.py`.
-- `web/steam_deals/`
-  - Assets HTML/CSS/JS servidos por `steam_deals_web.py`.
-- `web/payday2/`
-  - Assets HTML/CSS/JS servidos por `payday2_web.py`.
-
-### Steam Deals
-- **CLI:** `steam_deals_generator.py`
-- **Web:** `steam_deals_web.py` (http://127.0.0.1:8080)
-- **Guía:** `steam_deals_guia.md`
-- **Detalle en este README:** secciones `Watchlist`, `Budget Mode`, `Comparar Wishlists`, `Notificaciones`, `Scheduler`, `Todos los flags`.
-
-### PAYDAY 2
-- **CLI:** `payday2_dlc_tracker.py`
-- **Web:** `payday2_web.py` (http://127.0.0.1:8081)
-- **Guía:** `payday2_guia.md`
-- **Outputs:** `PAYDAY2_Plan_de_Compra.md` y `.html`
-- **Detalle en este README:** sección `PAYDAY 2 DLC Tracker`.
-
-### Desktop Suite
-- **Launcher:** `steam_tools_desktop.py`
-- **Build unificado:** `build_desktop.py`
-- **Wrappers:** `build_desktop.ps1`, `build_desktop.sh`
+- Dominio Steam Deals: módulos `steam_deals_*` para config, precios, enrichment, history, ITAD, recomendaciones, presentación, runtime reporting, output y adaptadores Steam.
+- Web compartida: `shared_web_infra.py` + assets en `web/steam_deals/` y `web/payday2/`.
+- Guías específicas: `steam_deals_guia.md`, `payday2_guia.md` y runbooks en `docs/runbooks/README.md`.
 
 ## Outputs por módulo
 
 | Módulo | Output principal | Formatos |
 |--------|------------------|----------|
-| Steam Deals | Reporte de deals de wishlist | `.md`, `.html`, `.csv` |
+| Steam Deals | Reporte de deals de wishlist | `.md`, `.html` interactivo, Share HTML, `.json`, `.csv` |
 | PAYDAY 2 | `PAYDAY2_Plan_de_Compra` | `.md`, `.html` |
 | Desktop Build | Artefactos de distribución | `dist/` (binario/app según OS) |
 
 Notas rápidas:
 - Los datos intermedios y caché viven en `.cache/steam_deals/`.
 - En desktop, los artefactos finales dependen de la plataforma (Windows/macOS/Linux).
+- Para validación de outputs y evidencia reproducible, usar `docs/runbooks/README.md`.
 
 ## Watchlist
 
@@ -728,80 +480,11 @@ python3 steam_deals_generator.py --watchlist remove 730
 python3 steam_deals_generator.py --vanity gaben --budget 500
 ```
 
-### Validación UX/output del modo presupuesto
-
-Checks mínimos antes de pasar a trabajo de share:
-
-1. **Output principal**
-   - confirmar que el `.json` del último run preserve `budget_result.selected`, `selected_variant`, `variants` y `actions`
-   - confirmar que `.md` y `.html` sigan mostrando la sección `Tu Presupuesto Ideal`
-
-2. **Variantes en Web UI**
-   - correr `python3 steam_deals_web.py`
-   - ejecutar un run con presupuesto activo
-   - en la tarjeta **Último reporte**, cambiar entre `Lista chica`, `Lista media` y `Lista grande`
-   - verificar que el **techo activo** siga igual al presupuesto del run y que cambien juegos/totales según la variante
-
-3. **Cambio por juego**
-   - abrir `Cambiar este juego` en un pick que tenga reemplazos
-   - verificar que el preview actualice `Total` y `Restante` sin exceder el mismo presupuesto
-   - usar `Volver al original` y confirmar que la selección principal se restaura
-
-4. **Cobertura automatizada**
-   - `tests/test_generator_logic.py` valida:
-     - variantes `small` / `balanced` / `large`
-     - acciones de `probar otra lista` y `cambiar este juego`
-     - preservación de totales y `swap_total_spent` / `swap_remaining`
-     - render de variantes/reemplazos en `.md`, `.html` y `.json`
+Muestra variantes de compra (`Lista chica`, `Lista media`, `Lista grande`) y permite reroll/reemplazos manteniendo el presupuesto. Checklist de validación UX/output: `docs/runbooks/features-validation.md` (índice general: `docs/runbooks/README.md`).
 
 ## Validación end-to-end de share
 
-Checks mínimos para cerrar el flujo de compartir:
-
-1. **Cobertura automatizada**
-   - `tests/test_generator_logic.py` valida:
-     - contrato del payload share en `generate_html(...)`
-     - contrato del payload share en `generate_share_html(...)`
-     - presencia del modal, botones y acciones `steamtools://share` en ambas superficies
-     - path/nombre del artifact `Steam Deals Share YYYY-MM-DD.html`
-   - `tests/test_desktop_share.py` valida compatibilidad del payload para desktop:
-     - alias `original_price -> price_original`
-     - payload URL-encoded
-
-2. **Web UI en vivo**
-   - correr `python3 steam_deals_web.py`
-   - ejecutar un run que genere `.json`, `.html` y `Steam Deals Share <fecha>.html`
-   - en **Último reporte**, abrir share desde:
-     - un **Top Pick**
-     - y, si existe presupuesto, un **budget pick**
-   - confirmar que el modal muestra:
-     - nombre correcto
-     - precio actual
-     - precio original cuando aplique
-     - mínimo histórico o fallback textual si no hay dato
-
-3. **HTML generado**
-   - abrir el `.html` interactivo generado
-   - confirmar que los botones share siguen funcionando desde:
-     - top picks
-     - tabla principal
-   - verificar cierre por botón, click fuera y `Esc`
-
-4. **Share HTML generado**
-   - abrir `Steam Deals Share <fecha>.html`
-   - confirmar que top picks y filas de deals exponen botón share
-   - verificar que `Copiar link steamtools://`, `Copiar link de Steam` y `Abrir en Steam` funcionan o caen al fallback esperado
-
-5. **Compatibilidad de payload**
-   - revisar que el mismo deal mantenga campos clave entre superficies:
-     - `appid`
-     - `name` / `steam_name`
-     - `price` / `price_final`
-     - `price_original` / `original_price`
-     - `min_hist` / `min_historical`
-     - `discount`
-     - `url`
-   - confirmar que el link `steamtools://share?data=...` sigue siendo decodificable por `steam_tools_desktop.py`
+El flujo share debe funcionar desde Web UI, HTML interactivo y Share HTML, manteniendo payload compatible con desktop. Checklist E2E completo: `docs/runbooks/features-validation.md` (índice general: `docs/runbooks/README.md`).
 
 ## Comparar Wishlists
 
@@ -861,7 +544,7 @@ python3 steam_deals_generator.py --vanity gaben \
 | `--discord-webhook` | URL del webhook de Discord |
 | `--schedule` | Ejecutar cada N horas |
 | `--family-json` | JSON de biblioteca familiar |
-| `--max-workers` | Workers de fetch paralelo para enrichment (default: 12; recomendado 12-16) |
+| `--max-workers` | Workers de fetch paralelo para enrichment (default: 16; recomendado 8-16 según estabilidad de red/API) |
 | `--md-frontmatter` | Incluir frontmatter YAML en Markdown (Obsidian/Notion); ver perfil y checklist en “Markdown con frontmatter” |
 | `--alert-rise-pct` | Umbral de subida % para alertas inteligentes (ej: 10 para >=10%) |
 | `--alert-global-margin-pct` | Margen % sobre mínimo global para alertas (ej: 3 para <= mínimo+3%) |

@@ -72,6 +72,88 @@ def _html_metacritic_badge(score: int | None, *, with_label: bool = False) -> st
     return f'<span class="badge {cls}" title="Metacritic">{label}</span>'
 
 
+_PROMO_CATEGORY_LABELS = {
+    "weeklong": "Weeklong",
+    "midweek": "Midweek",
+    "weekend": "Weekend",
+    "fest": "Fest",
+    "major_sale": "Oferta grande",
+    "themed": "Oferta temática",
+    "unknown": "Otra promo",
+}
+
+_TOP_PICK_RECOMMENDATION_FILTERS = (
+    "Comprar ahora",
+    "Muy buena oferta",
+    "Vale la pena",
+    "Solo si ya lo traías en radar",
+)
+
+
+def _promo_category_label(category: str) -> str:
+    return _PROMO_CATEGORY_LABELS.get(str(category or ""), str(category or "Otra promo"))
+
+
+def _build_promo_context_html(active_promo_context: dict | None) -> str:
+    if not isinstance(active_promo_context, dict):
+        return ""
+    primary = active_promo_context.get("primary")
+    primary_title = ""
+    if isinstance(primary, dict):
+        primary_title = str(primary.get("title", "") or "").strip()
+    primary_title = primary_title or str(active_promo_context.get("sale_name", "") or "").strip()
+    if not primary_title:
+        return ""
+
+    category_labels = [
+        _promo_category_label(category)
+        for category in active_promo_context.get("categories", [])
+        if category
+    ]
+    promos = active_promo_context.get("promos", [])
+    extra_titles = []
+    if isinstance(promos, list):
+        for promo in promos:
+            if not isinstance(promo, dict):
+                continue
+            title = str(promo.get("title", "") or "").strip()
+            if title and title != primary_title and title not in extra_titles:
+                extra_titles.append(title)
+
+    categories_html = "".join(
+        f'<span class="promo-context-pill">{_html_esc(label)}</span>'
+        for label in category_labels
+    )
+    extra_html = (
+        f'<div class="promo-context-extra">También activas: {_html_esc(", ".join(extra_titles[:4]))}</div>'
+        if extra_titles
+        else ""
+    )
+    return f"""<div class="promo-context-card">
+    <div><strong>Promo activa:</strong> {_html_esc(primary_title)}</div>
+    <div class="promo-context-pills">{categories_html}</div>
+    {extra_html}
+  </div>"""
+
+
+def _html_top_pick_filter_controls() -> str:
+    buttons = [
+        '<button type="button" class="top-pick-filter-btn is-active" data-top-pick-filter="all" aria-pressed="true">Todos</button>'
+    ]
+    buttons.extend(
+        f'<button type="button" class="top-pick-filter-btn" data-top-pick-filter="{_html_esc(label)}" aria-pressed="false">{_html_esc(label)}</button>'
+        for label in _TOP_PICK_RECOMMENDATION_FILTERS
+    )
+    return f'''<div class="top-pick-filters" aria-label="Filtrar Top Picks por recomendación">
+  <div class="top-pick-filter-head">
+    <strong>Filtrar recomendación</strong>
+    <span data-top-pick-filter-count></span>
+  </div>
+  <div class="top-pick-filter-buttons">{"".join(buttons)}</div>
+  <div class="top-picks-empty" data-top-picks-empty>No hay Top Picks con esa recomendación.</div>
+</div>'''
+
+
 def _html_multiplayer_badges(categories: list[int]) -> str:
     cats = set(categories)
     parts = []
@@ -120,6 +202,13 @@ def _build_sparkline_svg(
         f'<svg width="{width}" height="{height}" style="vertical-align:middle" title="Historial: ${mn:.0f}-${mx:.0f}">'
         f'<polyline points="{polyline}" fill="none" stroke="{color}" stroke-width="1.5"/>'
         f'<circle cx="{lx}" cy="{ly}" r="2" fill="{color}"/></svg>'
+    )
+
+
+def _has_sparkline_history(price_history_games: dict[str, dict], deals: list[dict]) -> bool:
+    return any(
+        len((price_history_games.get(deal["appid"]) or {}).get("snapshots", [])) >= 2
+        for deal in deals
     )
 
 
@@ -173,6 +262,83 @@ def _html_share_button(
     )
 
 
+def _shuffle_candidate_payload(game: dict, *, source_deal: dict | None = None) -> dict | None:
+    source_deal = source_deal or {}
+    appid = str(game.get("appid") or source_deal.get("appid") or "").strip()
+    name = str(game.get("name") or source_deal.get("name") or "").strip()
+    if not appid or not name:
+        return None
+    discount = int(game.get("discount") or source_deal.get("discount") or 0)
+    score = game.get("score")
+    recommendation = str(game.get("recommendation") or "").strip()
+    reasons = [str(reason) for reason in (game.get("score_reasons") or []) if reason]
+    reason = recommendation or (reasons[0] if reasons else "Buen candidato para revisar sin recorrer toda la lista.")
+    score_text = f"Score {score}" if score not in (None, "") else f"-{discount}% descuento"
+    return {
+        "appid": appid,
+        "name": name,
+        "discount": discount,
+        "price_final": str(game.get("price_final") or source_deal.get("price_final") or "—"),
+        "price_original": str(game.get("price_original") or source_deal.get("price_original") or ""),
+        "score_text": score_text,
+        "reason": reason,
+        "url": STORE_URL.format(appid=appid),
+        "image_url": HEADER_URL.format(appid=appid),
+    }
+
+
+def _build_shuffle_candidates(top_picks: list[dict], deals: list[dict], *, limit: int = 12) -> list[dict]:
+    deals_by_appid = {str(deal.get("appid")): deal for deal in deals if deal.get("appid")}
+    source_games = top_picks or sorted(
+        deals,
+        key=lambda deal: (
+            -int(deal.get("discount") or 0),
+            int(deal.get("price_raw") or 0),
+            str(deal.get("name") or "").lower(),
+        ),
+    )
+    candidates = []
+    seen: set[str] = set()
+    for game in source_games:
+        candidate = _shuffle_candidate_payload(
+            game,
+            source_deal=deals_by_appid.get(str(game.get("appid") or "")),
+        )
+        if not candidate or candidate["appid"] in seen:
+            continue
+        candidates.append(candidate)
+        seen.add(candidate["appid"])
+        if len(candidates) >= limit:
+            break
+    return candidates
+
+
+def _html_shuffle_one_game(candidates: list[dict]) -> str:
+    if not candidates:
+        return ""
+    first = candidates[0]
+    return f'''<section class="shuffle-one" data-shuffle-one data-shuffle-index="0" data-shuffle-candidates="{_share_payload_attr(candidates)}">
+  <div class="shuffle-copy">
+    <h2>&#127922; Shuffle 1 juego</h2>
+    <p class="section-desc">Si no quieres revisar toda la tabla, empieza por esta recomendación. El botón rota entre candidatos ya calculados del reporte.</p>
+  </div>
+  <div class="shuffle-card">
+    <a class="shuffle-image-link" data-shuffle-link href="{_html_esc(first['url'])}" target="_blank">
+      <img class="shuffle-img" data-shuffle-image src="{_html_esc(first['image_url'])}" alt="" loading="lazy" onerror="this.style.display='none'">
+    </a>
+    <div class="shuffle-info">
+      <a class="shuffle-name" data-shuffle-name href="{_html_esc(first['url'])}" target="_blank">{_html_esc(first['name'])}</a>
+      <div class="shuffle-meta"><span data-shuffle-score>{_html_esc(first['score_text'])}</span> &middot; <span data-shuffle-discount>-{int(first['discount'])}%</span> &middot; <span data-shuffle-price>{_html_esc(first['price_final'])}</span></div>
+      <div class="shuffle-reason" data-shuffle-reason>{_html_esc(first['reason'])}</div>
+    </div>
+    <div class="shuffle-actions">
+      <button type="button" class="btn-reset shuffle-next-btn" data-shuffle-next>Dame otro</button>
+      <span class="shuffle-counter" data-shuffle-counter>1/{len(candidates)}</span>
+    </div>
+  </div>
+</section>'''
+
+
 def _html_budget_pick_context(pick: dict) -> str:
     recommendation = _html_esc(pick.get("recommendation", ""))
     reasons = _html_esc(" · ".join(pick.get("score_reasons", [])))
@@ -185,8 +351,9 @@ def _html_budget_pick_context(pick: dict) -> str:
 
 
 def _budget_option_payload(pick: dict, *, total_spent: float, remaining: float) -> dict:
+    appid = str(pick.get("appid", ""))
     return {
-        "appid": str(pick.get("appid", "")),
+        "appid": appid,
         "name": str(pick.get("name", "")),
         "price_final": str(pick.get("price_final", "—")),
         "discount": int(pick.get("discount") or 0),
@@ -195,14 +362,16 @@ def _budget_option_payload(pick: dict, *, total_spent: float, remaining: float) 
         "score_reasons": list(pick.get("score_reasons") or []),
         "swap_total_spent": round(float(total_spent or 0), 2),
         "swap_remaining": round(float(remaining or 0), 2),
-        "url": STORE_URL.format(appid=pick.get("appid", "")),
+        "url": STORE_URL.format(appid=appid),
+        "image_url": CAPSULE_URL.format(appid=appid),
         "is_original": True,
     }
 
 
 def _budget_replacement_payload(replacement: dict) -> dict:
+    appid = str(replacement.get("appid", ""))
     return {
-        "appid": str(replacement.get("appid", "")),
+        "appid": appid,
         "name": str(replacement.get("name", "")),
         "price_final": str(replacement.get("price_final", "—")),
         "discount": int(replacement.get("discount") or 0),
@@ -215,7 +384,8 @@ def _budget_replacement_payload(replacement: dict) -> dict:
         "swap_remaining": round(
             float(replacement.get("swap_remaining", 0) or 0), 2
         ),
-        "url": STORE_URL.format(appid=replacement.get("appid", "")),
+        "url": STORE_URL.format(appid=appid),
+        "image_url": CAPSULE_URL.format(appid=appid),
         "is_original": False,
     }
 
@@ -329,6 +499,10 @@ def _html_recommendation_guide() -> str:
       <span>Muy buena combinación de descuento, señales de calidad y prioridad en tu wishlist.</span>
     </div>
     <div class="recommendation-guide-item">
+      <strong>Muy buena oferta</strong>
+      <span>Buen balance para revisar pronto: alto valor, aunque no siempre sea prioridad absoluta.</span>
+    </div>
+    <div class="recommendation-guide-item">
       <strong>Vale la pena</strong>
       <span>Se ve sólido para revisar pronto, aunque no necesariamente sea lo más urgente del run.</span>
     </div>
@@ -363,6 +537,10 @@ a:hover { text-decoration: underline; }
 .stats-bar h1 { font-size: 1.4rem; margin-bottom: .3rem; }
 .stats-meta { color: var(--text-secondary); font-size: .85rem; margin-bottom: .6rem; }
 .sale-badge { color: var(--accent-yellow); font-weight: bold; }
+.promo-context-card { background: rgba(240,178,50,.08); border: 1px solid rgba(240,178,50,.28); border-radius: 8px; padding: .6rem .75rem; margin: .6rem 0; font-size: .84rem; }
+.promo-context-pills { display: flex; flex-wrap: wrap; gap: .35rem; margin-top: .35rem; }
+.promo-context-pill { color: #000; background: var(--accent-yellow); border-radius: 999px; padding: .1rem .5rem; font-size: .76rem; font-weight: 700; }
+.promo-context-extra { color: var(--text-secondary); margin-top: .35rem; }
 .stats-pills { display: flex; flex-wrap: wrap; gap: .4rem; }
 .pill { background: var(--bg-primary); border: 1px solid var(--border); border-radius: 12px; padding: .15rem .6rem; font-size: .8rem; }
 .pill-accent { background: var(--accent-blue); color: #000; border-color: var(--accent-blue); font-weight: 600; }
@@ -458,6 +636,29 @@ a.pick-card:hover { border-color: var(--accent-blue); transform: translateY(-2px
 @media (max-width: 1023px) { .dash-grid { grid-template-columns: 1fr; } .fin-grid { grid-template-columns: repeat(3, 1fr); } }
 @media (max-width: 767px) { .fin-grid { grid-template-columns: repeat(2, 1fr); } }
 .pick-card { position: relative; }
+.top-pick-filters { margin: .75rem 0 1rem; padding: .75rem .85rem; border: 1px solid var(--border); border-radius: 8px; background: rgba(12,20,30,.2); }
+.top-pick-filter-head { display: flex; align-items: center; justify-content: space-between; gap: .6rem; margin-bottom: .55rem; font-size: .8rem; color: var(--text-secondary); }
+.top-pick-filter-head strong { color: var(--text-primary); }
+.top-pick-filter-buttons { display: flex; flex-wrap: wrap; gap: .45rem; }
+.top-pick-filter-btn { border: 1px solid var(--border); border-radius: 999px; background: var(--bg-primary); color: var(--text-secondary); padding: .32rem .7rem; font-size: .76rem; cursor: pointer; }
+.top-pick-filter-btn:hover, .top-pick-filter-btn.is-active { border-color: var(--accent-blue); color: var(--accent-blue); }
+.top-pick-filter-btn:focus-visible { outline: 2px solid var(--accent-blue); outline-offset: 2px; }
+.top-picks-empty { display: none; margin-top: .55rem; color: var(--accent-yellow); font-size: .78rem; }
+.top-picks-empty.is-visible { display: block; }
+.shuffle-one { margin: 0 0 1.5rem; padding: 1rem; border: 1px solid var(--border); border-radius: 10px; background: linear-gradient(135deg, rgba(102,192,244,.08), rgba(12,20,30,.28)); }
+.shuffle-one h2 { font-size: 1.15rem; margin-bottom: .25rem; }
+.shuffle-card { display: grid; grid-template-columns: 220px minmax(0, 1fr) auto; gap: .9rem; align-items: center; margin-top: .7rem; }
+.shuffle-image-link { display: block; border-radius: 8px; overflow: hidden; border: 1px solid var(--border); }
+.shuffle-img { width: 100%; aspect-ratio: 460/215; object-fit: cover; display: block; }
+.shuffle-name { display: inline-block; font-size: 1rem; font-weight: 700; margin-bottom: .25rem; }
+.shuffle-meta { color: var(--text-secondary); font-size: .82rem; }
+.shuffle-meta [data-shuffle-score] { color: var(--accent-blue); font-weight: 700; }
+.shuffle-meta [data-shuffle-discount] { color: var(--accent-green); font-weight: 700; }
+.shuffle-reason { margin-top: .35rem; color: var(--accent-yellow); font-size: .8rem; line-height: 1.4; }
+.shuffle-actions { display: flex; flex-direction: column; gap: .35rem; align-items: flex-end; }
+.shuffle-next-btn:focus-visible { outline: 2px solid var(--accent-blue); outline-offset: 2px; }
+.shuffle-counter { color: var(--text-secondary); font-size: .75rem; }
+@media (max-width: 767px) { .shuffle-card { grid-template-columns: 1fr; } .shuffle-actions { align-items: stretch; } }
 .share-btn-mini { position: absolute; top: .4rem; right: .4rem; background: var(--bg-card); border: 1px solid var(--border); border-radius: 4px; padding: .3rem .5rem; cursor: pointer; font-size: .9rem; opacity: 0.6; transition: opacity .2s; }
 .share-btn-mini:hover { opacity: 1; background: var(--accent-blue); }
 .share-modal { display: none; position: fixed; inset: 0; background: rgba(0,0,0,0.7); z-index: 1000; align-items: center; justify-content: center; }
@@ -496,6 +697,7 @@ a.pick-card:hover { border-color: var(--accent-blue); transform: translateY(-2px
 .min-hist-cell { display: inline-flex; align-items: center; gap: .4rem; flex-wrap: wrap; }
 .min-hist-jump-btn { background: var(--bg-primary); color: var(--accent-blue); border: 1px solid var(--border); border-radius: 999px; padding: .12rem .5rem; font-size: .7rem; cursor: pointer; }
 .min-hist-jump-btn:hover { border-color: var(--accent-blue); }
+.min-hist-jump-btn:focus-visible { outline: 2px solid var(--accent-blue); outline-offset: 2px; }
 .trend-focus { outline: 2px solid var(--accent-blue); outline-offset: 2px; background: rgba(102,192,244,.08); border-radius: 6px; transition: background .2s ease; }
 .recommendation-guide { margin: 0 0 1rem; padding: .85rem .95rem; border-radius: 8px; border: 1px solid var(--border); background: linear-gradient(180deg, var(--bg-secondary), var(--bg-primary)); }
 .recommendation-guide-title { margin-bottom: .6rem; color: var(--accent-blue); font-size: .82rem; font-weight: 700; }
@@ -507,6 +709,19 @@ a.pick-card:hover { border-color: var(--accent-blue); transform: translateY(-2px
 
 _HTML_JS = """
 const sortState = {};
+function parseFiniteNumber(value) {
+  const number = Number.parseFloat(value);
+  return Number.isFinite(number) ? number : null;
+}
+function setAverageStat(id, label, total, count, formatter) {
+  const el = document.getElementById(id);
+  if (!el) return;
+  if (count <= 0) {
+    el.textContent = label + ': sin datos';
+    return;
+  }
+  el.textContent = label + ': ' + formatter(Math.round(total / count));
+}
 function sortTable(tableId, colIdx, dataType) {
   const table = document.getElementById(tableId);
   const tbody = table.querySelector('tbody');
@@ -526,31 +741,38 @@ function sortTable(tableId, colIdx, dataType) {
   rows.forEach(r => tbody.appendChild(r));
 }
 function applyFilters() {
-  const discMin = parseInt(document.getElementById('f-discount').value);
-  const priceMax = parseInt(document.getElementById('f-price-max').value);
+  const discMinRaw = parseFiniteNumber(document.getElementById('f-discount').value);
+  const priceMaxRaw = parseFiniteNumber(document.getElementById('f-price-max').value);
   const deck = document.getElementById('f-deck').value;
-  const revMin = parseInt(document.getElementById('f-reviews').value);
+  const revMinRaw = parseFiniteNumber(document.getElementById('f-reviews').value);
+  const discMin = discMinRaw === null ? 0 : discMinRaw;
+  const priceMax = priceMaxRaw === null ? 2000 : priceMaxRaw;
+  const revMin = revMinRaw === null ? 0 : revMinRaw;
   const search = document.getElementById('f-search').value.toLowerCase();
   const newOnly = document.getElementById('f-new-only').checked;
-  let totalV = 0, totalD = 0, totalP = 0;
+  let totalV = 0, totalD = 0, totalP = 0, discountCount = 0, priceCount = 0;
   document.querySelectorAll('.deals-table tbody tr').forEach(row => {
     const d = row.dataset;
+    const discount = parseFiniteNumber(d.discount);
+    const price = parseFiniteNumber(d.price);
     let show = true;
-    if (parseInt(d.discount) < discMin) show = false;
-    if (priceMax < 2000 && parseFloat(d.price) > priceMax) show = false;
+    if (discount === null || discount < discMin) show = false;
+    if (priceMax < 2000 && (price === null || price > priceMax)) show = false;
     if (deck !== 'all' && d.deck !== deck) show = false;
-    const rv = parseInt(d.review);
-    if (rv >= 0 && rv < revMin) show = false;
+    const rv = parseFiniteNumber(d.review);
+    if (rv !== null && rv >= 0 && rv < revMin) show = false;
     if (search && !d.name.includes(search)) show = false;
     if (newOnly && d.new !== '1') show = false;
     row.style.display = show ? '' : 'none';
-    if (show) { totalV++; totalD += parseInt(d.discount); totalP += parseFloat(d.price); }
+    if (show) {
+      totalV++;
+      if (discount !== null) { discountCount++; totalD += discount; }
+      if (price !== null) { priceCount++; totalP += price; }
+    }
   });
   const sd = document.getElementById('stat-deals'); if (sd) sd.textContent = totalV.toLocaleString() + ' deals visibles';
-  if (totalV > 0) {
-    const sa = document.getElementById('stat-avg-disc'); if (sa) sa.textContent = 'Promedio: -' + Math.round(totalD / totalV) + '%';
-    const sp = document.getElementById('stat-avg-price'); if (sp) sp.textContent = 'Precio medio: $' + Math.round(totalP / totalV);
-  }
+  setAverageStat('stat-avg-disc', 'Promedio', totalD, discountCount, value => '-' + value + '%');
+  setAverageStat('stat-avg-price', 'Precio medio', totalP, priceCount, value => '$' + value);
   document.querySelectorAll('.tier-section').forEach(s => {
     const t = s.querySelector('.deals-table');
     if (t) { const v = t.querySelectorAll('tbody tr:not([style*=\"display: none\"])').length; const c = s.querySelector('.visible-count'); if (c) c.textContent = v; }
@@ -566,8 +788,79 @@ function resetFilters() {
   document.querySelectorAll('.filter-group output').forEach(o => { if (o.id === 'f-disc-val') o.textContent = '50%'; else if (o.id === 'f-price-val') o.textContent = 'Sin limite'; else if (o.id === 'f-rev-val') o.textContent = '0%'; });
   applyFilters();
 }
+function applyTopPickRecommendationFilter(section, selectedRecommendation) {
+  const cards = Array.from(section.querySelectorAll('[data-top-pick-card]'));
+  const normalized = selectedRecommendation || 'all';
+  let visible = 0;
+  cards.forEach((card) => {
+    const show = normalized === 'all' || card.dataset.recommendation === normalized;
+    card.style.display = show ? '' : 'none';
+    if (show) visible++;
+  });
+  section.querySelectorAll('[data-top-pick-filter]').forEach((btn) => {
+    const active = btn.dataset.topPickFilter === normalized;
+    btn.classList.toggle('is-active', active);
+    btn.setAttribute('aria-pressed', String(active));
+  });
+  const countEl = section.querySelector('[data-top-pick-filter-count]');
+  if (countEl) countEl.textContent = `${visible}/${cards.length} visibles`;
+  const emptyEl = section.querySelector('[data-top-picks-empty]');
+  if (emptyEl) emptyEl.classList.toggle('is-visible', visible === 0);
+}
+function bindTopPickRecommendationFilters() {
+  document.querySelectorAll('[data-top-picks-section]').forEach((section) => {
+    if (section.dataset.boundRecommendationFilter === '1') return;
+    section.dataset.boundRecommendationFilter = '1';
+    section.querySelectorAll('[data-top-pick-filter]').forEach((btn) => {
+      btn.addEventListener('click', () => applyTopPickRecommendationFilter(section, btn.dataset.topPickFilter || 'all'));
+    });
+    applyTopPickRecommendationFilter(section, 'all');
+  });
+}
+function applyShuffleCandidate(section, candidate, index, total) {
+  if (!section || !candidate) return;
+  section.dataset.shuffleIndex = String(index);
+  section.querySelectorAll('[data-shuffle-link]').forEach((link) => { link.href = candidate.url || '#'; });
+  const image = section.querySelector('[data-shuffle-image]');
+  if (image && candidate.image_url) {
+    image.style.display = '';
+    image.src = candidate.image_url;
+  }
+  const name = section.querySelector('[data-shuffle-name]');
+  if (name) name.textContent = candidate.name || 'Juego';
+  const score = section.querySelector('[data-shuffle-score]');
+  if (score) score.textContent = candidate.score_text || 'Sin score';
+  const discount = section.querySelector('[data-shuffle-discount]');
+  if (discount) discount.textContent = `-${Number(candidate.discount || 0)}%`;
+  const price = section.querySelector('[data-shuffle-price]');
+  if (price) price.textContent = candidate.price_final || '—';
+  const reason = section.querySelector('[data-shuffle-reason]');
+  if (reason) reason.textContent = candidate.reason || 'Buen candidato para revisar.';
+  const counter = section.querySelector('[data-shuffle-counter]');
+  if (counter) counter.textContent = `${index + 1}/${total}`;
+}
+function bindShuffleOneGame() {
+  document.querySelectorAll('[data-shuffle-one]').forEach((section) => {
+    if (section.dataset.boundShuffle === '1') return;
+    section.dataset.boundShuffle = '1';
+    let candidates = [];
+    try { candidates = JSON.parse(section.dataset.shuffleCandidates || '[]'); } catch (e) { candidates = []; }
+    if (!candidates.length) return;
+    const btn = section.querySelector('[data-shuffle-next]');
+    if (btn) {
+      btn.addEventListener('click', () => {
+        const current = Number(section.dataset.shuffleIndex || '0');
+        const next = (current + 1) % candidates.length;
+        applyShuffleCandidate(section, candidates[next], next, candidates.length);
+      });
+    }
+    applyShuffleCandidate(section, candidates[0], 0, candidates.length);
+  });
+}
 document.addEventListener('DOMContentLoaded', () => {
   applyFilters();
+  bindTopPickRecommendationFilters();
+  bindShuffleOneGame();
   bindShareModalInteractions();
   bindBudgetHtmlInteractions();
 });
@@ -773,6 +1066,7 @@ function applyBudgetOption(row, option) {
   const discountEl = row.querySelector('.budget-value-discount');
   const priceEl = row.querySelector('.budget-value-price');
   const linkEl = row.querySelector('.budget-value-link');
+  const imageEl = row.querySelector('.game-thumb');
   const contextEl = row.querySelector('.budget-value-context');
   const previewEl = row.querySelector('.budget-reroll-preview');
   if (scoreEl) scoreEl.textContent = String(option.score ?? '—');
@@ -781,6 +1075,10 @@ function applyBudgetOption(row, option) {
   if (linkEl) {
     linkEl.textContent = option.name || 'Juego';
     linkEl.href = option.url || '#';
+  }
+  if (imageEl && option.image_url) {
+    imageEl.style.display = '';
+    imageEl.src = option.image_url;
   }
   if (contextEl) contextEl.innerHTML = renderBudgetContext(option);
   if (previewEl) {
@@ -997,6 +1295,7 @@ def generate_html(
     local_trends: dict[str, dict] | None = None,
     price_history: dict | None = None,
     profile_display_name: str | None = None,
+    active_promo_context: dict | None = None,
     *,
     group_by_tier,
     group_deals_by_tag,
@@ -1026,8 +1325,9 @@ def generate_html(
     has_itad = bool(historical_lows)
     has_best = bool(current_prices)
     has_ach = bool(achievements_data)
-    has_sparklines = bool(price_history_games)
+    has_sparklines = _has_sparkline_history(price_history_games, deals)
     deals_by_appid = {deal["appid"]: deal for deal in deals}
+    profile_label = profile_display_name or vanity
 
     total_deals = len(deals)
     avg_disc = sum(d["discount"] for d in deals) / total_deals if total_deals else 0
@@ -1036,6 +1336,8 @@ def generate_html(
         if total_deals
         else 0
     )
+    avg_disc_text = f"-{avg_disc:.0f}%" if total_deals else "sin datos"
+    avg_price_text = f"${avg_price:.0f}" if total_deals else "sin datos"
     verified = sum(1 for d in deals if deck_compat_data.get(d["appid"]) == 3)
     new_count = (
         sum(1 for d in deals if previous_appids and d["appid"] not in previous_appids)
@@ -1052,15 +1354,16 @@ def generate_html(
     pills = [
         f'<span class="pill">{len(wishlist_appids):,} en wishlist</span>',
         f'<span class="pill pill-accent" id="stat-deals">{total_deals:,} deals (&ge;{min_discount}%)</span>',
-        f'<span class="pill" id="stat-avg-disc">Promedio: -{avg_disc:.0f}%</span>',
-        f'<span class="pill" id="stat-avg-price">Precio medio: ${avg_price:.0f}</span>',
+        f'<span class="pill" id="stat-avg-disc">Promedio: {avg_disc_text}</span>',
+        f'<span class="pill" id="stat-avg-price">Precio medio: {avg_price_text}</span>',
         f'<span class="pill">{verified} verificados para Steam Deck</span>',
     ]
     if new_count:
         pills.append(f'<span class="pill pill-new">{new_count} ofertas nuevas</span>')
     parts.append(f"""<header class="stats-bar">
-  <h1>Ofertas de Steam &mdash; {_html_esc(vanity)}</h1>
+  <h1>Ofertas de Steam &mdash; {_html_esc(profile_label)}</h1>
   <div class="stats-meta">{sale_html}{today} | Precios en MXN</div>
+  {_build_promo_context_html(active_promo_context)}
   <div class="stats-pills">{"".join(pills)}</div>
 </header>""")
 
@@ -1075,6 +1378,8 @@ def generate_html(
             group_deals_by_tag=group_deals_by_tag,
         )
     )
+
+    parts.append(_html_shuffle_one_game(_build_shuffle_candidates(top_picks, deals)))
 
     if top_picks:
         cards = []
@@ -1104,6 +1409,7 @@ def generate_html(
                 str(tp.get("price_original") or source_deal.get("price_original") or tp.get("price_final") or "")
             )
             recommendation = _html_esc(tp.get("recommendation", ""))
+            recommendation_filter = _html_esc(tp.get("recommendation") or "Sin recomendación")
             why_text = _html_esc(" · ".join(tp.get("score_reasons", [])))
             why_html = (
                 f'<div class="pick-recommendation">{recommendation}</div><div class="pick-why">{why_text}</div>'
@@ -1118,7 +1424,7 @@ def generate_html(
                 discount=int(tp.get("discount") or 0),
                 min_hist=min_hist_str,
             )
-            cards.append(f'''<div class="pick-card {rank_cls}">
+            cards.append(f'''<div class="pick-card {rank_cls}" data-top-pick-card data-recommendation="{recommendation_filter}">
   <a href="{store_url}" target="_blank" style="display:block">
     <img class="pick-img" src="{header_img}" alt="" loading="lazy" onerror="this.style.display='none'">
     <div class="pick-body">
@@ -1132,9 +1438,10 @@ def generate_html(
   </a>
   {_html_share_button(share_payload)}
 </div>''')
-        parts.append(f"""<section class="top-picks">
+        parts.append(f"""<section class="top-picks" data-top-picks-section>
   <h2>&#127942; {len(top_picks)} juegos destacados</h2>
   <p class="section-desc">Score = recomendación compuesta para priorizar qué revisar primero. Combina reviews (26%) + descuento (22%) + prioridad (18%) + $/hora HLTB (14%) + Deck (10%) + Metacritic (5%) + antigüedad (5%).</p>
+  {_html_top_pick_filter_controls()}
   {_html_recommendation_guide()}
   <div class="picks-grid">{"".join(cards)}</div>
 </section>""")
@@ -1261,7 +1568,7 @@ def generate_html(
         if has_ach:
             cols.append(("Logros", "num"))
         if has_sparklines:
-            cols.append(("Tendencia local", "text"))
+            cols.append(("Historial local", "text"))
         if has_itad:
             cols.append(("Mín. histórico", "price"))
         if has_best:
@@ -1355,7 +1662,7 @@ def generate_html(
         note_parts = []
         if has_sparklines:
             note_parts.append(
-                "Tendencia local = cómo se movió el precio de cada juego en tus corridas previas."
+                "Historial local = movimiento del precio en tus corridas previas; no es predicción."
             )
         if has_itad:
             note_parts.append(
@@ -1366,7 +1673,7 @@ def generate_html(
         )
         if has_itad and has_sparklines:
             note_parts.append(
-                "Usa ➡ Ver tendencia junto a Mín. histórico para saltar rápido al movimiento local del precio."
+                "Usa ➡ Ver historial junto a Mín. histórico para saltar rápido al movimiento local del precio."
             )
         note_html = (
             f'<p class="section-desc">{" · ".join(note_parts)}</p>'
@@ -1382,7 +1689,7 @@ def generate_html(
 
     return f"""<!DOCTYPE html>
 <html lang="es">
-<head><meta charset="UTF-8"><meta name="viewport" content="width=device-width,initial-scale=1.0"><title>Steam Deals &mdash; {_html_esc(profile_display_name or vanity)}</title><style>{_HTML_CSS}</style></head>
+<head><meta charset="UTF-8"><meta name="viewport" content="width=device-width,initial-scale=1.0"><title>Steam Deals &mdash; {_html_esc(profile_label)}</title><style>{_HTML_CSS}</style></head>
 <body>
 {"".join(parts)}
 <div class="share-modal" id="share-modal">

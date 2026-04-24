@@ -4,6 +4,7 @@
 <meta charset="UTF-8">
 <meta name="viewport" content="width=device-width,initial-scale=1">
 <title>PAYDAY 2 DLC Dashboard</title>
+<link rel="icon" type="image/svg+xml" href="/favicon.svg">
 <link rel="stylesheet" href="/app.css">
 </head>
 <body>
@@ -11,7 +12,15 @@
 <!-- Header -->
 <div class="hdr">
   <div class="hdr-inner">
-    <h1><span class="mask-icon">&#127917;</span> PAYDAY 2 DLC Dashboard</h1>
+    <h1 class="brand-lockup">
+      <span class="pd2-logo-mark">
+        <img id="pd2-mask-img" class="pd2-mask-img" src="/masks/heist_mask_blue.svg" alt="Mascara original estilo atraco">
+      </span>
+      <span class="brand-copy">
+        <span class="brand-kicker">Heist board</span>
+        <span class="brand-title"><span class="brand-word">PAYDAY</span><span class="brand-number">2</span> DLC Dashboard</span>
+      </span>
+    </h1>
     <div class="hdr-info">
       <span class="hdr-vanity" id="hdr-vanity"></span>
       <span class="hdr-refresh-time" id="hdr-time"></span>
@@ -27,7 +36,7 @@
 <div class="container">
   <!-- Empty state (shown when no data) -->
   <div class="empty-state" id="empty-state" style="display:none">
-    <h2>&#127917; Bienvenido al Dashboard de PAYDAY 2</h2>
+    <h2><span class="empty-mark" aria-hidden="true">PD2</span> Bienvenido al Dashboard de PAYDAY 2</h2>
     <p>No hay datos en cache. Configura tu perfil de Steam y haz click en actualizar para cargar tus DLCs.</p>
     <div class="card" style="max-width:500px;margin:0 auto 1.5rem;text-align:left">
       <h2>&#9881; Configuracion rapida</h2>

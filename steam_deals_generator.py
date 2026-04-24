@@ -125,6 +125,12 @@ except Exception:
 
 
 try:
+    from steam_deals_alerts import build_smart_alert_counts as _build_smart_alert_counts_impl
+except Exception:
+    _build_smart_alert_counts_impl = None
+
+
+try:
     from steam_deals_history import (
         analyze_trends as _analyze_trends_impl,
         compute_deal_comparison as _compute_deal_comparison_impl,
@@ -181,6 +187,7 @@ except Exception:
 try:
     from steam_deals_steam_api import (
         compare_wishlists as _compare_wishlists_impl,
+        get_active_promo_context as _get_active_promo_context_impl,
         get_active_sale as _get_active_sale_impl,
         get_owned_games as _get_owned_games_impl,
         get_wishlist as _get_wishlist_impl,
@@ -190,6 +197,7 @@ try:
     )
 except Exception:
     _compare_wishlists_impl = None
+    _get_active_promo_context_impl = None
     _get_active_sale_impl = None
     _get_owned_games_impl = None
     _get_wishlist_impl = None
@@ -775,6 +783,7 @@ def run_post_processing(
     previous_appids: set[str],
     comparison: dict | None,
     contract,
+    active_promo_context: dict | None = None,
 ):
     if _post_processing_module is None:
         raise RuntimeError("Post-processing module is not available")
@@ -789,6 +798,7 @@ def run_post_processing(
         previous_appids=previous_appids,
         comparison=comparison,
         contract=contract,
+        active_promo_context=active_promo_context,
     )
 
 
@@ -892,6 +902,13 @@ def get_active_sale() -> str:
     return _get_active_sale_impl(get_json=_get_json)
 
 
+def get_active_promo_context() -> dict:
+    """Detecta promos activas de Steam con contexto estructurado."""
+    if _get_active_promo_context_impl is None:
+        raise RuntimeError("Steam adapter module is not available")
+    return _get_active_promo_context_impl(get_json=_get_json)
+
+
 # ─────────────────────────────────────────────
 # IsThereAnyDeal API (mínimo histórico)
 # ─────────────────────────────────────────────
@@ -976,7 +993,13 @@ def load_previous_deal_appids(output_dir: Path, current_filename: str) -> set[st
 
 
 def save_run_history(
-    steam_id: str, vanity: str, sale_name: str, min_discount: int, deals: list[dict]
+    steam_id: str,
+    vanity: str,
+    sale_name: str,
+    min_discount: int,
+    deals: list[dict],
+    *,
+    active_promo_context: dict | None = None,
 ) -> Path:
     """Guarda snapshot del run actual en historial JSON."""
     if _save_run_history_impl is None:
@@ -989,6 +1012,7 @@ def save_run_history(
         deals,
         history_dir=HISTORY_DIR,
         history_max_files=HISTORY_MAX_FILES,
+        active_promo_context=active_promo_context,
     )
 
 
@@ -1146,6 +1170,12 @@ def build_final_summary(
         output_md,
         smart_alerts,
     )
+
+
+def build_smart_alert_counts(**kwargs) -> dict[str, int]:
+    if _build_smart_alert_counts_impl is None:
+        raise RuntimeError("Alerts module is not available")
+    return _build_smart_alert_counts_impl(**kwargs)
 
 
 def emit_final_closeout(
@@ -1319,6 +1349,7 @@ def select_scoped_cache(
     ttl_hours: float,
     current_time_fn=time.time,
     entry_ttl_hours: float | None = None,
+    failure_retry_hours: float = 2.0,
 ):
     if _cache_policy_module is None:
         raise RuntimeError("Cache policy module is not available")
@@ -1330,6 +1361,7 @@ def select_scoped_cache(
         ttl_hours=ttl_hours,
         current_time_fn=current_time_fn,
         entry_ttl_hours=entry_ttl_hours,
+        failure_retry_hours=failure_retry_hours,
     )
 
 
@@ -1561,6 +1593,9 @@ def format_price_cache_status(price_cache_policy, cache_age: float) -> str:
         refresh_ids = tuple(
             getattr(price_cache_policy, "refresh_ids", missing_ids) or ()
         )
+        deferred_failure_ids = tuple(
+            getattr(price_cache_policy, "deferred_failure_ids", ()) or ()
+        )
         stale_count = sum(1 for appid in refresh_ids if appid not in missing_ids)
         if refresh_ids:
             details = []
@@ -1568,10 +1603,14 @@ def format_price_cache_status(price_cache_policy, cache_age: float) -> str:
                 details.append(f"{len(missing_ids)} nuevos")
             if stale_count:
                 details.append(f"{stale_count} stale")
+            if deferred_failure_ids:
+                details.append(f"{len(deferred_failure_ids)} fallos recientes en cooldown")
             details_msg = f" ({', '.join(details)})" if details else ""
             status_msg = f"{len(refresh_ids)} por fetchear{details_msg}"
         else:
             status_msg = _dim("sin nuevos, skip fetch")
+            if deferred_failure_ids:
+                status_msg = f"{status_msg} ({len(deferred_failure_ids)} fallos recientes en cooldown)"
         return f"{_ok(f'Caché válida ({cache_age:.1f}h)')} — {status_msg}"
     if status == "expired":
         return _warn(f"Caché expirada ({cache_age:.0f}h) — re-fetching todo")
@@ -1613,6 +1652,7 @@ def run_price_cache_stage(
         ttl_hours=CACHE_MAX_HOURS,
         current_time_fn=current_time_fn,
         entry_ttl_hours=ENTRY_REFRESH_TTL_HOURS,
+        failure_retry_hours=PRICE_FAILURE_RETRY_HOURS,
     )
     fetched_cache = price_cache_policy.cache
 
@@ -1622,6 +1662,9 @@ def run_price_cache_stage(
 
     refresh_ids = tuple(getattr(price_cache_policy, "refresh_ids", ()) or ())
     missing_count = len(tuple(getattr(price_cache_policy, "missing_ids", ()) or ()))
+    deferred_failure_count = len(
+        tuple(getattr(price_cache_policy, "deferred_failure_ids", ()) or ())
+    )
     stale_count = max(0, len(refresh_ids) - missing_count)
     if refresh_ids:
         emit_fn(
@@ -1643,9 +1686,12 @@ def run_price_cache_stage(
         "refresh_candidate_count": len(refresh_ids),
         "missing_count": missing_count,
         "stale_count": stale_count,
+        "deferred_failure_count": deferred_failure_count,
         "degraded_batch_count": 0,
         "individual_fallback_count": 0,
         "individual_fallback_batches": 0,
+        "individual_fallback_resolved_count": 0,
+        "individual_fallback_failed_count": 0,
         "null_batch_count": 0,
     }
 
@@ -1685,7 +1731,9 @@ def run_price_cache_stage(
         fallback_msg = (
             "Fallback individual aplicado a "
             f"{price_fetch_stats['individual_fallback_count']:,} juegos en "
-            f"{price_fetch_stats['individual_fallback_batches']} tandas"
+            f"{price_fetch_stats['individual_fallback_batches']} tandas "
+            f"({price_fetch_stats['individual_fallback_resolved_count']:,} resueltos, "
+            f"{price_fetch_stats['individual_fallback_failed_count']:,} sin oferta/datos)"
         )
         emit_fn(
             f"  {_dim(fallback_msg)}"
@@ -1700,9 +1748,12 @@ def run_price_cache_stage(
         "refresh_candidate_count": price_fetch_stats["refresh_candidate_count"],
         "missing_count": price_fetch_stats["missing_count"],
         "stale_count": price_fetch_stats["stale_count"],
+        "deferred_failure_count": price_fetch_stats["deferred_failure_count"],
         "degraded_batch_count": price_fetch_stats["degraded_batch_count"],
         "individual_fallback_count": price_fetch_stats["individual_fallback_count"],
         "individual_fallback_batches": price_fetch_stats["individual_fallback_batches"],
+        "individual_fallback_resolved_count": price_fetch_stats["individual_fallback_resolved_count"],
+        "individual_fallback_failed_count": price_fetch_stats["individual_fallback_failed_count"],
         "null_batch_count": price_fetch_stats["null_batch_count"],
         "batch_size": int(price_tuning["batch_size"]),
         "batch_halving_limit": int(price_tuning["batch_halving_limit"]),
@@ -1745,6 +1796,7 @@ def run_warm_cache_mode(
 
 BATCH_SIZE = 20
 ENTRY_REFRESH_TTL_HOURS = 24
+PRICE_FAILURE_RETRY_HOURS = 2
 
 
 def _fetch_single(appid: str, country: str, delay: float) -> dict | None:
@@ -1815,6 +1867,7 @@ def get_deals_from_wishlist(
         current_time_fn=current_time_fn,
         refresh_ids=refresh_ids,
         max_batch_halving=max_batch_halving,
+        failure_retry_hours=PRICE_FAILURE_RETRY_HOURS,
         stats_out=stats_out,
     )
 
@@ -1919,7 +1972,7 @@ def apply_filters(
 # FETCH PARALELO (ThreadPoolExecutor)
 # ─────────────────────────────────────────────
 
-MAX_WORKERS = 12
+MAX_WORKERS = 16
 RATE_LIMIT_INTERVAL = 0.15
 
 
@@ -2303,12 +2356,19 @@ def rank_top_picks(
     hltb_hours: dict[str, float],
     deck_compat: dict[str, int],
     n: int = 10,
+    active_promo_context: dict | None = None,
 ) -> list[dict]:
     """Rank deals by composite value score, return top N."""
     if _rank_top_picks_impl is None:
         raise RuntimeError("Recommendations module is not available")
     return _rank_top_picks_impl(
-        deals, priorities, reviews, hltb_hours, deck_compat, n=n
+        deals,
+        priorities,
+        reviews,
+        hltb_hours,
+        deck_compat,
+        n=n,
+        active_promo_context=active_promo_context,
     )
 
 
@@ -2383,6 +2443,7 @@ def generate_md(
     compare_data: dict | None = None,
     gift_ideas: list[dict] | None = None,
     include_frontmatter: bool = False,
+    active_promo_context: dict | None = None,
 ) -> str:
     if _generate_md_renderer is None:
         raise RuntimeError("Markdown renderer module is not available")
@@ -2418,6 +2479,7 @@ def generate_md(
         compare_data=compare_data,
         gift_ideas=gift_ideas,
         include_frontmatter=include_frontmatter,
+        active_promo_context=active_promo_context,
         group_by_tier=group_by_tier,
         filter_by_genres=filter_by_genres,
         group_deals_by_tag=group_deals_by_tag,
@@ -2535,9 +2597,155 @@ def _build_sparkline_svg(
     )
 
 
+def _has_sparkline_history(price_history_games: dict[str, dict], deals: list[dict]) -> bool:
+    return any(
+        len((price_history_games.get(deal["appid"]) or {}).get("snapshots", [])) >= 2
+        for deal in deals
+    )
+
+
 def _html_price_raw(price_str: str) -> float:
     m = re.search(r"[\d,.]+", price_str.replace(",", ""))
     return float(m.group()) if m else 0.0
+
+
+_TOP_PICK_RECOMMENDATION_FILTERS = (
+    "Comprar ahora",
+    "Muy buena oferta",
+    "Vale la pena",
+    "Solo si ya lo traías en radar",
+)
+
+
+def _html_top_pick_filter_controls() -> str:
+    buttons = [
+        '<button type="button" class="top-pick-filter-btn is-active" data-top-pick-filter="all" aria-pressed="true">Todos</button>'
+    ]
+    buttons.extend(
+        f'<button type="button" class="top-pick-filter-btn" data-top-pick-filter="{_html_esc(label)}" aria-pressed="false">{_html_esc(label)}</button>'
+        for label in _TOP_PICK_RECOMMENDATION_FILTERS
+    )
+    return f'''<div class="top-pick-filters" aria-label="Filtrar Top Picks por recomendación">
+  <div class="top-pick-filter-head">
+    <strong>Filtrar recomendación</strong>
+    <span data-top-pick-filter-count></span>
+  </div>
+  <div class="top-pick-filter-buttons">{"".join(buttons)}</div>
+  <div class="top-picks-empty" data-top-picks-empty>No hay Top Picks con esa recomendación.</div>
+</div>'''
+
+
+def _html_recommendation_guide() -> str:
+    return """<div class="recommendation-guide">
+  <div class="recommendation-guide-title">Cómo leer la recomendación rápida</div>
+  <div class="recommendation-guide-grid">
+    <div class="recommendation-guide-item">
+      <strong>Comprar ahora</strong>
+      <span>Muy buena combinación de descuento, señales de calidad y prioridad en tu wishlist.</span>
+    </div>
+    <div class="recommendation-guide-item">
+      <strong>Muy buena oferta</strong>
+      <span>Buen balance para revisar pronto: alto valor, aunque no siempre sea prioridad absoluta.</span>
+    </div>
+    <div class="recommendation-guide-item">
+      <strong>Vale la pena</strong>
+      <span>Se ve sólido para revisar pronto, aunque no necesariamente sea lo más urgente del run.</span>
+    </div>
+    <div class="recommendation-guide-item">
+      <strong>Solo si ya lo traías en radar</strong>
+      <span>Puede seguir siendo buen deal, pero hoy no sobresale tanto frente a otras opciones.</span>
+    </div>
+  </div>
+</div>"""
+
+
+def _html_min_hist_jump_button(appid: str) -> str:
+    return (
+        f'<button type="button" class="min-hist-jump-btn" '
+        f'onclick="focusTrendCell(\'{_html_esc(appid)}\')" '
+        'title="Ir rápido al historial local de este juego">&#10148; Ver historial</button>'
+    )
+
+
+def _html_data_attr(payload: object) -> str:
+    return _html_esc(json.dumps(payload, ensure_ascii=False))
+
+
+def _shuffle_candidate_payload(game: dict, *, source_deal: dict | None = None) -> dict | None:
+    source_deal = source_deal or {}
+    appid = str(game.get("appid") or source_deal.get("appid") or "").strip()
+    name = str(game.get("name") or source_deal.get("name") or "").strip()
+    if not appid or not name:
+        return None
+    discount = int(game.get("discount") or source_deal.get("discount") or 0)
+    score = game.get("score")
+    recommendation = str(game.get("recommendation") or "").strip()
+    reasons = [str(reason) for reason in (game.get("score_reasons") or []) if reason]
+    reason = recommendation or (reasons[0] if reasons else "Buen candidato para revisar sin recorrer toda la lista.")
+    score_text = f"Score {score}" if score not in (None, "") else f"-{discount}% descuento"
+    return {
+        "appid": appid,
+        "name": name,
+        "discount": discount,
+        "price_final": str(game.get("price_final") or source_deal.get("price_final") or "—"),
+        "price_original": str(game.get("price_original") or source_deal.get("price_original") or ""),
+        "score_text": score_text,
+        "reason": reason,
+        "url": STORE_URL.format(appid=appid),
+        "image_url": HEADER_URL.format(appid=appid),
+    }
+
+
+def _build_shuffle_candidates(top_picks: list[dict], deals: list[dict], *, limit: int = 12) -> list[dict]:
+    deals_by_appid = {str(deal.get("appid")): deal for deal in deals if deal.get("appid")}
+    source_games = top_picks or sorted(
+        deals,
+        key=lambda deal: (
+            -int(deal.get("discount") or 0),
+            int(deal.get("price_raw") or 0),
+            str(deal.get("name") or "").lower(),
+        ),
+    )
+    candidates = []
+    seen: set[str] = set()
+    for game in source_games:
+        candidate = _shuffle_candidate_payload(
+            game,
+            source_deal=deals_by_appid.get(str(game.get("appid") or "")),
+        )
+        if not candidate or candidate["appid"] in seen:
+            continue
+        candidates.append(candidate)
+        seen.add(candidate["appid"])
+        if len(candidates) >= limit:
+            break
+    return candidates
+
+
+def _html_shuffle_one_game(candidates: list[dict]) -> str:
+    if not candidates:
+        return ""
+    first = candidates[0]
+    return f'''<section class="shuffle-one" data-shuffle-one data-shuffle-index="0" data-shuffle-candidates="{_html_data_attr(candidates)}">
+  <div class="shuffle-copy">
+    <h2>&#127922; Shuffle 1 juego</h2>
+    <p class="section-desc">Si no quieres revisar toda la tabla, empieza por esta recomendación. El botón rota entre candidatos ya calculados del reporte.</p>
+  </div>
+  <div class="shuffle-card">
+    <a class="shuffle-image-link" data-shuffle-link href="{_html_esc(first['url'])}" target="_blank">
+      <img class="shuffle-img" data-shuffle-image src="{_html_esc(first['image_url'])}" alt="" loading="lazy" onerror="this.style.display='none'">
+    </a>
+    <div class="shuffle-info">
+      <a class="shuffle-name" data-shuffle-name href="{_html_esc(first['url'])}" target="_blank">{_html_esc(first['name'])}</a>
+      <div class="shuffle-meta"><span data-shuffle-score>{_html_esc(first['score_text'])}</span> &middot; <span data-shuffle-discount>-{int(first['discount'])}%</span> &middot; <span data-shuffle-price>{_html_esc(first['price_final'])}</span></div>
+      <div class="shuffle-reason" data-shuffle-reason>{_html_esc(first['reason'])}</div>
+    </div>
+    <div class="shuffle-actions">
+      <button type="button" class="btn-reset shuffle-next-btn" data-shuffle-next>Dame otro</button>
+      <span class="shuffle-counter" data-shuffle-counter>1/{len(candidates)}</span>
+    </div>
+  </div>
+</section>'''
 
 
 _HTML_CSS = """
@@ -2578,6 +2786,14 @@ a.pick-card:hover { border-color: var(--accent-blue); transform: translateY(-2px
 .pick-discount { color: var(--accent-green); font-weight: bold; margin-right: .5rem; }
 .pick-price { color: var(--text-secondary); }
 .pick-meta { font-size: .75rem; color: var(--text-secondary); margin-top: .3rem; }
+.pick-recommendation { margin-top: .45rem; font-size: .78rem; font-weight: 700; color: var(--accent-yellow); }
+.pick-why { margin-top: .15rem; font-size: .72rem; color: var(--text-secondary); }
+.recommendation-guide { background: var(--bg-card); border: 1px solid var(--border); border-radius: 8px; padding: .8rem; margin-bottom: 1rem; }
+.recommendation-guide-title { font-weight: 700; margin-bottom: .6rem; }
+.recommendation-guide-grid { display: grid; grid-template-columns: repeat(auto-fit, minmax(210px, 1fr)); gap: .6rem; }
+.recommendation-guide-item { background: var(--bg-primary); border-radius: 6px; padding: .65rem; font-size: .78rem; }
+.recommendation-guide-item strong { color: var(--accent-yellow); display: block; margin-bottom: .25rem; }
+.recommendation-guide-item span { color: var(--text-secondary); }
 .filter-panel { background: var(--bg-secondary); border-radius: 8px; padding: .8rem 1.2rem; margin-bottom: 1.5rem; }
 .filter-panel summary { cursor: pointer; font-weight: bold; font-size: 1rem; }
 .filter-grid { display: grid; grid-template-columns: repeat(3, 1fr); gap: .8rem; margin-top: .8rem; }
@@ -2648,6 +2864,34 @@ a.pick-card:hover { border-color: var(--accent-blue); transform: translateY(-2px
 @media (max-width: 1023px) { .dash-grid { grid-template-columns: 1fr; } .fin-grid { grid-template-columns: repeat(3, 1fr); } }
 @media (max-width: 767px) { .fin-grid { grid-template-columns: repeat(2, 1fr); } }
 .pick-card { position: relative; }
+.top-pick-filters { margin: .75rem 0 1rem; padding: .75rem .85rem; border: 1px solid var(--border); border-radius: 8px; background: rgba(12,20,30,.2); }
+.top-pick-filter-head { display: flex; align-items: center; justify-content: space-between; gap: .6rem; margin-bottom: .55rem; font-size: .8rem; color: var(--text-secondary); }
+.top-pick-filter-head strong { color: var(--text-primary); }
+.top-pick-filter-buttons { display: flex; flex-wrap: wrap; gap: .45rem; }
+.top-pick-filter-btn { border: 1px solid var(--border); border-radius: 999px; background: var(--bg-primary); color: var(--text-secondary); padding: .32rem .7rem; font-size: .76rem; cursor: pointer; }
+.top-pick-filter-btn:hover, .top-pick-filter-btn.is-active { border-color: var(--accent-blue); color: var(--accent-blue); }
+.top-pick-filter-btn:focus-visible { outline: 2px solid var(--accent-blue); outline-offset: 2px; }
+.top-picks-empty { display: none; margin-top: .55rem; color: var(--accent-yellow); font-size: .78rem; }
+.top-picks-empty.is-visible { display: block; }
+.shuffle-one { margin: 0 0 1.5rem; padding: 1rem; border: 1px solid var(--border); border-radius: 10px; background: linear-gradient(135deg, rgba(102,192,244,.08), rgba(12,20,30,.28)); }
+.shuffle-one h2 { font-size: 1.15rem; margin-bottom: .25rem; }
+.shuffle-card { display: grid; grid-template-columns: 220px minmax(0, 1fr) auto; gap: .9rem; align-items: center; margin-top: .7rem; }
+.shuffle-image-link { display: block; border-radius: 8px; overflow: hidden; border: 1px solid var(--border); }
+.shuffle-img { width: 100%; aspect-ratio: 460/215; object-fit: cover; display: block; }
+.shuffle-name { display: inline-block; font-size: 1rem; font-weight: 700; margin-bottom: .25rem; }
+.shuffle-meta { color: var(--text-secondary); font-size: .82rem; }
+.shuffle-meta [data-shuffle-score] { color: var(--accent-blue); font-weight: 700; }
+.shuffle-meta [data-shuffle-discount] { color: var(--accent-green); font-weight: 700; }
+.shuffle-reason { margin-top: .35rem; color: var(--accent-yellow); font-size: .8rem; line-height: 1.4; }
+.shuffle-actions { display: flex; flex-direction: column; gap: .35rem; align-items: flex-end; }
+.shuffle-next-btn:focus-visible { outline: 2px solid var(--accent-blue); outline-offset: 2px; }
+.shuffle-counter { color: var(--text-secondary); font-size: .75rem; }
+@media (max-width: 767px) { .shuffle-card { grid-template-columns: 1fr; } .shuffle-actions { align-items: stretch; } }
+.min-hist-cell { display: inline-flex; align-items: center; gap: .4rem; flex-wrap: wrap; }
+.min-hist-jump-btn { background: var(--bg-primary); color: var(--accent-blue); border: 1px solid var(--border); border-radius: 999px; padding: .12rem .5rem; font-size: .7rem; cursor: pointer; }
+.min-hist-jump-btn:hover { border-color: var(--accent-blue); }
+.min-hist-jump-btn:focus-visible { outline: 2px solid var(--accent-blue); outline-offset: 2px; }
+.trend-focus { outline: 2px solid var(--accent-blue); outline-offset: 2px; background: rgba(102,192,244,.08); border-radius: 6px; transition: background .2s ease; }
 .share-btn-mini { position: absolute; top: .4rem; right: .4rem; background: var(--bg-card); border: 1px solid var(--border); border-radius: 4px; padding: .3rem .5rem; cursor: pointer; font-size: .9rem; opacity: 0.6; transition: opacity .2s; }
 .share-btn-mini:hover { opacity: 1; background: var(--accent-blue); }
 .share-modal { display: none; position: fixed; inset: 0; background: rgba(0,0,0,0.7); z-index: 1000; align-items: center; justify-content: center; }
@@ -2673,6 +2917,19 @@ a.pick-card:hover { border-color: var(--accent-blue); transform: translateY(-2px
 
 _HTML_JS = """
 const sortState = {};
+function parseFiniteNumber(value) {
+  const number = Number.parseFloat(value);
+  return Number.isFinite(number) ? number : null;
+}
+function setAverageStat(id, label, total, count, formatter) {
+  const el = document.getElementById(id);
+  if (!el) return;
+  if (count <= 0) {
+    el.textContent = label + ': sin datos';
+    return;
+  }
+  el.textContent = label + ': ' + formatter(Math.round(total / count));
+}
 function sortTable(tableId, colIdx, dataType) {
   const table = document.getElementById(tableId);
   const tbody = table.querySelector('tbody');
@@ -2692,31 +2949,38 @@ function sortTable(tableId, colIdx, dataType) {
   rows.forEach(r => tbody.appendChild(r));
 }
 function applyFilters() {
-  const discMin = parseInt(document.getElementById('f-discount').value);
-  const priceMax = parseInt(document.getElementById('f-price-max').value);
+  const discMinRaw = parseFiniteNumber(document.getElementById('f-discount').value);
+  const priceMaxRaw = parseFiniteNumber(document.getElementById('f-price-max').value);
   const deck = document.getElementById('f-deck').value;
-  const revMin = parseInt(document.getElementById('f-reviews').value);
+  const revMinRaw = parseFiniteNumber(document.getElementById('f-reviews').value);
+  const discMin = discMinRaw === null ? 0 : discMinRaw;
+  const priceMax = priceMaxRaw === null ? 2000 : priceMaxRaw;
+  const revMin = revMinRaw === null ? 0 : revMinRaw;
   const search = document.getElementById('f-search').value.toLowerCase();
   const newOnly = document.getElementById('f-new-only').checked;
-  let totalV = 0, totalD = 0, totalP = 0;
+  let totalV = 0, totalD = 0, totalP = 0, discountCount = 0, priceCount = 0;
   document.querySelectorAll('.deals-table tbody tr').forEach(row => {
     const d = row.dataset;
+    const discount = parseFiniteNumber(d.discount);
+    const price = parseFiniteNumber(d.price);
     let show = true;
-    if (parseInt(d.discount) < discMin) show = false;
-    if (priceMax < 2000 && parseFloat(d.price) > priceMax) show = false;
+    if (discount === null || discount < discMin) show = false;
+    if (priceMax < 2000 && (price === null || price > priceMax)) show = false;
     if (deck !== 'all' && d.deck !== deck) show = false;
-    const rv = parseInt(d.review);
-    if (rv >= 0 && rv < revMin) show = false;
+    const rv = parseFiniteNumber(d.review);
+    if (rv !== null && rv >= 0 && rv < revMin) show = false;
     if (search && !d.name.includes(search)) show = false;
     if (newOnly && d.new !== '1') show = false;
     row.style.display = show ? '' : 'none';
-    if (show) { totalV++; totalD += parseInt(d.discount); totalP += parseFloat(d.price); }
+    if (show) {
+      totalV++;
+      if (discount !== null) { discountCount++; totalD += discount; }
+      if (price !== null) { priceCount++; totalP += price; }
+    }
   });
   const sd = document.getElementById('stat-deals'); if (sd) sd.textContent = totalV.toLocaleString() + ' deals visibles';
-  if (totalV > 0) {
-    const sa = document.getElementById('stat-avg-disc'); if (sa) sa.textContent = 'Promedio: -' + Math.round(totalD / totalV) + '%';
-    const sp = document.getElementById('stat-avg-price'); if (sp) sp.textContent = 'Precio medio: $' + Math.round(totalP / totalV);
-  }
+  setAverageStat('stat-avg-disc', 'Promedio', totalD, discountCount, value => '-' + value + '%');
+  setAverageStat('stat-avg-price', 'Precio medio', totalP, priceCount, value => '$' + value);
   document.querySelectorAll('.tier-section').forEach(s => {
     const t = s.querySelector('.deals-table');
     if (t) { const v = t.querySelectorAll('tbody tr:not([style*=\"display: none\"])').length; const c = s.querySelector('.visible-count'); if (c) c.textContent = v; }
@@ -2732,7 +2996,90 @@ function resetFilters() {
   document.querySelectorAll('.filter-group output').forEach(o => { if (o.id === 'f-disc-val') o.textContent = '50%'; else if (o.id === 'f-price-val') o.textContent = 'Sin limite'; else if (o.id === 'f-rev-val') o.textContent = '0%'; });
   applyFilters();
 }
-document.addEventListener('DOMContentLoaded', applyFilters);
+function applyTopPickRecommendationFilter(section, selectedRecommendation) {
+  const cards = Array.from(section.querySelectorAll('[data-top-pick-card]'));
+  const normalized = selectedRecommendation || 'all';
+  let visible = 0;
+  cards.forEach((card) => {
+    const show = normalized === 'all' || card.dataset.recommendation === normalized;
+    card.style.display = show ? '' : 'none';
+    if (show) visible++;
+  });
+  section.querySelectorAll('[data-top-pick-filter]').forEach((btn) => {
+    const active = btn.dataset.topPickFilter === normalized;
+    btn.classList.toggle('is-active', active);
+    btn.setAttribute('aria-pressed', String(active));
+  });
+  const countEl = section.querySelector('[data-top-pick-filter-count]');
+  if (countEl) countEl.textContent = `${visible}/${cards.length} visibles`;
+  const emptyEl = section.querySelector('[data-top-picks-empty]');
+  if (emptyEl) emptyEl.classList.toggle('is-visible', visible === 0);
+}
+function bindTopPickRecommendationFilters() {
+  document.querySelectorAll('[data-top-picks-section]').forEach((section) => {
+    if (section.dataset.boundRecommendationFilter === '1') return;
+    section.dataset.boundRecommendationFilter = '1';
+    section.querySelectorAll('[data-top-pick-filter]').forEach((btn) => {
+      btn.addEventListener('click', () => applyTopPickRecommendationFilter(section, btn.dataset.topPickFilter || 'all'));
+    });
+    applyTopPickRecommendationFilter(section, 'all');
+  });
+}
+function applyShuffleCandidate(section, candidate, index, total) {
+  if (!section || !candidate) return;
+  section.dataset.shuffleIndex = String(index);
+  section.querySelectorAll('[data-shuffle-link]').forEach((link) => { link.href = candidate.url || '#'; });
+  const image = section.querySelector('[data-shuffle-image]');
+  if (image && candidate.image_url) {
+    image.style.display = '';
+    image.src = candidate.image_url;
+  }
+  const name = section.querySelector('[data-shuffle-name]');
+  if (name) name.textContent = candidate.name || 'Juego';
+  const score = section.querySelector('[data-shuffle-score]');
+  if (score) score.textContent = candidate.score_text || 'Sin score';
+  const discount = section.querySelector('[data-shuffle-discount]');
+  if (discount) discount.textContent = `-${Number(candidate.discount || 0)}%`;
+  const price = section.querySelector('[data-shuffle-price]');
+  if (price) price.textContent = candidate.price_final || '—';
+  const reason = section.querySelector('[data-shuffle-reason]');
+  if (reason) reason.textContent = candidate.reason || 'Buen candidato para revisar.';
+  const counter = section.querySelector('[data-shuffle-counter]');
+  if (counter) counter.textContent = `${index + 1}/${total}`;
+}
+function bindShuffleOneGame() {
+  document.querySelectorAll('[data-shuffle-one]').forEach((section) => {
+    if (section.dataset.boundShuffle === '1') return;
+    section.dataset.boundShuffle = '1';
+    let candidates = [];
+    try { candidates = JSON.parse(section.dataset.shuffleCandidates || '[]'); } catch (e) { candidates = []; }
+    if (!candidates.length) return;
+    const btn = section.querySelector('[data-shuffle-next]');
+    if (btn) {
+      btn.addEventListener('click', () => {
+        const current = Number(section.dataset.shuffleIndex || '0');
+        const next = (current + 1) % candidates.length;
+        applyShuffleCandidate(section, candidates[next], next, candidates.length);
+      });
+    }
+    applyShuffleCandidate(section, candidates[0], 0, candidates.length);
+  });
+}
+function focusTrendCell(appid) {
+  if (!appid) return;
+  const target = document.querySelector('[data-trend-cell="' + appid + '"]');
+  if (!target) return;
+  target.scrollIntoView({ behavior: 'smooth', block: 'center', inline: 'center' });
+  target.classList.remove('trend-focus');
+  void target.offsetWidth;
+  target.classList.add('trend-focus');
+  setTimeout(() => target.classList.remove('trend-focus'), 1600);
+}
+document.addEventListener('DOMContentLoaded', () => {
+  applyFilters();
+  bindTopPickRecommendationFilters();
+  bindShuffleOneGame();
+});
 function copyForSheets() {
   const rows = [];
   document.querySelectorAll('.deals-table').forEach(table => {
@@ -2936,6 +3283,7 @@ def generate_html(
     local_trends: dict[str, dict] | None = None,
     price_history: dict | None = None,
     profile_display_name: str | None = None,
+    active_promo_context: dict | None = None,
 ) -> str:
     if _generate_html_renderer is not None:
         return _generate_html_renderer(
@@ -2967,6 +3315,7 @@ def generate_html(
             local_trends=local_trends,
             price_history=price_history,
             profile_display_name=profile_display_name,
+            active_promo_context=active_promo_context,
             group_by_tier=group_by_tier,
             group_deals_by_tag=group_deals_by_tag,
         )
@@ -2986,7 +3335,8 @@ def generate_html(
     has_itad = bool(historical_lows)
     has_best = bool(current_prices)
     has_ach = bool(achievements_data)
-    has_sparklines = bool(price_history_games)
+    has_sparklines = _has_sparkline_history(price_history_games, deals)
+    profile_label = profile_display_name or vanity
 
     # Stats
     total_deals = len(deals)
@@ -2996,6 +3346,8 @@ def generate_html(
         if total_deals
         else 0
     )
+    avg_disc_text = f"-{avg_disc:.0f}%" if total_deals else "sin datos"
+    avg_price_text = f"${avg_price:.0f}" if total_deals else "sin datos"
     verified = sum(1 for d in deals if deck_compat_data.get(d["appid"]) == 3)
     new_count = (
         sum(1 for d in deals if previous_appids and d["appid"] not in previous_appids)
@@ -3014,14 +3366,14 @@ def generate_html(
     pills = [
         f'<span class="pill">{len(wishlist_appids):,} en wishlist</span>',
         f'<span class="pill pill-accent" id="stat-deals">{total_deals:,} deals (&ge;{min_discount}%)</span>',
-        f'<span class="pill" id="stat-avg-disc">Promedio: -{avg_disc:.0f}%</span>',
-        f'<span class="pill" id="stat-avg-price">Precio medio: ${avg_price:.0f}</span>',
+        f'<span class="pill" id="stat-avg-disc">Promedio: {avg_disc_text}</span>',
+        f'<span class="pill" id="stat-avg-price">Precio medio: {avg_price_text}</span>',
         f'<span class="pill">{verified} Deck Verified</span>',
     ]
     if new_count:
         pills.append(f'<span class="pill pill-new">{new_count} ofertas nuevas</span>')
     parts.append(f"""<header class="stats-bar">
-  <h1>Steam Deals &mdash; {_html_esc(vanity)}</h1>
+  <h1>Steam Deals &mdash; {_html_esc(profile_label)}</h1>
   <div class="stats-meta">{sale_html}{today} | Precios en MXN</div>
   <div class="stats-pills">{"".join(pills)}</div>
 </header>""")
@@ -3032,6 +3384,8 @@ def generate_html(
             deals, reviews, deck_compat_data, tags_data or {}, protondb_data or {}
         )
     )
+
+    parts.append(_html_shuffle_one_game(_build_shuffle_candidates(top_picks, deals)))
 
     # ── Top Picks ──
     if top_picks:
@@ -3057,8 +3411,16 @@ def generate_html(
             store_url = STORE_URL.format(appid=tp["appid"])
             min_hist = historical_lows.get(tp["appid"])
             min_hist_str = f"${min_hist['price']:.0f}" if min_hist else ""
+            recommendation = _html_esc(tp.get("recommendation", ""))
+            recommendation_filter = _html_esc(tp.get("recommendation") or "Sin recomendación")
+            why_text = _html_esc(" · ".join(tp.get("score_reasons", [])))
+            why_html = (
+                f'<div class="pick-recommendation">{recommendation}</div><div class="pick-why">{why_text}</div>'
+                if recommendation or why_text
+                else ""
+            )
             tp_data = f'{{"name":"{_html_esc(tp["name"])}","appid":"{tp["appid"]}","price":"{_html_esc(tp["price_final"])}","price_original":"{_html_esc(tp.get("price_original", ""))}","discount":{tp["discount"]},"min_hist":"{min_hist_str}"}}'
-            cards.append(f'''<div class="pick-card {rank_cls}">
+            cards.append(f'''<div class="pick-card {rank_cls}" data-top-pick-card data-recommendation="{recommendation_filter}">
   <a href="{store_url}" target="_blank" style="display:block">
     <img class="pick-img" src="{header_img}" alt="" loading="lazy" onerror="this.style.display='none'">
     <div class="pick-body">
@@ -3067,13 +3429,16 @@ def generate_html(
       <div class="pick-name">{_html_esc(tp["name"])}{prio_html}</div>
       <div class="pick-details"><span class="pick-discount">-{tp["discount"]}%</span><span class="pick-price">{_html_esc(tp["price_final"])}</span></div>
       <div class="pick-meta">{rev_html} &middot; {mc_html} &middot; {dk_html} &middot; {mp_html}</div>
+      {why_html}
     </div>
   </a>
   <button class="share-btn-mini" onclick="openShareModal({tp_data})" title="Compartir">&#128279;</button>
 </div>''')
-        parts.append(f"""<section class="top-picks">
+        parts.append(f"""<section class="top-picks" data-top-picks-section>
   <h2>&#127942; {len(top_picks)} juegos destacados</h2>
-  <p class="section-desc">Ranking: reviews (26%) + descuento (22%) + prioridad (18%) + $/hora HLTB (14%) + Deck (10%) + Metacritic (5%) + antigüedad (5%).</p>
+  <p class="section-desc">Score = recomendación compuesta para priorizar qué revisar primero. Combina reviews (26%) + descuento (22%) + prioridad (18%) + $/hora HLTB (14%) + Deck (10%) + Metacritic (5%) + antigüedad (5%).</p>
+  {_html_top_pick_filter_controls()}
+  {_html_recommendation_guide()}
   <div class="picks-grid">{"".join(cards)}</div>
 </section>""")
 
@@ -3189,7 +3554,7 @@ def generate_html(
         if has_ach:
             cols.append(("Logros", "num"))
         if has_sparklines:
-            cols.append(("Trend", "text"))
+            cols.append(("Historial local", "text"))
         if has_itad:
             cols.append(("Min. hist.", "price"))
         if has_best:
@@ -3211,6 +3576,8 @@ def generate_html(
             dk = deck_compat_data.get(appid, 0)
             prio = priorities.get(appid, 0)
             price_num = _html_price_raw(d["price_final"])
+            game_hist = price_history_games.get(appid, {}) if has_sparklines else {}
+            snaps = game_hist.get("snapshots", []) if has_sparklines else []
 
             mc = d.get("metacritic_score")
             mp_cats = d.get("categories", [])
@@ -3228,15 +3595,18 @@ def generate_html(
                 ach = achievements_data.get(appid)
                 cells.append(f"<td>{_html_achievements_badge(ach)}</td>")
             if has_sparklines:
-                game_hist = price_history_games.get(appid, {})
-                snaps = game_hist.get("snapshots", [])
                 spark = _build_sparkline_svg(snaps) if len(snaps) >= 2 else "\u2014"
-                cells.append(f"<td>{spark}</td>")
+                cells.append(f"<td data-trend-cell=\"{_html_esc(appid)}\">{spark}</td>")
             if has_itad:
                 low = historical_lows.get(appid)
                 if low:
                     low_txt = f"${low['price']:.0f} ({low['date']})"
-                    cells.append(f"<td>{_html_esc(low_txt)}</td>")
+                    trend_jump = (
+                        _html_min_hist_jump_button(appid) if len(snaps) >= 2 else ""
+                    )
+                    cells.append(
+                        f"<td><div class=\"min-hist-cell\"><span>{_html_esc(low_txt)}</span>{trend_jump}</div></td>"
+                    )
                 else:
                     cells.append("<td>\u2014</td>")
             if has_best:
@@ -3267,14 +3637,32 @@ def generate_html(
             data_attrs = f'data-discount="{d["discount"]}" data-price="{price_num}" data-deck="{dk}" data-review="{rev_pct}" data-name="{_html_esc(d["name"].lower())}" data-new="{"1" if is_new else "0"}"'
             rows.append(f"<tr {data_attrs}>{''.join(cells)}</tr>")
 
+        note_parts = []
+        if has_sparklines:
+            note_parts.append(
+                "Historial local = movimiento del precio en tus corridas previas; no es predicción."
+            )
+        if has_itad:
+            note_parts.append("Mín. histórico = mejor precio detectado antes en Steam.")
+        if has_itad and has_sparklines:
+            note_parts.append(
+                "Usa ➡ Ver historial junto a Mín. histórico para saltar rápido al movimiento local del precio."
+            )
+        note_html = (
+            f'<p class="section-desc">{" · ".join(note_parts)}</p>'
+            if note_parts
+            else ""
+        )
+
         parts.append(f"""<details open class="tier-section">
   <summary class="tier-header">{_html_esc(tier_name)} de Descuento <span class="tier-count">(<span class="visible-count">{len(tier_deals)}</span> juegos)</span></summary>
+  {note_html}
   <div class="table-wrap"><table class="deals-table" id="t-{tid}"><thead><tr>{ths}</tr></thead><tbody>{"".join(rows)}</tbody></table></div>
 </details>""")
 
     return f"""<!DOCTYPE html>
 <html lang="es">
-<head><meta charset="UTF-8"><meta name="viewport" content="width=device-width,initial-scale=1.0"><title>Steam Deals &mdash; {_html_esc(profile_display_name or vanity)}</title><style>{_HTML_CSS}</style></head>
+<head><meta charset="UTF-8"><meta name="viewport" content="width=device-width,initial-scale=1.0"><title>Steam Deals &mdash; {_html_esc(profile_label)}</title><style>{_HTML_CSS}</style></head>
 <body>
 {"".join(parts)}
 <script>{_HTML_JS}</script>
@@ -3465,6 +3853,7 @@ def generate_json(
     compare_data=None,
     gift_ideas=None,
     profile_display_name: str | None = None,
+    active_promo_context: dict | None = None,
 ) -> str:
     if _generate_json_renderer is None:
         raise RuntimeError("JSON renderer module is not available")
@@ -3500,6 +3889,7 @@ def generate_json(
         compare_data=compare_data,
         gift_ideas=gift_ideas,
         profile_display_name=profile_display_name,
+        active_promo_context=active_promo_context,
     )
 
 
@@ -3735,7 +4125,8 @@ def main():
 
     # [4] Detectar oferta activa
     step("Detectando oferta activa de Steam...")
-    sale_name = get_active_sale()
+    active_promo_context = get_active_promo_context()
+    sale_name = str(active_promo_context.get("sale_name", "") or "")
     if sale_name:
         print(f"  {_ok(f'{SYM_TAG}  {sale_name}')}")
     else:
@@ -3799,7 +4190,14 @@ def main():
         print(f"  {_ok(' · '.join(parts))}")
 
     # Guardar run actual en historial
-    save_run_history(steam_id, VANITY, sale_name, MIN_DISCOUNT, deals)
+    save_run_history(
+        steam_id,
+        VANITY,
+        sale_name,
+        MIN_DISCOUNT,
+        deals,
+        active_promo_context=active_promo_context,
+    )
 
     # Historial local de precios (tendencias)
     price_history = load_price_history(steam_id)
@@ -3893,54 +4291,12 @@ def main():
     active_bundles = itad_outputs.active_bundles
     itad_ids = itad_outputs.itad_ids
 
+    alert_deals = deals
     alert_global_margin_pct = _resolve_alert_global_margin_pct(
         FILTERS.get("alert_global_margin_pct")
     )
-    deal_by_appid = {deal["appid"]: deal for deal in deals}
-    global_historical_low_count = 0
-    for appid, low in historical_lows.items():
-        deal = deal_by_appid.get(appid)
-        if not deal:
-            continue
-        price_raw = deal.get("price_raw", 0)
-        low_price = low.get("price") if isinstance(low, dict) else None
-        if not price_raw or not isinstance(low_price, (int, float)):
-            continue
-        low_with_margin = float(low_price) * (1.0 + (alert_global_margin_pct / 100.0))
-        if (price_raw / 100.0) <= low_with_margin:
-            global_historical_low_count += 1
-
-    bundle_names = {
-        bundle.get("title")
-        for bundles in active_bundles.values()
-        for bundle in bundles
-        if isinstance(bundle, dict) and bundle.get("title")
-    }
-
     alert_rise_pct = _resolve_alert_rise_pct(FILTERS.get("alert_rise_pct"))
-    price_up_count = 0
-    for _appid, change in comparison.get("price_changes", {}).items():
-        if change.get("direction") != "up":
-            continue
-        change_pct = change.get("change_pct")
-        if isinstance(change_pct, (int, float)) and change_pct >= alert_rise_pct:
-            price_up_count += 1
-
-    best_local_count = sum(
-        1
-        for trend in local_trends.values()
-        if trend.get("is_best_local") and not trend.get("is_first_time")
-    )
-
-    active_bundle_games_count = len(active_bundles)
-
-    smart_alerts = {
-        "best_local_count": best_local_count,
-        "price_up_count": price_up_count,
-        "global_historical_low_count": global_historical_low_count,
-        "active_bundles_count": len(bundle_names),
-        "active_bundle_games_count": active_bundle_games_count,
-    }
+    alert_score_min = _resolve_alert_score_min(FILTERS.get("alert_score_min"))
 
     post_processing_outputs = run_post_processing(
         deals,
@@ -3953,66 +4309,23 @@ def main():
         previous_appids=previous_appids,
         comparison=comparison,
         contract=post_processing_contract,
+        active_promo_context=active_promo_context,
     )
     hltb_hours = post_processing_outputs.hltb_hours
     deals = post_processing_outputs.deals
     top_picks = post_processing_outputs.top_picks
 
-    alert_score_min = _resolve_alert_score_min(FILTERS.get("alert_score_min"))
-    if alert_score_min > 0:
-        qualifying_appids = {
-            pick["appid"]
-            for pick in top_picks
-            if pick.get("appid") and float(pick.get("score", 0.0)) >= alert_score_min
-        }
-
-        scored_price_up_count = 0
-        for appid, change in comparison.get("price_changes", {}).items():
-            if appid not in qualifying_appids:
-                continue
-            if change.get("direction") != "up":
-                continue
-            change_pct = change.get("change_pct")
-            if isinstance(change_pct, (int, float)) and change_pct >= alert_rise_pct:
-                scored_price_up_count += 1
-
-        scored_best_local_count = sum(
-            1
-            for appid, trend in local_trends.items()
-            if appid in qualifying_appids
-            and trend.get("is_best_local")
-            and not trend.get("is_first_time")
-        )
-
-        scored_global_low_count = sum(
-            1
-            for appid, low in historical_lows.items()
-            if appid in qualifying_appids
-            and isinstance(low, dict)
-            and isinstance(low.get("price"), (int, float))
-            and appid in deal_by_appid
-            and deal_by_appid[appid].get("price_raw", 0)
-            and (deal_by_appid[appid].get("price_raw", 0) / 100.0)
-            <= (float(low.get("price")) * (1.0 + (alert_global_margin_pct / 100.0)))
-        )
-
-        scored_bundle_names = {
-            bundle.get("title")
-            for appid, bundles in active_bundles.items()
-            if appid in qualifying_appids
-            for bundle in bundles
-            if isinstance(bundle, dict) and bundle.get("title")
-        }
-        smart_alerts = {
-            **smart_alerts,
-            "best_local_count": scored_best_local_count,
-            "price_up_count": scored_price_up_count,
-            "global_historical_low_count": scored_global_low_count,
-            "active_bundles_count": len(scored_bundle_names),
-            "active_bundle_games_count": sum(
-                1 for appid in active_bundles.keys() if appid in qualifying_appids
-            ),
-        }
+    smart_alerts = build_smart_alert_counts(
+        deals=alert_deals,
+        historical_lows=historical_lows,
+        active_bundles=active_bundles,
+        comparison=comparison,
+        local_trends=local_trends,
+        top_picks=top_picks,
+        alert_global_margin_pct=alert_global_margin_pct,
+        alert_rise_pct=alert_rise_pct,
+        alert_score_min=alert_score_min,
+    )
 
     engagement_outputs = run_engagement_post_run(
         deals,
@@ -4061,6 +4374,7 @@ def main():
         gift_ideas=gift_ideas,
         family_appids=family_renderer_kwargs.get("family_appids"),
         include_frontmatter=bool(FILTERS.get("md_frontmatter")),
+        active_promo_context=active_promo_context,
     )
 
     # Generar HTML interactivo
@@ -4093,6 +4407,7 @@ def main():
         local_trends=local_trends,
         price_history=price_history,
         profile_display_name=profile_display_name,
+        active_promo_context=active_promo_context,
         **family_renderer_kwargs,
     )
 
@@ -4141,6 +4456,7 @@ def main():
         compare_data=compare_data,
         gift_ideas=gift_ideas,
         profile_display_name=profile_display_name,
+        active_promo_context=active_promo_context,
         **family_renderer_kwargs,
     )
 

@@ -1665,11 +1665,15 @@ btnOpenLast.addEventListener('click', async () => {
       appendLine('No hay reportes generados todavia.', 'warn');
       return;
     }
-    const name = files[0].name;
+    const name = findLatestPrimaryHtmlReport(files);
+    if (!name) {
+      appendLine('No hay reporte HTML interactivo para abrir. Usa los enlaces generados para descargar Markdown, JSON o CSV.', 'warn');
+      return;
+    }
     window.open('/files/' + encodeURIComponent(name), '_blank');
-    appendLine('Abriendo reporte: ' + name, 'ok');
+    appendLine('Abriendo reporte HTML interactivo: ' + name, 'ok');
   } catch(e) {
-    appendLine('No se pudo abrir ultimo reporte: ' + e.message, 'err');
+    appendLine('No se pudo abrir ultimo reporte HTML: ' + e.message, 'err');
   }
 });
 
@@ -1968,9 +1972,25 @@ function handleEvent(ev) {
   }
 }
 
+function getGeneratedFileName(file) {
+  if (typeof file === 'string') return file.split('/').pop() || '';
+  return (file && file.name) || '';
+}
+
+function getGeneratedFileExtension(name) {
+  const dot = (name || '').lastIndexOf('.');
+  return dot >= 0 ? name.slice(dot).toLowerCase() : '';
+}
+
+function findLatestPrimaryHtmlReport(files) {
+  return (Array.isArray(files) ? files : [])
+    .map(getGeneratedFileName)
+    .find(name => getGeneratedFileExtension(name) === '.html' && !isShareHtmlFile(name));
+}
+
 function buildGeneratedFileAction(filePath) {
-  const name = (filePath || '').split('/').pop() || '';
-  const ext = name.slice(name.lastIndexOf('.')).toLowerCase();
+  const name = getGeneratedFileName(filePath);
+  const ext = getGeneratedFileExtension(name);
   const href = '/files/' + encodeURIComponent(name);
   if (ext === '.html' && isShareHtmlFile(name)) {
     return {
@@ -2038,7 +2058,7 @@ function showFiles(files) {
   if (actions.length) {
     const hint = document.createElement('div');
     hint.className = 'file-links-hint';
-    hint.textContent = 'Los HTML se abren aparte. Markdown, JSON y CSV se descargan para evitar páginas en blanco o confusas.';
+    hint.textContent = 'El HTML interactivo se abre en otra pestaña. Markdown, JSON y CSV se descargan automáticamente para revisarlos en tu editor, Excel/Sheets o herramientas.';
     fileLinks.appendChild(hint);
   }
   actions.forEach(action => {
