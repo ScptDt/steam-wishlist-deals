@@ -90,8 +90,8 @@ python3 steam_deals_warm_cache_summary.py \
 
 ## Interpretación de `Warm-cache next actions`
 
-- `HTTP 400 repetido`: prueba primero bajar `STEAM_DEALS_PRICE_BATCH_SIZE` o revisar batch sizing; no cambies cache por promo todavía.
-- `Mucho fallback sin datos`: respeta el cooldown y evita reintentos inmediatos con `--no-cache` salvo que estés capturando evidencia explícita.
+- `HTTP 400 repetido`: sigue el valor sugerido (`STEAM_DEALS_PRICE_BATCH_SIZE=N`, normalmente la mitad del batch actual/base) antes de repetir una wishlist grande; no cambies cache por promo todavía.
+- `Mucho fallback sin datos`: usa el desglose `fallidos/total` y espera al menos el cooldown indicado (2h por defecto) antes de forzar `--no-cache` salvo que estés capturando evidencia explícita.
 - `Cache efectivo`: la segunda corrida redujo fuerte los refresh candidates; conserva cache caliente antes de ampliar políticas de invalidación.
 - `Fallback sigue alto`: prioriza batching/fallback antes de invalidar cache por promos.
 - `Sin acción automática`: no hay una señal clara; captura otra corrida si cambia la promo o la wishlist.

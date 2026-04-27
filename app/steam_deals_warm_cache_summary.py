@@ -54,6 +54,9 @@ COMPARISON_COLUMNS = (
 HIGH_FALLBACK_THRESHOLD = 20
 HIGH_FAILED_FALLBACK_RATIO = 0.5
 CACHE_EFFECTIVE_DROP_RATIO = 0.25
+DEFAULT_PRICE_BATCH_SIZE = 20
+MIN_PRICE_BATCH_SIZE = 1
+PRICE_FAILURE_RETRY_HOURS = 2
 
 
 def _parse_int(raw_value: str) -> int:
@@ -189,6 +192,52 @@ def _fallback_failed_ratio(summary: WarmCacheLogSummary) -> float:
     return summary.individual_fallback_failed_count / summary.individual_fallback_count
 
 
+def _known_batch_size(
+    latest: WarmCacheLogSummary, previous: WarmCacheLogSummary | None
+) -> int:
+    for summary in (latest, previous):
+        value = getattr(summary, "batch_size", None) if summary else None
+        if isinstance(value, int) and value > 0:
+            return value
+    return DEFAULT_PRICE_BATCH_SIZE
+
+
+def _suggest_lower_batch_size(
+    latest: WarmCacheLogSummary, previous: WarmCacheLogSummary | None
+) -> int:
+    current_batch_size = _known_batch_size(latest, previous)
+    if current_batch_size <= MIN_PRICE_BATCH_SIZE:
+        return MIN_PRICE_BATCH_SIZE
+    return max(MIN_PRICE_BATCH_SIZE, current_batch_size // 2)
+
+
+def _format_http_400_action(
+    latest: WarmCacheLogSummary, previous: WarmCacheLogSummary | None
+) -> str:
+    current_batch_size = _known_batch_size(latest, previous)
+    suggested_batch_size = _suggest_lower_batch_size(latest, previous)
+    if suggested_batch_size >= current_batch_size:
+        return (
+            "HTTP 400 repetido: ya estás en batch_size=1; captura otro log antes "
+            "de cambiar cache por promos."
+        )
+    return (
+        "HTTP 400 repetido: prueba "
+        f"STEAM_DEALS_PRICE_BATCH_SIZE={suggested_batch_size} "
+        f"(actual/base {current_batch_size}) antes de otra wishlist grande."
+    )
+
+
+def _format_fallback_cooldown_action(summary: WarmCacheLogSummary) -> str:
+    failed = summary.individual_fallback_failed_count
+    total = summary.individual_fallback_count
+    percent = round(_fallback_failed_ratio(summary) * 100)
+    return (
+        f"Mucho fallback sin datos: {failed}/{total} (~{percent}%) no resolvió; "
+        f"espera al menos {PRICE_FAILURE_RETRY_HOURS}h de cooldown antes de forzar --no-cache."
+    )
+
+
 def analyze_warm_cache_recommendations(
     summaries: list[WarmCacheLogSummary],
 ) -> list[WarmCacheRecommendation]:
@@ -204,7 +253,7 @@ def analyze_warm_cache_recommendations(
             WarmCacheRecommendation(
                 "repeated-http-400",
                 "warn",
-                "HTTP 400 repetido: baja STEAM_DEALS_PRICE_BATCH_SIZE o revisa el batch sizing antes de otra wishlist grande.",
+                _format_http_400_action(latest, previous),
             )
         )
 
@@ -216,7 +265,7 @@ def analyze_warm_cache_recommendations(
             WarmCacheRecommendation(
                 "fallback-no-data-cooldown",
                 "warn",
-                "Mucho fallback sin datos: evita reintentos inmediatos y espera el cooldown antes de forzar --no-cache.",
+                _format_fallback_cooldown_action(latest),
             )
         )
 

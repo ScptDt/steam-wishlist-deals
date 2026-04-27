@@ -107,6 +107,19 @@ class WarmCacheSummaryTests(unittest.TestCase):
 
         self.assertEqual(recommendations[0].code, "repeated-http-400")
         self.assertIn("STEAM_DEALS_PRICE_BATCH_SIZE", recommendations[0].action)
+        self.assertIn("STEAM_DEALS_PRICE_BATCH_SIZE=10", recommendations[0].action)
+
+    def test_analyze_warm_cache_recommends_half_detected_batch_size(self) -> None:
+        recommendations = analyze_warm_cache_recommendations(
+            [
+                WarmCacheLogSummary(degraded_batch_count=1, batch_size=8),
+                WarmCacheLogSummary(degraded_batch_count=2, batch_size=8),
+            ]
+        )
+
+        self.assertEqual(recommendations[0].code, "repeated-http-400")
+        self.assertIn("STEAM_DEALS_PRICE_BATCH_SIZE=4", recommendations[0].action)
+        self.assertIn("actual/base 8", recommendations[0].action)
 
     def test_analyze_warm_cache_recommends_cooldown_for_no_data_fallback(self) -> None:
         recommendations = analyze_warm_cache_recommendations(
@@ -124,6 +137,13 @@ class WarmCacheSummaryTests(unittest.TestCase):
             "fallback-no-data-cooldown",
             {recommendation.code for recommendation in recommendations},
         )
+        action = next(
+            recommendation.action
+            for recommendation in recommendations
+            if recommendation.code == "fallback-no-data-cooldown"
+        )
+        self.assertIn("13/20", action)
+        self.assertIn("2h", action)
 
     def test_analyze_warm_cache_marks_effective_cache_when_refreshes_drop(self) -> None:
         recommendations = analyze_warm_cache_recommendations(
