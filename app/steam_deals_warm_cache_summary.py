@@ -35,6 +35,16 @@ class WarmCacheLogSummary:
     cache_path: str | None = None
 
 
+COMPARISON_COLUMNS = (
+    ("Duración", "elapsed_seconds", "s"),
+    ("Refresh candidates", "refresh_candidates", ""),
+    ("Cooldown", "deferred_failure_count", ""),
+    ("HTTP 400", "degraded_batch_count", ""),
+    ("Fallback total", "individual_fallback_count", ""),
+    ("Fallback sin datos", "individual_fallback_failed_count", ""),
+)
+
+
 def _parse_int(raw_value: str) -> int:
     return int(raw_value.replace(",", ""))
 
@@ -145,6 +155,23 @@ def _format_value(value, suffix: str = "") -> str:
     return str(value)
 
 
+def _format_delta(value, previous_value, suffix: str = "") -> str:
+    if value is None or previous_value is None:
+        return ""
+    delta = value - previous_value
+    if delta == 0:
+        return " (sin cambio)"
+    if isinstance(value, float) or isinstance(previous_value, float):
+        return f" ({delta:+.1f}{suffix})"
+    return f" ({delta:+,}{suffix})"
+
+
+def _summary_label(summary: WarmCacheLogSummary, index: int) -> str:
+    if not summary.source_path:
+        return f"Log {index + 1}"
+    return Path(summary.source_path).name
+
+
 def format_warm_cache_summary(summary: WarmCacheLogSummary) -> str:
     lines = ["## Warm-cache summary"]
     if summary.source_path:
@@ -179,6 +206,28 @@ def format_warm_cache_summary(summary: WarmCacheLogSummary) -> str:
     return "\n".join(lines)
 
 
+def format_warm_cache_comparison(summaries: list[WarmCacheLogSummary]) -> str:
+    if len(summaries) < 2:
+        return ""
+
+    headers = ["Log", *(label for label, _field, _suffix in COMPARISON_COLUMNS)]
+    lines = [
+        "## Warm-cache comparison",
+        "| " + " | ".join(headers) + " |",
+        "| " + " | ".join(["---", *("---:" for _ in COMPARISON_COLUMNS)]) + " |",
+    ]
+    previous: WarmCacheLogSummary | None = None
+    for index, summary in enumerate(summaries):
+        row = [_summary_label(summary, index)]
+        for _label, field, suffix in COMPARISON_COLUMNS:
+            value = getattr(summary, field)
+            previous_value = getattr(previous, field) if previous else None
+            row.append(_format_value(value, suffix) + _format_delta(value, previous_value, suffix))
+        lines.append("| " + " | ".join(row) + " |")
+        previous = summary
+    return "\n".join(lines)
+
+
 def build_parser() -> argparse.ArgumentParser:
     parser = argparse.ArgumentParser(
         description="Resume logs offline de steam_deals_generator.py --warm-cache."
@@ -203,7 +252,11 @@ def main(argv: list[str] | None = None, *, stdout: TextIO | None = None) -> int:
             payload = payload[0]
         output.write(json.dumps(payload, ensure_ascii=False, indent=2) + "\n")
         return 0
-    output.write("\n\n".join(format_warm_cache_summary(summary) for summary in summaries))
+    sections = [format_warm_cache_summary(summary) for summary in summaries]
+    comparison = format_warm_cache_comparison(summaries)
+    if comparison:
+        sections.append(comparison)
+    output.write("\n\n".join(sections))
     output.write("\n")
     return 0
 
@@ -211,6 +264,7 @@ def main(argv: list[str] | None = None, *, stdout: TextIO | None = None) -> int:
 __all__ = [
     "WarmCacheLogSummary",
     "build_parser",
+    "format_warm_cache_comparison",
     "format_warm_cache_summary",
     "main",
     "parse_warm_cache_log_file",

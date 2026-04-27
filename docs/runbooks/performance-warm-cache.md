@@ -42,6 +42,14 @@ Si quieres guardar salida estructurada para comparar después:
 python3 steam_deals_warm_cache_summary.py "$HOME/.cache/steam_deals/logs/warm-cache-YYYY-MM-DD_HH-MM-SS.log" --json
 ```
 
+Para comparar dos o más corridas en Markdown, pasa todos los logs en orden cronológico; el resumen agrega una tabla con deltas contra el log anterior:
+
+```bash
+python3 steam_deals_warm_cache_summary.py \
+  "$HOME/.cache/steam_deals/logs/warm-cache-PRIMERA.log" \
+  "$HOME/.cache/steam_deals/logs/warm-cache-SEGUNDA.log"
+```
+
 ## Checklist de evidencia warm-cache
 
 - [ ] Comando exacto usado para warm-cache.
@@ -55,7 +63,7 @@ python3 steam_deals_warm_cache_summary.py "$HOME/.cache/steam_deals/logs/warm-ca
 - [ ] `Fallback individual aplicado a X juegos en Y tandas`.
 - [ ] Desglose de fallback: `resueltos` vs `sin oferta/datos`.
 - [ ] Si se hizo segunda corrida warm-cache, comparar contra la primera.
-- [ ] Resumen offline generado con `steam_deals_warm_cache_summary.py` y pegado en `BITACORA.md` si aporta evidencia.
+- [ ] Resumen offline generado con `steam_deals_warm_cache_summary.py` y pegado en `BITACORA.md` si aporta evidencia; si hay 2+ logs, incluir la tabla `Warm-cache comparison`.
 
 ## Plantilla de comparación
 

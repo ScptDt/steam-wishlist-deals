@@ -6,6 +6,7 @@ import unittest
 from pathlib import Path
 
 from steam_deals_warm_cache_summary import (
+    format_warm_cache_comparison,
     format_warm_cache_summary,
     main as warm_cache_summary_main,
     parse_warm_cache_log_file,
@@ -79,6 +80,20 @@ class WarmCacheSummaryTests(unittest.TestCase):
             output,
         )
 
+    def test_format_warm_cache_comparison_outputs_delta_table_for_multiple_logs(self) -> None:
+        summaries = [
+            parse_warm_cache_log_file(FIXTURES / "full.log"),
+            parse_warm_cache_log_file(FIXTURES / "minimal.log"),
+        ]
+
+        output = format_warm_cache_comparison(summaries)
+
+        self.assertIn("## Warm-cache comparison", output)
+        self.assertIn(
+            "| minimal.log | 2.1s (-82.1s) | 0 (-2,204) | 0 (-12) | 0 (-3) | 0 (-20) | 0 (-13) |",
+            output,
+        )
+
     def test_cli_prints_markdown_summary_for_log_path(self) -> None:
         stdout = io.StringIO()
 
@@ -87,6 +102,18 @@ class WarmCacheSummaryTests(unittest.TestCase):
         self.assertEqual(exit_code, 0)
         self.assertIn("## Warm-cache summary", stdout.getvalue())
         self.assertIn("- Batches degradados HTTP 400: 0", stdout.getvalue())
+
+    def test_cli_appends_comparison_when_multiple_markdown_logs_are_passed(self) -> None:
+        stdout = io.StringIO()
+
+        exit_code = warm_cache_summary_main(
+            [str(FIXTURES / "full.log"), str(FIXTURES / "minimal.log")],
+            stdout=stdout,
+        )
+
+        self.assertEqual(exit_code, 0)
+        self.assertIn("## Warm-cache comparison", stdout.getvalue())
+        self.assertIn("minimal.log", stdout.getvalue())
 
     def test_cli_can_emit_json_summary_for_one_log(self) -> None:
         stdout = io.StringIO()
