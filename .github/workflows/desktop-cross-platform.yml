@@ -34,6 +34,15 @@ jobs:
       - name: Validate desktop and web scripts compile
         run: python -m py_compile steam_tools_desktop.py steam_deals_web.py build_desktop.py
 
+      - name: Run focused desktop and web tests
+        run: >-
+          python -m unittest
+          tests.test_web_assets
+          tests.test_generated_files_serving
+          tests.test_shared_web_infra
+          tests.test_runtime_paths
+          tests.test_history_drilldown_assets
+
       - name: Validate local fallback web readiness mode
         run: python steam_deals_web.py --no-open --help
 

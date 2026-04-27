@@ -1,6 +1,6 @@
 # Bitácora Operativa
 
-Ultima actualizacion: 2026-04-24
+Ultima actualizacion: 2026-04-27
 
 ## Proposito
 
@@ -72,6 +72,11 @@ Mantener en `PENDIENTES.md`:
 
 ## Bitacora
 
+- 2026-04-27: Fix PAYDAY 2 refresh ante Steam HTTP 403: `resolve_steam_id` ahora convierte rechazos de API key en warning accionable y prueba fallback público sin key; si el perfil público también falla, muestra error claro sin traceback crudo. Validado con `tests/test_web_assets.py -k "payday2 or Payday2SteamResolution"` (5 tests OK) y regresión relacionada `tests/test_web_assets.py tests/test_shared_web_infra.py tests/test_shared_cache_utils.py tests/test_runtime_paths.py` (31 tests OK).
+- 2026-04-27: Quick win PAYDAY 2 feedback/loading: tras validación visual del usuario donde el dashboard parecía “no hacer nada”, se agrega estado global visible (`action-status`) y feedback para actualización, setup rápido, guardar config, marcar/desmarcar DLCs y acciones de bundle; se reemplazan silencios de fetch por mensajes accionables. Validado con `tests/test_web_assets.py -k "payday2"` (3 tests OK).
+- 2026-04-27: Auditoría de fallback/packaging: se elimina el uso de fallbacks HTML monolíticos embebidos en `steam_deals_web.py` y `payday2_web.py`, quedando `web/steam_deals/*` y `web/payday2/*` como fuente de UI y una pantalla mínima compartida para assets faltantes. `build_desktop.py` ahora incluye `web/payday2/favicon.svg` y `web/payday2/masks/*.svg`; `desktop_doctor.py` valida esos assets en `DATA_FILES`. Evidencia: `python3 -m unittest tests.test_web_assets tests.test_generated_files_serving tests.test_shared_web_infra`, `python3 -m py_compile shared_web_infra.py steam_deals_web.py payday2_web.py build_desktop.py desktop_doctor.py` y `git diff --check` OK.
+- 2026-04-27: Auditoría documental/copy: Steam Deals y PAYDAY 2 quedan alineados con API Key opcional para wishlist pública, outputs `.md/.html/.csv` opcional en PAYDAY 2 y copy `Tu Presupuesto Ideal`; se borran artefactos locales `demo_share.html` y `.venv/` tras aprobación.
+- 2026-04-27: Quick win PAYDAY 2 real-data smoke parcial: `tests/test_web_assets.py -k "payday2"` OK (2 tests) y `tests/test_shared_web_infra.py tests/test_shared_cache_utils.py tests/test_runtime_paths.py` OK (19 tests). Se levantó `payday2_web.py --no-open` en `127.0.0.1:8081`; `/` sirve el dashboard, `/api/data` carga cache real con 80 DLCs, 40 poseídos y 40 faltantes, y un toggle reversible de DLC (`3188980`) cambió 40/40 -> 41/39 -> 40/40 sin dejar estado alterado. Siguiente seguimiento: abrir en browser para validar experiencia visual/cómoda y ejecutar `Actualizar datos` si se quiere refrescar red antes de cerrar el quick win.
 - 2026-04-27: Quick win de UX en Share/Compartir: el modal y reportes usan `Compartir oferta`, `Compartir juegos destacados`, texto sin jerga de `payload` y feedback `¡Copiado!`; se mantiene compatibilidad `steamtools://share`. Validado con `tests/test_generator_logic.py -k "share"` (6 tests OK) y `tests/test_desktop_share.py tests/test_web_assets.py` (22 tests OK).
 - 2026-04-27: Quick win de copy en Dashboard histórico: se corrigen acentos visibles (`Página`, `Salió`, `Cambió`, `histórico`) y se reemplaza copy técnico de `include_same`/`run` por lenguaje de usuario. Validado con `tests/test_track_history_flow.py tests/test_web_assets.py` (17 tests OK).
 - 2026-04-22: Track Stop queda casi cerrado: la Web UI ya no duplica `Solicitando detener ejecucion...`, `/api/stop` usa estados veraces y una prueba manual en browser confirmó que el run sí se detiene. La validación equivalente en desktop se difiere al Track Desktop mientras el launcher/fallback sigue estabilizándose.

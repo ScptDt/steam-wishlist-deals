@@ -241,17 +241,40 @@ def resolve_steam_id(api_key: str | None, vanity: str) -> str:
         return vanity
     if api_key:
         url = f"https://api.steampowered.com/ISteamUser/ResolveVanityURL/v1/?key={api_key}&vanityurl={vanity}"
-        data = _get_json(url)
-        if data["response"]["success"] != 1:
-            raise ValueError(f"No se pudo resolver: {vanity}")
-        return data["response"]["steamid"]
+        try:
+            data = _get_json(url)
+            if data["response"]["success"] != 1:
+                raise ValueError(f"No se pudo resolver: {vanity}")
+            return data["response"]["steamid"]
+        except urllib.error.HTTPError as exc:
+            if exc.code not in (401, 403):
+                raise
+            print(
+                _warn(
+                    f"Steam rechazó la API key al resolver el perfil (HTTP {exc.code}). "
+                    "Intentando fallback público sin key..."
+                ),
+                flush=True,
+            )
+        except ValueError:
+            raise
     url = f"https://steamcommunity.com/id/{vanity}/?xml=1"
     req = urllib.request.Request(url, headers={"User-Agent": "Mozilla/5.0"})
-    with urllib.request.urlopen(req, timeout=15) as r:
-        text = r.read().decode("utf-8")
+    try:
+        with urllib.request.urlopen(req, timeout=15) as r:
+            text = r.read().decode("utf-8")
+    except urllib.error.HTTPError as exc:
+        if exc.code in (401, 403):
+            raise ValueError(
+                f"Steam rechazó el perfil público (HTTP {exc.code}). "
+                "Revisa que el perfil sea público, usa tu SteamID de 17 dígitos o regenera/borra la API key."
+            ) from exc
+        raise
     m = re.search(r"<steamID64>(\d+)</steamID64>", text)
     if not m:
-        raise ValueError(f"No se pudo resolver: {vanity}")
+        raise ValueError(
+            f"No se pudo resolver el perfil: {vanity}. Usa tu SteamID de 17 dígitos o una URL pública válida."
+        )
     return m.group(1)
 
 

@@ -166,6 +166,32 @@ def load_html_with_fallback(
     return fallback_html
 
 
+def build_missing_assets_html(app_name: str, asset_hint: str) -> str:
+    safe_app_name = app_name.replace("&", "&amp;").replace("<", "&lt;").replace(">", "&gt;")
+    safe_asset_hint = asset_hint.replace("&", "&amp;").replace("<", "&lt;").replace(">", "&gt;")
+    return f"""<!DOCTYPE html>
+<html lang="es">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>{safe_app_name} - assets faltantes</title>
+<style>
+body {{ font-family: system-ui, sans-serif; background: #1b2838; color: #c7d5e0; margin: 0; padding: 2rem; }}
+main {{ max-width: 680px; margin: 8vh auto; background: #16202d; border: 1px solid #2a475e; border-radius: 12px; padding: 1.5rem; }}
+h1 {{ color: #66c0f4; margin-top: 0; }}
+code {{ background: #0e1a26; border-radius: 4px; padding: .1rem .3rem; }}
+</style>
+</head>
+<body>
+<main>
+<h1>{safe_app_name}</h1>
+<p>No se encontraron los assets web necesarios para cargar la interfaz completa.</p>
+<p>Revisa que <code>{safe_asset_hint}</code> esté incluido junto al ejecutable o vuelve a generar el build desktop.</p>
+</main>
+</body>
+</html>"""
+
+
 def serve_text_asset(
     handler: LocalWebHandlerProtocol,
     asset_file: Path,

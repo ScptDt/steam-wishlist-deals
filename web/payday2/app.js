@@ -1,6 +1,7 @@
 /* Globals */
 let DATA = null;
 let sortKey = 'discount', sortAsc = false;
+let actionStatusTimer = null;
 const STORE = 'https://store.steampowered.com/app/';
 const CAP = 'https://cdn.akamai.steamstatic.com/steam/apps/';
 const PD2_MASKS = Object.freeze([
@@ -14,6 +15,30 @@ function $(id) { return document.getElementById(id); }
 function esc(s) { const d = document.createElement('div'); d.textContent = s; return d.innerHTML; }
 function fmt(n) { return n.toLocaleString('en', { maximumFractionDigits: 0 }); }
 function togglePw(btn) { const i = btn.previousElementSibling; i.type = i.type === 'password' ? 'text' : 'password'; }
+
+function showActionStatus(message, kind = 'loading', {autoHide = false} = {}) {
+  const el = $('action-status');
+  if (!el) return;
+  if (actionStatusTimer) {
+    clearTimeout(actionStatusTimer);
+    actionStatusTimer = null;
+  }
+  el.textContent = message;
+  el.className = 'action-status action-status-' + kind;
+  el.classList.remove('hidden');
+  if (autoHide) {
+    actionStatusTimer = setTimeout(() => {
+      el.classList.add('hidden');
+      actionStatusTimer = null;
+    }, 3500);
+  }
+}
+
+function setButtonBusy(btn, busy) {
+  if (!btn) return;
+  btn.disabled = !!busy;
+  btn.classList.toggle('loading', !!busy);
+}
 
 function renderRandomMask() {
   const img = $('pd2-mask-img');
@@ -35,7 +60,9 @@ async function loadData() {
       $('empty-state').style.display = 'block';
       $('dashboard').style.display = 'none';
     }
-  } catch (e) {}
+  } catch (e) {
+    showActionStatus('No se pudo cargar el estado del dashboard. Revisa que el servidor local siga abierto.', 'error');
+  }
 
   try {
     const r = await fetch('/api/config');
@@ -185,15 +212,20 @@ function sparkSvg(id) {
 }
 
 async function toggleOwned(appid) {
+  showActionStatus('Guardando cambio del DLC...', 'loading');
   try {
     const r = await fetch('/api/toggle', {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
       body: JSON.stringify({ appid }),
     });
+    if (!r.ok) throw new Error('HTTP ' + r.status);
     await r.json();
     await loadData();
-  } catch (e) {}
+    showActionStatus('DLC actualizado.', 'ok', {autoHide: true});
+  } catch (e) {
+    showActionStatus('No se pudo guardar el cambio del DLC: ' + e.message, 'error');
+  }
 }
 
 async function unmarkOwned(appid) {
@@ -226,27 +258,37 @@ function renderBundles() {
 }
 
 async function markBundle(bundleId) {
+  showActionStatus('Marcando DLCs del bundle...', 'loading');
   try {
     const r = await fetch('/api/toggle-bundle', {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
       body: JSON.stringify({ bundle_id: bundleId, action: 'mark' }),
     });
+    if (!r.ok) throw new Error('HTTP ' + r.status);
     await r.json();
     await loadData();
-  } catch (e) {}
+    showActionStatus('Bundle actualizado.', 'ok', {autoHide: true});
+  } catch (e) {
+    showActionStatus('No se pudo marcar el bundle: ' + e.message, 'error');
+  }
 }
 
 async function unmarkBundle(bundleId) {
+  showActionStatus('Deshaciendo marcado del bundle...', 'loading');
   try {
     const r = await fetch('/api/toggle-bundle', {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
       body: JSON.stringify({ bundle_id: bundleId, action: 'unmark' }),
     });
+    if (!r.ok) throw new Error('HTTP ' + r.status);
     await r.json();
     await loadData();
-  } catch (e) {}
+    showActionStatus('Bundle actualizado.', 'ok', {autoHide: true});
+  } catch (e) {
+    showActionStatus('No se pudo deshacer el bundle: ' + e.message, 'error');
+  }
 }
 
 function renderOwned() {
@@ -332,8 +374,8 @@ function switchTab(name) {
 
 async function doRefresh() {
   const btn = $('btn-refresh');
-  btn.classList.add('loading');
-  btn.disabled = true;
+  setButtonBusy(btn, true);
+  showActionStatus('Actualizando datos de PAYDAY 2... esto puede tardar 1-3 min.', 'loading');
   window._refreshStart = Date.now();
 
   const panel = $('refresh-panel');
@@ -343,15 +385,17 @@ async function doRefresh() {
   $('prog-bar').style.width = '0%';
   $('prog-bar').style.background = 'linear-gradient(90deg, var(--gold), #b8922e)';
   $('prog-text').textContent = 'Iniciando... (puede tardar 1-3 min con cache vacio)';
+  appendConsole('Preparando actualización de datos...', 'step');
 
   try {
     const resp = await fetch('/api/refresh', { method: 'POST' });
     if (resp.status === 409) {
       appendConsole('Ya hay una actualizacion en curso.', 'warn');
-      btn.classList.remove('loading');
-      btn.disabled = false;
+      showActionStatus('Ya hay una actualización en curso.', 'warn');
+      setButtonBusy(btn, false);
       return;
     }
+    if (!resp.ok) throw new Error('HTTP ' + resp.status);
     const reader = resp.body.getReader();
     const decoder = new TextDecoder();
     let buffer = '';
@@ -372,10 +416,10 @@ async function doRefresh() {
     }
   } catch (e) {
     appendConsole('Error: ' + e.message, 'err');
+    showActionStatus('No se pudo actualizar PAYDAY 2: ' + e.message, 'error');
   }
 
-  btn.classList.remove('loading');
-  btn.disabled = false;
+  setButtonBusy(btn, false);
   await loadData();
   if (!DATA || !DATA.totalDlcs) {
     location.reload();
@@ -401,10 +445,12 @@ function handleSSE(ev) {
     if (ev.exit_code === 0) {
       $('prog-text').textContent = 'Completado!';
       $('prog-bar').style.background = 'linear-gradient(90deg, var(--green), #4eaa5a)';
+      showActionStatus('Actualización completada.', 'ok', {autoHide: true});
       setTimeout(() => { $('refresh-panel').classList.remove('visible'); }, 3000);
     } else {
       $('prog-text').textContent = 'Error (codigo ' + ev.exit_code + ')';
       $('prog-bar').style.background = 'linear-gradient(90deg, var(--red), #a02020)';
+      showActionStatus('La actualización terminó con error. Revisa el log del panel.', 'error');
     }
   }
 }
@@ -418,40 +464,55 @@ function appendConsole(text, cls) {
 }
 
 async function saveConfig() {
+  const btn = $('btn-save-config');
   const cfg = {};
   const v = $('cfg-vanity').value.trim(); if (v) cfg.vanity = v;
   const k = $('cfg-key').value.trim(); if (k) cfg.key = k;
   const i = $('cfg-itad').value.trim(); if (i) cfg.itad_key = i;
+  setButtonBusy(btn, true);
+  showActionStatus('Guardando configuración...', 'loading');
   try {
-    await fetch('/api/config', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify(cfg) });
+    const resp = await fetch('/api/config', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify(cfg) });
+    if (!resp.ok) throw new Error('HTTP ' + resp.status);
     $('cfg-status').textContent = 'Guardado! Haz click en "Actualizar datos" para aplicar.';
+    showActionStatus('Configuración guardada. Usa “Actualizar datos” para refrescar.', 'ok', {autoHide: true});
     setTimeout(() => { $('cfg-status').textContent = ''; }, 4000);
   } catch (e) {
     $('cfg-status').textContent = 'Error al guardar';
     $('cfg-status').style.color = 'var(--red)';
+    showActionStatus('No se pudo guardar configuración: ' + e.message, 'error');
+  } finally {
+    setButtonBusy(btn, false);
   }
 }
 
 async function quickSetup() {
+  const btn = $('btn-setup');
   const v = $('setup-vanity').value.trim();
   const k = $('setup-key').value.trim();
   if (!v) {
     $('setup-vanity').style.borderColor = 'var(--red)';
     $('setup-vanity').focus();
+    showActionStatus('Ingresa tu perfil de Steam para cargar los DLCs.', 'warn');
     setTimeout(() => { $('setup-vanity').style.borderColor = ''; }, 2000);
     return;
   }
   const cfg = { vanity: v };
   if (k) cfg.key = k;
+  setButtonBusy(btn, true);
+  showActionStatus('Guardando perfil y preparando carga de datos...', 'loading');
   try {
-    await fetch('/api/config', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify(cfg) });
+    const resp = await fetch('/api/config', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify(cfg) });
+    if (!resp.ok) throw new Error('HTTP ' + resp.status);
     $('cfg-vanity').value = v;
     if (k) $('cfg-key').value = k;
     $('empty-state').style.display = 'none';
     $('dashboard').style.display = 'block';
-    doRefresh();
+    await doRefresh();
   } catch (e) {
-    alert('Error: ' + e.message);
+    showActionStatus('No se pudo iniciar la carga: ' + e.message, 'error');
+  } finally {
+    setButtonBusy(btn, false);
   }
 }
 

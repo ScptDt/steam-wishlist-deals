@@ -20,6 +20,13 @@ APP_NAME = "SteamToolsDesktop"
 STATUS_PREFIXES = {"ok": "[OK]", "warn": "[WARN]", "fail": "[FAIL]"}
 REQUIRED_BUILD_PACKAGES = ("shared", "renderers", "app")
 REQUIRED_HIDDEN_IMPORTS = ("steam_deals_generator", "payday2_dlc_tracker")
+REQUIRED_DATA_FILES = (
+    "web/payday2/favicon.svg",
+    "web/payday2/masks/heist_mask_blue.svg",
+    "web/payday2/masks/heist_mask_gold.svg",
+    "web/payday2/masks/heist_mask_red.svg",
+    "web/payday2/masks/heist_mask_shadow.svg",
+)
 LINUX_QT_MODULES = (
     ("qtpy", "QtPy"),
     ("PyQt6", "PyQt6"),
@@ -404,12 +411,16 @@ def check_build_configuration() -> DoctorCheck:
         for name in REQUIRED_HIDDEN_IMPORTS
         if name not in set(getattr(build_desktop, "HIDDEN_IMPORTS", []))
     ]
-    if missing_packages or missing_hidden:
+    data_sources = {src for src, _dest in getattr(build_desktop, "DATA_FILES", [])}
+    missing_data = [name for name in REQUIRED_DATA_FILES if name not in data_sources]
+    if missing_packages or missing_hidden or missing_data:
         details = []
         if missing_packages:
             details.append(f"collect-submodules faltantes: {', '.join(missing_packages)}")
         if missing_hidden:
             details.append(f"hidden imports faltantes: {', '.join(missing_hidden)}")
+        if missing_data:
+            details.append(f"assets web faltantes: {', '.join(missing_data)}")
         return DoctorCheck(
             "warn",
             "Config build PyInstaller",

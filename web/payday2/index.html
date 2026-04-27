@@ -34,6 +34,8 @@
 </div>
 
 <div class="container">
+  <div class="action-status hidden" id="action-status" role="status" aria-live="polite"></div>
+
   <!-- Empty state (shown when no data) -->
   <div class="empty-state" id="empty-state" style="display:none">
     <h2><span class="empty-mark" aria-hidden="true">PD2</span> Bienvenido al Dashboard de PAYDAY 2</h2>
@@ -49,8 +51,10 @@
         <input type="text" id="setup-key" placeholder="Tu Steam API Key (opcional)">
         <div style="font-size:.72rem;color:var(--text2);margin-top:.3rem">Nota: la API de Steam no permite detectar DLCs poseidos. Usa los checkboxes en la tabla para marcarlos manualmente.</div>
       </div>
-      <button class="btn-refresh" onclick="quickSetup()" style="width:100%;justify-content:center">
-        <span class="refresh-icon">&#128640;</span> Configurar y cargar datos
+      <button class="btn-refresh" id="btn-setup" onclick="quickSetup()" style="width:100%;justify-content:center">
+        <span class="refresh-icon">&#128640;</span>
+        <span class="spinner"></span>
+        Configurar y cargar datos
       </button>
     </div>
   </div>
@@ -203,7 +207,7 @@
           </div>
           <div class="settings-field">
             <label>&nbsp;</label>
-            <button class="settings-save" onclick="saveConfig()">&#128190; Guardar configuracion</button>
+            <button class="settings-save" id="btn-save-config" onclick="saveConfig()">&#128190; Guardar configuracion</button>
           </div>
         </div>
         <div id="cfg-status" style="font-size:.8rem;color:var(--green);margin-top:.3rem"></div>

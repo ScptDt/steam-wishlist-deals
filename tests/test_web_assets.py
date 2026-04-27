@@ -1,7 +1,15 @@
 from __future__ import annotations
 
+import urllib.error
 import unittest
 from pathlib import Path
+
+import build_desktop
+import desktop_doctor
+import payday2_dlc_tracker
+import payday2_web
+import steam_deals_web
+from shared_web_infra import build_missing_assets_html
 
 
 ROOT = Path(__file__).resolve().parents[1]
@@ -99,13 +107,24 @@ class WebAssetsTests(unittest.TestCase):
         app_css = (ROOT / "web" / "payday2" / "app.css").read_text(
             encoding="utf-8"
         )
+        app_js = (ROOT / "web" / "payday2" / "app.js").read_text(
+            encoding="utf-8"
+        )
 
         self.assertIn('class="brand-lockup"', index_html)
         self.assertIn('class="pd2-logo-mark"', index_html)
+        self.assertIn('id="action-status"', index_html)
+        self.assertIn('id="btn-setup"', index_html)
+        self.assertIn('id="btn-save-config"', index_html)
         self.assertIn("Heist board", index_html)
         self.assertIn("--heist-blue", app_css)
         self.assertIn(".pd2-mask-img", app_css)
+        self.assertIn(".action-status", app_css)
+        self.assertIn(".action-status-loading", app_css)
         self.assertIn(".brand-number", app_css)
+        self.assertIn("showActionStatus", app_js)
+        self.assertIn("Actualizando datos de PAYDAY 2", app_js)
+        self.assertIn("Guardando cambio del DLC", app_js)
 
     def test_payday2_favicon_and_random_masks_stay_scoped(self) -> None:
         index_html = (ROOT / "web" / "payday2" / "index.html").read_text(
@@ -138,6 +157,81 @@ class WebAssetsTests(unittest.TestCase):
         for mask_file in mask_files:
             self.assertTrue((ROOT / "web" / "payday2" / "masks" / mask_file).exists())
             self.assertIn(f"/masks/{mask_file}", app_js)
+
+    def test_missing_assets_fallback_is_minimal_and_user_facing(self) -> None:
+        fallback = build_missing_assets_html("Steam Tools", "web/steam_deals")
+
+        self.assertIn("assets web necesarios", fallback)
+        self.assertIn("web/steam_deals", fallback)
+        self.assertNotIn("Budget Planner", fallback)
+        self.assertNotIn("mismo directorio del script", fallback)
+
+    def test_web_entrypoints_use_minimal_missing_assets_fallbacks(self) -> None:
+        self.assertIn("assets web necesarios", steam_deals_web.STEAM_DEALS_MISSING_ASSETS_HTML)
+        self.assertIn("assets web necesarios", payday2_web.PAYDAY2_MISSING_ASSETS_HTML)
+        self.assertNotIn("Budget Planner", payday2_web.PAYDAY2_MISSING_ASSETS_HTML)
+        self.assertNotIn("mismo directorio del script", steam_deals_web.STEAM_DEALS_MISSING_ASSETS_HTML)
+
+    def test_web_entrypoints_do_not_embed_full_fallback_html(self) -> None:
+        steam_web = (ROOT / "steam_deals_web.py").read_text(encoding="utf-8")
+        payday_web = (ROOT / "payday2_web.py").read_text(encoding="utf-8")
+
+        self.assertNotIn("PAGE_HTML = r", steam_web)
+        self.assertNotIn("PAGE_HTML = r", payday_web)
+        self.assertIn("STEAM_DEALS_MISSING_ASSETS_HTML", steam_web)
+        self.assertIn("PAYDAY2_MISSING_ASSETS_HTML", payday_web)
+
+    def test_desktop_packaging_includes_payday2_svg_assets(self) -> None:
+        data_sources = {src for src, _dest in build_desktop.DATA_FILES}
+
+        for asset in desktop_doctor.REQUIRED_DATA_FILES:
+            self.assertIn(asset, data_sources)
+
+
+class Payday2SteamResolutionTests(unittest.TestCase):
+    def test_resolve_steam_id_falls_back_to_public_xml_when_api_key_is_forbidden(self) -> None:
+        original_get_json = payday2_dlc_tracker._get_json
+        original_urlopen = payday2_dlc_tracker.urllib.request.urlopen
+        calls = []
+
+        def fake_get_json(url, headers=None):
+            calls.append(url)
+            raise urllib.error.HTTPError(url, 403, "Forbidden", hdrs=None, fp=None)
+
+        class _FakeResponse:
+            def __enter__(self):
+                return self
+
+            def __exit__(self, exc_type, exc, tb):
+                return False
+
+            def read(self):
+                return b"<steamID64>76561198000000000</steamID64>"
+
+        try:
+            payday2_dlc_tracker._get_json = fake_get_json
+            payday2_dlc_tracker.urllib.request.urlopen = lambda _req, timeout=0: _FakeResponse()
+
+            steam_id = payday2_dlc_tracker.resolve_steam_id("bad-key", "gaben")
+        finally:
+            payday2_dlc_tracker._get_json = original_get_json
+            payday2_dlc_tracker.urllib.request.urlopen = original_urlopen
+
+        self.assertEqual(steam_id, "76561198000000000")
+        self.assertEqual(len(calls), 1)
+
+    def test_resolve_steam_id_converts_public_profile_403_to_actionable_error(self) -> None:
+        original_urlopen = payday2_dlc_tracker.urllib.request.urlopen
+
+        def fake_urlopen(req, timeout=0):
+            raise urllib.error.HTTPError(req.full_url, 403, "Forbidden", hdrs=None, fp=None)
+
+        try:
+            payday2_dlc_tracker.urllib.request.urlopen = fake_urlopen
+            with self.assertRaisesRegex(ValueError, "Steam rechazó el perfil público"):
+                payday2_dlc_tracker.resolve_steam_id(None, "private-profile")
+        finally:
+            payday2_dlc_tracker.urllib.request.urlopen = original_urlopen
 
 
 if __name__ == "__main__":
