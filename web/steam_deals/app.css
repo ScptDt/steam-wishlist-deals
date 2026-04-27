@@ -1512,6 +1512,28 @@ details .details-body .field:last-child {
   margin-top: 0.65rem;
 }
 
+.history-drilldown-more {
+  margin-top: 0.45rem;
+}
+
+.history-drilldown-more summary {
+  color: var(--accent);
+  cursor: pointer;
+  font-size: 0.76rem;
+  font-weight: 700;
+}
+
+.history-drilldown-more-grid {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 0.45rem;
+  margin-top: 0.5rem;
+  padding: 0.55rem;
+  border: 1px dashed var(--card-border);
+  border-radius: 8px;
+  background: rgba(255,255,255,0.015);
+}
+
 .history-drilldown-btn {
   background: var(--bg2);
   border: 1px solid var(--card-border);

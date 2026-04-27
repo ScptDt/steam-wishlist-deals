@@ -604,6 +604,7 @@ let historyPage = 1;
 let latestHistoryComparisonPayload = null;
 let selectedHistoryAppid = '';
 const HISTORY_PAGE_SIZE = 20;
+const HISTORY_DRILLDOWN_VISIBLE_CANDIDATES = 6;
 const PRESET_MAX_WORKERS = Object.freeze({
   rapido: 12,
   completo: 16,
@@ -999,6 +1000,26 @@ function resolveHistoryDrilldownCandidates(payload) {
   return candidates;
 }
 
+function splitHistoryDrilldownCandidates(candidates, selectedAppid, limit = HISTORY_DRILLDOWN_VISIBLE_CANDIDATES) {
+  const normalized = Array.isArray(candidates) ? candidates : [];
+  const selected = normalized.find((item) => item.appid === selectedAppid);
+  const visible = normalized.slice(0, limit);
+  if (selected && !visible.some((item) => item.appid === selected.appid)) {
+    visible.splice(Math.max(0, limit - 1), 1, selected);
+  }
+  const visibleIds = new Set(visible.map((item) => item.appid));
+  return {
+    visible,
+    hidden: normalized.filter((item) => !visibleIds.has(item.appid)),
+  };
+}
+
+function renderHistoryDrilldownButtons(items, selectedAppid) {
+  return (Array.isArray(items) ? items : []).map((item) => `
+    <button type="button" class="history-drilldown-btn${item.appid === selectedAppid ? ' is-active' : ''}" data-history-drilldown="${escapeHtml(item.appid)}">${escapeHtml(item.name)}</button>
+  `).join('');
+}
+
 function renderHistoryAnalyticsSummary(payload) {
   if (!historyAnalyticsSummary) return;
   const analytics = payload && payload.analytics ? payload.analytics : {};
@@ -1053,6 +1074,8 @@ function renderHistoryGameDrilldown(payload, preferredAppid = '') {
       ? `Bajó de ${formatCurrencyFromRaw(firstSnapshot.price_raw)} a ${formatCurrencyFromRaw(lastSnapshot.price_raw)} entre ejecuciones recientes.`
       : `Subió de ${formatCurrencyFromRaw(firstSnapshot.price_raw)} a ${formatCurrencyFromRaw(lastSnapshot.price_raw)} entre ejecuciones recientes.`)
     : 'No hay suficiente cambio reciente para resumir un movimiento claro de precio.';
+  const candidateGroups = splitHistoryDrilldownCandidates(candidates, selected.appid);
+  const hiddenCount = candidateGroups.hidden.length;
 
   selectedHistoryAppid = selected.appid;
   saveHistoryNavState();
@@ -1068,15 +1091,21 @@ function renderHistoryGameDrilldown(payload, preferredAppid = '') {
     <div class="history-drilldown-head">
       <div>
         <div class="history-drilldown-title">Historial por juego</div>
-        <div class="history-drilldown-subtitle">Selecciona un juego con cambios destacados para ver su precio en ejecuciones recientes.</div>
+        <div class="history-drilldown-subtitle">Mostramos primero los juegos más relevantes para no saturar el panel. Usa “Ver más juegos” si necesitas revisar otros candidatos.</div>
       </div>
       <div class="history-drilldown-pill">${escapeHtml(selected.name)}</div>
     </div>
     <div class="history-drilldown-candidates">
-      ${candidates.map((item) => `
-        <button type="button" class="history-drilldown-btn${item.appid === selected.appid ? ' is-active' : ''}" data-history-drilldown="${escapeHtml(item.appid)}">${escapeHtml(item.name)}</button>
-      `).join('')}
+      ${renderHistoryDrilldownButtons(candidateGroups.visible, selected.appid)}
     </div>
+    ${hiddenCount ? `
+      <details class="history-drilldown-more">
+        <summary>Ver ${escapeHtml(hiddenCount)} juegos más</summary>
+        <div class="history-drilldown-more-grid">
+          ${renderHistoryDrilldownButtons(candidateGroups.hidden, selected.appid)}
+        </div>
+      </details>
+    ` : ''}
     <div class="history-drilldown-summary">${escapeHtml(trendText)}</div>
     <div class="history-drilldown-list">
       ${snapshots.map((snapshot) => `
