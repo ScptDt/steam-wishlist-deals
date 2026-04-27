@@ -35,6 +35,13 @@ class WarmCacheLogSummary:
     cache_path: str | None = None
 
 
+@dataclass(frozen=True)
+class WarmCacheRecommendation:
+    code: str
+    severity: str
+    action: str
+
+
 COMPARISON_COLUMNS = (
     ("Duración", "elapsed_seconds", "s"),
     ("Refresh candidates", "refresh_candidates", ""),
@@ -43,6 +50,10 @@ COMPARISON_COLUMNS = (
     ("Fallback total", "individual_fallback_count", ""),
     ("Fallback sin datos", "individual_fallback_failed_count", ""),
 )
+
+HIGH_FALLBACK_THRESHOLD = 20
+HIGH_FAILED_FALLBACK_RATIO = 0.5
+CACHE_EFFECTIVE_DROP_RATIO = 0.25
 
 
 def _parse_int(raw_value: str) -> int:
@@ -172,6 +183,79 @@ def _summary_label(summary: WarmCacheLogSummary, index: int) -> str:
     return Path(summary.source_path).name
 
 
+def _fallback_failed_ratio(summary: WarmCacheLogSummary) -> float:
+    if summary.individual_fallback_count <= 0:
+        return 0.0
+    return summary.individual_fallback_failed_count / summary.individual_fallback_count
+
+
+def analyze_warm_cache_recommendations(
+    summaries: list[WarmCacheLogSummary],
+) -> list[WarmCacheRecommendation]:
+    if not summaries:
+        return []
+
+    latest = summaries[-1]
+    previous = summaries[-2] if len(summaries) > 1 else None
+    recommendations: list[WarmCacheRecommendation] = []
+
+    if previous and previous.degraded_batch_count > 0 and latest.degraded_batch_count > 0:
+        recommendations.append(
+            WarmCacheRecommendation(
+                "repeated-http-400",
+                "warn",
+                "HTTP 400 repetido: baja STEAM_DEALS_PRICE_BATCH_SIZE o revisa el batch sizing antes de otra wishlist grande.",
+            )
+        )
+
+    if (
+        latest.individual_fallback_count >= HIGH_FALLBACK_THRESHOLD
+        and _fallback_failed_ratio(latest) >= HIGH_FAILED_FALLBACK_RATIO
+    ):
+        recommendations.append(
+            WarmCacheRecommendation(
+                "fallback-no-data-cooldown",
+                "warn",
+                "Mucho fallback sin datos: evita reintentos inmediatos y espera el cooldown antes de forzar --no-cache.",
+            )
+        )
+
+    if previous and previous.refresh_candidates > 0:
+        effective_limit = previous.refresh_candidates * CACHE_EFFECTIVE_DROP_RATIO
+        if latest.refresh_candidates <= effective_limit:
+            recommendations.append(
+                WarmCacheRecommendation(
+                    "cache-effective",
+                    "info",
+                    "Cache efectivo: los refresh candidates bajaron fuerte; conserva cache caliente antes de tocar promos.",
+                )
+            )
+
+    if (
+        previous
+        and latest.individual_fallback_count >= HIGH_FALLBACK_THRESHOLD
+        and latest.refresh_candidates <= previous.refresh_candidates
+    ):
+        recommendations.append(
+            WarmCacheRecommendation(
+                "fallback-still-high",
+                "warn",
+                "Fallback sigue alto con cache caliente: prioriza batching/fallback antes de invalidar cache por promos.",
+            )
+        )
+
+    if not recommendations:
+        recommendations.append(
+            WarmCacheRecommendation(
+                "no-action",
+                "info",
+                "Sin acción automática: métricas warm-cache estables; captura otra corrida si cambia la promo o la wishlist.",
+            )
+        )
+
+    return recommendations
+
+
 def format_warm_cache_summary(summary: WarmCacheLogSummary) -> str:
     lines = ["## Warm-cache summary"]
     if summary.source_path:
@@ -228,6 +312,18 @@ def format_warm_cache_comparison(summaries: list[WarmCacheLogSummary]) -> str:
     return "\n".join(lines)
 
 
+def format_warm_cache_recommendations(summaries: list[WarmCacheLogSummary]) -> str:
+    if len(summaries) < 2:
+        return ""
+
+    lines = ["## Warm-cache next actions"]
+    for recommendation in analyze_warm_cache_recommendations(summaries):
+        lines.append(
+            f"- [{recommendation.severity}] {recommendation.action}"
+        )
+    return "\n".join(lines)
+
+
 def build_parser() -> argparse.ArgumentParser:
     parser = argparse.ArgumentParser(
         description="Resume logs offline de steam_deals_generator.py --warm-cache."
@@ -256,6 +352,9 @@ def main(argv: list[str] | None = None, *, stdout: TextIO | None = None) -> int:
     comparison = format_warm_cache_comparison(summaries)
     if comparison:
         sections.append(comparison)
+    recommendations = format_warm_cache_recommendations(summaries)
+    if recommendations:
+        sections.append(recommendations)
     output.write("\n\n".join(sections))
     output.write("\n")
     return 0
@@ -263,8 +362,11 @@ def main(argv: list[str] | None = None, *, stdout: TextIO | None = None) -> int:
 
 __all__ = [
     "WarmCacheLogSummary",
+    "WarmCacheRecommendation",
+    "analyze_warm_cache_recommendations",
     "build_parser",
     "format_warm_cache_comparison",
+    "format_warm_cache_recommendations",
     "format_warm_cache_summary",
     "main",
     "parse_warm_cache_log_file",

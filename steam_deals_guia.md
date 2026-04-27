@@ -19,27 +19,27 @@ Python → Cruce con HLTB + scoring + generación de reportes
 
 ## 1. Fuentes de datos
 
-### Steam API (requiere API Key)
+### Steam API (API Key opcional según el dato)
 
 Base URL: `https://api.steampowered.com/`
 
 Necesitas:
-- **API Key**: de https://steamcommunity.com/dev/apikey
-- **Steam ID** (64-bit numérico): si tienes vanity URL (ej. `gaben`), primero lo resuelves
+- **Perfil Steam**: vanity URL, URL completa o Steam ID de 17 dígitos.
+- **API Key**: opcional para wishlist pública; recomendable para resolver datos privados como juegos propios y biblioteca familiar. Se obtiene en https://steamcommunity.com/dev/apikey
 
 **Endpoints usados:**
 
 | Endpoint | Qué devuelve | Requiere API Key |
 |----------|-------------|-----------------|
-| `ISteamUser/ResolveVanityURL/v1/?vanityurl=...` | Traduce vanity URL a Steam ID | Sí |
-| `IWishlistService/GetWishlist/v1/?steamid=...` | Lista de appids de la wishlist | Sí |
+| `ISteamUser/ResolveVanityURL/v1/?vanityurl=...` | Traduce vanity URL a Steam ID | Opcional; fallback a perfil público XML sin key |
+| `IWishlistService/GetWishlist/v1/?steamid=...` | Lista de appids de la wishlist | Opcional si la wishlist es pública |
 | `IPlayerService/GetOwnedGames/v1/?include_appinfo=1` | Juegos comprados con nombres | Sí |
 | `IMarketingMessagesService/GetActiveMarketingMessages/v1/` | Ofertas/eventos activos de Steam | No |
 
 ### Vanity URL vs API Key
 
 - **Vanity URL** (`gaben`): Es pública, solo identifica tu perfil. Con ella se resuelve tu Steam ID numérico.
-- **API Key**: Da acceso a datos privados (wishlist, biblioteca, juegos jugados). Sin ella no funciona el script.
+- **API Key**: habilita datos privados/extra, especialmente juegos propios. Sin ella el flujo puede funcionar si tu wishlist es pública, pero tendrá menos señales.
 
 ### Steam Store API (precios, batching y fallback)
 

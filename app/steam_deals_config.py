@@ -38,7 +38,7 @@ def build_parser() -> argparse.ArgumentParser:
         "--vanity", help="Vanity URL, Steam ID, o link de perfil de Steam"
     )
     parser.add_argument("--hltb", help="Ruta al CSV de HLTB")
-    parser.add_argument("--output", help="Directorio de salida para los MD")
+    parser.add_argument("--output", help="Directorio de salida para reportes")
     parser.add_argument("--discount", type=int, help="Descuento mínimo %%")
     parser.add_argument(
         "--genre",
@@ -243,7 +243,7 @@ def _resolve_output_dir(
         interactive_keys.append("output_dir")
     script_dir = str(script_path.parent)
     raw = _ask(
-        input_fn, "Directorio de salida para los MD", script_dir, can_prompt=can_prompt
+        input_fn, "Directorio de salida para reportes", script_dir, can_prompt=can_prompt
     )
     return Path(raw or script_dir).expanduser()
 

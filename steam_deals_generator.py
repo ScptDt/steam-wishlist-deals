@@ -1,7 +1,7 @@
 #!/usr/bin/env python3
 """
 Steam Wishlist Deals Generator
-Genera un MD con los deals de tu wishlist cruzados con tu HLTB.
+Genera reportes de deals de tu wishlist cruzados con HLTB y señales externas.
 
 Uso:
     python3 steam_deals_generator.py --vanity gaben

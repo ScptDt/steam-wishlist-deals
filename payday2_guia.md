@@ -87,7 +87,7 @@ python3 payday2_dlc_tracker.py --csv
 python3 payday2_dlc_tracker.py --no-cache
 ```
 
-Genera `PAYDAY2_Plan_de_Compra.md` y `.html` con el reporte completo.
+Genera `PAYDAY2_Plan_de_Compra.md` y `.html` con el reporte completo; si usas `--csv`, también genera `.csv`.
 
 ## Todos los flags
 

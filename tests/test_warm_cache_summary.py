@@ -6,7 +6,10 @@ import unittest
 from pathlib import Path
 
 from steam_deals_warm_cache_summary import (
+    WarmCacheLogSummary,
+    analyze_warm_cache_recommendations,
     format_warm_cache_comparison,
+    format_warm_cache_recommendations,
     format_warm_cache_summary,
     main as warm_cache_summary_main,
     parse_warm_cache_log_file,
@@ -94,6 +97,58 @@ class WarmCacheSummaryTests(unittest.TestCase):
             output,
         )
 
+    def test_analyze_warm_cache_recommends_batch_tuning_for_repeated_http_400(self) -> None:
+        recommendations = analyze_warm_cache_recommendations(
+            [
+                WarmCacheLogSummary(degraded_batch_count=2, refresh_candidates=100),
+                WarmCacheLogSummary(degraded_batch_count=3, refresh_candidates=80),
+            ]
+        )
+
+        self.assertEqual(recommendations[0].code, "repeated-http-400")
+        self.assertIn("STEAM_DEALS_PRICE_BATCH_SIZE", recommendations[0].action)
+
+    def test_analyze_warm_cache_recommends_cooldown_for_no_data_fallback(self) -> None:
+        recommendations = analyze_warm_cache_recommendations(
+            [
+                WarmCacheLogSummary(refresh_candidates=100),
+                WarmCacheLogSummary(
+                    refresh_candidates=80,
+                    individual_fallback_count=20,
+                    individual_fallback_failed_count=13,
+                ),
+            ]
+        )
+
+        self.assertIn(
+            "fallback-no-data-cooldown",
+            {recommendation.code for recommendation in recommendations},
+        )
+
+    def test_analyze_warm_cache_marks_effective_cache_when_refreshes_drop(self) -> None:
+        recommendations = analyze_warm_cache_recommendations(
+            [
+                parse_warm_cache_log_file(FIXTURES / "full.log"),
+                parse_warm_cache_log_file(FIXTURES / "minimal.log"),
+            ]
+        )
+
+        self.assertIn(
+            "cache-effective",
+            {recommendation.code for recommendation in recommendations},
+        )
+
+    def test_format_warm_cache_recommendations_outputs_stable_no_action(self) -> None:
+        output = format_warm_cache_recommendations(
+            [
+                WarmCacheLogSummary(refresh_candidates=10, elapsed_seconds=5.0),
+                WarmCacheLogSummary(refresh_candidates=9, elapsed_seconds=5.2),
+            ]
+        )
+
+        self.assertIn("## Warm-cache next actions", output)
+        self.assertIn("Sin acción automática", output)
+
     def test_cli_prints_markdown_summary_for_log_path(self) -> None:
         stdout = io.StringIO()
 
@@ -113,6 +168,7 @@ class WarmCacheSummaryTests(unittest.TestCase):
 
         self.assertEqual(exit_code, 0)
         self.assertIn("## Warm-cache comparison", stdout.getvalue())
+        self.assertIn("## Warm-cache next actions", stdout.getvalue())
         self.assertIn("minimal.log", stdout.getvalue())
 
     def test_cli_can_emit_json_summary_for_one_log(self) -> None:

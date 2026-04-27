@@ -451,7 +451,7 @@ El cierre formal P2 requiere evidencia manual Linux + macOS según `PENDIENTES.m
 | Módulo | Output principal | Formatos |
 |--------|------------------|----------|
 | Steam Deals | Reporte de deals de wishlist | `.md`, `.html` interactivo, Share HTML, `.json`, `.csv` |
-| PAYDAY 2 | `PAYDAY2_Plan_de_Compra` | `.md`, `.html` |
+| PAYDAY 2 | `PAYDAY2_Plan_de_Compra` | `.md`, `.html`, `.csv` opcional |
 | Desktop Build | Artefactos de distribución | `dist/` (binario/app según OS) |
 
 Notas rápidas:
@@ -565,7 +565,7 @@ python3 payday2_dlc_tracker.py --itad-key TU_KEY      # mínimos históricos
 python3 payday2_dlc_tracker.py --mark-owned 259381    # marcar DLC como comprado
 ```
 
-Genera `PAYDAY2_Plan_de_Compra.md` y `.html` con el reporte completo.
+Genera `PAYDAY2_Plan_de_Compra.md` y `.html` con el reporte completo; con `--csv` también genera `.csv`.
 
 ## Datos locales, caché y config
 

@@ -42,7 +42,7 @@ Si quieres guardar salida estructurada para comparar después:
 python3 steam_deals_warm_cache_summary.py "$HOME/.cache/steam_deals/logs/warm-cache-YYYY-MM-DD_HH-MM-SS.log" --json
 ```
 
-Para comparar dos o más corridas en Markdown, pasa todos los logs en orden cronológico; el resumen agrega una tabla con deltas contra el log anterior:
+Para comparar dos o más corridas en Markdown, pasa todos los logs en orden cronológico; el resumen agrega una tabla con deltas contra el log anterior y un bloque `Warm-cache next actions` con recomendaciones automáticas:
 
 ```bash
 python3 steam_deals_warm_cache_summary.py \
@@ -87,6 +87,14 @@ python3 steam_deals_warm_cache_summary.py \
 - Si hay muchos `sin oferta/datos`, el cooldown debe evitar reintentos inmediatos; confirmar que aparecen como `fallos recientes en cooldown` en corridas posteriores.
 - Si hay degradación repetida por HTTP 400, optimizar batching/fallback antes de diseñar cache por promo.
 - Si una promo activa parece correlacionar con mejores oportunidades, documentarlo como observación; no invalidar cache por promo hasta tener evidencia suficiente.
+
+## Interpretación de `Warm-cache next actions`
+
+- `HTTP 400 repetido`: prueba primero bajar `STEAM_DEALS_PRICE_BATCH_SIZE` o revisar batch sizing; no cambies cache por promo todavía.
+- `Mucho fallback sin datos`: respeta el cooldown y evita reintentos inmediatos con `--no-cache` salvo que estés capturando evidencia explícita.
+- `Cache efectivo`: la segunda corrida redujo fuerte los refresh candidates; conserva cache caliente antes de ampliar políticas de invalidación.
+- `Fallback sigue alto`: prioriza batching/fallback antes de invalidar cache por promos.
+- `Sin acción automática`: no hay una señal clara; captura otra corrida si cambia la promo o la wishlist.
 
 ## Plantilla para BITACORA.md
 
