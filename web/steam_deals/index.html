@@ -285,8 +285,8 @@
         </div>
         <div class="field">
           <label>Dónde guardar los reportes</label>
-          <input type="text" id="output" placeholder="Usar carpeta actual">
-          <div class="hint">Define dónde se guardan los reportes generados si no quieres usar la ruta actual por defecto.</div>
+          <input type="text" id="output" placeholder="output/">
+          <div class="hint">Si lo dejas vacío, los reportes se guardan en <code>output/</code>. Cambia esta ruta solo si quieres una carpeta personalizada.</div>
         </div>
       </div>
     </details>
@@ -515,7 +515,8 @@
       </div>
       <div class="field">
         <label>Directorio de salida</label>
-        <input type="text" id="pd2_output" placeholder="(mismo directorio del script)">
+        <input type="text" id="pd2_output" placeholder="output/">
+        <div class="hint">Por defecto se usa <code>output/</code>, igual que Steam Deals.</div>
       </div>
     </div>
     <div class="checks checks-spaced">
@@ -533,6 +534,7 @@
     <button class="btn btn-ghost" id="btn-desktop-autofix" title="Intenta aplicar arreglos seguros del entorno desktop">&#128295; Autofix desktop</button>
     <button class="btn btn-ghost" id="btn-clear-cache" title="Borra caché local para forzar una nueva descarga de datos">&#128465; Limpiar cache</button>
     <button class="btn btn-ghost" id="btn-open-last" title="Abre el último reporte HTML interactivo; Markdown, JSON y CSV quedan como descargas">&#128194; Ver último HTML</button>
+    <button class="btn btn-ghost" id="btn-open-output-folder" title="Abre o crea la carpeta donde se guardan los reportes">&#128193; Ver carpeta</button>
   </div>
   <div class="actions-help" aria-label="Ayuda rápida para botones utilitarios">
     <div class="actions-help-item">
@@ -555,10 +557,14 @@
       <strong>Ver último HTML</strong>
       <span>Abre el último reporte interactivo. Los Markdown, JSON y CSV se descargan desde los enlaces generados.</span>
     </div>
+    <div class="actions-help-item">
+      <strong>Ver carpeta</strong>
+      <span>Abre la carpeta de salida local; si el campo está vacío, usa <code>output/</code>.</span>
+    </div>
   </div>
 
   <div class="actions actions-margin-md">
-    <button class="btn btn-primary" id="btn-run">&#128640; Ejecutar</button>
+    <button class="btn btn-primary" id="btn-run">&#128640; Generar reportes</button>
     <button class="btn btn-primary btn-primary-pd2" id="btn-run-pd2" style="display:none">&#127918; Ejecutar PAYDAY 2</button>
     <button class="btn btn-danger" id="btn-stop" disabled>&#9209; Detener</button>
   </div>

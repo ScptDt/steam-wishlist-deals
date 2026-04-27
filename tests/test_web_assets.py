@@ -39,7 +39,31 @@ class WebAssetsTests(unittest.TestCase):
         self.assertIn("Descargar JSON", app_js)
         self.assertIn("Descargar CSV", app_js)
         self.assertIn("a.setAttribute('download', action.name)", app_js)
-        self.assertIn("El HTML interactivo se abre en otra pestaña", app_js)
+        self.assertIn("Los artefactos se muestran por tipo", app_js)
+
+    def test_output_folder_actions_explain_default_folder_and_open_button(self) -> None:
+        index_html = (ROOT / "web" / "steam_deals" / "index.html").read_text(
+            encoding="utf-8"
+        )
+        app_js = (ROOT / "web" / "steam_deals" / "app.js").read_text(
+            encoding="utf-8"
+        )
+        app_css = (ROOT / "web" / "steam_deals" / "app.css").read_text(
+            encoding="utf-8"
+        )
+
+        self.assertIn('placeholder="output/"', index_html)
+        self.assertIn("Si lo dejas vacío, los reportes se guardan", index_html)
+        self.assertIn("Ver carpeta", index_html)
+        self.assertIn("Generar reportes", index_html)
+        self.assertIn("/api/open-output-folder", app_js)
+        self.assertIn("openOutputFolderUI", app_js)
+        self.assertIn("GENERATED_FILE_ACTION_GROUPS", app_js)
+        self.assertIn("HTML interactivo", app_js)
+        self.assertIn("Share HTML", app_js)
+        self.assertIn("Carpeta local", app_js)
+        self.assertIn(".file-link-group", app_css)
+        self.assertIn(".file-link-button", app_css)
 
     def test_payday2_dashboard_has_themed_branding_hooks(self) -> None:
         index_html = (ROOT / "web" / "payday2" / "index.html").read_text(

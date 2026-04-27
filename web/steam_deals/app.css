@@ -678,7 +678,7 @@ details .details-body .field:last-child {
 
 /* File links */
 .file-links {
-  display: flex; flex-wrap: wrap; gap: 0.5rem; margin-top: 0.75rem;
+  display: flex; flex-direction: column; gap: 0.55rem; margin-top: 0.75rem;
 }
 .file-links-hint {
   width: 100%;
@@ -687,11 +687,37 @@ details .details-body .field:last-child {
   line-height: 1.45;
   margin-bottom: 0.1rem;
 }
+.file-link-group {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 0.45rem;
+  padding: 0.55rem;
+  border: 1px solid rgba(102, 192, 244, 0.16);
+  border-radius: 8px;
+  background: rgba(42, 71, 94, 0.22);
+}
+.file-link-group-secondary {
+  border-style: dashed;
+  background: rgba(22, 32, 45, 0.7);
+}
+.file-link-group-title {
+  flex: 0 0 120px;
+  color: var(--text2);
+  font-size: 0.75rem;
+  font-weight: 700;
+  letter-spacing: 0.02em;
+  text-transform: uppercase;
+}
 .file-link {
   display: inline-flex; align-items: center; gap: 0.4rem;
   padding: 0.5rem 1rem; background: var(--bg2); border: 1px solid var(--card-border);
   border-radius: 6px; color: var(--accent); font-size: 0.85rem;
   font-weight: 500; transition: all 0.2s;
+}
+.file-link-button {
+  cursor: pointer;
+  font-family: inherit;
 }
 .file-link:hover { background: var(--accent); color: #fff; text-decoration: none; border-color: var(--accent); }
 .latest-report-empty-state {

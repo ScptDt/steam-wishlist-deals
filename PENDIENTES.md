@@ -1,6 +1,6 @@
 # Pendientes (Fuente Unica)
 
-Ultima actualizacion: 2026-04-24
+Ultima actualizacion: 2026-04-27
 
 ## Regla de Oro
 
@@ -26,7 +26,7 @@ No se mantienen documentos paralelos de planificacion; este archivo es la unica 
 - [x] Empaquetado con PyInstaller (build inicial) validado en Windows.
 - [x] Checklist de release y smoke tests (primera version).
 - [ ] [Quick Win] Corregir botón `Detener` en Steam Deals desktop/web. [Estado: Web UI validada sin duplicar `Solicitando detener ejecucion...` y `/api/stop` ya usa estados veraces. Falta: confirmar la misma experiencia visible en desktop. Evidencia: prueba manual desde binario sin mensajes duplicados ni procesos colgados.]
-- [ ] [Track] Hacer robusta y clara la apertura/descarga de reportes y archivos generados. [Estado: primer corte cerrado; UI distingue abrir HTML vs descargar MD/JSON/CSV y `/files/...` sirve HTML inline + datos como attachment. Falta: unificar estrategia de guardado/apertura para todos los outputs y cerrar casos confusos/`403`. Evidencia: HTML/MD/JSON/CSV abiertos o descargados consistentemente desde Web UI y desktop.]
+- [ ] [Track] Hacer robusta y clara la apertura/descarga de reportes y archivos generados. [Estado: cortes cerrados para acciones HTML/MD/JSON/CSV, errores claros en `/files/...` (`403` inválido, `404` faltante, `500` lectura), default explícito `output/`, endpoint local `Ver carpeta` y artefactos agrupados por tipo en Web UI. Falta: validación manual web/desktop desde superficie real/binario. Evidencia: HTML/Share HTML abren, MD/JSON/CSV descargan y la carpeta `output/` se abre/crea consistentemente.]
 - [ ] [Track] Reducir el tiempo total de fetching en wishlists grandes. [Estado: ya hay `max_workers=16`, observabilidad de fallback individual, cooldown para fallos/no-data y parser offline de logs warm-cache. Falta: medir corrida larga real, ajustar cache/batches/invalidación por promos y reducir fallback individual lento. Evidencia: run grande con progreso estable, menor duración y artifacts completos.]
 - [x] [Quick Win] Corregir el cálculo de estadísticas visibles en el HTML interactivo: hoy `Promedio` y `Precio medio` pueden renderizar `NaN`; blindar el cálculo cuando no haya deals visibles o entren valores no numéricos, y mostrar un fallback claro. [Cerrado 2026-04-24: fallback `sin datos` y cálculo defensivo para promedios visibles.]
 
@@ -181,8 +181,10 @@ Notas:
 
 ## Bitacora reciente
 
+- 2026-04-27: Track outputs/reportes suma carpeta default `output/`, `POST /api/open-output-folder`, botón `Ver carpeta`, botón principal `Generar reportes` y acciones finales agrupadas por HTML interactivo/Share HTML/Markdown/JSON/CSV; validado con `tests/test_generated_files_serving.py tests/test_web_assets.py` (18 tests OK).
 - 2026-04-24: Quick wins HTML/histórico cerrados: estadísticas visibles del HTML interactivo usan fallback `sin datos` en vez de `NaN`, el encabezado visible del reporte usa `profile_display_name` cuando existe y el dashboard histórico mejora copy/alineación de búsqueda + `Comparar 2 recientes`; validado con tests focales de renderer y `tests/test_web_assets.py tests/test_track_history_flow.py` (13 tests OK).
 - 2026-04-24: Quick win outputs/reportes cierra el primer corte de claridad para `/files/...`: `Ver último HTML` prioriza el reporte interactivo, MD/JSON/CSV descargan explícitamente y el server usa `Content-Disposition` consistente; validado con `tests/test_web_assets.py tests/test_generated_files_serving.py tests/test_shared_web_infra.py` (10 tests OK).
+- 2026-04-24: Track outputs/reportes suma errores claros para `/files/...`: nombres inválidos/path traversal devuelven página 403 accionable, faltantes 404 y fallos de lectura 500 sin exponer detalles internos; validado con `tests/test_generated_files_serving.py tests/test_web_assets.py` (13 tests OK).
 - 2026-04-24: Quick win de `Tu Presupuesto Ideal` corrige imagen stale en reroll/reemplazo: las opciones serializan `image_url` y el HTML interactivo actualiza la cápsula junto con texto/precio; validado con `tests/test_generator_logic.py -k "budget"` (8 tests OK).
 - 2026-04-24: Quick win de diversidad en Modo Presupuesto agrega depriorización suave de juegos ya usados por la variante balanceada y diversifica la primera sugerencia de reemplazo cuando hay alternativas, manteniendo fallback determinístico; validado con `tests/test_generator_logic.py -k "budget"` (10 tests OK).
 - 2026-04-24: Quick win del bloque `trend` lo replantea como `Historial local`: se ocultan columnas sin señal útil/snapshots suficientes y el copy aclara que no es predicción; validado con `tests/test_generator_logic.py -k "trend or local_history"` (8 tests OK).

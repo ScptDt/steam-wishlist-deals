@@ -270,6 +270,12 @@ function getConfig() {
     if (f === 'discount') c[f] = parseInt(el.value);
     else c[f] = el.value.trim() || null;
   });
+  const pd2Output = $('pd2_output');
+  const pd2Panel = $('panel-pd2');
+  const pd2OutputValue = pd2Output ? pd2Output.value.trim() : '';
+  if (pd2OutputValue && pd2Panel && pd2Panel.style.display !== 'none') {
+    c.output = pd2OutputValue;
+  }
   c.vanity = normalizeVanity(c.vanity);
   return c;
 }
@@ -302,6 +308,7 @@ function getFilters() {
 
 function fillForm(cfg) {
   if (!cfg) return;
+  const outputValue = cfg.output_dir || cfg.output || '';
   CONFIG_FIELDS.forEach(f => {
     const el = $(f);
     if (!el || cfg[f] == null) return;
@@ -311,11 +318,13 @@ function fillForm(cfg) {
     } else if (f === 'genres') {
       el.value = Array.isArray(cfg[f]) ? cfg[f].join(', ') : (cfg[f] || '');
     } else if (f === 'output') {
-      el.value = cfg.output_dir || cfg.output || '';
+      el.value = outputValue;
     } else {
       el.value = cfg[f] || '';
     }
   });
+  const pd2Output = $('pd2_output');
+  if (pd2Output) pd2Output.value = outputValue;
   FILTER_FIELDS.forEach(f => {
     const el = $(f);
     if (!el || cfg[f] == null) return;
@@ -555,6 +564,7 @@ const btnDesktopDoctor = $('btn-desktop-doctor');
 const btnDesktopAutofix = $('btn-desktop-autofix');
 const btnClearCache = $('btn-clear-cache');
 const btnOpenLast = $('btn-open-last');
+const btnOpenOutputFolder = $('btn-open-output-folder');
 const btnRunPd2 = $('btn-run-pd2');
 const historyLeft = $('history-left');
 const historyRight = $('history-right');
@@ -733,7 +743,7 @@ function resetHistoryFilters({announce = false} = {}) {
   refreshRunSelectorsFromState();
   clearHistoryComparison();
   if (announce) {
-    appendLine('Filtros del historico restablecidos.', 'ok');
+    appendLine('Filtros del histórico restablecidos.', 'ok');
   }
 }
 
@@ -828,7 +838,7 @@ function getHistoryPageSlice(runs) {
 
 function updateHistoryPaginationUi(totalItems, totalPages) {
   if (historyPageInfo) {
-    historyPageInfo.textContent = `Pagina ${historyPage} de ${totalPages} · ${totalItems} ejecuciones`;
+    historyPageInfo.textContent = `Página ${historyPage} de ${totalPages} · ${totalItems} ejecuciones`;
   }
   if (btnHistoryPrevPage) btnHistoryPrevPage.disabled = historyPage <= 1;
   if (btnHistoryNextPage) btnHistoryNextPage.disabled = historyPage >= totalPages;
@@ -943,9 +953,9 @@ function renderHistoryRows(rows) {
     const statusText = row.status === 'new'
       ? 'Nuevo'
       : row.status === 'removed'
-      ? 'Salio'
+      ? 'Salió'
       : row.status === 'changed'
-      ? 'Cambio'
+      ? 'Cambió'
       : 'Igual';
     return `
       <tr>
@@ -1131,7 +1141,7 @@ function renderHistoryStatusChart(summary) {
       }).join('')}
     </div>
     <div class="history-status-chart-note">
-      ${includeSameActive ? 'Incluye estado "Iguales" (include_same activo).' : '"Iguales" depende de activar include_same.'}
+      ${includeSameActive ? 'Incluye juegos con precios sin cambio.' : 'Activa "Incluir precios sin cambio" para ver también los iguales.'}
     </div>
   `;
   historyStatusChart.classList.remove('hidden');
@@ -1255,7 +1265,7 @@ function renderHistoryTrend(runs) {
   historyTrend.innerHTML = `
     <div class="history-trend-title">Tendencia general de ofertas (últimas ${normalized.length} ejecuciones)</div>
     <div class="history-trend-subtitle">Te ayuda a ver si últimamente aparecieron más o menos ofertas en total. Si quieres revisar juegos concretos, usa la tabla y los cambios destacados.</div>
-    <svg class="history-trend-svg" viewBox="0 0 ${width} ${height}" preserveAspectRatio="none" role="img" aria-label="Tendencia general del volumen de ofertas por run">
+    <svg class="history-trend-svg" viewBox="0 0 ${width} ${height}" preserveAspectRatio="none" role="img" aria-label="Tendencia general del volumen de ofertas por ejecución">
       <line x1="${padX}" y1="${height - padY}" x2="${width - padX}" y2="${height - padY}" stroke="var(--card-border)" stroke-width="1" />
       <line x1="${padX}" y1="${padY}" x2="${padX}" y2="${height - padY}" stroke="var(--card-border)" stroke-width="1" />
       <polyline fill="none" stroke="var(--accent)" stroke-width="2" points="${polyline}" />
@@ -1657,6 +1667,30 @@ btnClearCache.addEventListener('click', async () => {
   }
 });
 
+async function openOutputFolderUI(triggerBtn = null) {
+  if (triggerBtn) triggerBtn.disabled = true;
+  try {
+    const resp = await fetch('/api/open-output-folder', {
+      method: 'POST',
+      headers: {'Content-Type': 'application/json'},
+      body: JSON.stringify({config: getConfig()}),
+    });
+    const data = await resp.json();
+    if (!resp.ok) {
+      throw new Error(data.message || data.error || ('HTTP ' + resp.status));
+    }
+    appendLine('Carpeta de salida abierta: ' + (data.label || data.path || 'output/'), 'ok');
+  } catch(e) {
+    appendLine('No se pudo abrir la carpeta de salida: ' + e.message, 'err');
+  } finally {
+    if (triggerBtn) triggerBtn.disabled = false;
+  }
+}
+
+if (btnOpenOutputFolder) btnOpenOutputFolder.addEventListener('click', () => {
+  openOutputFolderUI(btnOpenOutputFolder);
+});
+
 btnOpenLast.addEventListener('click', async () => {
   try {
     const r = await fetch('/api/files');
@@ -1988,6 +2022,22 @@ function findLatestPrimaryHtmlReport(files) {
     .find(name => getGeneratedFileExtension(name) === '.html' && !isShareHtmlFile(name));
 }
 
+const GENERATED_FILE_ACTION_GROUPS = Object.freeze([
+  {kind: 'report-html', label: 'HTML interactivo'},
+  {kind: 'share-html', label: 'Share HTML'},
+  {kind: 'markdown', label: 'Markdown'},
+  {kind: 'json', label: 'JSON'},
+  {kind: 'csv', label: 'CSV'},
+  {kind: 'other', label: 'Otros archivos'},
+]);
+
+const GENERATED_FILE_ACTION_ORDER = Object.freeze(
+  GENERATED_FILE_ACTION_GROUPS.reduce((acc, group, index) => {
+    acc[group.kind] = index;
+    return acc;
+  }, {})
+);
+
 function buildGeneratedFileAction(filePath) {
   const name = getGeneratedFileName(filePath);
   const ext = getGeneratedFileExtension(name);
@@ -1996,6 +2046,7 @@ function buildGeneratedFileAction(filePath) {
     return {
       name,
       href,
+      kind: 'share-html',
       label: 'Abrir Share HTML',
       icon: '&#128279;',
       openInTab: true,
@@ -2006,6 +2057,7 @@ function buildGeneratedFileAction(filePath) {
     return {
       name,
       href,
+      kind: 'report-html',
       label: 'Abrir reporte interactivo',
       icon: '&#128202;',
       openInTab: true,
@@ -2016,6 +2068,7 @@ function buildGeneratedFileAction(filePath) {
     return {
       name,
       href,
+      kind: 'markdown',
       label: 'Descargar Markdown',
       icon: '&#128196;',
       openInTab: false,
@@ -2026,6 +2079,7 @@ function buildGeneratedFileAction(filePath) {
     return {
       name,
       href,
+      kind: 'json',
       label: 'Descargar JSON',
       icon: '&#123;&#125;',
       openInTab: false,
@@ -2036,6 +2090,7 @@ function buildGeneratedFileAction(filePath) {
     return {
       name,
       href,
+      kind: 'csv',
       label: 'Descargar CSV',
       icon: '&#128203;',
       openInTab: false,
@@ -2045,6 +2100,7 @@ function buildGeneratedFileAction(filePath) {
   return {
     name,
     href,
+    kind: 'other',
     label: name,
     icon: '&#128196;',
     openInTab: true,
@@ -2052,30 +2108,79 @@ function buildGeneratedFileAction(filePath) {
   };
 }
 
+function sortGeneratedFileActions(actions) {
+  return [...actions].sort((a, b) => {
+    const groupDelta = (GENERATED_FILE_ACTION_ORDER[a.kind] ?? 99) - (GENERATED_FILE_ACTION_ORDER[b.kind] ?? 99);
+    if (groupDelta !== 0) return groupDelta;
+    return a.name.localeCompare(b.name);
+  });
+}
+
+function createGeneratedFileActionButton(action) {
+  const a = document.createElement('a');
+  a.className = 'file-link';
+  a.href = action.href;
+  a.title = action.title;
+  if (action.openInTab) {
+    a.target = '_blank';
+    a.rel = 'noopener noreferrer';
+  } else {
+    a.setAttribute('download', action.name);
+  }
+  a.innerHTML = action.icon + ' ' + action.label;
+  return a;
+}
+
+function appendGeneratedFileGroup(container, group, actions) {
+  const groupedActions = actions.filter(action => action.kind === group.kind);
+  if (!groupedActions.length) return;
+
+  const section = document.createElement('div');
+  section.className = 'file-link-group';
+
+  const title = document.createElement('div');
+  title.className = 'file-link-group-title';
+  title.textContent = group.label;
+  section.appendChild(title);
+
+  groupedActions.forEach(action => section.appendChild(createGeneratedFileActionButton(action)));
+  container.appendChild(section);
+}
+
+function createOpenOutputFolderActionButton() {
+  const btn = document.createElement('button');
+  btn.type = 'button';
+  btn.className = 'file-link file-link-button';
+  btn.title = 'Abre la carpeta local donde se guardaron los reportes';
+  btn.innerHTML = '&#128193; Ver carpeta';
+  btn.addEventListener('click', () => openOutputFolderUI(btn));
+  return btn;
+}
+
 function showFiles(files) {
   fileLinks.innerHTML = '';
-  const actions = (Array.isArray(files) ? files : []).map(buildGeneratedFileAction);
+  const actions = sortGeneratedFileActions((Array.isArray(files) ? files : []).map(buildGeneratedFileAction));
   if (actions.length) {
     const hint = document.createElement('div');
     hint.className = 'file-links-hint';
-    hint.textContent = 'El HTML interactivo se abre en otra pestaña. Markdown, JSON y CSV se descargan automáticamente para revisarlos en tu editor, Excel/Sheets o herramientas.';
+    hint.textContent = 'Los artefactos se muestran por tipo: HTML interactivo y Share HTML se abren; Markdown, JSON y CSV se descargan para tu editor, Excel/Sheets o herramientas.';
     fileLinks.appendChild(hint);
   }
-  actions.forEach(action => {
-    const a = document.createElement('a');
-    a.className = 'file-link';
-    a.href = action.href;
-    a.title = action.title;
-    if (action.openInTab) {
-      a.target = '_blank';
-      a.rel = 'noopener noreferrer';
-    } else {
-      a.setAttribute('download', action.name);
-    }
-    a.innerHTML = action.icon + ' ' + action.label;
-    fileLinks.appendChild(a);
-  });
-  fileLinks.classList.remove('hidden');
+  GENERATED_FILE_ACTION_GROUPS.forEach(group => appendGeneratedFileGroup(fileLinks, group, actions));
+
+  if (actions.length) {
+    const folderGroup = document.createElement('div');
+    folderGroup.className = 'file-link-group file-link-group-secondary';
+    const title = document.createElement('div');
+    title.className = 'file-link-group-title';
+    title.textContent = 'Carpeta local';
+    folderGroup.appendChild(title);
+    folderGroup.appendChild(createOpenOutputFolderActionButton());
+    fileLinks.appendChild(folderGroup);
+    fileLinks.classList.remove('hidden');
+  } else {
+    fileLinks.classList.add('hidden');
+  }
 }
 
 function latestReportUrl() {

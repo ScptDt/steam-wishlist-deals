@@ -5,7 +5,9 @@ Ejecuta: python3 steam_deals_web.py
 Abre: http://127.0.0.1:8080
 """
 
+import html
 import json
+import os
 import re
 import subprocess
 import sys
@@ -54,6 +56,7 @@ WEB_DIR = PROJECT_DIR / "web" / "steam_deals"
 STEAM_DEALS_HTML_FILE = WEB_DIR / "index.html"
 STEAM_DEALS_CSS_FILE = WEB_DIR / "app.css"
 STEAM_DEALS_JS_FILE = WEB_DIR / "app.js"
+DEFAULT_OUTPUT_DIR = PROJECT_DIR / "output"
 
 _running_proc = None
 _proc_lock = threading.Lock()
@@ -93,6 +96,90 @@ def generated_file_content_disposition(name: str, suffix: str) -> str:
 
 def generated_file_content_type(suffix: str) -> str:
     return GENERATED_FILE_CONTENT_TYPES.get(suffix.lower(), "application/octet-stream")
+
+
+def resolve_output_dir(value: str | None) -> Path:
+    raw = str(value or "").strip()
+    path = Path(raw).expanduser() if raw else DEFAULT_OUTPUT_DIR
+    if not path.is_absolute():
+        path = PROJECT_DIR / path
+    return path
+
+
+def output_folder_display_name(path: Path) -> str:
+    try:
+        return str(path.relative_to(PROJECT_DIR)) or path.name
+    except ValueError:
+        return str(path)
+
+
+def open_output_folder(
+    output_dir: Path,
+    *,
+    platform: str | None = None,
+    startfile_fn=None,
+    popen_fn=None,
+) -> Path:
+    output_dir.mkdir(parents=True, exist_ok=True)
+    platform_name = platform or sys.platform
+    if platform_name.startswith("win"):
+        opener = startfile_fn or os.startfile  # type: ignore[attr-defined]
+        opener(str(output_dir))
+        return output_dir
+
+    command = (
+        ["open", str(output_dir)]
+        if platform_name == "darwin"
+        else ["xdg-open", str(output_dir)]
+    )
+    launcher = popen_fn or subprocess.Popen
+    launcher(command)
+    return output_dir
+
+
+def is_safe_generated_file_name(name: str) -> bool:
+    return bool(name) and ".." not in name and "/" not in name and "\\" not in name
+
+
+def generated_file_error_page(status_code: int, title: str, message: str) -> str:
+    safe_title = html.escape(title)
+    safe_message = html.escape(message)
+    return f"""<!DOCTYPE html>
+<html lang="es">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>{status_code} — {safe_title}</title>
+  <style>
+    :root {{ --bg:#1b2838; --card:#16202d; --border:#2a475e; --text:#c7d5e0; --muted:#8f98a0; --accent:#66c0f4; --warn:#f0b232; }}
+    * {{ box-sizing: border-box; }}
+    body {{ margin:0; min-height:100vh; display:grid; place-items:center; padding:1.5rem; font-family:system-ui,-apple-system,sans-serif; background:var(--bg); color:var(--text); }}
+    main {{ width:min(680px,100%); background:var(--card); border:1px solid var(--border); border-radius:12px; padding:1.5rem; box-shadow:0 16px 40px rgba(0,0,0,.24); }}
+    .code {{ color:var(--warn); font-weight:700; font-size:.85rem; margin-bottom:.35rem; }}
+    h1 {{ margin:.1rem 0 .7rem; font-size:1.35rem; }}
+    p {{ color:var(--muted); line-height:1.55; margin:.4rem 0 1rem; }}
+    a {{ display:inline-block; color:#000; background:var(--accent); border-radius:8px; padding:.55rem .85rem; text-decoration:none; font-weight:700; }}
+  </style>
+</head>
+<body>
+  <main>
+    <div class="code">Error {status_code}</div>
+    <h1>{safe_title}</h1>
+    <p>{safe_message}</p>
+    <a href="/">Volver a Steam Tools</a>
+  </main>
+</body>
+</html>"""
+
+
+def send_generated_file_error(handler, status_code: int, title: str, message: str) -> None:
+    data = generated_file_error_page(status_code, title, message).encode("utf-8")
+    handler.send_response(status_code)
+    handler.send_header("Content-Type", "text/html; charset=utf-8")
+    handler.send_header("X-Content-Type-Options", "nosniff")
+    handler.send_header("Content-Length", str(len(data)))
+    handler.end_headers()
+    handler.wfile.write(data)
 
 # ─── Config I/O ──────────────────────────────────
 
@@ -504,8 +591,7 @@ def build_command(config: dict, filters: dict) -> list[str]:
         cmd += ["--key", config["key"]]
     if config.get("hltb"):
         cmd += ["--hltb", config["hltb"]]
-    if config.get("output"):
-        cmd += ["--output", config["output"]]
+    cmd += ["--output", str(resolve_output_dir(config.get("output")))]
     if config.get("discount") is not None:
         cmd += ["--discount", str(config["discount"])]
     if config.get("genres"):
@@ -566,8 +652,7 @@ def build_pd2_command(config: dict, filters: dict) -> list[str]:
         cmd += ["--key", config["key"]]
     if config.get("itad_key"):
         cmd += ["--itad-key", config["itad_key"]]
-    if config.get("output"):
-        cmd += ["--output", config["output"]]
+    cmd += ["--output", str(resolve_output_dir(config.get("output")))]
     if filters.get("no_cache"):
         cmd.append("--no-cache")
     if filters.get("budget"):
@@ -2423,7 +2508,7 @@ syncLatestReportCard();
 
 
 class Handler(BaseHTTPRequestHandler):
-    output_dir = str(SCRIPT_PATH.parent)
+    output_dir = str(DEFAULT_OUTPUT_DIR)
     max_json_body_bytes = 64 * 1024
 
     def log_message(self, format, *args):
@@ -2460,7 +2545,13 @@ class Handler(BaseHTTPRequestHandler):
         elif path == "/app.js":
             serve_text_asset(self, STEAM_DEALS_JS_FILE, JS_CONTENT_TYPE)
         elif path == "/api/config":
-            self._send_json(load_config())
+            self._send_json(
+                {
+                    **load_config(),
+                    "default_output_dir": str(DEFAULT_OUTPUT_DIR),
+                    "default_output_label": output_folder_display_name(DEFAULT_OUTPUT_DIR),
+                }
+            )
         elif path == "/api/ui-state":
             self._send_json(
                 {
@@ -2501,6 +2592,8 @@ class Handler(BaseHTTPRequestHandler):
             self._serve_clear_cache()
         elif path == "/api/stop":
             self._serve_stop()
+        elif path == "/api/open-output-folder":
+            self._serve_open_output_folder()
         elif path == "/api/config":
             self._serve_config_save()
         elif path == "/api/watchlist":
@@ -2551,14 +2644,15 @@ class Handler(BaseHTTPRequestHandler):
         if family_json and not Path(family_json).expanduser().exists():
             issues.append(f"No se encontró Family JSON: {family_json}")
 
-        output = (config.get("output") or "").strip()
-        if output:
-            try:
-                Path(output).expanduser().mkdir(parents=True, exist_ok=True)
-            except Exception as e:
-                issues.append(
-                    f"No se pudo usar el directorio de salida: {output} ({e})"
-                )
+        output_dir = resolve_output_dir(config.get("output"))
+        if not output_dir.exists():
+            warnings.append(
+                f"La carpeta de salida se creará al generar: {output_folder_display_name(output_dir)}"
+            )
+        elif not output_dir.is_dir():
+            issues.append(
+                f"La ruta de salida no es una carpeta: {output_folder_display_name(output_dir)}"
+            )
 
         if not (config.get("key") or "").strip():
             warnings.append(
@@ -2570,6 +2664,44 @@ class Handler(BaseHTTPRequestHandler):
                 "ok": len(issues) == 0,
                 "issues": issues,
                 "warnings": warnings,
+                "output_dir": str(output_dir),
+                "output_label": output_folder_display_name(output_dir),
+            }
+        )
+
+    def _serve_open_output_folder(self):
+        body = self._read_json_body()
+        if body is None:
+            return
+        config = body.get("config", {}) or {}
+        if not isinstance(config, dict):
+            self._send_json(
+                {"error": "invalid_payload", "message": "config debe ser objeto."},
+                status=400,
+            )
+            return
+
+        output_dir = resolve_output_dir(config.get("output"))
+        try:
+            opened_dir = open_output_folder(output_dir)
+        except Exception as e:
+            self._send_json(
+                {
+                    "error": "open_output_folder_failed",
+                    "message": f"No se pudo abrir la carpeta de salida: {e}",
+                    "output_dir": str(output_dir),
+                    "output_label": output_folder_display_name(output_dir),
+                },
+                status=500,
+            )
+            return
+
+        Handler.output_dir = str(opened_dir)
+        self._send_json(
+            {
+                "status": "opened",
+                "path": str(opened_dir),
+                "label": output_folder_display_name(opened_dir),
             }
         )
 
@@ -2787,15 +2919,34 @@ class Handler(BaseHTTPRequestHandler):
 
     def _serve_file(self, encoded_name: str):
         name = urllib.parse.unquote(encoded_name)
-        if ".." in name or "/" in name or "\\" in name:
-            self.send_error(403)
+        if not is_safe_generated_file_name(name):
+            send_generated_file_error(
+                self,
+                403,
+                "Archivo no disponible",
+                "Por seguridad solo se pueden abrir archivos generados por nombre. Vuelve al panel y usa los enlaces del último run.",
+            )
             return
         fpath = Path(Handler.output_dir) / name
         if not fpath.exists():
-            self.send_error(404)
+            send_generated_file_error(
+                self,
+                404,
+                "Archivo no encontrado",
+                "El archivo generado ya no está disponible en la carpeta de salida. Ejecuta de nuevo el reporte o revisa la ruta configurada.",
+            )
             return
         ct = generated_file_content_type(fpath.suffix)
-        data = fpath.read_bytes()
+        try:
+            data = fpath.read_bytes()
+        except OSError:
+            send_generated_file_error(
+                self,
+                500,
+                "No se pudo leer el archivo",
+                "El archivo existe, pero no se pudo leer en este momento. Reintenta o vuelve a generar el reporte.",
+            )
+            return
         self.send_response(200)
         self.send_header("Content-Type", f"{ct}; charset=utf-8")
         self.send_header(
@@ -2861,10 +3012,7 @@ class Handler(BaseHTTPRequestHandler):
             pass
 
         # Update output_dir for file serving
-        if config.get("output"):
-            Handler.output_dir = str(Path(config["output"]).expanduser())
-        else:
-            Handler.output_dir = str(SCRIPT_PATH.parent)
+        Handler.output_dir = str(resolve_output_dir(config.get("output")))
 
         cmd = (
             build_pd2_command(config, filters)
