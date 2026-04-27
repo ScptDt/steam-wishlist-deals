@@ -3097,7 +3097,7 @@ function copyForSheets() {
   navigator.clipboard.writeText(tsv).then(() => {
     const btn = document.querySelector('[onclick*=copyForSheets]');
     const orig = btn.innerHTML;
-    btn.innerHTML = '&#9989; Copiado!';
+    btn.innerHTML = '&#9989; ¡Copiado!';
     setTimeout(() => btn.innerHTML = orig, 2000);
   }).catch(() => alert('No se pudo copiar al clipboard'));
 }
@@ -3122,7 +3122,7 @@ function copyShareLink() {
   const shareUrl = 'steamtools://share?data=' + encoded;
   navigator.clipboard.writeText(shareUrl).then(() => {
     const btn = document.getElementById('btn-copy-app');
-    btn.textContent = 'Copiado!';
+    btn.textContent = '¡Copiado!';
     setTimeout(() => btn.textContent = 'Copiar link steamtools://', 2000);
   });
 }
@@ -3130,7 +3130,7 @@ function copySteamLink() {
   if (!currentSteamUrl) return;
   navigator.clipboard.writeText(currentSteamUrl).then(() => {
     const btn = document.querySelector('.share-btn-copy-steam');
-    btn.textContent = 'Copiado!';
+    btn.textContent = '¡Copiado!';
     setTimeout(() => btn.textContent = 'Copiar link de Steam', 2000);
   });
 }
@@ -3746,7 +3746,7 @@ def generate_share_html(
 <!-- Share Modal -->
 <div class="share-modal" id="share-modal">
   <div class="share-modal-content">
-    <h3>Compartir Deal</h3>
+    <h3>Compartir oferta</h3>
     <div class="share-game-info">
       <div class="share-game-name" id="share-name"></div>
       <div class="share-game-price" id="share-price"></div>
@@ -3760,7 +3760,7 @@ def generate_share_html(
     <div class="share-close" onclick="closeShareModal()">Cerrar</div>
   </div>
 </div>
-<script>let currentShareData=null,currentSteamUrl='';function openShareModal(game){{currentShareData=game;currentSteamUrl='https://store.steampowered.com/app/'+game.appid+'/';document.getElementById('share-name').textContent=game.name||'';document.getElementById('share-price').innerHTML=(game.price_original&&game.price?'<span>$'+game.price_original+' </span>':'')+(game.price||'')+(game.discount?' ('+game.discount+'% OFF)':'');document.getElementById('share-minhist').innerHTML=game.min_hist?'Minimo historico: <span>$'+game.min_hist+'</span>':'';document.getElementById('share-modal').classList.add('active')}}function closeShareModal(){{document.getElementById('share-modal').classList.remove('active');currentShareData=null}}function copyShareLink(){{if(!currentShareData)return;const encoded=btoa(JSON.stringify(currentShareData));const shareUrl='steamtools://share?data='+encoded;navigator.clipboard.writeText(shareUrl).then(()=>{{const btn=document.getElementById('btn-copy-app');btn.textContent='Copiado!';setTimeout(()=>btn.textContent='Copiar link steamtools://',2000)}})}}function copySteamLink(){{if(!currentSteamUrl)return;navigator.clipboard.writeText(currentSteamUrl).then(()=>{{const btn=document.querySelector('.share-btn-copy-steam');btn.textContent='Copiado!';setTimeout(()=>btn.textContent='Copiar link de Steam',2000)}})}}function openInSteam(){{if(currentSteamUrl)window.open(currentSteamUrl,'_blank')}}</script>
+<script>let currentShareData=null,currentSteamUrl='';function openShareModal(game){{currentShareData=game;currentSteamUrl='https://store.steampowered.com/app/'+game.appid+'/';document.getElementById('share-name').textContent=game.name||'';document.getElementById('share-price').innerHTML=(game.price_original&&game.price?'<span>$'+game.price_original+' </span>':'')+(game.price||'')+(game.discount?' ('+game.discount+'% OFF)':'');document.getElementById('share-minhist').innerHTML=game.min_hist?'Minimo historico: <span>$'+game.min_hist+'</span>':'';document.getElementById('share-modal').classList.add('active')}}function closeShareModal(){{document.getElementById('share-modal').classList.remove('active');currentShareData=null}}function copyShareLink(){{if(!currentShareData)return;const encoded=btoa(JSON.stringify(currentShareData));const shareUrl='steamtools://share?data='+encoded;navigator.clipboard.writeText(shareUrl).then(()=>{{const btn=document.getElementById('btn-copy-app');btn.textContent='¡Copiado!';setTimeout(()=>btn.textContent='Copiar link steamtools://',2000)}})}}function copySteamLink(){{if(!currentSteamUrl)return;navigator.clipboard.writeText(currentSteamUrl).then(()=>{{const btn=document.querySelector('.share-btn-copy-steam');btn.textContent='¡Copiado!';setTimeout(()=>btn.textContent='Copiar link de Steam',2000)}})}}function openInSteam(){{if(currentSteamUrl)window.open(currentSteamUrl,'_blank')}}</script>
 </body></html>"""
 
 

@@ -3,6 +3,7 @@ __pycache__/
 .vscode/
 .opencode/
 .tmp/
+.venv/
 .pytest_cache/
 logs/
 *.pyc

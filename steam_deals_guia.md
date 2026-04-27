@@ -1,16 +1,18 @@
-# Guía: Cómo funciona el generador de Steam Wishlist Deals
+# Guía técnica: Cómo funciona Steam Wishlist Deals
+
+> Guía de arquitectura/funcionamiento interno. Para instalación, uso diario, desktop y comandos rápidos, usa `README.md`. Para validaciones paso a paso, usa `docs/runbooks/README.md`.
 
 ## Panorama general
 
-El programa hace 6 pasos en orden:
+El flujo base hace estos pasos en orden:
 
 ```
 Steam API → Resolver vanity URL → Steam ID
 Steam API → Lista de la wishlist (appids)
 Steam API → Biblioteca propia (juegos comprados)
 Steam API → Detectar oferta activa (marketing messages)
-Steam Store API → Precios actuales (en batches de 20)
-Python → Cruce con HLTB + generación del MD
+Steam Store API → Precios actuales (batching/paralelismo controlado)
+Python → Cruce con HLTB + scoring + generación de reportes
 ```
 
 ---
@@ -39,7 +41,7 @@ Necesitas:
 - **Vanity URL** (`gaben`): Es pública, solo identifica tu perfil. Con ella se resuelve tu Steam ID numérico.
 - **API Key**: Da acceso a datos privados (wishlist, biblioteca, juegos jugados). Sin ella no funciona el script.
 
-### Steam Store API (precios, en batches)
+### Steam Store API (precios, batching y fallback)
 
 Base URL: `https://store.steampowered.com/api/`
 
@@ -49,13 +51,13 @@ GET /appdetails?appids=730,440,570,...&cc=mx&filters=price_overview,basic,genres
 
 - `cc=mx` → precios en MXN
 - `filters=price_overview,basic,genres` → nombre, tipo (game/dlc), precio y géneros
-- **Batching**: acepta múltiples appids separados por coma (hasta ~20 por request)
-- Con ~2,900 juegos → ~146 batches en vez de 2,900 requests individuales
+- **Batching**: acepta múltiples appids separados por coma, evitando una request por juego cuando Steam responde bien.
+- **Paralelismo**: el enrichment usa `--max-workers` (default actual: 16) y puede bajarse a 12/8 si hay rate limits o red inestable.
 
-**Rate limiting**:
-- Delay base: 1.5s entre batches
-- Si Steam devuelve 429 (rate limit), el delay sube dinámicamente (x1.5, máx 5s)
-- Tiempo estimado para fetch completo: ~4 minutos (vs ~80 min sin batching)
+**Rate limiting / errores externos**:
+- Si Steam degrada batches (`HTTP 400`, `429` u otros fallos), el flujo puede caer a fallback individual para rescatar appids puntuales.
+- Los fallos/no-data recientes entran en cooldown corto para no repetir trabajo lento innecesario.
+- Para medir corridas grandes, usar `--warm-cache` y el runbook `docs/runbooks/performance-warm-cache.md`.
 
 La respuesta incluye un campo `type` que indica si es `"game"`, `"dlc"`, `"demo"`, etc. Esto se usa para filtrar soundtracks y DLCs del matching con HLTB.
 
@@ -71,7 +73,7 @@ No requiere API key. Devuelve los eventos/ofertas activas de Steam. El script bu
 3. Fallback: primer mensaje con título
 
 El nombre de la oferta se usa para:
-- El header del MD: `> 🏷️ **Steam Spring Sale** | 30 de marzo de 2026`
+- El header del Markdown: `> 🏷️ **Steam Spring Sale** | 30 de marzo de 2026`
 - El nombre del archivo: `Steam Deals Steam Spring Sale 2026-03-30.md`
 
 ### HLTB (HowLongToBeat)
@@ -153,15 +155,16 @@ La implementación de parseo HLTB, normalización, `is_same_game`, `find_best_ma
 
 ---
 
-## 4. Estructura del MD generado
+## 4. Reportes generados
 
-### Nombre del archivo
+### Nombre de archivos
 
-- Con oferta detectada: `Steam Deals [Nombre de la oferta] [YYYY-MM-DD].md`
-- Sin oferta: `Steam Deals [YYYY-MM-DD].md`
-- Se genera en el mismo directorio del script
+- Con oferta detectada: `Steam Deals [Nombre de la oferta] [YYYY-MM-DD].*`
+- Sin oferta: `Steam Deals [YYYY-MM-DD].*`
+- Por defecto se generan en `output/` o en el directorio indicado con `--output`.
+- Formatos vigentes: Markdown `.md`, HTML interactivo `.html`, Share HTML, JSON estructurado `.json` y CSV `.csv` cuando se activa.
 
-### Secciones
+### Secciones principales del Markdown
 
 ```
 # Steam Wishlist Deals — [vanity]
@@ -215,7 +218,7 @@ La sección "Quitar de la Wishlist" agrupa todo lo que deberías remover:
 | `--key` | Steam API Key |
 | `--vanity` | Vanity URL o Steam ID numérico |
 | `--hltb` | Ruta al CSV de HLTB (opcional) |
-| `--output` | Directorio de salida para los MD |
+| `--output` | Directorio de salida para reportes |
 | `--discount` | Descuento mínimo % (default: 50) |
 | `--genre` | Géneros de interés (puede repetirse) |
 | `--no-cache` | Ignorar caché y re-fetchear todo |
@@ -242,5 +245,5 @@ Prioridad: flag CLI > config file > prompt interactivo.
    a. Parsear CSV → backlog[], completed[], playing[], retired[]
    b. Para cada juego, buscar match en deals[] (solo type=game)
    c. Clasificar por storefront y estado
-9. Generar MD con todas las secciones
+9. Generar reportes (`.md`, `.html`, Share HTML, `.json` y `.csv` si aplica)
 ```

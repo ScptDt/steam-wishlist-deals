@@ -25,7 +25,7 @@ Guía mínima para darle rumbo al repo sin convertirlo en burocracia.
 ## Higiene del repo
 
 - Se versiona: código fuente, tests, docs permanentes, runbooks y configuración útil del proyecto.
-- No se versiona: `.tmp/`, `.pytest_cache/`, `logs/` y reportes generados `Steam Deals*.md/.html/.json/.csv`.
+- No se versiona: `.tmp/`, `.pytest_cache/`, `logs/`, reportes generados `Steam Deals*.md/.html/.json/.csv` y `PAYDAY2_Plan_de_Compra.*`.
 - El caché local en `.cache/steam_deals` sí se conserva localmente; no debe borrarse por limpieza rutinaria si ayuda a corridas grandes.
 - Si un archivo generado merece conservarse como ejemplo, debe moverse a una ubicación intencional (`docs/` o `tests/fixtures/`) con nombre estable y contexto claro.
 

@@ -17,7 +17,7 @@ Los DLCs se descubren dinámicamente desde la API de Steam — no hay base de da
 
 ### Herramientas
 - **Umbral configurable (`--min-deal`)** — Define el descuento mínimo para recomendar compra (default: 50%)
-- **Budget Mode** — "Tengo $500, ¿qué compro?" ordenado por mejor oferta
+- **Tu Presupuesto Ideal** — "Tengo $500, ¿qué compro?" ordenado por mejor oferta
 - **Alert Price** — Alertar cuando un DLC baja de N MXN
 - **Mark Owned/Unowned** — Marcar DLCs como comprados o no desde CLI o desde la web (checkboxes)
 
@@ -46,7 +46,7 @@ Dashboard interactivo con:
 - **Tabla de DLCs** — Sorteable, filtrable por oferta, con imágenes
 - **Marcar como comprado** — Click en el checkbox y se guarda al instante
 - **Simulador de descuento** — Desliza para ver cuánto costaría con X% de descuento
-- **Budget Planner** — "Tengo $500, ¿qué compro?" ordenado por mejor oferta
+- **Tu Presupuesto Ideal** — "Tengo $500, ¿qué compro?" ordenado por mejor oferta
 - **Próximas ofertas** — Estimación de costo en Summer/Autumn/Winter Sale
 - **Actualizar datos** — Botón que ejecuta el tracker y muestra progreso en vivo
 - **Config** — Cambia vanity/API keys desde la web
@@ -59,13 +59,13 @@ También disponible como tab integrado en `steam_deals_web.py`.
 # Básico (usa config compartida de Steam Deals)
 python3 payday2_dlc_tracker.py --vanity TU_VANITY_URL
 
-# Con API key (detecta DLCs propios automáticamente)
+# Con API key/config compartida (ownership de DLCs sigue siendo manual)
 python3 payday2_dlc_tracker.py --key TU_KEY --vanity TU_VANITY_URL
 
 # Con ITAD (mínimos históricos + multi-tienda)
 python3 payday2_dlc_tracker.py --itad-key TU_KEY
 
-# Budget mode
+# Tu Presupuesto Ideal
 python3 payday2_dlc_tracker.py --budget 500
 
 # Alert price

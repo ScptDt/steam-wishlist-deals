@@ -4033,10 +4033,13 @@ class RankTopPicksTests(unittest.TestCase):
         )
 
         self.assertIn('id="share-modal"', html)
+        self.assertIn("Compartir oferta", html)
         self.assertIn("Copiar link steamtools://", html)
         self.assertIn("Abrir en Steam", html)
+        self.assertIn("¡Copiado!", html)
         self.assertIn("data-share-game=", html)
         self.assertIn("bindShareModalInteractions", html)
+        self.assertNotIn("Compartir Deal", html)
 
     def test_generate_share_html_surfaces_include_modal_and_share_actions(self) -> None:
         html = generate_share_html(
@@ -4065,10 +4068,13 @@ class RankTopPicksTests(unittest.TestCase):
         )
 
         self.assertIn('id="share-modal"', html)
+        self.assertIn("Compartir oferta", html)
         self.assertIn("Copiar link steamtools://", html)
         self.assertIn("Abrir en Steam", html)
+        self.assertIn("¡Copiado!", html)
         self.assertIn("data-share-game=", html)
         self.assertIn("bindShareModalInteractions", html)
+        self.assertNotIn("Compartir Deal", html)
 
     def test_generate_md_includes_budget_recommendation_context(self) -> None:
         md = generate_md(

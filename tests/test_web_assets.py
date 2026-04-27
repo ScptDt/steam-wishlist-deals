@@ -15,11 +15,22 @@ class WebAssetsTests(unittest.TestCase):
         app_css = (ROOT / "web" / "steam_deals" / "app.css").read_text(
             encoding="utf-8"
         )
+        app_js = (ROOT / "web" / "steam_deals" / "app.js").read_text(
+            encoding="utf-8"
+        )
 
         self.assertIn('class="row row-spaced history-search-row"', index_html)
         self.assertIn("Buscar en el histórico", index_html)
         self.assertIn("Comparar 2 recientes", index_html)
         self.assertIn("Filtra por fecha, evento o perfil", index_html)
+        self.assertIn("Página ${historyPage} de ${totalPages}", app_js)
+        self.assertIn("Filtros del histórico restablecidos.", app_js)
+        self.assertIn("Salió", app_js)
+        self.assertIn("Cambió", app_js)
+        self.assertIn("precios sin cambio", app_js)
+        self.assertIn("volumen de ofertas por ejecución", app_js)
+        self.assertNotIn("Pagina ${historyPage} de ${totalPages}", app_js)
+        self.assertNotIn("include_same activo", app_js)
         self.assertIn(".history-search-row", app_css)
         self.assertIn(".history-quick-card", app_css)
         self.assertIn("@media (max-width: 640px)", app_css)
@@ -40,6 +51,22 @@ class WebAssetsTests(unittest.TestCase):
         self.assertIn("Descargar CSV", app_js)
         self.assertIn("a.setAttribute('download', action.name)", app_js)
         self.assertIn("Los artefactos se muestran por tipo", app_js)
+
+    def test_share_copy_uses_user_friendly_spanish_terms(self) -> None:
+        index_html = (ROOT / "web" / "steam_deals" / "index.html").read_text(
+            encoding="utf-8"
+        )
+        app_js = (ROOT / "web" / "steam_deals" / "app.js").read_text(
+            encoding="utf-8"
+        )
+
+        self.assertIn("Compartir oferta", index_html)
+        self.assertIn("Compartir juegos destacados", app_js)
+        self.assertIn("información del reporte más reciente", app_js)
+        self.assertIn("¡Copiado!", app_js)
+        self.assertNotIn("Compartir Deal", index_html)
+        self.assertNotIn("Compartir Top Picks", app_js)
+        self.assertNotIn("payload más reciente", app_js)
 
     def test_output_folder_actions_explain_default_folder_and_open_button(self) -> None:
         index_html = (ROOT / "web" / "steam_deals" / "index.html").read_text(

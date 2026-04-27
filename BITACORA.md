@@ -45,6 +45,7 @@ Mantener en `PENDIENTES.md`:
 
 ## Bitacora reciente de migracion
 
+- 2026-04-24: `README.md` compacta el tail de referencia: flags comunes reemplazan la tabla completa, PAYDAY 2 queda como resumen con link a `payday2_guia.md`, y caché/config se condensan en notas de datos locales.
 - 2026-04-24: `README.md` compacta `Mapa de módulos y entrypoints` hacia una tabla de superficies + resumen interno; `docs/project-rules.md` enlaza explícitamente el índice `docs/runbooks/README.md`.
 - 2026-04-24: Se crea `docs/runbooks/README.md` como índice central de runbooks y `README.md` pasa a enlazar ese índice para desktop, performance y validaciones de features.
 - 2026-04-24: Se crea `docs/runbooks/features-validation.md` para mover checklists de frontmatter Obsidian/Notion, `Tu Presupuesto Ideal` y share E2E fuera del README; `README.md` queda con resúmenes y links.
@@ -71,6 +72,8 @@ Mantener en `PENDIENTES.md`:
 
 ## Bitacora
 
+- 2026-04-27: Quick win de UX en Share/Compartir: el modal y reportes usan `Compartir oferta`, `Compartir juegos destacados`, texto sin jerga de `payload` y feedback `¡Copiado!`; se mantiene compatibilidad `steamtools://share`. Validado con `tests/test_generator_logic.py -k "share"` (6 tests OK) y `tests/test_desktop_share.py tests/test_web_assets.py` (22 tests OK).
+- 2026-04-27: Quick win de copy en Dashboard histórico: se corrigen acentos visibles (`Página`, `Salió`, `Cambió`, `histórico`) y se reemplaza copy técnico de `include_same`/`run` por lenguaje de usuario. Validado con `tests/test_track_history_flow.py tests/test_web_assets.py` (17 tests OK).
 - 2026-04-22: Track Stop queda casi cerrado: la Web UI ya no duplica `Solicitando detener ejecucion...`, `/api/stop` usa estados veraces y una prueba manual en browser confirmó que el run sí se detiene. La validación equivalente en desktop se difiere al Track Desktop mientras el launcher/fallback sigue estabilizándose.
 - 2026-04-22: Quick win de UX en reportes HTML: el encabezado visible pasa de `Steam Deals` a `Ofertas de Steam`, para sonar menos como nombre interno de script y más como pantalla orientada al usuario.
 - 2026-04-22: Quick win de UX en la tarjeta final: `Último reporte` se renombra a `Resumen de tu última ejecución`, alineado con el lenguaje más claro del historial y la UI principal.

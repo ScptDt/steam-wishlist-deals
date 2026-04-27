@@ -1762,7 +1762,7 @@ function copyExecutionLog() {
   }
 
   copyTextWithFallback(text).then(() => {
-    flashButtonLabel(btnCopyLog, 'Copiado!');
+    flashButtonLabel(btnCopyLog, '¡Copiado!');
   }).catch(() => {
     window.prompt('Copia este log:', text);
     flashButtonLabel(btnCopyLog, 'Listo');
@@ -2512,8 +2512,8 @@ function renderLatestShareTopPicks(report) {
   if (!cards) return '';
   return `
     <div class="latest-share-section">
-      <div class="latest-share-section-title">Compartir Top Picks</div>
-      <div class="latest-share-section-subtitle">Abre el modal desde aquí para copiar el link <code>steamtools://share</code> o el link de Steam con el payload más reciente.</div>
+      <div class="latest-share-section-title">Compartir juegos destacados</div>
+      <div class="latest-share-section-subtitle">Abre el modal desde aquí para copiar el link <code>steamtools://share</code> o el link de Steam con la información del reporte más reciente.</div>
       <div class="latest-share-grid">${cards}</div>
     </div>
   `;
@@ -2763,7 +2763,7 @@ function copyLatestReportUrl(btn) {
   const url = latestReportUrl();
   const resetLabel = btn.innerHTML;
   const showCopied = () => {
-    btn.textContent = 'Copiado!';
+    btn.textContent = '¡Copiado!';
     setTimeout(() => { btn.innerHTML = resetLabel; }, 2000);
   };
 
@@ -2964,7 +2964,7 @@ function copyShareLink() {
   const shareUrl = 'steamtools://share?data=' + encoded;
   copyTextWithFallback(shareUrl).then(() => {
     const btn = document.getElementById('btn-copy-app');
-    flashShareButton(btn, 'Copiado!', 'Copiar link steamtools://');
+    flashShareButton(btn, '¡Copiado!', 'Copiar link steamtools://');
   }).catch(() => {
     window.prompt('Copia este link:', shareUrl);
   });
@@ -2974,7 +2974,7 @@ function copySteamLink() {
   if (!currentSteamUrl) return;
   copyTextWithFallback(currentSteamUrl).then(() => {
     const btn = document.querySelector('.share-btn-copy-steam');
-    flashShareButton(btn, 'Copiado!', 'Copiar link de Steam');
+    flashShareButton(btn, '¡Copiado!', 'Copiar link de Steam');
   }).catch(() => {
     window.prompt('Copia este link de Steam:', currentSteamUrl);
   });

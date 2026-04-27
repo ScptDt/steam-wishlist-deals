@@ -881,7 +881,7 @@ function copyForSheets() {
   navigator.clipboard.writeText(tsv).then(() => {
     const btn = document.querySelector('[onclick*=copyForSheets]');
     const orig = btn.innerHTML;
-    btn.innerHTML = '&#9989; Copiado!';
+    btn.innerHTML = '&#9989; ¡Copiado!';
     setTimeout(() => btn.innerHTML = orig, 2000);
   }).catch(() => alert('No se pudo copiar al clipboard'));
 }
@@ -1007,7 +1007,7 @@ function copyShareLink() {
   const shareUrl = 'steamtools://share?data=' + encoded;
   copyTextWithFallback(shareUrl).then(() => {
     const btn = document.getElementById('btn-copy-app');
-    flashShareButton(btn, 'Copiado!', 'Copiar link steamtools://');
+    flashShareButton(btn, '¡Copiado!', 'Copiar link steamtools://');
   }).catch(() => {
     window.prompt('Copia este link:', shareUrl);
   });
@@ -1016,7 +1016,7 @@ function copySteamLink() {
   if (!currentSteamUrl) return;
   copyTextWithFallback(currentSteamUrl).then(() => {
     const btn = document.querySelector('.share-btn-copy-steam');
-    flashShareButton(btn, 'Copiado!', 'Copiar link de Steam');
+    flashShareButton(btn, '¡Copiado!', 'Copiar link de Steam');
   }).catch(() => {
     window.prompt('Copia este link de Steam:', currentSteamUrl);
   });
@@ -1694,7 +1694,7 @@ def generate_html(
 {"".join(parts)}
 <div class="share-modal" id="share-modal">
   <div class="share-modal-content">
-    <h3>Compartir Deal</h3>
+    <h3>Compartir oferta</h3>
     <div class="share-game-info">
       <div class="share-game-name" id="share-name"></div>
       <div class="share-game-price" id="share-price"></div>

@@ -73,7 +73,7 @@ Resumen corto para mantener rumbo y evitar ruido en el repo:
 - **`BITACORA.md` guarda la evidencia cronológica detallada**: validaciones, workarounds, avances históricos y notas operativas largas.
 - **La Web UI es la UX principal**; desktop debe seguir reutilizando la misma UI y no abrir otro frontend separado.
 - **`CLI` es la superficie operativa** para automatización, flags avanzados y corridas reproducibles.
-- **Artefactos temporales o generados no se versionan**: `.tmp/`, `.pytest_cache/`, `logs/` y reportes `Steam Deals*.md/.html/.json/.csv` son locales.
+- **Artefactos temporales o generados no se versionan**: `.tmp/`, `.pytest_cache/`, `logs/`, reportes `Steam Deals*.md/.html/.json/.csv` y `PAYDAY2_Plan_de_Compra.*` son locales.
 - **El caché local sí se conserva**: `./.cache/steam_deals` o la ruta persistente equivalente no se limpia por rutina porque acelera corridas reales.
 - **Si necesitas un ejemplo o fixture**, guárdalo en `tests/fixtures/` o `docs/` con nombre intencional, no como salida cruda de una corrida real.
 
@@ -514,65 +514,46 @@ python3 steam_deals_generator.py --vanity gaben \
   --schedule 6
 ```
 
-## Todos los flags (Steam Deals CLI)
+## Flags comunes (Steam Deals CLI)
 
-| Flag | Descripción |
-|------|-------------|
-| `--vanity` | Vanity URL, Steam ID, o link de perfil |
-| `--key` | Steam API Key (opcional) |
-| `--itad-key` | IsThereAnyDeal API Key (opcional) |
-| `--hltb` | Ruta al CSV exportado de HLTB |
-| `--discount` | Descuento mínimo % (default: 50) |
-| `--genre` | Filtrar por géneros |
-| `--output` | Directorio de salida |
-| `--no-cache` | Ignorar caché existente |
-| `--max-price` | Precio máximo en MXN |
-| `--deck-only` | Solo Deck Verified o Playable |
-| `--deck-verified` | Solo Deck Verified |
-| `--min-reviews` | Mínimo % de reviews positivas |
-| `--min-review-count` | Mínimo total de reviews |
-| `--max-hours` | Máximo horas HLTB |
-| `--top` | Top N picks (default: 10) |
-| `--sort` | Ordenar por: discount, price, reviews, priority, score |
-| `--new-only` | Solo deals nuevos vs run anterior |
-| `--csv` | Generar CSV |
-| `--watchlist` | add/remove/list precio objetivo |
-| `--budget` | Presupuesto en MXN |
+Para la lista completa y vigente, usa:
+
+```bash
+python3 steam_deals_generator.py --help
+```
+
+Flags más usados:
+
+| Flag | Uso típico |
+|------|------------|
+| `--vanity` | Perfil Steam: vanity, Steam ID o URL completa |
+| `--key` / `--itad-key` | API keys para más datos y mínimo histórico |
+| `--discount` / `--max-price` | Filtros principales de precio/oferta |
+| `--deck-only` / `--deck-verified` | Filtros Steam Deck |
+| `--top` / `--sort` | Cantidad y orden de picks destacados |
+| `--budget` | Activar `Tu Presupuesto Ideal` |
 | `--compare` | Comparar con otro perfil |
-| `--telegram-token` | Token del bot de Telegram |
-| `--telegram-chat` | Chat ID de Telegram |
-| `--discord-webhook` | URL del webhook de Discord |
-| `--schedule` | Ejecutar cada N horas |
-| `--family-json` | JSON de biblioteca familiar |
-| `--max-workers` | Workers de fetch paralelo para enrichment (default: 16; recomendado 8-16 según estabilidad de red/API) |
-| `--md-frontmatter` | Incluir frontmatter YAML en Markdown (Obsidian/Notion); ver perfil y checklist en “Markdown con frontmatter” |
-| `--alert-rise-pct` | Umbral de subida % para alertas inteligentes (ej: 10 para >=10%) |
-| `--alert-global-margin-pct` | Margen % sobre mínimo global para alertas (ej: 3 para <= mínimo+3%) |
-| `--alert-score-min` | Score mínimo para priorizar alertas inteligentes (ej: 80) |
+| `--watchlist` | `add/remove/list` de precio objetivo |
+| `--csv` / `--md-frontmatter` | Exports extra para Sheets, Obsidian o Notion |
+| `--max-workers` | Paralelismo de enrichment; default actual: 16 |
+| `--warm-cache` | Precalentar caché de precios sin generar reportes |
+| `--interactive` | Habilitar prompts de configuración en terminal |
+| `--no-cache` | Forzar re-fetch cuando haga falta |
 
-## PAYDAY 2 DLC Tracker (detalle)
+También existen flags avanzados para HLTB, familia, notificaciones, scheduler y alertas inteligentes; consulta `--help` antes de automatizar.
 
-Script y dashboard web para trackear DLCs de PAYDAY 2: cuáles te faltan, precios, ofertas, historial y recomendaciones de compra. Los DLCs se descubren dinámicamente desde la API de Steam.
+## PAYDAY 2 DLC Tracker
 
-> **Nota:** La API de Steam no detecta DLCs poseídos (solo juegos base). Marca tus DLCs como comprados vía checkboxes en el dashboard o con `--mark-owned` en CLI.
+Tracker standalone para DLCs de PAYDAY 2: faltantes, precios, ofertas, historial y recomendaciones de compra. Guía completa: `payday2_guia.md`.
 
-### Dashboard Web (recomendado)
+> La API de Steam no detecta DLCs poseídos automáticamente. Márcalos manualmente con checkboxes en el dashboard o con `--mark-owned` / `--mark-unowned` en CLI.
+
+### Dashboard Web
 
 ```bash
 python3 payday2_web.py
 # Se abre http://127.0.0.1:8081 en tu navegador
 ```
-
-Dashboard interactivo con:
-- **Vista instantánea** — Carga datos del caché al abrir, sin esperas
-- **Stats y donut** — Cuántos DLCs tienes, cuánto falta, ofertas activas
-- **Tabla de DLCs** — Sorteable, filtrable por oferta, con imagenes
-- **Marcar como comprado** — Click en el checkbox y se guarda al instante
-- **Simulador de descuento** — Desliza para ver cuánto costaría con X% de descuento
-- **Budget Planner** — "Tengo $500, ¿qué compro?" ordenado por mejor oferta
-- **Próximas ofertas** — Estimación de costo en Summer/Autumn/Winter Sale
-- **Actualizar datos** — Boton que ejecuta el tracker y muestra progreso en vivo
-- **Config** — Cambia vanity/API keys desde la web
 
 ### CLI
 
@@ -586,18 +567,12 @@ python3 payday2_dlc_tracker.py --mark-owned 259381    # marcar DLC como comprado
 
 Genera `PAYDAY2_Plan_de_Compra.md` y `.html` con el reporte completo.
 
-## Caché
+## Datos locales, caché y config
 
-Los datos se cachean en `.cache/steam_deals/` (dentro del proyecto) para evitar requests innecesarios:
+- Config principal: `~/.config/steam_deals.json`.
+- Watchlist: `~/.config/steam_deals_watchlist.json`.
+- Caché source: `.cache/steam_deals/`.
+- Caché desktop/frozen: ruta persistente de usuario (`~/.cache/steam_deals` o equivalente XDG).
+- PAYDAY 2 usa subcarpeta propia bajo `.cache/steam_deals/payday2/`.
 
-| Dato | TTL |
-|------|-----|
-| Precios | 24 horas |
-| Reviews, Deck, ProtonDB, Anti-Cheat | 7 días |
-| Etiquetas (SteamSpy), Achievements | 30 días |
-
-Usa `--no-cache` para forzar re-fetch.
-
-## Config
-
-La configuración se guarda en `~/.config/steam_deals.json` tras el primer run interactivo. La watchlist se guarda en `~/.config/steam_deals_watchlist.json`.
+Usa `--no-cache` solo cuando quieras forzar re-fetch. Para wishlists grandes, prefiere `--warm-cache`; el flujo de medición y evidencia vive en `docs/runbooks/performance-warm-cache.md`.
