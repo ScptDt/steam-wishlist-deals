@@ -1584,36 +1584,47 @@ def save_price_cache(steam_id: str, fetched: dict) -> None:
     _prices_module.save_price_cache(CACHE_FILE, steam_id, fetched)
 
 
+def _format_price_refresh_details(price_cache_policy, *, action_label: str) -> str:
+    missing_ids = tuple(getattr(price_cache_policy, "missing_ids", ()) or ())
+    refresh_ids = tuple(
+        getattr(price_cache_policy, "refresh_ids", missing_ids) or ()
+    )
+    deferred_failure_ids = tuple(
+        getattr(price_cache_policy, "deferred_failure_ids", ()) or ()
+    )
+    stale_count = sum(1 for appid in refresh_ids if appid not in missing_ids)
+    if refresh_ids:
+        details = []
+        if missing_ids:
+            details.append(f"{len(missing_ids)} nuevos")
+        if stale_count:
+            details.append(f"{stale_count} stale")
+        if deferred_failure_ids:
+            details.append(f"{len(deferred_failure_ids)} fallos recientes en cooldown")
+        details_msg = f" ({', '.join(details)})" if details else ""
+        return f"{len(refresh_ids)} {action_label}{details_msg}"
+    status_msg = _dim("sin nuevos, skip fetch")
+    if deferred_failure_ids:
+        status_msg = f"{status_msg} ({len(deferred_failure_ids)} fallos recientes en cooldown)"
+    return status_msg
+
+
 def format_price_cache_status(price_cache_policy, cache_age: float) -> str:
     status = getattr(price_cache_policy, "status", "empty")
     if status == "bypass":
         return _warn("--no-cache: ignorando caché existente")
     if status == "valid":
-        missing_ids = tuple(getattr(price_cache_policy, "missing_ids", ()) or ())
-        refresh_ids = tuple(
-            getattr(price_cache_policy, "refresh_ids", missing_ids) or ()
+        status_msg = _format_price_refresh_details(
+            price_cache_policy,
+            action_label="por fetchear",
         )
-        deferred_failure_ids = tuple(
-            getattr(price_cache_policy, "deferred_failure_ids", ()) or ()
-        )
-        stale_count = sum(1 for appid in refresh_ids if appid not in missing_ids)
-        if refresh_ids:
-            details = []
-            if missing_ids:
-                details.append(f"{len(missing_ids)} nuevos")
-            if stale_count:
-                details.append(f"{stale_count} stale")
-            if deferred_failure_ids:
-                details.append(f"{len(deferred_failure_ids)} fallos recientes en cooldown")
-            details_msg = f" ({', '.join(details)})" if details else ""
-            status_msg = f"{len(refresh_ids)} por fetchear{details_msg}"
-        else:
-            status_msg = _dim("sin nuevos, skip fetch")
-            if deferred_failure_ids:
-                status_msg = f"{status_msg} ({len(deferred_failure_ids)} fallos recientes en cooldown)"
         return f"{_ok(f'Caché válida ({cache_age:.1f}h)')} — {status_msg}"
     if status == "expired":
-        return _warn(f"Caché expirada ({cache_age:.0f}h) — re-fetching todo")
+        status_msg = _format_price_refresh_details(
+            price_cache_policy,
+            action_label="por revalidar",
+        )
+        return f"{_warn(f'Caché expirada ({cache_age:.0f}h)')} — {status_msg}"
     return _dim("Sin caché — fetch completo")
 
 
@@ -1653,6 +1664,7 @@ def run_price_cache_stage(
         current_time_fn=current_time_fn,
         entry_ttl_hours=ENTRY_REFRESH_TTL_HOURS,
         failure_retry_hours=PRICE_FAILURE_RETRY_HOURS,
+        preserve_expired_payload=True,
     )
     fetched_cache = price_cache_policy.cache
 
@@ -1692,6 +1704,8 @@ def run_price_cache_stage(
         "individual_fallback_batches": 0,
         "individual_fallback_resolved_count": 0,
         "individual_fallback_failed_count": 0,
+        "http_400_direct_fallback_count": 0,
+        "http_400_direct_fallback_batches": 0,
         "null_batch_count": 0,
     }
 
@@ -1738,6 +1752,15 @@ def run_price_cache_stage(
         emit_fn(
             f"  {_dim(fallback_msg)}"
         )
+    if price_fetch_stats["http_400_direct_fallback_count"]:
+        direct_fallback_msg = (
+            "Fallback individual directo por HTTP 400 repetido: "
+            f"{price_fetch_stats['http_400_direct_fallback_count']:,} juegos en "
+            f"{price_fetch_stats['http_400_direct_fallback_batches']} tandas"
+        )
+        emit_fn(
+            f"  {_dim(direct_fallback_msg)}"
+        )
     emit_fn(f"  {build_price_cache_completion_message(deals, min_discount, n_fetched)}")
     return {
         "deals": deals,
@@ -1754,6 +1777,8 @@ def run_price_cache_stage(
         "individual_fallback_batches": price_fetch_stats["individual_fallback_batches"],
         "individual_fallback_resolved_count": price_fetch_stats["individual_fallback_resolved_count"],
         "individual_fallback_failed_count": price_fetch_stats["individual_fallback_failed_count"],
+        "http_400_direct_fallback_count": price_fetch_stats["http_400_direct_fallback_count"],
+        "http_400_direct_fallback_batches": price_fetch_stats["http_400_direct_fallback_batches"],
         "null_batch_count": price_fetch_stats["null_batch_count"],
         "batch_size": int(price_tuning["batch_size"]),
         "batch_halving_limit": int(price_tuning["batch_halving_limit"]),

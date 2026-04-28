@@ -544,6 +544,60 @@ class WarmCacheTests(unittest.TestCase):
         self.assertEqual(result["n_fetched"], 2)
         self.assertTrue(any("2 por fetchear" in line for line in emitted))
 
+    def test_run_price_cache_stage_preserves_expired_cache_payload(self) -> None:
+        emitted = []
+        received = {}
+        now_ts = 1_700_000_000.0
+        fetched_cache = {
+            "10": self._price_cache_entry(
+                name="Alpha",
+                discount_percent=70,
+                price_final="$10",
+                price_original="$20",
+                price_final_raw=1000,
+                fetched_at=now_ts - (25 * 3600),
+            ),
+            "20": self._price_cache_entry(
+                name="Bravo",
+                discount_percent=60,
+                price_final="$8",
+                price_original="$20",
+                price_final_raw=800,
+                fetched_at=now_ts,
+            ),
+            "40": {"_failed_at": now_ts - 3600, "_failure_reason": "no_price_data"},
+        }
+
+        def fake_get_deals(_wishlist, cache, _steam_id, **kwargs):
+            received["cache"] = dict(cache)
+            received["refresh_ids"] = tuple(kwargs.get("refresh_ids") or ())
+            return ([{"appid": "10"}, {"appid": "20"}], len(received["refresh_ids"]))
+
+        result = run_price_cache_stage(
+            ["10", "20", "30", "40"],
+            "steam-id",
+            no_cache=False,
+            min_discount=50,
+            rate_limit=1.5,
+            load_price_cache_fn=lambda _steam_id: (fetched_cache, 48.0),
+            select_cache_fn=module_select_scoped_cache,
+            clear_cache_files_fn=lambda _paths: (),
+            get_deals_from_wishlist_fn=fake_get_deals,
+            save_price_cache_fn=lambda *_args, **_kwargs: None,
+            emit_fn=emitted.append,
+            current_time_fn=lambda: now_ts,
+        )
+
+        self.assertEqual(result["cache_status"], "expired")
+        self.assertEqual(result["missing_count"], 1)
+        self.assertEqual(result["stale_count"], 1)
+        self.assertEqual(result["deferred_failure_count"], 1)
+        self.assertEqual(received["refresh_ids"], ("10", "30"))
+        self.assertIn("20", received["cache"])
+        self.assertIn("40", received["cache"])
+        self.assertTrue(any("Caché expirada" in line for line in emitted))
+        self.assertTrue(any("2 por revalidar" in line for line in emitted))
+
     def test_run_price_cache_stage_emits_observability_counts_and_tuning_info(
         self,
     ) -> None:
@@ -1278,7 +1332,7 @@ class PriceCacheTests(unittest.TestCase):
         self.assertEqual(decision.refresh_ids, ("20",))
         self.assertEqual(decision.deferred_failure_ids, ("10",))
 
-    def test_select_scoped_cache_clears_expired_payload(self) -> None:
+    def test_select_scoped_cache_clears_expired_payload_by_default(self) -> None:
         decision = module_select_scoped_cache(
             ["10", "20"],
             {"10": {"discount_percent": 70}},
@@ -1290,19 +1344,56 @@ class PriceCacheTests(unittest.TestCase):
         self.assertEqual(decision.status, "expired")
         self.assertEqual(decision.cache, {})
         self.assertEqual(decision.missing_ids, ("10", "20"))
+        self.assertEqual(decision.refresh_ids, ("10", "20"))
 
-    def test_select_scoped_cache_expires_exactly_at_ttl_boundary(self) -> None:
+    def test_select_scoped_cache_preserves_expired_payload_when_enabled(self) -> None:
+        now_ts = 1_700_000_000.0
         decision = module_select_scoped_cache(
-            ["10", "20"],
-            {"10": {"discount_percent": 70}},
-            24.0,
+            ["10", "20", "30"],
+            {
+                "10": {"discount_percent": 70, "_fetched_at": now_ts - (25 * 3600)},
+                "20": {"discount_percent": 60, "_fetched_at": now_ts},
+            },
+            48.0,
             no_cache=False,
             ttl_hours=24,
+            current_time_fn=lambda: now_ts,
+            entry_ttl_hours=24,
+            preserve_expired_payload=True,
         )
 
         self.assertEqual(decision.status, "expired")
-        self.assertEqual(decision.cache, {})
-        self.assertEqual(decision.missing_ids, ("10", "20"))
+        self.assertEqual(
+            decision.cache,
+            {
+                "10": {"discount_percent": 70, "_fetched_at": now_ts - (25 * 3600)},
+                "20": {"discount_percent": 60, "_fetched_at": now_ts},
+            },
+        )
+        self.assertEqual(decision.missing_ids, ("30",))
+        self.assertEqual(decision.refresh_ids, ("10", "30"))
+
+    def test_select_scoped_cache_expires_exactly_at_ttl_boundary(self) -> None:
+        now_ts = 1_700_000_000.0
+        decision = module_select_scoped_cache(
+            ["10", "20"],
+            {
+                "10": {"discount_percent": 70, "_fetched_at": now_ts - (25 * 3600)},
+                "20": {"_failed_at": now_ts - 3600, "_failure_reason": "no_price_data"},
+            },
+            24.0,
+            no_cache=False,
+            ttl_hours=24,
+            current_time_fn=lambda: now_ts,
+            entry_ttl_hours=24,
+            failure_retry_hours=2,
+            preserve_expired_payload=True,
+        )
+
+        self.assertEqual(decision.status, "expired")
+        self.assertEqual(decision.missing_ids, ())
+        self.assertEqual(decision.refresh_ids, ("10",))
+        self.assertEqual(decision.deferred_failure_ids, ("20",))
 
     def test_select_global_cache_bypasses_when_no_cache_is_enabled(self) -> None:
         decision = module_select_global_cache(
@@ -1702,6 +1793,101 @@ class PriceCacheTests(unittest.TestCase):
         self.assertEqual(single_calls, ["10", "20", "30", "40"])
         self.assertTrue(
             any("reduciendo lote" in line for line in emitted)
+        )
+
+    def test_get_deals_from_wishlist_skips_extra_sleep_before_http_400_fallback(
+        self,
+    ) -> None:
+        fetched_cache = {}
+        sleep_calls = []
+        single_calls = []
+
+        def fake_get_json(url, headers=None):
+            raise urllib.error.HTTPError(url, 400, "Bad Request", hdrs=None, fp=None)
+
+        def fake_fetch_single(appid, _country, _delay):
+            single_calls.append(appid)
+            return None
+
+        deals, total = module_get_deals_from_wishlist(
+            ["10", "20"],
+            fetched_cache,
+            "steam-id",
+            min_discount=50,
+            get_json=fake_get_json,
+            sleep_fn=sleep_calls.append,
+            monotonic_fn=lambda: 0.0,
+            current_time_fn=lambda: 200000.0,
+            save_price_cache_fn=lambda _steam_id, _cache: None,
+            fetch_single_fn=fake_fetch_single,
+            process_app_entry_fn=lambda appid, data: module_process_app_entry(
+                appid, data, parse_release_year_fn=module_parse_release_year
+            ),
+            emit=lambda *_args, **_kwargs: None,
+            warn=lambda text: text,
+            dim=lambda text: text,
+            batch_size=2,
+            max_batch_halving=1,
+        )
+
+        self.assertEqual(total, 2)
+        self.assertEqual(deals, [])
+        self.assertEqual(single_calls, ["10", "20"])
+        self.assertEqual(sleep_calls, [])
+
+    def test_get_deals_from_wishlist_switches_to_direct_fallback_after_repeated_http_400(
+        self,
+    ) -> None:
+        fetched_cache = {}
+        emitted = []
+        requested_batches = []
+        single_calls = []
+        stats = {}
+
+        def fake_get_json(url, headers=None):
+            requested_batches.append(url.split("appids=", 1)[1].split("&", 1)[0])
+            raise urllib.error.HTTPError(url, 400, "Bad Request", hdrs=None, fp=None)
+
+        def fake_fetch_single(appid, _country, _delay):
+            single_calls.append(appid)
+            return None
+
+        appids = ["10", "20", "30", "40", "50", "60", "70", "80"]
+
+        deals, total = module_get_deals_from_wishlist(
+            appids,
+            fetched_cache,
+            "steam-id",
+            min_discount=50,
+            get_json=fake_get_json,
+            sleep_fn=lambda _seconds: None,
+            monotonic_fn=lambda: 0.0,
+            current_time_fn=lambda: 200000.0,
+            save_price_cache_fn=lambda _steam_id, _cache: None,
+            fetch_single_fn=fake_fetch_single,
+            process_app_entry_fn=lambda appid, data: module_process_app_entry(
+                appid, data, parse_release_year_fn=module_parse_release_year
+            ),
+            emit=emitted.append,
+            warn=lambda text: f"WARN:{text}",
+            dim=lambda text: f"DIM:{text}",
+            batch_size=2,
+            max_batch_halving=1,
+            http_400_circuit_breaker_threshold=2,
+            stats_out=stats,
+        )
+
+        self.assertEqual(total, 8)
+        self.assertEqual(deals, [])
+        self.assertEqual(
+            requested_batches,
+            ["10,20", "10", "20", "30,40", "30", "40"],
+        )
+        self.assertEqual(single_calls, appids)
+        self.assertEqual(stats["http_400_direct_fallback_batches"], 2)
+        self.assertEqual(stats["http_400_direct_fallback_count"], 4)
+        self.assertTrue(
+            any("fallback individual directo" in line for line in emitted)
         )
 
 

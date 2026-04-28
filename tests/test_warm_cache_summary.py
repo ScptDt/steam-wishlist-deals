@@ -66,6 +66,16 @@ class WarmCacheSummaryTests(unittest.TestCase):
 
         self.assertEqual(summary.elapsed_seconds, 3.5)
 
+    def test_parse_warm_cache_log_text_extracts_direct_http_400_fallback(self) -> None:
+        text = "Fallback individual directo por HTTP 400 repetido: 2,880 juegos en 144 tandas\n"
+
+        summary = parse_warm_cache_log_text(text)
+        output = format_warm_cache_summary(summary)
+
+        self.assertEqual(summary.http_400_direct_fallback_count, 2880)
+        self.assertEqual(summary.http_400_direct_fallback_batches, 144)
+        self.assertIn("- Fallback directo HTTP 400: 2,880 juegos en 144 tandas", output)
+
     def test_format_warm_cache_summary_outputs_bitacora_friendly_markdown(self) -> None:
         summary = parse_warm_cache_log_file(FIXTURES / "full.log")
 
@@ -121,6 +131,18 @@ class WarmCacheSummaryTests(unittest.TestCase):
         self.assertIn("STEAM_DEALS_PRICE_BATCH_SIZE=4", recommendations[0].action)
         self.assertIn("actual/base 8", recommendations[0].action)
 
+    def test_analyze_warm_cache_reports_batch_size_floor_for_repeated_http_400(self) -> None:
+        recommendations = analyze_warm_cache_recommendations(
+            [
+                WarmCacheLogSummary(degraded_batch_count=1, batch_size=1),
+                WarmCacheLogSummary(degraded_batch_count=2, batch_size=1),
+            ]
+        )
+
+        self.assertEqual(recommendations[0].code, "repeated-http-400")
+        self.assertIn("ya estás en batch_size=1", recommendations[0].action)
+        self.assertNotIn("STEAM_DEALS_PRICE_BATCH_SIZE=", recommendations[0].action)
+
     def test_analyze_warm_cache_recommends_cooldown_for_no_data_fallback(self) -> None:
         recommendations = analyze_warm_cache_recommendations(
             [
@@ -144,6 +166,39 @@ class WarmCacheSummaryTests(unittest.TestCase):
         )
         self.assertIn("13/20", action)
         self.assertIn("2h", action)
+
+    def test_analyze_warm_cache_avoids_generic_fallback_when_cooldown_is_specific(self) -> None:
+        recommendations = analyze_warm_cache_recommendations(
+            [
+                WarmCacheLogSummary(refresh_candidates=100),
+                WarmCacheLogSummary(
+                    refresh_candidates=80,
+                    individual_fallback_count=20,
+                    individual_fallback_failed_count=13,
+                ),
+            ]
+        )
+
+        codes = {recommendation.code for recommendation in recommendations}
+        self.assertIn("fallback-no-data-cooldown", codes)
+        self.assertNotIn("fallback-still-high", codes)
+
+    def test_analyze_warm_cache_keeps_generic_fallback_when_no_specific_signal(self) -> None:
+        recommendations = analyze_warm_cache_recommendations(
+            [
+                WarmCacheLogSummary(refresh_candidates=100),
+                WarmCacheLogSummary(
+                    refresh_candidates=80,
+                    individual_fallback_count=20,
+                    individual_fallback_failed_count=0,
+                ),
+            ]
+        )
+
+        self.assertIn(
+            "fallback-still-high",
+            {recommendation.code for recommendation in recommendations},
+        )
 
     def test_analyze_warm_cache_marks_effective_cache_when_refreshes_drop(self) -> None:
         recommendations = analyze_warm_cache_recommendations(

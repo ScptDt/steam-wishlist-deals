@@ -89,6 +89,38 @@ def _missing_ids(target_ids: list[str], cached: dict) -> tuple[str, ...]:
     return tuple(appid for appid in target_ids if appid not in cached)
 
 
+def _build_scoped_cache_decision(
+    status: str,
+    target_ids: list[str],
+    cached: dict,
+    *,
+    now_ts: float,
+    refresh_ttl: float,
+    failure_retry_hours: float,
+) -> CacheDecision:
+    missing_ids = _missing_ids(target_ids, cached)
+    refresh_ids = _refresh_ids(
+        target_ids,
+        cached,
+        now_ts=now_ts,
+        ttl_hours=refresh_ttl,
+        failure_retry_hours=failure_retry_hours,
+    )
+    deferred_failure_ids = _deferred_failure_ids(
+        target_ids,
+        cached,
+        now_ts=now_ts,
+        failure_retry_hours=failure_retry_hours,
+    )
+    return CacheDecision(
+        status,
+        cached,
+        missing_ids,
+        refresh_ids,
+        deferred_failure_ids,
+    )
+
+
 def select_scoped_cache(
     target_ids: list[str],
     cached: dict,
@@ -99,6 +131,7 @@ def select_scoped_cache(
     current_time_fn=time.time,
     entry_ttl_hours: float | None = None,
     failure_retry_hours: float = DEFAULT_FAILURE_RETRY_HOURS,
+    preserve_expired_payload: bool = False,
 ) -> CacheDecision:
     target_ids = list(target_ids)
     if no_cache:
@@ -108,32 +141,28 @@ def select_scoped_cache(
     if not normalized_cache:
         return CacheDecision("empty", {}, tuple(target_ids), tuple(target_ids))
 
-    if cache_age >= ttl_hours:
-        return CacheDecision("expired", {}, tuple(target_ids), tuple(target_ids))
-
-    missing_ids = _missing_ids(target_ids, normalized_cache)
     refresh_ttl = ttl_hours if entry_ttl_hours is None else entry_ttl_hours
     now_ts = float(current_time_fn())
-    refresh_ids = _refresh_ids(
-        target_ids,
-        normalized_cache,
-        now_ts=now_ts,
-        ttl_hours=refresh_ttl,
-        failure_retry_hours=failure_retry_hours,
-    )
-    deferred_failure_ids = _deferred_failure_ids(
-        target_ids,
-        normalized_cache,
-        now_ts=now_ts,
-        failure_retry_hours=failure_retry_hours,
-    )
 
-    return CacheDecision(
+    if cache_age >= ttl_hours:
+        if not preserve_expired_payload:
+            return CacheDecision("expired", {}, tuple(target_ids), tuple(target_ids))
+        return _build_scoped_cache_decision(
+            "expired",
+            target_ids,
+            normalized_cache,
+            now_ts=now_ts,
+            refresh_ttl=refresh_ttl,
+            failure_retry_hours=failure_retry_hours,
+        )
+
+    return _build_scoped_cache_decision(
         "valid",
+        target_ids,
         normalized_cache,
-        missing_ids,
-        refresh_ids,
-        deferred_failure_ids,
+        now_ts=now_ts,
+        refresh_ttl=refresh_ttl,
+        failure_retry_hours=failure_retry_hours,
     )
 
 

@@ -26,6 +26,8 @@ class WarmCacheLogSummary:
     individual_fallback_batches: int = 0
     individual_fallback_resolved_count: int = 0
     individual_fallback_failed_count: int = 0
+    http_400_direct_fallback_count: int = 0
+    http_400_direct_fallback_batches: int = 0
     batch_size: int | None = None
     batch_halving_limit: int | None = None
     deals_count: int | None = None
@@ -130,6 +132,14 @@ def parse_warm_cache_log_text(
                 match.group("resolved")
             )
             values["individual_fallback_failed_count"] = _parse_int(match.group("failed"))
+
+        if match := re.search(
+            r"Fallback individual directo por HTTP 400 repetido: "
+            r"(?P<total>[\d,]+) juegos en (?P<batches>[\d,]+) tandas",
+            line,
+        ):
+            values["http_400_direct_fallback_count"] = _parse_int(match.group("total"))
+            values["http_400_direct_fallback_batches"] = _parse_int(match.group("batches"))
 
         if match := re.search(r"(?P<deals>[\d,]+) deals \(≥(?P<discount>\d+)%\)", line):
             values["deals_count"] = _parse_int(match.group("deals"))
@@ -248,7 +258,15 @@ def analyze_warm_cache_recommendations(
     previous = summaries[-2] if len(summaries) > 1 else None
     recommendations: list[WarmCacheRecommendation] = []
 
-    if previous and previous.degraded_batch_count > 0 and latest.degraded_batch_count > 0:
+    has_repeated_http_400 = bool(
+        previous and previous.degraded_batch_count > 0 and latest.degraded_batch_count > 0
+    )
+    has_fallback_no_data_cooldown = (
+        latest.individual_fallback_count >= HIGH_FALLBACK_THRESHOLD
+        and _fallback_failed_ratio(latest) >= HIGH_FAILED_FALLBACK_RATIO
+    )
+
+    if has_repeated_http_400:
         recommendations.append(
             WarmCacheRecommendation(
                 "repeated-http-400",
@@ -257,10 +275,7 @@ def analyze_warm_cache_recommendations(
             )
         )
 
-    if (
-        latest.individual_fallback_count >= HIGH_FALLBACK_THRESHOLD
-        and _fallback_failed_ratio(latest) >= HIGH_FAILED_FALLBACK_RATIO
-    ):
+    if has_fallback_no_data_cooldown:
         recommendations.append(
             WarmCacheRecommendation(
                 "fallback-no-data-cooldown",
@@ -284,6 +299,8 @@ def analyze_warm_cache_recommendations(
         previous
         and latest.individual_fallback_count >= HIGH_FALLBACK_THRESHOLD
         and latest.refresh_candidates <= previous.refresh_candidates
+        and not has_repeated_http_400
+        and not has_fallback_no_data_cooldown
     ):
         recommendations.append(
             WarmCacheRecommendation(
@@ -327,6 +344,12 @@ def format_warm_cache_summary(summary: WarmCacheLogSummary) -> str:
             f"{_format_value(summary.individual_fallback_failed_count)} sin oferta/datos)",
         ]
     )
+    if summary.http_400_direct_fallback_count:
+        lines.append(
+            "- Fallback directo HTTP 400: "
+            f"{_format_value(summary.http_400_direct_fallback_count)} juegos en "
+            f"{_format_value(summary.http_400_direct_fallback_batches)} tandas"
+        )
     if summary.batch_size is not None or summary.batch_halving_limit is not None:
         lines.append(
             f"- Tuning precios: batch_size={_format_value(summary.batch_size)} · "

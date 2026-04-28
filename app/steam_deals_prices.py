@@ -13,6 +13,7 @@ ENTRY_FAILED_AT_KEY = "_failed_at"
 ENTRY_FAILURE_REASON_KEY = "_failure_reason"
 PRICE_DATA_FAILURE_REASON = "no_price_data"
 DEFAULT_FAILURE_RETRY_HOURS = 2.0
+DEFAULT_HTTP_400_CIRCUIT_BREAKER_THRESHOLD = 3
 
 
 def load_price_cache(
@@ -223,7 +224,8 @@ def _resolve_batch_with_guardrails(
                     f"\n  {warn(f'HTTP {exc.code} en batch, saltando')}",
                     flush=True,
                 )
-                sleep_fn(delay)
+                if exc.code != 400:
+                    sleep_fn(delay)
                 break
             except Exception as exc:
                 _emit(
@@ -435,6 +437,7 @@ def get_deals_from_wishlist(
     refresh_ids: list[str] | tuple[str, ...] | None = None,
     max_batch_halving: int = 3,
     failure_retry_hours: float = DEFAULT_FAILURE_RETRY_HOURS,
+    http_400_circuit_breaker_threshold: int = DEFAULT_HTTP_400_CIRCUIT_BREAKER_THRESHOLD,
     stats_out: dict | None = None,
 ) -> tuple[list[dict], int]:
     now_ts = float(current_time_fn())
@@ -455,27 +458,29 @@ def get_deals_from_wishlist(
     )
     total = len(to_fetch)
     delay = rate_limit
-    if isinstance(stats_out, dict):
-        stats_out.setdefault("refresh_candidate_count", total)
-        stats_out.setdefault(
-            "deferred_failure_count",
-            sum(
-                1
-                for appid in appids
-                if appid in fetched_cache
-                and _is_recent_failed_entry(
-                    fetched_cache.get(appid),
-                    now_ts,
-                    failure_retry_hours=failure_retry_hours,
-                )
-            ),
-        )
-        stats_out.setdefault("degraded_batch_count", 0)
-        stats_out.setdefault("individual_fallback_count", 0)
-        stats_out.setdefault("individual_fallback_batches", 0)
-        stats_out.setdefault("individual_fallback_resolved_count", 0)
-        stats_out.setdefault("individual_fallback_failed_count", 0)
-        stats_out.setdefault("null_batch_count", 0)
+    tracking_stats = stats_out if isinstance(stats_out, dict) else {}
+    tracking_stats.setdefault("refresh_candidate_count", total)
+    tracking_stats.setdefault(
+        "deferred_failure_count",
+        sum(
+            1
+            for appid in appids
+            if appid in fetched_cache
+            and _is_recent_failed_entry(
+                fetched_cache.get(appid),
+                now_ts,
+                failure_retry_hours=failure_retry_hours,
+            )
+        ),
+    )
+    tracking_stats.setdefault("degraded_batch_count", 0)
+    tracking_stats.setdefault("individual_fallback_count", 0)
+    tracking_stats.setdefault("individual_fallback_batches", 0)
+    tracking_stats.setdefault("individual_fallback_resolved_count", 0)
+    tracking_stats.setdefault("individual_fallback_failed_count", 0)
+    tracking_stats.setdefault("http_400_direct_fallback_count", 0)
+    tracking_stats.setdefault("http_400_direct_fallback_batches", 0)
+    tracking_stats.setdefault("null_batch_count", 0)
 
     if total > 0:
         batches = [
@@ -492,6 +497,9 @@ def get_deals_from_wishlist(
         )
 
         fetched_count = 0
+        http_400_degradation_streak = 0
+        use_direct_http_400_fallback = False
+        direct_fallback_notice_emitted = False
         for batch_index, batch in enumerate(batches):
             bar = _build_bar(
                 fetched_count,
@@ -514,12 +522,54 @@ def get_deals_from_wishlist(
                 flush=True,
             )
 
+            batch_now_ts = float(current_time_fn())
+            if use_direct_http_400_fallback:
+                if not direct_fallback_notice_emitted:
+                    _emit(
+                        emit,
+                        "\n  "
+                        + dim(
+                            "HTTP 400 repetido; usando fallback individual directo para evitar splits lentos..."
+                        ),
+                        flush=True,
+                    )
+                    direct_fallback_notice_emitted = True
+                tracking_stats["http_400_direct_fallback_batches"] = (
+                    int(tracking_stats.get("http_400_direct_fallback_batches", 0) or 0)
+                    + 1
+                )
+                tracking_stats["http_400_direct_fallback_count"] = (
+                    int(tracking_stats.get("http_400_direct_fallback_count", 0) or 0)
+                    + len(batch)
+                )
+                _handle_individual_fallback(
+                    batch,
+                    fetched_cache,
+                    country=country,
+                    delay=delay,
+                    now_ts=batch_now_ts,
+                    fetch_single_fn=fetch_single_fn,
+                    process_app_entry_fn=process_app_entry_fn,
+                    stats_out=tracking_stats,
+                )
+                fetched_count += len(batch)
+                if (
+                    save_price_cache_fn is not None
+                    and batch_index > 0
+                    and batch_index % 10 == 0
+                ):
+                    save_price_cache_fn(steam_id, fetched_cache)
+                continue
+
+            degraded_before = int(tracking_stats.get("degraded_batch_count", 0) or 0)
+            fallback_before = int(tracking_stats.get("individual_fallback_count", 0) or 0)
+
             _resolve_batch_with_guardrails(
                 batch,
                 fetched_cache,
                 country=country,
                 delay=delay,
-                now_ts=now_ts,
+                now_ts=batch_now_ts,
                 get_json=get_json,
                 sleep_fn=sleep_fn,
                 fetch_single_fn=fetch_single_fn,
@@ -528,8 +578,26 @@ def get_deals_from_wishlist(
                 warn=warn,
                 dim=dim,
                 max_batch_halving=max_batch_halving,
-                stats_out=stats_out,
+                stats_out=tracking_stats,
             )
+
+            degraded_delta = (
+                int(tracking_stats.get("degraded_batch_count", 0) or 0)
+                - degraded_before
+            )
+            fallback_delta = (
+                int(tracking_stats.get("individual_fallback_count", 0) or 0)
+                - fallback_before
+            )
+            if degraded_delta > 0 and fallback_delta >= len(batch):
+                http_400_degradation_streak += 1
+            else:
+                http_400_degradation_streak = 0
+            if (
+                http_400_circuit_breaker_threshold > 0
+                and http_400_degradation_streak >= http_400_circuit_breaker_threshold
+            ):
+                use_direct_http_400_fallback = True
 
             fetched_count += len(batch)
             if (

@@ -61,6 +61,7 @@ python3 steam_deals_warm_cache_summary.py \
 - [ ] `fallos recientes en cooldown`, si aparece.
 - [ ] `Batches degradados por HTTP 400`, si aparece.
 - [ ] `Fallback individual aplicado a X juegos en Y tandas`.
+- [ ] `Fallback individual directo por HTTP 400 repetido`, si aparece.
 - [ ] Desglose de fallback: `resueltos` vs `sin oferta/datos`.
 - [ ] Si se hizo segunda corrida warm-cache, comparar contra la primera.
 - [ ] Resumen offline generado con `steam_deals_warm_cache_summary.py` y pegado en `BITACORA.md` si aporta evidencia; si hay 2+ logs, incluir la tabla `Warm-cache comparison`.
@@ -77,6 +78,7 @@ python3 steam_deals_warm_cache_summary.py \
 | Fallos en cooldown |  |  |  |
 | Batches degradados HTTP 400 |  |  |  |
 | Fallback individual total |  |  |  |
+| Fallback directo HTTP 400 |  |  |  |
 | Fallback resueltos |  |  |  |
 | Fallback sin datos/oferta |  |  |  |
 
@@ -84,6 +86,7 @@ python3 steam_deals_warm_cache_summary.py \
 
 - Si la segunda corrida baja mucho `Refresh candidates`, el cache caliente está funcionando.
 - Si `Fallback individual total` sigue alto con cache caliente, revisar primero batch sizing y distribución de fallos/no-data.
+- Si aparece `Fallback individual directo por HTTP 400 repetido`, compara duración y `Batches degradados HTTP 400` contra una corrida previa: debe reducir splits fallidos, aunque el fallback individual siga siendo el costo dominante.
 - Si hay muchos `sin oferta/datos`, el cooldown debe evitar reintentos inmediatos; confirmar que aparecen como `fallos recientes en cooldown` en corridas posteriores.
 - Si hay degradación repetida por HTTP 400, optimizar batching/fallback antes de diseñar cache por promo.
 - Si una promo activa parece correlacionar con mejores oportunidades, documentarlo como observación; no invalidar cache por promo hasta tener evidencia suficiente.
@@ -110,6 +113,7 @@ python3 steam_deals_warm_cache_summary.py \
 - Fallos recientes en cooldown:
 - Batches degradados HTTP 400:
 - Fallback individual total:
+- Fallback directo HTTP 400:
 - Fallback resueltos/sin datos:
 - Segunda corrida comparativa: sí/no
 - Resultado de tests focales:
