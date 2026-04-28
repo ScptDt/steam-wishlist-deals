@@ -552,12 +552,29 @@ def resolve_steam_id(api_key: str | None, vanity: str) -> str:
     """Convierte vanity URL, link de perfil, o Steam ID numérico a Steam ID."""
     if _resolve_steam_id_impl is None:
         raise RuntimeError("Steam adapter module is not available")
-    return _resolve_steam_id_impl(
-        api_key,
-        vanity,
-        get_json=_get_json,
-        fetch_public_profile_xml=_fetch_public_profile_xml,
-    )
+    try:
+        return _resolve_steam_id_impl(
+            api_key,
+            vanity,
+            get_json=_get_json,
+            fetch_public_profile_xml=_fetch_public_profile_xml,
+        )
+    except urllib.error.HTTPError as exc:
+        if not api_key or exc.code not in (401, 403):
+            raise
+        print(
+            _warn(
+                f"Steam rechazó la API key al resolver el perfil (HTTP {exc.code}). "
+                "Intentando fallback público sin key..."
+            ),
+            flush=True,
+        )
+        return _resolve_steam_id_impl(
+            None,
+            vanity,
+            get_json=_get_json,
+            fetch_public_profile_xml=_fetch_public_profile_xml,
+        )
 
 
 def resolve_profile_display_name(
@@ -4125,8 +4142,13 @@ def main():
     owned: dict[str, str] = {}
     if KEY:
         step("Obteniendo biblioteca de Steam...")
-        owned = get_owned_games(KEY, steam_id)
-        print(f"  {_ok(f'{len(owned):,} juegos comprados')}")
+        try:
+            owned = get_owned_games(KEY, steam_id)
+            print(f"  {_ok(f'{len(owned):,} juegos comprados')}")
+        except ValueError as exc:
+            print(f"  {_warn(str(exc))}")
+            print(f"  {_dim('Continuando sin datos de biblioteca propia.')}")
+            owned = {}
 
     # Compare wishlists (optional)
     compare_data = None

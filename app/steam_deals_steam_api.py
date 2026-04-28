@@ -21,6 +21,13 @@ def _normalized_vanity(vanity: str) -> str:
     return vanity
 
 
+def _public_profile_error(vanity: str) -> ValueError:
+    return ValueError(
+        f"No se pudo resolver el perfil: {vanity}. "
+        "Usa tu SteamID de 17 dígitos o una URL pública válida."
+    )
+
+
 def resolve_steam_id(
     api_key: str | None,
     vanity: str,
@@ -39,15 +46,27 @@ def resolve_steam_id(
 
     if api_key:
         url = f"https://api.steampowered.com/ISteamUser/ResolveVanityURL/v1/?key={api_key}&vanityurl={vanity}"
-        data = get_json(url)
-        if data["response"]["success"] != 1:
-            raise ValueError(f"No se pudo resolver el vanity URL: {vanity}")
-        return data["response"]["steamid"]
+        try:
+            data = get_json(url)
+            if data["response"]["success"] != 1:
+                raise ValueError(f"No se pudo resolver el vanity URL: {vanity}")
+            return data["response"]["steamid"]
+        except urllib.error.HTTPError as exc:
+            if exc.code not in (401, 403):
+                raise
 
-    text = fetch_public_profile_xml(vanity)
+    try:
+        text = fetch_public_profile_xml(vanity)
+    except urllib.error.HTTPError as exc:
+        if exc.code in (401, 403):
+            raise ValueError(
+                f"Steam rechazó el perfil público (HTTP {exc.code}). "
+                "Revisa que el perfil sea público, usa tu SteamID de 17 dígitos o regenera/borra la API key."
+            ) from exc
+        raise
     steam_id_match = STEAM_ID64_RE.search(text)
     if not steam_id_match:
-        raise ValueError(f"No se pudo resolver el perfil: {vanity}")
+        raise _public_profile_error(vanity)
     return steam_id_match.group(1)
 
 
@@ -123,7 +142,15 @@ def get_owned_games(api_key: str, steam_id: str, *, get_json) -> dict[str, str]:
         f"https://api.steampowered.com/IPlayerService/GetOwnedGames/v1/"
         f"?key={api_key}&steamid={steam_id}&include_appinfo=1&include_played_free_games=1"
     )
-    data = get_json(url)
+    try:
+        data = get_json(url)
+    except urllib.error.HTTPError as exc:
+        if exc.code in (401, 403):
+            raise ValueError(
+                f"Steam rechazó la API key al obtener tu biblioteca (HTTP {exc.code}). "
+                "El reporte puede continuar sin marcar juegos ya comprados; revisa/regenera la API key si quieres esa señal."
+            ) from exc
+        raise
     return {
         str(game["appid"]): game["name"]
         for game in data.get("response", {}).get("games", [])

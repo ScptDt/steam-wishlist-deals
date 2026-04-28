@@ -3195,6 +3195,37 @@ class SteamAdapterTests(unittest.TestCase):
 
         self.assertEqual(steam_id, "76561198000000000")
 
+    def test_resolve_steam_id_falls_back_to_public_xml_when_api_key_forbidden(self) -> None:
+        calls = []
+
+        def fake_get_json(url):
+            calls.append(url)
+            raise urllib.error.HTTPError(url, 403, "Forbidden", hdrs=None, fp=None)
+
+        steam_id = module_resolve_steam_id(
+            "bad-key",
+            "gaben",
+            get_json=fake_get_json,
+            fetch_public_profile_xml=lambda _vanity: (
+                "<steamID64>76561198000000000</steamID64>"
+            ),
+        )
+
+        self.assertEqual(steam_id, "76561198000000000")
+        self.assertEqual(len(calls), 1)
+
+    def test_resolve_steam_id_public_profile_forbidden_is_actionable(self) -> None:
+        def fake_fetch_public_profile_xml(_vanity):
+            raise urllib.error.HTTPError("url", 403, "Forbidden", hdrs=None, fp=None)
+
+        with self.assertRaisesRegex(ValueError, "perfil público"):
+            module_resolve_steam_id(
+                None,
+                "private-profile",
+                get_json=lambda _url: {},
+                fetch_public_profile_xml=fake_fetch_public_profile_xml,
+            )
+
     def test_get_wishlist_returns_appids_and_priorities(self) -> None:
         appids, priorities = module_get_wishlist(
             "key",
@@ -3218,6 +3249,13 @@ class SteamAdapterTests(unittest.TestCase):
 
         with self.assertRaises(ValueError):
             module_get_wishlist(None, "steam-id", get_json=fake_get_json)
+
+    def test_get_owned_games_converts_auth_error_to_actionable_value_error(self) -> None:
+        def fake_get_json(_url):
+            raise urllib.error.HTTPError(_url, 401, "Unauthorized", hdrs=None, fp=None)
+
+        with self.assertRaisesRegex(ValueError, "biblioteca"):
+            module_get_owned_games("bad-key", "steam-id", get_json=fake_get_json)
 
     def test_compare_wishlists_returns_friend_payload(self) -> None:
         comparison = module_compare_wishlists(
