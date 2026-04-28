@@ -152,6 +152,8 @@ a { color: var(--accent); text-decoration: none; } a:hover { text-decoration: un
 .budget-item { display: flex; align-items: center; gap: .5rem; padding: .3rem 0; border-bottom: 1px solid rgba(42,71,94,.3); font-size: .82rem; }
 .budget-item:last-child { border: none; }
 .budget-item .bi-tier { font-weight: 700; width: 22px; text-align: center; }
+.budget-item .bi-copy { display: grid; gap: .05rem; min-width: 0; }
+.budget-item .bi-reason { color: var(--text2); font-size: .68rem; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
 .budget-item .bi-price { margin-left: auto; color: var(--text2); white-space: nowrap; }
 
 /* Bundle cards */

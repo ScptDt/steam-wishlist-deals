@@ -598,6 +598,42 @@ class WarmCacheTests(unittest.TestCase):
         self.assertTrue(any("Caché expirada" in line for line in emitted))
         self.assertTrue(any("2 por revalidar" in line for line in emitted))
 
+    def test_run_price_cache_stage_default_selector_accepts_expired_payload_opt_in(self) -> None:
+        emitted = []
+        now_ts = 1_700_000_000.0
+        fetched_cache = {
+            "10": self._price_cache_entry(
+                name="Alpha",
+                discount_percent=70,
+                price_final="$10",
+                price_original="$20",
+                price_final_raw=1000,
+                fetched_at=now_ts,
+            )
+        }
+
+        result = run_price_cache_stage(
+            ["10"],
+            "steam-id",
+            no_cache=False,
+            min_discount=50,
+            rate_limit=1.5,
+            load_price_cache_fn=lambda _steam_id: (fetched_cache, 48.0),
+            clear_cache_files_fn=lambda _paths: (),
+            get_deals_from_wishlist_fn=lambda _wishlist, cache, _steam_id, **_kwargs: (
+                [{"appid": "10"}] if "10" in cache else [],
+                0,
+            ),
+            save_price_cache_fn=lambda *_args, **_kwargs: None,
+            emit_fn=emitted.append,
+            current_time_fn=lambda: now_ts,
+        )
+
+        self.assertEqual(result["cache_status"], "expired")
+        self.assertEqual(result["refresh_candidate_count"], 0)
+        self.assertTrue(any("Caché expirada" in line for line in emitted))
+        self.assertTrue(any("desde caché" in line for line in emitted))
+
     def test_run_price_cache_stage_emits_observability_counts_and_tuning_info(
         self,
     ) -> None:

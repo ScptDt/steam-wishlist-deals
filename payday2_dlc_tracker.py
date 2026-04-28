@@ -407,8 +407,39 @@ def get_owned_games(api_key: str, steam_id: str) -> set[str]:
         f"https://api.steampowered.com/IPlayerService/GetOwnedGames/v1/"
         f"?key={api_key}&steamid={steam_id}&include_appinfo=1&include_played_free_games=1"
     )
-    data = _get_json(url)
+    try:
+        data = _get_json(url)
+    except urllib.error.HTTPError as exc:
+        if exc.code in (401, 403):
+            raise ValueError(
+                f"Steam rechazó la API key al verificar juegos poseídos (HTTP {exc.code}). "
+                "Continuando con DLCs marcados manualmente en el dashboard."
+            ) from exc
+        raise
     return {str(g["appid"]) for g in data.get("response", {}).get("games", [])}
+
+
+def resolve_owned_dlc_appids(
+    api_key: str | None,
+    steam_id: str,
+    pd2_dlc_appids: list[str],
+    *,
+    get_owned_games_fn=get_owned_games,
+    load_owned_fn=None,
+    emit=print,
+) -> set[str]:
+    """Resolve owned PAYDAY 2 DLCs, preserving manual cache on API auth errors."""
+    if load_owned_fn is None:
+        load_owned_fn = load_owned
+    manual_owned = set(load_owned_fn(steam_id))
+    if not api_key:
+        return manual_owned
+    try:
+        all_owned = get_owned_games_fn(api_key, steam_id)
+    except ValueError as exc:
+        emit(f"  {_warn(str(exc))}")
+        return manual_owned
+    return {appid for appid in pd2_dlc_appids if appid in all_owned} | manual_owned
 
 
 def load_owned(steam_id: str) -> set[str]:
@@ -637,15 +668,162 @@ def analyze_trends(history: dict, prices: dict) -> dict[str, dict]:
 # ============================================─
 
 
+def _dlc_search_name(dlc: dict) -> str:
+    return str(dlc.get("steam_name") or dlc.get("name") or "").lower()
+
+
+def classify_payday2_dlc_importance(dlc: dict) -> dict:
+    """Classify a PAYDAY 2 DLC by likely gameplay impact using its Steam name."""
+    name = _dlc_search_name(dlc)
+
+    if any(
+        term in name
+        for term in ("tailor", "music", "soundtrack", "weapon color", "b-sides", " vr")
+    ):
+        return {
+            "tier": "C",
+            "label": "Cosmético/audio",
+            "importance_score": 24,
+        }
+    if "subscription" in name:
+        return {
+            "tier": "C",
+            "label": "Suscripción/servicio",
+            "importance_score": 35,
+        }
+    if any(
+        term in name
+        for term in (
+            "heist",
+            "bank",
+            "casino",
+            "armored transport",
+            "hotline miami",
+            "goat simulator",
+        )
+    ):
+        return {
+            "tier": "S",
+            "label": "Heist/contenido jugable",
+            "importance_score": 95,
+        }
+    if any(
+        term in name
+        for term in (
+            "weapon pack",
+            "mod pack",
+            "gage ",
+            "smuggler",
+            "shotgun",
+            "sniper",
+            "assault",
+            "spec ops",
+            "ninja",
+            "chivalry",
+            "historical",
+            "bbq",
+            "western",
+            "ak/car",
+            "overkill pack",
+            "fugitive weapon",
+            "federales weapon",
+            "mcshay weapon",
+        )
+    ):
+        return {
+            "tier": "A",
+            "label": "Armas/mods jugables",
+            "importance_score": 72,
+        }
+    if any(
+        term in name
+        for term in (
+            "character pack",
+            "jacket",
+            "sokol",
+            "clover",
+            "dragan",
+            "sydney",
+            "biker character",
+            "yakuza",
+            "h3h3",
+        )
+    ):
+        return {
+            "tier": "B",
+            "label": "Personaje/perk deck",
+            "importance_score": 58,
+        }
+    if "pack" in name:
+        return {
+            "tier": "B",
+            "label": "Contenido jugable",
+            "importance_score": 56,
+        }
+    return {
+        "tier": "B",
+        "label": "DLC general",
+        "importance_score": 45,
+    }
+
+
+def compute_payday2_dlc_value(dlc: dict) -> dict:
+    """Return explainable value metadata for PAYDAY 2 budget ranking."""
+    category = classify_payday2_dlc_importance(dlc)
+    discount = max(0, int(dlc.get("discount") or 0))
+    price_mxn = max(0, int(dlc.get("price_raw") or 0)) / 100
+
+    discount_bonus = min(discount, 90) * 0.45
+    price_bonus = 0
+    if 0 < price_mxn <= 40:
+        price_bonus = 8
+    elif price_mxn <= 70:
+        price_bonus = 5
+    elif price_mxn <= 120:
+        price_bonus = 2
+
+    reasons = [category["label"]]
+    if discount >= 50:
+        reasons.append("Buen descuento")
+    elif discount > 0:
+        reasons.append("Oferta activa")
+    if 0 < price_mxn <= 50:
+        reasons.append("Precio bajo")
+
+    return {
+        "importance_score": category["importance_score"],
+        "importance_tier": category["tier"],
+        "importance_label": category["label"],
+        "value_score": round(category["importance_score"] + discount_bonus + price_bonus),
+        "value_reasons": reasons[:3],
+    }
+
+
+def enrich_payday2_dlc_value(dlc: dict) -> dict:
+    return {**dlc, **compute_payday2_dlc_value(dlc)}
+
+
+def payday2_budget_sort_key(dlc: dict) -> tuple:
+    enriched = enrich_payday2_dlc_value(dlc)
+    return (
+        -enriched["value_score"],
+        -enriched["importance_score"],
+        -int(enriched.get("discount") or 0),
+        int(enriched.get("price_raw") or 0),
+        str(enriched.get("steam_name") or ""),
+    )
+
+
 def compute_recommendations(
     missing: list[dict],
     budget: float | None,
     alert_price: float | None,
     min_deal: int = 50,
 ) -> dict:
+    enriched_missing = [enrich_payday2_dlc_value(d) for d in missing]
     on_sale = sorted(
-        [d for d in missing if d.get("discount", 0) > 0],
-        key=lambda d: (-d.get("discount", 0), d.get("price_raw", 0)),
+        [d for d in enriched_missing if d.get("discount", 0) > 0],
+        key=payday2_budget_sort_key,
     )
 
     buy_now = [d for d in on_sale if d.get("discount", 0) >= min_deal]
@@ -654,17 +832,14 @@ def compute_recommendations(
     if alert_price:
         alerts = [
             d
-            for d in missing
+            for d in enriched_missing
             if d.get("price_raw", 0) > 0 and d["price_raw"] / 100 <= alert_price
         ]
 
     budget_fit = []
     if budget:
         remaining = budget
-        for d in sorted(
-            on_sale + [x for x in missing if x not in on_sale],
-            key=lambda d: (-d.get("discount", 0), d.get("price_raw", 0)),
-        ):
+        for d in sorted(enriched_missing, key=payday2_budget_sort_key):
             price = d.get("price_raw", 0) / 100
             if price > 0 and price <= remaining:
                 budget_fit.append(d)
@@ -801,15 +976,19 @@ def generate_md(
         lines += [
             f"## Con tu presupuesto (Mex$ {budget:,.0f})",
             "",
-            f"> Puedes comprar {len(rec['budget_fit'])} DLCs por ~Mex$ {total_budget_cost:,.0f} (ordenados por mejor oferta)",
+            f"> Puedes comprar {len(rec['budget_fit'])} DLCs por ~Mex$ {total_budget_cost:,.0f} (priorizando importancia y valor, no solo precio)",
             "",
-            "| # | DLC | Precio | Descuento |",
-            "|---|-----|--------|-----------|",
+            "| # | DLC | Prioridad | Precio | Descuento | Por qué |",
+            "|---|-----|-----------|--------|-----------|--------|",
         ]
         for i, d in enumerate(rec["budget_fit"], 1):
             disc = f"-{d['discount']}%" if d.get("discount", 0) > 0 else "—"
+            tier = d.get("importance_tier", "B")
+            reason = " · ".join(d.get("value_reasons", [])[:2]) or d.get(
+                "importance_label", "Valor estimado"
+            )
             lines.append(
-                f"| {i} | {_link(d['steam_name'], d['appid'])} | {d.get('price_fmt', '?')} | {disc} |"
+                f"| {i} | {_link(d['steam_name'], d['appid'])} | {tier} | {d.get('price_fmt', '?')} | {disc} | {_md_esc(reason)} |"
             )
         lines += ["", "---", ""]
 
@@ -1023,6 +1202,7 @@ def generate_html(
         ],
         key=lambda d: (-d.get("discount", 0), d.get("price_raw", 0)),
     ):
+        value = compute_payday2_dlc_value(d)
         appid = d.get("appid", "")
         low = itad_lows.get(appid)
         dlc_json_list.append(
@@ -1036,6 +1216,11 @@ def generate_html(
                 "discount": d.get("discount", 0),
                 "low": low["price"] if low else None,
                 "lowDate": low["date"] if low else None,
+                "importanceScore": value["importance_score"],
+                "importanceTier": value["importance_tier"],
+                "importanceLabel": value["importance_label"],
+                "valueScore": value["value_score"],
+                "valueReasons": value["value_reasons"],
             }
         )
 
@@ -1424,12 +1609,9 @@ def main():
     # [3] Ownership
     if KEY:
         step("Verificando DLCs poseídos...")
-        all_owned = get_owned_games(KEY, steam_id)
-        pd2_owned = {a for a in pd2_dlc_appids if a in all_owned}
-        prev_owned = load_owned(steam_id)
-        pd2_owned |= prev_owned
+        pd2_owned = resolve_owned_dlc_appids(KEY, steam_id, pd2_dlc_appids)
     else:
-        pd2_owned = load_owned(steam_id)
+        pd2_owned = resolve_owned_dlc_appids(None, steam_id, pd2_dlc_appids)
 
     for appid in cfg["mark_owned"]:
         pd2_owned.add(appid)

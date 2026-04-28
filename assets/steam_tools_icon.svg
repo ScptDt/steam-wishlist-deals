@@ -1,0 +1,17 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 256 256" role="img" aria-label="Steam Tools">
+  <defs>
+    <linearGradient id="bg" x1="24" y1="18" x2="232" y2="238" gradientUnits="userSpaceOnUse">
+      <stop offset="0" stop-color="#101a29"/>
+      <stop offset="0.55" stop-color="#1f6feb"/>
+      <stop offset="1" stop-color="#070b12"/>
+    </linearGradient>
+    <linearGradient id="gold" x1="66" y1="54" x2="194" y2="210" gradientUnits="userSpaceOnUse">
+      <stop offset="0" stop-color="#ffe28a"/>
+      <stop offset="1" stop-color="#f5c542"/>
+    </linearGradient>
+  </defs>
+  <rect width="256" height="256" rx="56" fill="url(#bg)"/>
+  <path d="M62 73h132v34h-48v100h-36V107H62z" fill="url(#gold)"/>
+  <path d="M64 155c15 16 36 24 64 24 20 0 31-5 31-14 0-8-7-12-27-16l-24-5c-33-7-49-22-49-47 0-32 28-52 71-52 25 0 48 7 67 21l-18 29c-15-11-31-16-51-16-18 0-29 5-29 14 0 8 8 12 30 17l23 5c32 7 47 22 47 47 0 33-28 54-73 54-32 0-61-10-82-30z" fill="#e7eef7" opacity="0.94"/>
+  <circle cx="194" cy="69" r="18" fill="#5fe07a"/>
+</svg>

@@ -1350,6 +1350,7 @@ def select_scoped_cache(
     current_time_fn=time.time,
     entry_ttl_hours: float | None = None,
     failure_retry_hours: float = 2.0,
+    preserve_expired_payload: bool = False,
 ):
     if _cache_policy_module is None:
         raise RuntimeError("Cache policy module is not available")
@@ -1362,6 +1363,7 @@ def select_scoped_cache(
         current_time_fn=current_time_fn,
         entry_ttl_hours=entry_ttl_hours,
         failure_retry_hours=failure_retry_hours,
+        preserve_expired_payload=preserve_expired_payload,
     )
 
 

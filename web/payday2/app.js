@@ -327,7 +327,12 @@ function calcBudget() {
     return;
   }
 
-  const sorted = [...DATA.dlcs].sort((a, b) => b.discount - a.discount || a.price - b.price);
+  const sorted = [...DATA.dlcs].sort((a, b) =>
+    (b.valueScore || 0) - (a.valueScore || 0) ||
+    (b.importanceScore || 0) - (a.importanceScore || 0) ||
+    b.discount - a.discount ||
+    a.price - b.price
+  );
   let remaining = budget;
   const picks = [];
   sorted.forEach(d => {
@@ -339,7 +344,7 @@ function calcBudget() {
   });
 
   const totalSpent = budget - remaining;
-  let html = '<div class="budget-result">Con <strong>Mex$ ' + fmt(budget) + '</strong> puedes comprar <span class="val">' + picks.length + ' DLCs</span> por <span class="val">Mex$ ' + fmt(Math.round(totalSpent)) + '</span>';
+  let html = '<div class="budget-result">Con <strong>Mex$ ' + fmt(budget) + '</strong> puedes comprar <span class="val">' + picks.length + ' DLCs</span> por <span class="val">Mex$ ' + fmt(Math.round(totalSpent)) + '</span>, priorizando importancia y valor';
   if (remaining > 0) html += ' (sobran $' + fmt(Math.round(remaining)) + ')';
   html += '</div>';
 
@@ -347,7 +352,9 @@ function calcBudget() {
     html += '<div class="budget-list">';
     picks.forEach(d => {
       const disc = d.discount > 0 ? ' <small style="color:var(--green)">-' + d.discount + '%</small>' : '';
-      html += '<div class="budget-item"><a href="' + STORE + d.id + '/" target="_blank">' + esc(d.name.replace(/PAYDAY 2:\s*/, '')) + disc + '</a><span class="bi-price">' + esc(d.priceFmt) + '</span></div>';
+      const tier = d.importanceTier || 'B';
+      const reasons = (d.valueReasons && d.valueReasons.length ? d.valueReasons : [d.importanceLabel || 'Valor estimado']).slice(0, 2).join(' · ');
+      html += '<div class="budget-item"><span class="bi-tier tier-' + esc(tier) + '" title="Prioridad ' + esc(tier) + '">' + esc(tier) + '</span><span class="bi-copy"><a href="' + STORE + d.id + '/" target="_blank">' + esc(d.name.replace(/PAYDAY 2:\s*/, '')) + disc + '</a><small class="bi-reason">' + esc(reasons) + '</small></span><span class="bi-price">' + esc(d.priceFmt) + '</span></div>';
     });
     html += '</div>';
   }

@@ -209,6 +209,7 @@ def get_data_json() -> dict:
             [d for a, d in all_dlcs.items() if a not in owned and d.get("steam_name")],
             key=lambda d: (-d.get("discount", 0), d.get("price_raw", 0)),
         ):
+            value = pd2.compute_payday2_dlc_value(d)
             appid = d.get("appid", "")
             low = itad_lows.get(appid)
             dlc_list.append(
@@ -222,6 +223,11 @@ def get_data_json() -> dict:
                     "discount": d.get("discount", 0),
                     "low": low["price"] if low else None,
                     "lowDate": low["date"] if low else None,
+                    "importanceScore": value["importance_score"],
+                    "importanceTier": value["importance_tier"],
+                    "importanceLabel": value["importance_label"],
+                    "valueScore": value["value_score"],
+                    "valueReasons": value["value_reasons"],
                 }
             )
 

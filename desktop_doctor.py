@@ -21,6 +21,7 @@ STATUS_PREFIXES = {"ok": "[OK]", "warn": "[WARN]", "fail": "[FAIL]"}
 REQUIRED_BUILD_PACKAGES = ("shared", "renderers", "app")
 REQUIRED_HIDDEN_IMPORTS = ("steam_deals_generator", "payday2_dlc_tracker")
 REQUIRED_DATA_FILES = (
+    "assets/steam_tools_icon.svg",
     "web/payday2/favicon.svg",
     "web/payday2/masks/heist_mask_blue.svg",
     "web/payday2/masks/heist_mask_gold.svg",

@@ -17,7 +17,7 @@ Los DLCs se descubren dinámicamente desde la API de Steam — no hay base de da
 
 ### Herramientas
 - **Umbral configurable (`--min-deal`)** — Define el descuento mínimo para recomendar compra (default: 50%)
-- **Tu Presupuesto Ideal** — "Tengo $500, ¿qué compro?" ordenado por mejor oferta
+- **Tu Presupuesto Ideal** — "Tengo $500, ¿qué compro?" priorizando importancia jugable y valor, no solo descuento/precio
 - **Alert Price** — Alertar cuando un DLC baja de N MXN
 - **Mark Owned/Unowned** — Marcar DLCs como comprados o no desde CLI o desde la web (checkboxes)
 
@@ -46,7 +46,7 @@ Dashboard interactivo con:
 - **Tabla de DLCs** — Sorteable, filtrable por oferta, con imágenes
 - **Marcar como comprado** — Click en el checkbox y se guarda al instante
 - **Simulador de descuento** — Desliza para ver cuánto costaría con X% de descuento
-- **Tu Presupuesto Ideal** — "Tengo $500, ¿qué compro?" ordenado por mejor oferta
+- **Tu Presupuesto Ideal** — "Tengo $500, ¿qué compro?" priorizando importancia/valor del DLC antes que solo el descuento más alto
 - **Próximas ofertas** — Estimación de costo en Summer/Autumn/Winter Sale
 - **Actualizar datos** — Botón que ejecuta el tracker y muestra progreso en vivo
 - **Config** — Cambia vanity/API keys desde la web

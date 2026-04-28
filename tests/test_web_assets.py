@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import copy
 import urllib.error
 import unittest
 from pathlib import Path
@@ -126,6 +127,24 @@ class WebAssetsTests(unittest.TestCase):
         self.assertIn("Actualizando datos de PAYDAY 2", app_js)
         self.assertIn("Guardando cambio del DLC", app_js)
 
+    def test_payday2_budget_uses_importance_value_copy_and_fields(self) -> None:
+        index_html = (ROOT / "web" / "payday2" / "index.html").read_text(
+            encoding="utf-8"
+        )
+        app_js = (ROOT / "web" / "payday2" / "app.js").read_text(
+            encoding="utf-8"
+        )
+        app_css = (ROOT / "web" / "payday2" / "app.css").read_text(
+            encoding="utf-8"
+        )
+
+        self.assertIn("priorizando importancia jugable y valor", index_html)
+        self.assertIn("b.valueScore", app_js)
+        self.assertIn("b.importanceScore", app_js)
+        self.assertIn("valueReasons", app_js)
+        self.assertIn("bi-reason", app_js)
+        self.assertIn(".budget-item .bi-reason", app_css)
+
     def test_payday2_favicon_and_random_masks_stay_scoped(self) -> None:
         index_html = (ROOT / "web" / "payday2" / "index.html").read_text(
             encoding="utf-8"
@@ -187,6 +206,105 @@ class WebAssetsTests(unittest.TestCase):
         for asset in desktop_doctor.REQUIRED_DATA_FILES:
             self.assertIn(asset, data_sources)
 
+    def test_desktop_packaging_wires_windows_icon(self) -> None:
+        icon_src = ROOT / "assets" / "steam_tools_icon.svg"
+        fake_icon = ROOT / ".tmp" / "test" / "steam_tools_icon.ico"
+        cmd = ["pyinstaller"]
+
+        build_desktop.append_icon_arg(cmd, os_name="nt", icon_path=fake_icon)
+        ico_bytes = build_desktop.build_windows_icon_bytes()
+
+        self.assertTrue(icon_src.exists())
+        self.assertEqual(cmd[-2:], ["--icon", str(fake_icon)])
+        self.assertEqual(ico_bytes[:4], b"\x00\x00\x01\x00")
+        self.assertGreater(len(ico_bytes), 100)
+
+
+class Payday2BudgetImportanceTests(unittest.TestCase):
+    def test_budget_prioritizes_gameplay_heist_over_cheap_cosmetic(self) -> None:
+        missing = [
+            {
+                "appid": "100",
+                "steam_name": "PAYDAY 2: Very Cheap Tailor Pack",
+                "price_raw": 3900,
+                "price_fmt": "Mex$ 39.00",
+                "orig_raw": 39000,
+                "discount": 90,
+            },
+            {
+                "appid": "200",
+                "steam_name": "PAYDAY 2: Important Bank Heist",
+                "price_raw": 6400,
+                "price_fmt": "Mex$ 64.00",
+                "orig_raw": 6400,
+                "discount": 0,
+            },
+        ]
+
+        rec = payday2_dlc_tracker.compute_recommendations(
+            missing, budget=70, alert_price=None, min_deal=50
+        )
+
+        self.assertEqual(
+            [d["steam_name"] for d in rec["budget_fit"]],
+            ["PAYDAY 2: Important Bank Heist"],
+        )
+        self.assertLessEqual(
+            sum(d["price_raw"] for d in rec["budget_fit"]) / 100,
+            70,
+        )
+        self.assertEqual(rec["budget_fit"][0]["importance_tier"], "S")
+        self.assertIn("Heist", rec["budget_fit"][0]["value_reasons"][0])
+
+    def test_payday2_web_payload_exposes_budget_value_metadata(self) -> None:
+        original_store = copy.deepcopy(payday2_web._store)
+        all_dlcs = {
+            "200": {
+                "appid": "200",
+                "steam_name": "PAYDAY 2: Important Bank Heist",
+                "price_raw": 6400,
+                "price_fmt": "Mex$ 64.00",
+                "orig_raw": 6400,
+                "orig_fmt": "",
+                "discount": 0,
+            }
+        }
+        recommendations = payday2_dlc_tracker.compute_recommendations(
+            list(all_dlcs.values()), None, None
+        )
+
+        try:
+            with payday2_web._store_lock:
+                payday2_web._store.update(
+                    {
+                        "loaded": True,
+                        "refreshing": False,
+                        "last_refresh": None,
+                        "vanity": "tester",
+                        "steam_id": "steam-id",
+                        "pd2_dlc_appids": ["200"],
+                        "all_dlcs": all_dlcs,
+                        "owned": set(),
+                        "prices": all_dlcs,
+                        "sale_name": "",
+                        "recommendations": recommendations,
+                        "bundles": [],
+                        "history_data": {},
+                        "comparison": {},
+                        "itad_lows": {},
+                    }
+                )
+
+            payload = payday2_web.get_data_json()
+        finally:
+            with payday2_web._store_lock:
+                payday2_web._store.clear()
+                payday2_web._store.update(original_store)
+
+        self.assertEqual(payload["dlcs"][0]["importanceTier"], "S")
+        self.assertGreater(payload["dlcs"][0]["valueScore"], 0)
+        self.assertIn("Heist", payload["dlcs"][0]["valueReasons"][0])
+
 
 class Payday2SteamResolutionTests(unittest.TestCase):
     def test_resolve_steam_id_falls_back_to_public_xml_when_api_key_is_forbidden(self) -> None:
@@ -232,6 +350,39 @@ class Payday2SteamResolutionTests(unittest.TestCase):
                 payday2_dlc_tracker.resolve_steam_id(None, "private-profile")
         finally:
             payday2_dlc_tracker.urllib.request.urlopen = original_urlopen
+
+    def test_get_owned_games_converts_auth_errors_to_actionable_error(self) -> None:
+        original_get_json = payday2_dlc_tracker._get_json
+
+        def fake_get_json(url, headers=None):
+            raise urllib.error.HTTPError(url, 401, "Unauthorized", hdrs=None, fp=None)
+
+        try:
+            payday2_dlc_tracker._get_json = fake_get_json
+            with self.assertRaisesRegex(ValueError, "juegos poseídos"):
+                payday2_dlc_tracker.get_owned_games("bad-key", "steam-id")
+        finally:
+            payday2_dlc_tracker._get_json = original_get_json
+
+    def test_resolve_owned_dlc_appids_preserves_manual_cache_when_api_key_is_rejected(self) -> None:
+        emitted = []
+
+        def fake_get_owned_games(_key, _steam_id):
+            raise ValueError(
+                "Steam rechazó la API key al verificar juegos poseídos (HTTP 401)."
+            )
+
+        owned = payday2_dlc_tracker.resolve_owned_dlc_appids(
+            "bad-key",
+            "steam-id",
+            ["10", "20", "30"],
+            get_owned_games_fn=fake_get_owned_games,
+            load_owned_fn=lambda _steam_id: {"20"},
+            emit=emitted.append,
+        )
+
+        self.assertEqual(owned, {"20"})
+        self.assertTrue(any("juegos poseídos" in line for line in emitted))
 
 
 if __name__ == "__main__":
