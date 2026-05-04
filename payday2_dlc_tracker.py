@@ -23,6 +23,7 @@ import urllib.request
 from datetime import date, datetime
 from pathlib import Path
 
+from shared_web_infra import resolve_config_secret
 from shared.io_utils import http_get_json, http_post_json, load_json_file, write_json_file
 
 from shared.io_utils import http_get_json, http_post_json, load_json_file
@@ -109,7 +110,7 @@ def load_user_config() -> dict:
     return load_json_file(CONFIG_FILE, {})
 
 
-def get_config():
+def get_config(*, argv=None, environ=None, load_user_config_fn=load_user_config):
     parser = argparse.ArgumentParser(description="PAYDAY 2 DLC Tracker")
     parser.add_argument("--key", help="Steam API Key")
     parser.add_argument("--vanity", help="Steam vanity URL, ID, o perfil")
@@ -136,12 +137,12 @@ def get_config():
         help="Descuento mínimo %% para recomendar compra (default: 50)",
     )
     parser.add_argument("--csv", action="store_true", help="Generar CSV")
-    args = parser.parse_args()
+    args = parser.parse_args(argv)
 
-    cfg = load_user_config()
-    key = args.key or cfg.get("key")
+    cfg = load_user_config_fn()
+    key = resolve_config_secret(args.key, cfg, "key", environ=environ)
     vanity = args.vanity or cfg.get("vanity") or "gaben"
-    itad_key = args.itad_key or cfg.get("itad_key")
+    itad_key = resolve_config_secret(args.itad_key, cfg, "itad_key", environ=environ)
     output_dir = (
         Path(args.output).expanduser()
         if args.output

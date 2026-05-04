@@ -61,6 +61,58 @@ class WebAssetsTests(unittest.TestCase):
         self.assertIn("a.setAttribute('download', action.name)", app_js)
         self.assertIn("Los artefactos se muestran por tipo", app_js)
 
+    def test_execution_log_copy_uses_native_bridge_then_browser_clipboard(self) -> None:
+        app_js = (ROOT / "web" / "steam_deals" / "app.js").read_text(
+            encoding="utf-8"
+        )
+        copy_text_start = app_js.index("async function copyExecutionLogText(text)")
+        copy_start = app_js.index("async function copyExecutionLog()")
+        copy_text_block = app_js[copy_text_start:copy_start]
+        copy_end = app_js.index("async function downloadExecutionLog()")
+        copy_block = app_js[copy_start:copy_end]
+
+        self.assertIn("async function exportExecutionLogText", app_js)
+        self.assertIn("/api/log/export", app_js)
+        self.assertNotIn("/api/log/copy", app_js)
+        self.assertIn("async function copyExecutionLogText", app_js)
+        self.assertIn("const IS_DESKTOP_NATIVE", app_js)
+        self.assertIn("pywebviewready", app_js)
+        self.assertIn("copy_text_to_clipboard", copy_text_block)
+        self.assertIn("navigator.clipboard.writeText(text)", copy_text_block)
+        self.assertIn("await copyExecutionLogText(text)", copy_block)
+        self.assertIn("Usa Descargar log (.txt).", copy_text_block)
+        self.assertNotIn("copyTextWithFallback", copy_block)
+        self.assertNotIn("execCommand", copy_block)
+        self.assertNotIn("window.prompt('Copia este log:'", app_js)
+
+    def test_steam_deals_mutable_requests_send_local_csrf_header(self) -> None:
+        app_js = (ROOT / "web" / "steam_deals" / "app.js").read_text(
+            encoding="utf-8"
+        )
+        index_html = (ROOT / "web" / "steam_deals" / "index.html").read_text(
+            encoding="utf-8"
+        )
+
+        self.assertIn("const LOCAL_CSRF_HEADER = 'X-Steam-Tools-Local-Token'", app_js)
+        self.assertIn('meta[name="steam-tools-local-token"]', app_js)
+        self.assertIn("function localMutableFetch", app_js)
+        for endpoint in (
+            "/api/config",
+            "/api/preflight",
+            "/api/desktop-doctor",
+            "/api/desktop-doctor/fix",
+            "/api/cache/clear",
+            "/api/open-output-folder",
+            "/api/log/export",
+            "/api/run",
+            "/api/stop",
+            "/api/run-pd2",
+            "/api/watchlist",
+            "/api/watchlist/delete",
+        ):
+            self.assertIn(f"localMutableFetch('{endpoint}'", app_js)
+        self.assertNotIn("steam-tools-local-token", index_html)
+
     def test_share_copy_uses_user_friendly_spanish_terms(self) -> None:
         index_html = (ROOT / "web" / "steam_deals" / "index.html").read_text(
             encoding="utf-8"
@@ -126,6 +178,28 @@ class WebAssetsTests(unittest.TestCase):
         self.assertIn("showActionStatus", app_js)
         self.assertIn("Actualizando datos de PAYDAY 2", app_js)
         self.assertIn("Guardando cambio del DLC", app_js)
+
+    def test_payday2_mutable_requests_send_local_csrf_header(self) -> None:
+        index_html = (ROOT / "web" / "payday2" / "index.html").read_text(
+            encoding="utf-8"
+        )
+        app_js = (ROOT / "web" / "payday2" / "app.js").read_text(
+            encoding="utf-8"
+        )
+
+        self.assertIn("const LOCAL_CSRF_HEADER = 'X-Steam-Tools-Local-Token'", app_js)
+        self.assertIn('meta[name="steam-tools-local-token"]', app_js)
+        self.assertIn("function localMutableFetch", app_js)
+        for endpoint in (
+            "/api/toggle",
+            "/api/toggle-bundle",
+            "/api/refresh",
+            "/api/config",
+        ):
+            self.assertIn(f"localMutableFetch('{endpoint}'", app_js)
+        self.assertIn("fetch('/api/data')", app_js)
+        self.assertIn("fetch('/api/config')", app_js)
+        self.assertNotIn("steam-tools-local-token", index_html)
 
     def test_payday2_budget_uses_importance_value_copy_and_fields(self) -> None:
         index_html = (ROOT / "web" / "payday2" / "index.html").read_text(

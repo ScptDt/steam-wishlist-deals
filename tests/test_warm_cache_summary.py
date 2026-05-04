@@ -76,6 +76,37 @@ class WarmCacheSummaryTests(unittest.TestCase):
         self.assertEqual(summary.http_400_direct_fallback_batches, 144)
         self.assertIn("- Fallback directo HTTP 400: 2,880 juegos en 144 tandas", output)
 
+    def test_parse_warm_cache_log_text_extracts_fallback_workers_tuning(self) -> None:
+        text = "Tuning precios activo: batch_size=20 · halving_limit=3 · fallback_workers=4\n"
+
+        summary = parse_warm_cache_log_text(text)
+        output = format_warm_cache_summary(summary)
+
+        self.assertEqual(summary.batch_size, 20)
+        self.assertEqual(summary.batch_halving_limit, 3)
+        self.assertEqual(summary.individual_fallback_workers, 4)
+        self.assertIn(
+            "- Tuning precios: batch_size=20 · halving_limit=3 · fallback_workers=4",
+            output,
+        )
+
+    def test_parse_warm_cache_log_text_extracts_adaptive_fallback_diagnostics(self) -> None:
+        text = (
+            "Fallback individual adaptativo: 1 bajadas de workers\n"
+            "Fallback individual fallos por razón: http_429=12, no_price_data=34\n"
+        )
+
+        summary = parse_warm_cache_log_text(text)
+        output = format_warm_cache_summary(summary)
+
+        self.assertEqual(summary.individual_fallback_worker_downgrade_count, 1)
+        self.assertEqual(
+            summary.individual_fallback_failure_reasons,
+            {"http_429": 12, "no_price_data": 34},
+        )
+        self.assertIn("- Fallback adaptativo: 1 bajadas de workers", output)
+        self.assertIn("- Fallback razones: http_429=12, no_price_data=34", output)
+
     def test_format_warm_cache_summary_outputs_bitacora_friendly_markdown(self) -> None:
         summary = parse_warm_cache_log_file(FIXTURES / "full.log")
 

@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import json
+import threading
 import time
 import unittest
 from datetime import date
@@ -22,6 +23,7 @@ from steam_deals_config import (
     load_user_config as module_load_user_config,
     save_user_config as module_save_user_config,
 )
+from shared_web_infra import CONFIG_SECRET_ENV_VARS
 from steam_deals_alerts import build_smart_alert_counts as module_build_smart_alert_counts
 from steam_deals_cache_policy import (
     clear_cache_files as module_clear_cache_files,
@@ -74,6 +76,7 @@ from steam_deals_family import (
 )
 from steam_deals_prices import (
     count_refresh_candidates as module_count_refresh_candidates,
+    fetch_single as module_fetch_single,
     get_deals_from_wishlist as module_get_deals_from_wishlist,
     load_price_cache as module_load_price_cache,
     parse_release_year as module_parse_release_year,
@@ -291,6 +294,76 @@ class ConfigTests(unittest.TestCase):
             )
 
         self.assertEqual(calls, [["list"]])
+
+    def test_get_config_resolves_secret_env_before_saved_config(self) -> None:
+        class FakeStdin:
+            def isatty(self):
+                return False
+
+        result = module_get_config(
+            script_path=Path("/tmp/fake_script.py"),
+            load_user_config_fn=lambda: {
+                "key": "CONFIG-STEAM",
+                "itad_key": "CONFIG-ITAD",
+                "telegram_token": "CONFIG-TELEGRAM",
+                "discord_webhook": "CONFIG-DISCORD",
+            },
+            save_user_config_fn=lambda _cfg: None,
+            handle_watchlist_command_fn=lambda _args: None,
+            input_fn=lambda _prompt: "",
+            stdin=FakeStdin(),
+            exit_fn=lambda _code: None,
+            argv=["--vanity", "gaben"],
+            environ={
+                CONFIG_SECRET_ENV_VARS["key"]: "ENV-STEAM",
+                CONFIG_SECRET_ENV_VARS["itad_key"]: "ENV-ITAD",
+                CONFIG_SECRET_ENV_VARS["telegram_token"]: "ENV-TELEGRAM",
+                CONFIG_SECRET_ENV_VARS["discord_webhook"]: "ENV-DISCORD",
+            },
+        )
+
+        self.assertEqual(result[2], "ENV-STEAM")
+        self.assertEqual(result[10], "ENV-ITAD")
+        self.assertEqual(result[11]["telegram_token"], "ENV-TELEGRAM")
+        self.assertEqual(result[11]["discord_webhook"], "ENV-DISCORD")
+
+    def test_get_config_keeps_cli_secret_priority_over_env(self) -> None:
+        class FakeStdin:
+            def isatty(self):
+                return False
+
+        result = module_get_config(
+            script_path=Path("/tmp/fake_script.py"),
+            load_user_config_fn=lambda: {},
+            save_user_config_fn=lambda _cfg: None,
+            handle_watchlist_command_fn=lambda _args: None,
+            input_fn=lambda _prompt: "",
+            stdin=FakeStdin(),
+            exit_fn=lambda _code: None,
+            argv=[
+                "--vanity",
+                "gaben",
+                "--key",
+                "CLI-STEAM",
+                "--itad-key",
+                "CLI-ITAD",
+                "--telegram-token",
+                "CLI-TELEGRAM",
+                "--discord-webhook",
+                "CLI-DISCORD",
+            ],
+            environ={
+                CONFIG_SECRET_ENV_VARS["key"]: "ENV-STEAM",
+                CONFIG_SECRET_ENV_VARS["itad_key"]: "ENV-ITAD",
+                CONFIG_SECRET_ENV_VARS["telegram_token"]: "ENV-TELEGRAM",
+                CONFIG_SECRET_ENV_VARS["discord_webhook"]: "ENV-DISCORD",
+            },
+        )
+
+        self.assertEqual(result[2], "CLI-STEAM")
+        self.assertEqual(result[10], "CLI-ITAD")
+        self.assertEqual(result[11]["telegram_token"], "CLI-TELEGRAM")
+        self.assertEqual(result[11]["discord_webhook"], "CLI-DISCORD")
 
 
 class CliErrorHandlingTests(unittest.TestCase):
@@ -668,6 +741,7 @@ class WarmCacheTests(unittest.TestCase):
             stats["individual_fallback_failed_count"] = 13
             received["batch_size"] = kwargs.get("batch_size")
             received["max_batch_halving"] = kwargs.get("max_batch_halving")
+            received["individual_fallback_workers"] = kwargs.get("individual_fallback_workers")
             return ([{"appid": "10"}, {"appid": "20"}, {"appid": "30"}], 2)
 
         result = run_price_cache_stage(
@@ -686,11 +760,13 @@ class WarmCacheTests(unittest.TestCase):
             env={
                 "STEAM_DEALS_PRICE_BATCH_SIZE": "8",
                 "STEAM_DEALS_PRICE_BATCH_HALVING_LIMIT": "5",
+                "STEAM_DEALS_INDIVIDUAL_FALLBACK_WORKERS": "4",
             },
         )
 
         self.assertEqual(received["batch_size"], 8)
         self.assertEqual(received["max_batch_halving"], 5)
+        self.assertEqual(received["individual_fallback_workers"], 4)
         self.assertEqual(result["refresh_candidate_count"], 2)
         self.assertEqual(result["missing_count"], 1)
         self.assertEqual(result["stale_count"], 1)
@@ -700,11 +776,15 @@ class WarmCacheTests(unittest.TestCase):
         self.assertEqual(result["individual_fallback_failed_count"], 13)
         self.assertEqual(result["batch_size"], 8)
         self.assertEqual(result["batch_halving_limit"], 5)
+        self.assertEqual(result["individual_fallback_workers"], 4)
         self.assertTrue(
             any("Refresh candidates: 2 (1 nuevos, 1 stale)" in line for line in emitted)
         )
         self.assertTrue(
-            any("Tuning precios activo: batch_size=8 · halving_limit=5" in line for line in emitted)
+            any(
+                "Tuning precios activo: batch_size=8 · halving_limit=5 · fallback_workers=4" in line
+                for line in emitted
+            )
         )
         self.assertTrue(
             any("Batches degradados por HTTP 400: 3" in line for line in emitted)
@@ -778,6 +858,44 @@ class WarmCacheTests(unittest.TestCase):
             fetched_cache,
             "steam-id",
             min_discount=50,
+            rate_limit=0.0,
+            get_json=lambda *_args, **_kwargs: (_ for _ in ()).throw(
+                AssertionError("No debería iniciar fetch por batch")
+            ),
+            sleep_fn=lambda _delay: None,
+            monotonic_fn=lambda: 0.0,
+            save_price_cache_fn=lambda *_args, **_kwargs: None,
+            fetch_single_fn=lambda *_args, **_kwargs: (_ for _ in ()).throw(
+                AssertionError("No debería iniciar fetch individual")
+            ),
+            process_app_entry_fn=module_process_app_entry,
+            emit=emitted.append,
+            warn=lambda text: text,
+            dim=lambda text: text,
+            current_time_fn=lambda: now_ts,
+            stats_out=stats,
+        )
+
+        self.assertEqual(n_fetched, 0)
+        self.assertEqual(deals, [])
+        self.assertEqual(stats["deferred_failure_count"], 1)
+        self.assertFalse(any("Fetching" in line for line in emitted))
+
+    def test_get_deals_from_wishlist_ignores_failed_cache_entries_with_zero_discount_filter(
+        self,
+    ) -> None:
+        now_ts = 1_700_000_000.0
+        emitted = []
+        stats = {}
+        fetched_cache = {
+            "10": {"_failed_at": now_ts - 60, "_failure_reason": "no_price_data"}
+        }
+
+        deals, n_fetched = module_get_deals_from_wishlist(
+            ["10"],
+            fetched_cache,
+            "steam-id",
+            min_discount=0,
             rate_limit=0.0,
             get_json=lambda *_args, **_kwargs: (_ for _ in ()).throw(
                 AssertionError("No debería iniciar fetch por batch")
@@ -1298,6 +1416,7 @@ class PriceCacheTests(unittest.TestCase):
             {
                 "batch_size": 20,
                 "batch_halving_limit": 3,
+                "individual_fallback_workers": 1,
                 "is_custom": False,
             },
         )
@@ -1306,14 +1425,52 @@ class PriceCacheTests(unittest.TestCase):
                 env={
                     "STEAM_DEALS_PRICE_BATCH_SIZE": "8",
                     "STEAM_DEALS_PRICE_BATCH_HALVING_LIMIT": "5",
+                    "STEAM_DEALS_INDIVIDUAL_FALLBACK_WORKERS": "4",
                 }
             ),
             {
                 "batch_size": 8,
                 "batch_halving_limit": 5,
+                "individual_fallback_workers": 4,
                 "is_custom": True,
             },
         )
+
+    def test_resolve_price_fetch_tuning_bounds_fallback_workers(self) -> None:
+        self.assertEqual(
+            resolve_price_fetch_tuning(
+                env={"STEAM_DEALS_INDIVIDUAL_FALLBACK_WORKERS": "99"}
+            )["individual_fallback_workers"],
+            4,
+        )
+        self.assertEqual(
+            resolve_price_fetch_tuning(
+                env={"STEAM_DEALS_INDIVIDUAL_FALLBACK_WORKERS": "0"}
+            ),
+            {
+                "batch_size": 20,
+                "batch_halving_limit": 3,
+                "individual_fallback_workers": 1,
+                "is_custom": False,
+            },
+        )
+
+    def test_fetch_single_returns_failure_marker_for_http_errors(self) -> None:
+        sleep_calls = []
+
+        def fake_get_json(url, headers=None):
+            raise urllib.error.HTTPError(url, 429, "Too Many Requests", hdrs=None, fp=None)
+
+        result = module_fetch_single(
+            "10",
+            "mx",
+            1.5,
+            get_json=fake_get_json,
+            sleep_fn=sleep_calls.append,
+        )
+
+        self.assertEqual(result, {"_steam_deals_fetch_error": "http_429"})
+        self.assertEqual(sleep_calls, [1.5])
 
     def test_select_scoped_cache_reports_missing_ids_for_valid_cache(self) -> None:
         decision = module_select_scoped_cache(
@@ -1925,6 +2082,175 @@ class PriceCacheTests(unittest.TestCase):
         self.assertTrue(
             any("fallback individual directo" in line for line in emitted)
         )
+
+    def test_get_deals_from_wishlist_uses_bounded_individual_fallback_workers(
+        self,
+    ) -> None:
+        fetched_cache = {}
+        single_calls = []
+        stats = {}
+
+        def fake_get_json(url, headers=None):
+            raise urllib.error.HTTPError(url, 400, "Bad Request", hdrs=None, fp=None)
+
+        def fake_fetch_single(appid, _country, _delay):
+            single_calls.append(appid)
+            if appid == "10":
+                return {
+                    "10": {
+                        "success": True,
+                        "data": {
+                            "name": "Alpha",
+                            "type": "game",
+                            "price_overview": {
+                                "discount_percent": 70,
+                                "final_formatted": "$10",
+                                "initial_formatted": "$20",
+                                "final": 1000,
+                            },
+                            "genres": [],
+                            "platforms": {},
+                            "release_date": {"date": "Jan 1, 2020"},
+                        },
+                    }
+                }
+            return None
+
+        deals, total = module_get_deals_from_wishlist(
+            ["10", "20", "30"],
+            fetched_cache,
+            "steam-id",
+            min_discount=50,
+            get_json=fake_get_json,
+            sleep_fn=lambda _seconds: None,
+            monotonic_fn=lambda: 0.0,
+            current_time_fn=lambda: 200000.0,
+            save_price_cache_fn=lambda _steam_id, _cache: None,
+            fetch_single_fn=fake_fetch_single,
+            process_app_entry_fn=lambda appid, data: module_process_app_entry(
+                appid, data, parse_release_year_fn=module_parse_release_year
+            ),
+            emit=lambda *_args, **_kwargs: None,
+            warn=lambda text: text,
+            dim=lambda text: text,
+            batch_size=3,
+            max_batch_halving=0,
+            individual_fallback_workers=99,
+            stats_out=stats,
+        )
+
+        self.assertEqual(total, 3)
+        self.assertEqual(sorted(single_calls), ["10", "20", "30"])
+        self.assertEqual([deal["appid"] for deal in deals], ["10"])
+        self.assertEqual(fetched_cache["10"].get("_fetched_at"), 200000.0)
+        self.assertEqual(fetched_cache["20"].get("_failed_at"), 200000.0)
+        self.assertEqual(fetched_cache["30"].get("_failure_reason"), "no_price_data")
+        self.assertEqual(stats["individual_fallback_count"], 3)
+        self.assertEqual(stats["individual_fallback_resolved_count"], 1)
+        self.assertEqual(stats["individual_fallback_failed_count"], 2)
+        self.assertEqual(stats["individual_fallback_worker_count"], 4)
+        self.assertEqual(
+            stats["individual_fallback_failure_reasons"],
+            {"no_price_data": 2},
+        )
+
+    def test_get_deals_from_wishlist_downgrades_fallback_workers_on_high_failure_ratio(
+        self,
+    ) -> None:
+        fetched_cache = {}
+        emitted = []
+        stats = {}
+
+        def fake_get_json(url, headers=None):
+            raise urllib.error.HTTPError(url, 400, "Bad Request", hdrs=None, fp=None)
+
+        deals, total = module_get_deals_from_wishlist(
+            ["10", "20", "30", "40", "50", "60", "70", "80"],
+            fetched_cache,
+            "steam-id",
+            min_discount=50,
+            get_json=fake_get_json,
+            sleep_fn=lambda _seconds: None,
+            monotonic_fn=lambda: 0.0,
+            current_time_fn=lambda: 200000.0,
+            save_price_cache_fn=lambda _steam_id, _cache: None,
+            fetch_single_fn=lambda _appid, _country, _delay: None,
+            process_app_entry_fn=lambda appid, data: module_process_app_entry(
+                appid, data, parse_release_year_fn=module_parse_release_year
+            ),
+            emit=emitted.append,
+            warn=lambda text: f"WARN:{text}",
+            dim=lambda text: f"DIM:{text}",
+            batch_size=4,
+            max_batch_halving=0,
+            individual_fallback_workers=2,
+            stats_out=stats,
+        )
+
+        self.assertEqual(total, 8)
+        self.assertEqual(deals, [])
+        self.assertEqual(stats["individual_fallback_worker_count"], 2)
+        self.assertEqual(stats["individual_fallback_worker_downgrade_count"], 1)
+        self.assertEqual(stats["individual_fallback_failure_reasons"], {"no_price_data": 8})
+        self.assertTrue(
+            any("Fallback individual adaptativo" in line for line in emitted)
+        )
+
+    def test_get_deals_from_wishlist_applies_downgraded_workers_to_later_batches(
+        self,
+    ) -> None:
+        fetched_cache = {}
+        stats = {}
+        lock = threading.Lock()
+        active_by_batch = {"first": 0, "second": 0}
+        max_active_by_batch = {"first": 0, "second": 0}
+
+        def fake_get_json(url, headers=None):
+            raise urllib.error.HTTPError(url, 400, "Bad Request", hdrs=None, fp=None)
+
+        def fake_fetch_single(appid, _country, _delay):
+            batch_label = "first" if int(appid) < 50 else "second"
+            with lock:
+                active_by_batch[batch_label] += 1
+                max_active_by_batch[batch_label] = max(
+                    max_active_by_batch[batch_label],
+                    active_by_batch[batch_label],
+                )
+            try:
+                time.sleep(0.01)
+                return None
+            finally:
+                with lock:
+                    active_by_batch[batch_label] -= 1
+
+        deals, total = module_get_deals_from_wishlist(
+            ["10", "20", "30", "40", "50", "60", "70", "80"],
+            fetched_cache,
+            "steam-id",
+            min_discount=50,
+            get_json=fake_get_json,
+            sleep_fn=lambda _seconds: None,
+            monotonic_fn=lambda: 0.0,
+            current_time_fn=lambda: 200000.0,
+            save_price_cache_fn=lambda _steam_id, _cache: None,
+            fetch_single_fn=fake_fetch_single,
+            process_app_entry_fn=lambda appid, data: module_process_app_entry(
+                appid, data, parse_release_year_fn=module_parse_release_year
+            ),
+            emit=lambda *_args, **_kwargs: None,
+            warn=lambda text: text,
+            dim=lambda text: text,
+            batch_size=4,
+            max_batch_halving=0,
+            individual_fallback_workers=2,
+            stats_out=stats,
+        )
+
+        self.assertEqual(total, 8)
+        self.assertEqual(deals, [])
+        self.assertGreaterEqual(max_active_by_batch["first"], 2)
+        self.assertEqual(max_active_by_batch["second"], 1)
+        self.assertEqual(stats["individual_fallback_worker_downgrade_count"], 1)
 
 
 class RunOutputTests(unittest.TestCase):

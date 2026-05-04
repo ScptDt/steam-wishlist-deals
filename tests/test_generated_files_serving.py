@@ -1,12 +1,15 @@
 from __future__ import annotations
 
 import io
+import os
+import sys
 import unittest
 import urllib.parse
 from pathlib import Path
 from tempfile import TemporaryDirectory
 
 import steam_deals_web as web
+from steam_deals_paths import OUTPUT_DIR_ENV_VAR
 from steam_deals_web import (
     DEFAULT_OUTPUT_DIR,
     Handler,
@@ -15,7 +18,11 @@ from steam_deals_web import (
     generated_file_error_page,
     generated_file_content_disposition,
     generated_file_content_type,
+    generated_html_security_headers,
+    is_allowed_generated_file_path,
+    is_expected_generated_artifact_name,
     is_safe_generated_file_name,
+    list_allowed_generated_files,
     open_output_folder,
     resolve_output_dir,
 )
@@ -59,12 +66,77 @@ class _FakeJsonHandler:
         self.status = status
         self.json = data
 
+class _FakeRunHandler(_FakeJsonHandler):
+    max_json_body_bytes = 64 * 1024
+
+    def __init__(self, body: dict) -> None:
+        super().__init__(body)
+        self.headers = []
+        self.wfile = io.BytesIO()
+
+    def send_response(self, status):
+        self.status = status
+
+    def send_header(self, name, value):
+        self.headers.append((name, value))
+
+    def end_headers(self):
+        pass
+
+    def body_text(self) -> str:
+        return self.wfile.getvalue().decode("utf-8")
+
+
+class _FakeStreamProcess:
+    def __init__(self, lines: list[str]) -> None:
+        self.stdout = iter(lines)
+        self.returncode = 0
+
+    def poll(self):
+        return None
+
+    def wait(self, timeout=None):
+        self.returncode = 0
+        return 0
+
 
 class GeneratedFilesServingTests(unittest.TestCase):
     def test_empty_output_resolves_to_project_output_folder(self) -> None:
         self.assertEqual(resolve_output_dir(None), DEFAULT_OUTPUT_DIR)
         self.assertEqual(resolve_output_dir(""), DEFAULT_OUTPUT_DIR)
         self.assertEqual(resolve_output_dir("custom-reports"), web.PROJECT_DIR / "custom-reports")
+
+    def test_frozen_empty_output_resolves_to_persistent_user_output_folder(self) -> None:
+        output_dir = resolve_output_dir(
+            None,
+            env={"HOME": "/home/tester"},
+            frozen=True,
+            project_dir=Path("/tmp/_MEI123"),
+        )
+
+        self.assertEqual(output_dir, Path("/home/tester/SteamTools/output"))
+
+    def test_frozen_build_commands_use_persistent_output_override(self) -> None:
+        original_output = os.environ.get(OUTPUT_DIR_ENV_VAR)
+        had_frozen = hasattr(sys, "frozen")
+        original_frozen = getattr(sys, "frozen", None)
+        try:
+            setattr(sys, "frozen", True)
+            os.environ[OUTPUT_DIR_ENV_VAR] = "/var/tmp/steam-output"
+            deals_cmd = build_command({"vanity": "gaben"}, {})
+            pd2_cmd = build_pd2_command({"vanity": "gaben"}, {})
+        finally:
+            if original_output is None:
+                os.environ.pop(OUTPUT_DIR_ENV_VAR, None)
+            else:
+                os.environ[OUTPUT_DIR_ENV_VAR] = original_output
+            if had_frozen:
+                setattr(sys, "frozen", original_frozen)
+            elif hasattr(sys, "frozen"):
+                delattr(sys, "frozen")
+
+        self.assertEqual(Path(deals_cmd[deals_cmd.index("--output") + 1]), Path("/var/tmp/steam-output"))
+        self.assertEqual(Path(pd2_cmd[pd2_cmd.index("--output") + 1]), Path("/var/tmp/steam-output"))
 
     def test_build_commands_always_pass_resolved_output_dir(self) -> None:
         deals_cmd = build_command({"vanity": "gaben"}, {})
@@ -110,8 +182,63 @@ class GeneratedFilesServingTests(unittest.TestCase):
 
         self.assertEqual(handler.status, 200)
         self.assertEqual(handler.json["status"], "opened")
-        self.assertEqual(Path(handler.json["path"]), target)
+        self.assertEqual(handler.json["path"], "[ruta]")
+        self.assertEqual(handler.json["label"], "[ruta]")
         self.assertEqual(opened_paths, [target])
+
+    def test_open_output_folder_error_sanitizes_public_detail(self) -> None:
+        original_open_output_folder = web.open_output_folder
+        original_output_dir = Handler.output_dir
+        secret_path = "/tmp/private-folder"
+        secret_token = "123456:ABCDEFGHIJKLMNOPQRSTUVWXYZabc"
+
+        def fake_open_output_folder(_path):
+            raise RuntimeError(f"Traceback key={secret_token} failed at {secret_path} _MEIPASS")
+
+        web.open_output_folder = fake_open_output_folder
+        handler = _FakeJsonHandler({"config": {"output": secret_path}})
+        try:
+            Handler._serve_open_output_folder(handler)
+        finally:
+            web.open_output_folder = original_open_output_folder
+            Handler.output_dir = original_output_dir
+
+        payload = str(handler.json)
+        self.assertEqual(handler.status, 500)
+        self.assertEqual(handler.json["message"], "No se pudo abrir la carpeta de salida.")
+        self.assertNotIn(secret_path, payload)
+        self.assertNotIn(secret_token, payload)
+        self.assertNotIn("Traceback", payload)
+        self.assertNotIn("_MEIPASS", payload)
+
+    def test_preflight_sanitizes_public_path_fields_and_messages(self) -> None:
+        original_load_config = web.load_config
+        hltb_path = "/usr/bin/steamtools-missing.csv"
+        family_path = "/private/tmp/steamtools-family-missing.json"
+        output_path = "/srv/app/steamtools-output-secret"
+
+        web.load_config = lambda: {"key": "SAVED-SECRET"}
+        handler = _FakeJsonHandler(
+            {
+                "config": {
+                    "vanity": "gaben",
+                    "hltb": hltb_path,
+                    "family_json": family_path,
+                    "output": output_path,
+                }
+            }
+        )
+        try:
+            Handler._serve_preflight(handler)
+        finally:
+            web.load_config = original_load_config
+
+        payload = str(handler.json)
+        self.assertEqual(handler.status, 200)
+        self.assertNotIn(hltb_path, payload)
+        self.assertNotIn(family_path, payload)
+        self.assertNotIn(output_path, payload)
+        self.assertIn("[ruta]", payload)
 
     def test_generated_file_content_type_matches_report_extensions(self) -> None:
         self.assertEqual(generated_file_content_type(".html"), "text/html")
@@ -136,12 +263,110 @@ class GeneratedFilesServingTests(unittest.TestCase):
         self.assertIn('filename="Steam Deals _sale_.json"', disposition)
         self.assertNotIn('filename="Steam Deals "sale".json"', disposition)
 
+    def test_generated_html_security_headers_apply_only_to_html(self) -> None:
+        html_headers = generated_html_security_headers(".html")
+
+        self.assertIn("Content-Security-Policy", html_headers)
+        self.assertIn("sandbox", html_headers["Content-Security-Policy"])
+        self.assertIn("allow-scripts", html_headers["Content-Security-Policy"])
+        self.assertIn("allow-popups", html_headers["Content-Security-Policy"])
+        self.assertIn("allow-downloads", html_headers["Content-Security-Policy"])
+        self.assertIn("connect-src 'none'", html_headers["Content-Security-Policy"])
+        self.assertIn("form-action 'none'", html_headers["Content-Security-Policy"])
+        self.assertIn("frame-ancestors 'none'", html_headers["Content-Security-Policy"])
+        self.assertNotIn("allow-same-origin", html_headers["Content-Security-Policy"])
+        self.assertEqual(html_headers["Referrer-Policy"], "no-referrer")
+        self.assertEqual(generated_html_security_headers(".json"), {})
+
     def test_generated_file_name_validation_blocks_path_traversal(self) -> None:
         self.assertTrue(is_safe_generated_file_name("Steam Deals 2026-04-24.html"))
         self.assertFalse(is_safe_generated_file_name("../secrets.json"))
         self.assertFalse(is_safe_generated_file_name("nested/report.html"))
         self.assertFalse(is_safe_generated_file_name("nested\\report.html"))
         self.assertFalse(is_safe_generated_file_name(""))
+
+    def test_expected_generated_artifact_name_validation_uses_allowlist(self) -> None:
+        self.assertTrue(is_expected_generated_artifact_name("Steam Deals 2026-04-24.html"))
+        self.assertTrue(is_expected_generated_artifact_name("Steam Deals Now Available - Far Far West 2026-04-24.html"))
+        self.assertTrue(is_expected_generated_artifact_name("Steam Deals Share 2026-04-24.html"))
+        self.assertTrue(is_expected_generated_artifact_name("Steam Deals 2026-04-24.md"))
+        self.assertTrue(is_expected_generated_artifact_name("Steam Deals 2026-04-24.json"))
+        self.assertTrue(is_expected_generated_artifact_name("Steam Deals 2026-04-24.csv"))
+        self.assertTrue(is_expected_generated_artifact_name("PAYDAY2_Plan_de_Compra.html"))
+        self.assertTrue(is_expected_generated_artifact_name("PAYDAY2_Plan_de_Compra.md"))
+        self.assertTrue(is_expected_generated_artifact_name("PAYDAY2_Plan_de_Compra.csv"))
+        self.assertFalse(is_expected_generated_artifact_name("report.html"))
+        self.assertFalse(is_expected_generated_artifact_name("Steam Deals secrets.json"))
+        self.assertFalse(is_expected_generated_artifact_name("Steam Deals secrets 2026-04-24.json"))
+        self.assertFalse(is_expected_generated_artifact_name("Steam Deals random.csv"))
+        self.assertFalse(is_expected_generated_artifact_name("Steam Deals Share 2026-04-24.json"))
+        self.assertFalse(is_expected_generated_artifact_name("Steam Deals 2026-04-24.backup.html"))
+        self.assertFalse(is_expected_generated_artifact_name("PAYDAY2_Plan_de_Compra.json"))
+        self.assertFalse(is_expected_generated_artifact_name("Steam Deals 2026-04-24.exe"))
+        self.assertFalse(is_expected_generated_artifact_name("../Steam Deals 2026-04-24.html"))
+
+    def test_allowed_generated_file_path_rejects_directories_and_symlinks(self) -> None:
+        with TemporaryDirectory() as temp_dir:
+            output_dir = Path(temp_dir)
+            valid = output_dir / "Steam Deals 2026-04-24.html"
+            valid.with_suffix(".md").write_text("md", encoding="utf-8")
+            valid.with_suffix(".json").write_text("{}", encoding="utf-8")
+            directory = output_dir / "Steam Deals Directory 2026-04-24.html"
+            symlink = output_dir / "Steam Deals Link 2026-04-24.html"
+            target = output_dir / "target.html"
+            valid.write_text("ok", encoding="utf-8")
+            directory.mkdir()
+            target.write_text("secret", encoding="utf-8")
+
+            self.assertTrue(is_allowed_generated_file_path(valid, output_dir))
+            self.assertFalse(is_allowed_generated_file_path(directory, output_dir))
+            try:
+                symlink.symlink_to(target)
+            except (NotImplementedError, OSError):
+                self.skipTest("symlink creation is not available on this platform")
+            self.assertFalse(is_allowed_generated_file_path(symlink, output_dir))
+
+    def test_list_allowed_generated_files_filters_output_dir_contents(self) -> None:
+        with TemporaryDirectory() as temp_dir:
+            output_dir = Path(temp_dir)
+            valid_html = output_dir / "Steam Deals 2026-04-24.html"
+            valid_md = output_dir / "Steam Deals 2026-04-24.md"
+            valid_json = output_dir / "Steam Deals 2026-04-24.json"
+            valid_share = output_dir / "Steam Deals Share 2026-04-24.html"
+            valid_pd2 = output_dir / "PAYDAY2_Plan_de_Compra.csv"
+            invalid_basename = output_dir / "secrets.json"
+            invalid_extension = output_dir / "Steam Deals 2026-04-24.exe"
+            invalid_generated_looking = output_dir / "Steam Deals secrets.json"
+            invalid_share_json = output_dir / "Steam Deals Share 2026-04-24.json"
+            invalid_backup = output_dir / "Steam Deals 2026-04-24.backup.html"
+            invalid_directory = output_dir / "Steam Deals Directory 2026-04-24.html"
+            for path in (
+                valid_html,
+                valid_md,
+                valid_json,
+                valid_share,
+                valid_pd2,
+                invalid_basename,
+                invalid_extension,
+                invalid_generated_looking,
+                invalid_share_json,
+                invalid_backup,
+            ):
+                path.write_text(path.name, encoding="utf-8")
+            invalid_directory.mkdir()
+
+            result = {path.name for path in list_allowed_generated_files(output_dir)}
+
+        self.assertEqual(
+            result,
+            {
+                "Steam Deals 2026-04-24.html",
+                "Steam Deals 2026-04-24.md",
+                "Steam Deals 2026-04-24.json",
+                "Steam Deals Share 2026-04-24.html",
+                "PAYDAY2_Plan_de_Compra.csv",
+            },
+        )
 
     def test_generated_file_error_page_is_clear_and_escapes_content(self) -> None:
         page = generated_file_error_page(404, "Archivo <faltante>", "No usar <path>")
@@ -167,7 +392,10 @@ class GeneratedFilesServingTests(unittest.TestCase):
         with TemporaryDirectory() as temp_dir:
             Handler.output_dir = temp_dir
             try:
-                Handler._serve_file(handler, urllib.parse.quote("missing.html", safe=""))
+                Handler._serve_file(
+                    handler,
+                    urllib.parse.quote("Steam Deals Missing 2026-04-24.html", safe=""),
+                )
             finally:
                 Handler.output_dir = original_output_dir
 
@@ -177,18 +405,92 @@ class GeneratedFilesServingTests(unittest.TestCase):
     def test_serve_file_returns_clear_500_for_read_failures(self) -> None:
         handler = _FakeFileHandler()
         original_output_dir = Handler.output_dir
+        original_read_bytes = Path.read_bytes
         with TemporaryDirectory() as temp_dir:
-            (Path(temp_dir) / "folder.html").mkdir()
+            target = Path(temp_dir) / "Steam Deals 2026-04-24.html"
+            target.write_text("ok", encoding="utf-8")
+            target.with_suffix(".md").write_text("md", encoding="utf-8")
+            target.with_suffix(".json").write_text("{}", encoding="utf-8")
             Handler.output_dir = temp_dir
+            Path.read_bytes = lambda _path: (_ for _ in ()).throw(OSError("boom"))
             try:
-                Handler._serve_file(handler, urllib.parse.quote("folder.html", safe=""))
+                Handler._serve_file(
+                    handler,
+                    urllib.parse.quote("Steam Deals 2026-04-24.html", safe=""),
+                )
             finally:
+                Path.read_bytes = original_read_bytes
                 Handler.output_dir = original_output_dir
 
         self.assertEqual(handler.status, 500)
         self.assertIn("No se pudo leer el archivo", handler.body_text())
 
+    def test_serve_file_error_page_sanitizes_sensitive_message(self) -> None:
+        handler = _FakeFileHandler()
+
+        web.send_generated_file_error(
+            handler,
+            500,
+            "Fallo",
+            "Traceback key=SECRET123 en /tmp/private _MEIPASS",
+        )
+
+        body = handler.body_text()
+        self.assertNotIn("Traceback", body)
+        self.assertNotIn("SECRET123", body)
+        self.assertNotIn("/tmp/private", body)
+        self.assertNotIn("_MEIPASS", body)
+
     def test_serve_file_keeps_successful_html_inline(self) -> None:
+        handler = _FakeFileHandler()
+        original_output_dir = Handler.output_dir
+        with TemporaryDirectory() as temp_dir:
+            target = Path(temp_dir) / "Steam Deals 2026-04-24.html"
+            target.write_text("<h1>OK</h1>", encoding="utf-8")
+            target.with_suffix(".md").write_text("md", encoding="utf-8")
+            target.with_suffix(".json").write_text("{}", encoding="utf-8")
+            Handler.output_dir = temp_dir
+            try:
+                Handler._serve_file(
+                    handler,
+                    urllib.parse.quote("Steam Deals 2026-04-24.html", safe=""),
+                )
+            finally:
+                Handler.output_dir = original_output_dir
+
+        self.assertEqual(handler.status, 200)
+        self.assertIn("text/html", handler.header("Content-Type"))
+        self.assertTrue(handler.header("Content-Disposition").startswith("inline;"))
+        self.assertIn("sandbox", handler.header("Content-Security-Policy"))
+        self.assertNotIn("allow-same-origin", handler.header("Content-Security-Policy"))
+        self.assertEqual(handler.header("Referrer-Policy"), "no-referrer")
+        self.assertEqual(handler.header("X-Content-Type-Options"), "nosniff")
+        self.assertEqual(handler.body_text(), "<h1>OK</h1>")
+
+    def test_serve_file_does_not_add_sandbox_to_data_downloads(self) -> None:
+        handler = _FakeFileHandler()
+        original_output_dir = Handler.output_dir
+        with TemporaryDirectory() as temp_dir:
+            target = Path(temp_dir) / "Steam Deals 2026-04-24.json"
+            target.write_text("{}", encoding="utf-8")
+            target.with_suffix(".md").write_text("md", encoding="utf-8")
+            target.with_suffix(".html").write_text("html", encoding="utf-8")
+            Handler.output_dir = temp_dir
+            try:
+                Handler._serve_file(
+                    handler,
+                    urllib.parse.quote("Steam Deals 2026-04-24.json", safe=""),
+                )
+            finally:
+                Handler.output_dir = original_output_dir
+
+        self.assertEqual(handler.status, 200)
+        self.assertTrue(handler.header("Content-Disposition").startswith("attachment;"))
+        self.assertEqual(handler.header("Content-Security-Policy"), None)
+        self.assertEqual(handler.header("Referrer-Policy"), None)
+        self.assertEqual(handler.header("X-Content-Type-Options"), "nosniff")
+
+    def test_serve_file_rejects_non_generated_basename(self) -> None:
         handler = _FakeFileHandler()
         original_output_dir = Handler.output_dir
         with TemporaryDirectory() as temp_dir:
@@ -199,10 +501,153 @@ class GeneratedFilesServingTests(unittest.TestCase):
             finally:
                 Handler.output_dir = original_output_dir
 
+        self.assertEqual(handler.status, 403)
+        self.assertIn("Archivo no disponible", handler.body_text())
+
+    def test_serve_file_rejects_generated_looking_non_artifact_name(self) -> None:
+        handler = _FakeFileHandler()
+        original_output_dir = Handler.output_dir
+        with TemporaryDirectory() as temp_dir:
+            (Path(temp_dir) / "Steam Deals secrets.json").write_text("{}", encoding="utf-8")
+            Handler.output_dir = temp_dir
+            try:
+                Handler._serve_file(handler, urllib.parse.quote("Steam Deals secrets.json", safe=""))
+            finally:
+                Handler.output_dir = original_output_dir
+
+        self.assertEqual(handler.status, 403)
+        self.assertIn("Archivo no disponible", handler.body_text())
+
+    def test_serve_file_rejects_directory_named_like_generated_report(self) -> None:
+        handler = _FakeFileHandler()
+        original_output_dir = Handler.output_dir
+        with TemporaryDirectory() as temp_dir:
+            (Path(temp_dir) / "Steam Deals Directory 2026-04-24.html").mkdir()
+            Handler.output_dir = temp_dir
+            try:
+                Handler._serve_file(
+                    handler,
+                    urllib.parse.quote("Steam Deals Directory 2026-04-24.html", safe=""),
+                )
+            finally:
+                Handler.output_dir = original_output_dir
+
+        self.assertEqual(handler.status, 403)
+        self.assertIn("reportes generados válidos", handler.body_text())
+
+    def test_files_list_only_returns_allowed_generated_artifacts(self) -> None:
+        handler = _FakeJsonHandler({})
+        original_output_dir = Handler.output_dir
+        with TemporaryDirectory() as temp_dir:
+            output_dir = Path(temp_dir)
+            (output_dir / "Steam Deals 2026-04-24.html").write_text("html", encoding="utf-8")
+            (output_dir / "Steam Deals 2026-04-24.md").write_text("md", encoding="utf-8")
+            (output_dir / "Steam Deals 2026-04-24.json").write_text("{}", encoding="utf-8")
+            (output_dir / "PAYDAY2_Plan_de_Compra.md").write_text("md", encoding="utf-8")
+            (output_dir / "secret.json").write_text("{}", encoding="utf-8")
+            (output_dir / "Steam Deals secrets.json").write_text("{}", encoding="utf-8")
+            (output_dir / "Steam Deals Share 2026-04-24.json").write_text("{}", encoding="utf-8")
+            Handler.output_dir = temp_dir
+            try:
+                Handler._serve_files_list(handler)
+            finally:
+                Handler.output_dir = original_output_dir
+
         self.assertEqual(handler.status, 200)
-        self.assertIn("text/html", handler.header("Content-Type"))
-        self.assertTrue(handler.header("Content-Disposition").startswith("inline;"))
-        self.assertEqual(handler.body_text(), "<h1>OK</h1>")
+        self.assertEqual(
+            {item["name"] for item in handler.json},
+            {
+                "Steam Deals 2026-04-24.html",
+                "Steam Deals 2026-04-24.md",
+                "Steam Deals 2026-04-24.json",
+                "PAYDAY2_Plan_de_Compra.md",
+            },
+        )
+
+    def test_run_sse_start_error_sanitizes_public_detail(self) -> None:
+        original_start_text_subprocess = web.start_text_subprocess
+        original_load_config = web.load_config
+        secret_path = "/tmp/secret-process"
+        secret_webhook = "https://discord.com/api/webhooks/1/secret"
+
+        def fake_start_text_subprocess(_cmd, env=None):
+            raise RuntimeError(f"failed {secret_path} webhook={secret_webhook}")
+
+        web.start_text_subprocess = fake_start_text_subprocess
+        web.load_config = lambda: {"key": "SAVED-SECRET"}
+        handler = _FakeRunHandler({"config": {"vanity": "gaben"}, "filters": {}})
+        try:
+            Handler._serve_run_sse(handler)
+        finally:
+            web.start_text_subprocess = original_start_text_subprocess
+            web.load_config = original_load_config
+
+        payload = str(handler.json)
+        self.assertEqual(handler.status, 500)
+        self.assertEqual(handler.json["error"], "process_start_failed")
+        self.assertEqual(handler.json["message"], "No se pudo iniciar proceso.")
+        self.assertNotIn(secret_path, payload)
+        self.assertNotIn("discord.com/api/webhooks", payload)
+
+    def test_run_sse_runtime_lines_sanitize_public_text(self) -> None:
+        original_start_text_subprocess = web.start_text_subprocess
+        original_load_config = web.load_config
+        original_save_config = web.save_config
+        original_running_proc = web._running_proc
+        secret_path = "/usr/bin/python3"
+        secret_webhook = "https://discord.com/api/webhooks/1/secret"
+        secret_token = "123456:ABCDEFGHIJKLMNOPQRSTUVWXYZabc"
+
+        def fake_start_text_subprocess(_cmd, env=None):
+            return _FakeStreamProcess(
+                [
+                    "Bare saved secret SAVED-SECRET must be hidden\n",
+                    f"Traceback failed {secret_path} webhook={secret_webhook} _MEIPASS\n",
+                    f"[1/2] Token {secret_token} en /srv/app/config.json\n",
+                ]
+            )
+
+        web.start_text_subprocess = fake_start_text_subprocess
+        web.load_config = lambda: {"key": "SAVED-SECRET"}
+        web.save_config = lambda _cfg: None
+        web._running_proc = None
+        handler = _FakeRunHandler({"config": {"vanity": "gaben"}, "filters": {}})
+        try:
+            Handler._serve_run_sse(handler)
+        finally:
+            web.start_text_subprocess = original_start_text_subprocess
+            web.load_config = original_load_config
+            web.save_config = original_save_config
+            web._running_proc = original_running_proc
+
+        payload = handler.body_text()
+        self.assertNotIn("Traceback", payload)
+        self.assertNotIn(secret_path, payload)
+        self.assertNotIn("discord.com/api/webhooks", payload)
+        self.assertNotIn(secret_token, payload)
+        self.assertNotIn("SAVED-SECRET", payload)
+        self.assertNotIn("_MEIPASS", payload)
+        self.assertNotIn("/srv/app/config.json", payload)
+        self.assertIn('"files"', payload)
+        self.assertIn("[ruta]", payload)
+
+    def test_log_export_success_sanitizes_public_path(self) -> None:
+        original_save_execution_log_text = web.save_execution_log_text
+        secret_path = Path("/private/tmp/steamtools-secret-log.txt")
+
+        web.save_execution_log_text = lambda _text, filename=None: secret_path
+        handler = _FakeJsonHandler({"text": "hello", "filename": "log.txt"})
+        try:
+            Handler._serve_log_export(handler)
+        finally:
+            web.save_execution_log_text = original_save_execution_log_text
+
+        payload = str(handler.json)
+        self.assertEqual(handler.status, 200)
+        self.assertEqual(handler.json["status"], "saved")
+        self.assertEqual(handler.json["path"], "[ruta]")
+        self.assertEqual(handler.json["name"], secret_path.name)
+        self.assertNotIn(str(secret_path), payload)
 
 
 if __name__ == "__main__":

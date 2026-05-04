@@ -42,6 +42,16 @@ Si quieres guardar salida estructurada para comparar después:
 python3 steam_deals_warm_cache_summary.py "$HOME/.cache/steam_deals/logs/warm-cache-YYYY-MM-DD_HH-MM-SS.log" --json
 ```
 
+Experimento opt-in para cold-cache grande cuando el cuello ya sea fallback individual:
+
+```bash
+STEAM_DEALS_CACHE_DIR="$HOME/.cache/steam_deals-benchmark-large" \
+STEAM_DEALS_INDIVIDUAL_FALLBACK_WORKERS=4 \
+python3 steam_deals_generator.py --vanity BG00G --warm-cache
+```
+
+Usa `STEAM_DEALS_INDIVIDUAL_FALLBACK_WORKERS` con cautela: el default sigue siendo `1`, el máximo inicial es `4`, y cualquier mejora debe compararse contra un log cold-cache equivalente antes de subirlo a un flujo normal. Si la corrida detecta demasiados fallos con workers paralelos, el fallback adaptativo puede bajar a `1` worker y dejar evidencia como `Fallback individual adaptativo` y `Fallback individual fallos por razón`.
+
 Para comparar dos o más corridas en Markdown, pasa todos los logs en orden cronológico; el resumen agrega una tabla con deltas contra el log anterior y un bloque `Warm-cache next actions` con recomendaciones automáticas:
 
 ```bash
@@ -62,6 +72,7 @@ python3 steam_deals_warm_cache_summary.py \
 - [ ] `Batches degradados por HTTP 400`, si aparece.
 - [ ] `Fallback individual aplicado a X juegos en Y tandas`.
 - [ ] `Fallback individual directo por HTTP 400 repetido`, si aparece.
+- [ ] `Fallback individual adaptativo` y `Fallback individual fallos por razón`, si aparecen.
 - [ ] Desglose de fallback: `resueltos` vs `sin oferta/datos`.
 - [ ] Si se hizo segunda corrida warm-cache, comparar contra la primera.
 - [ ] Resumen offline generado con `steam_deals_warm_cache_summary.py` y pegado en `BITACORA.md` si aporta evidencia; si hay 2+ logs, incluir la tabla `Warm-cache comparison`.
@@ -79,6 +90,8 @@ python3 steam_deals_warm_cache_summary.py \
 | Batches degradados HTTP 400 |  |  |  |
 | Fallback individual total |  |  |  |
 | Fallback directo HTTP 400 |  |  |  |
+| Fallback adaptativo |  |  |  |
+| Razones de fallo fallback |  |  |  |
 | Fallback resueltos |  |  |  |
 | Fallback sin datos/oferta |  |  |  |
 
@@ -87,6 +100,8 @@ python3 steam_deals_warm_cache_summary.py \
 - Si la segunda corrida baja mucho `Refresh candidates`, el cache caliente está funcionando.
 - Si `Fallback individual total` sigue alto con cache caliente, revisar primero batch sizing y distribución de fallos/no-data.
 - Si aparece `Fallback individual directo por HTTP 400 repetido`, compara duración y `Batches degradados HTTP 400` contra una corrida previa: debe reducir splits fallidos, aunque el fallback individual siga siendo el costo dominante.
+- Si `Fallback individual total` cubre casi todos los candidatos y los HTTP 400 degradados ya son bajos, prueba una corrida aislada con `STEAM_DEALS_INDIVIDUAL_FALLBACK_WORKERS=4`; si mejora sin `429`, considerar hacerlo preset/configurable.
+- Si `fallback_workers > 1` baja fuerte la duración pero también baja deals/resueltos, revisa `Fallback individual adaptativo` y las razones de fallo; no uses esa configuración como default hasta que conserve calidad.
 - Si hay muchos `sin oferta/datos`, el cooldown debe evitar reintentos inmediatos; confirmar que aparecen como `fallos recientes en cooldown` en corridas posteriores.
 - Si hay degradación repetida por HTTP 400, optimizar batching/fallback antes de diseñar cache por promo.
 - Si una promo activa parece correlacionar con mejores oportunidades, documentarlo como observación; no invalidar cache por promo hasta tener evidencia suficiente.
@@ -114,6 +129,9 @@ python3 steam_deals_warm_cache_summary.py \
 - Batches degradados HTTP 400:
 - Fallback individual total:
 - Fallback directo HTTP 400:
+- Fallback workers:
+- Fallback adaptativo:
+- Razones de fallo fallback:
 - Fallback resueltos/sin datos:
 - Segunda corrida comparativa: sí/no
 - Resultado de tests focales:

@@ -23,6 +23,8 @@ import runpy
 from pathlib import Path
 from urllib.parse import urlencode
 
+from steam_deals_paths import build_persistent_runtime_env
+
 
 ROOT = Path(__file__).resolve().parent
 HOST = "127.0.0.1"
@@ -35,6 +37,9 @@ FALLBACK_REASON_MESSAGES = {
     "window-timeout": "La ventana nativa no respondio a tiempo. Abriendo Steam Tools en el navegador.",
     "window-error": "La ventana nativa fallo al iniciar. Abriendo Steam Tools en el navegador.",
 }
+ALLOWED_EMBEDDED_SCRIPTS = frozenset(
+    {"steam_deals_generator.py", "payday2_dlc_tracker.py"}
+)
 
 
 def _fallback_url(reason: str | None = None, *, base_url: str = URL) -> str:
@@ -42,6 +47,56 @@ def _fallback_url(reason: str | None = None, *, base_url: str = URL) -> str:
         return base_url
     query = urlencode({"desktop_fallback": "1", "reason": reason})
     return f"{base_url}?{query}"
+
+
+def _desktop_window_url(base_url: str) -> str:
+    parsed = urllib.parse.urlparse(base_url)
+    query = dict(urllib.parse.parse_qsl(parsed.query, keep_blank_values=True))
+    query["desktop_native"] = "1"
+    return urllib.parse.urlunparse(parsed._replace(query=urlencode(query)))
+
+
+def _normalize_clipboard_text(text: object) -> str:
+    value = str(text or "")
+    if not value.strip():
+        raise ValueError("No hay contenido de log para copiar.")
+    return value
+
+
+def copy_text_to_qt_clipboard(
+    text: str,
+    *,
+    qapplication_cls=None,
+) -> str:
+    if qapplication_cls is None:
+        try:
+            from PyQt6.QtWidgets import QApplication as qapplication_cls  # type: ignore[import-not-found]
+        except Exception as exc:
+            raise RuntimeError("Clipboard nativo Qt no disponible.") from exc
+
+    app = qapplication_cls.instance()
+    if app is None:
+        raise RuntimeError("Clipboard nativo Qt no inicializado.")
+    clipboard = app.clipboard()
+    if clipboard is None:
+        raise RuntimeError("Clipboard nativo Qt no disponible.")
+    clipboard.setText(text)
+    return "qt"
+
+
+class DesktopClipboardApi:
+    def __init__(self, *, copy_text_fn=copy_text_to_qt_clipboard):
+        self._copy_text_fn = copy_text_fn
+
+    def copy_text_to_clipboard(self, text: object) -> dict[str, str]:
+        normalized = _normalize_clipboard_text(text)
+        try:
+            backend = self._copy_text_fn(normalized)
+        except Exception as exc:
+            raise RuntimeError(
+                "Clipboard nativo no disponible. Usa Descargar log (.txt)."
+            ) from exc
+        return {"status": "copied", "backend": str(backend or "native")}
 
 
 def _config_probe_url(base_url: str) -> str:
@@ -167,19 +222,60 @@ def _build_child_process_env(*, frozen: bool, base_env=None) -> dict[str, str]:
     env = dict(os.environ if base_env is None else base_env)
     if frozen:
         env["PYINSTALLER_RESET_ENVIRONMENT"] = "1"
+        env = build_persistent_runtime_env(ROOT, env=env, frozen=True)
     return env
 
 
-def _run_embedded_script(script_name: str, script_args: list[str]) -> None:
-    base = Path(getattr(sys, "_MEIPASS", ROOT))
-    script_path = base / script_name
-    if not script_path.exists():
-        raise RuntimeError(f"No se encontró script embebido: {script_name}")
+def validate_embedded_script_name(raw_name: str) -> str:
+    script_name = str(raw_name or "").strip()
+    if not script_name:
+        raise ValueError("Script embebido no permitido.")
+    if Path(script_name).is_absolute():
+        raise ValueError("Script embebido no permitido.")
+    if (
+        ".." in script_name
+        or "/" in script_name
+        or "\\" in script_name
+        or ":" in script_name
+    ):
+        raise ValueError("Script embebido no permitido.")
+    if script_name not in ALLOWED_EMBEDDED_SCRIPTS:
+        raise ValueError("Script embebido no permitido.")
+    return script_name
+
+
+def resolve_allowed_embedded_script(
+    raw_name: str,
+    *,
+    base_dir: str | Path | None = None,
+) -> Path:
+    script_name = validate_embedded_script_name(raw_name)
+    base = Path(base_dir) if base_dir is not None else Path(getattr(sys, "_MEIPASS", ROOT))
+    try:
+        resolved_base = base.resolve(strict=False)
+        script_path = (resolved_base / script_name).resolve(strict=False)
+    except OSError as exc:
+        raise RuntimeError("Script embebido permitido no disponible.") from exc
+    if script_path.parent != resolved_base:
+        raise ValueError("Script embebido no permitido.")
+    if not script_path.is_file() or script_path.is_symlink():
+        raise RuntimeError("Script embebido permitido no disponible.")
+    return script_path
+
+
+def _run_embedded_script(
+    script_name: str,
+    script_args: list[str],
+    *,
+    base_dir: str | Path | None = None,
+    run_path_fn=runpy.run_path,
+) -> None:
+    script_path = resolve_allowed_embedded_script(script_name, base_dir=base_dir)
 
     prev_argv = sys.argv[:]
     try:
         sys.argv = [str(script_path), *script_args]
-        runpy.run_path(str(script_path), run_name="__main__")
+        run_path_fn(str(script_path), run_name="__main__")
     finally:
         sys.argv = prev_argv
 
@@ -251,7 +347,11 @@ def main() -> None:
                 return
 
     if len(sys.argv) >= 3 and sys.argv[1] == "--run-script":
-        _run_embedded_script(sys.argv[2], sys.argv[3:])
+        try:
+            _run_embedded_script(sys.argv[2], sys.argv[3:])
+        except (ValueError, RuntimeError) as exc:
+            print(str(exc), file=sys.stderr)
+            raise SystemExit(2) from exc
         return
 
     if "--internal-web" in sys.argv:
@@ -336,10 +436,11 @@ def main() -> None:
 
         webview.create_window(
             "Steam Tools",
-            active_url,
+            _desktop_window_url(active_url),
             width=1280,
             height=860,
             min_size=(1000, 700),
+            js_api=DesktopClipboardApi(),
         )
         window_started.set()
         webview.start(debug=False)

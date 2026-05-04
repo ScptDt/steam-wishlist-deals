@@ -1,5 +1,30 @@
 // ── Helpers ──
 function $(id) { return document.getElementById(id); }
+const LOCAL_CSRF_HEADER = 'X-Steam-Tools-Local-Token';
+const PAGE_QUERY = new URLSearchParams(window.location.search);
+const IS_DESKTOP_NATIVE = PAGE_QUERY.get('desktop_native') === '1';
+let pywebviewBridgeReady = !!(window.pywebview && window.pywebview.api);
+
+window.addEventListener('pywebviewready', () => {
+  pywebviewBridgeReady = true;
+});
+
+function getLocalSessionToken() {
+  const meta = document.querySelector('meta[name="steam-tools-local-token"]');
+  return meta ? meta.getAttribute('content') || '' : '';
+}
+
+function localMutableHeaders(headers = {}) {
+  return Object.assign({}, headers, {[LOCAL_CSRF_HEADER]: getLocalSessionToken()});
+}
+
+function localMutableFetch(url, options = {}) {
+  return fetch(url, Object.assign({}, options, {
+    method: options.method || 'POST',
+    headers: localMutableHeaders(options.headers || {}),
+  }));
+}
+
 function togglePw(btn) {
   const inp = btn.previousElementSibling;
   inp.type = inp.type === 'password' ? 'text' : 'password';
@@ -499,7 +524,7 @@ function wizFinish() {
   const cfg = { vanity };
   if (key) cfg.key = key;
   if (itad) cfg.itad_key = itad;
-  fetch('/api/config', { method:'POST', headers:{'Content-Type':'application/json'}, body:JSON.stringify(cfg) }).catch(() => {});
+  localMutableFetch('/api/config', { method:'POST', headers:{'Content-Type':'application/json'}, body:JSON.stringify(cfg) }).catch(() => {});
   closeWizard();
 }
 
@@ -1554,7 +1579,7 @@ function maybeShowActionableHint(text, cls) {
 }
 
 async function runPreflightUI() {
-  const pre = await fetch('/api/preflight', {
+  const pre = await localMutableFetch('/api/preflight', {
     method: 'POST',
     headers: {'Content-Type': 'application/json'},
     body: JSON.stringify({config: getConfig(), filters: getFilters()}),
@@ -1605,7 +1630,7 @@ function renderDoctorFixPlan(fixes) {
 }
 
 async function fetchDesktopDoctorReport() {
-  const resp = await fetch('/api/desktop-doctor', {method: 'POST'});
+  const resp = await localMutableFetch('/api/desktop-doctor', {method: 'POST'});
   const data = await resp.json();
   if (!resp.ok) {
     throw new Error(data.message || data.error || ('HTTP ' + resp.status));
@@ -1633,7 +1658,7 @@ async function runDesktopDoctorAutofixUI() {
     return {status: 'cancelled', report};
   }
 
-  const resp = await fetch('/api/desktop-doctor/fix', {
+  const resp = await localMutableFetch('/api/desktop-doctor/fix', {
     method: 'POST',
     headers: {'Content-Type': 'application/json'},
     body: JSON.stringify({confirm: true}),
@@ -1688,7 +1713,7 @@ if (btnDesktopAutofix) btnDesktopAutofix.addEventListener('click', async () => {
 
 btnClearCache.addEventListener('click', async () => {
   try {
-    const r = await fetch('/api/cache/clear', {method: 'POST'});
+    const r = await localMutableFetch('/api/cache/clear', {method: 'POST'});
     const d = await r.json();
     appendLine('Cache limpiada: ' + (d.removed || 0) + ' archivo(s).', 'ok');
   } catch(e) {
@@ -1699,7 +1724,7 @@ btnClearCache.addEventListener('click', async () => {
 async function openOutputFolderUI(triggerBtn = null) {
   if (triggerBtn) triggerBtn.disabled = true;
   try {
-    const resp = await fetch('/api/open-output-folder', {
+    const resp = await localMutableFetch('/api/open-output-folder', {
       method: 'POST',
       headers: {'Content-Type': 'application/json'},
       body: JSON.stringify({config: getConfig()}),
@@ -1783,19 +1808,78 @@ function buildExecutionLogFilename() {
   return 'steam-deals-log-' + new Date().toISOString().replace(/[:]/g, '-').replace(/\..+/, '') + '.txt';
 }
 
-function copyExecutionLog() {
+async function exportExecutionLogText(text, {button = btnDownloadLog, successLabel = 'Guardado'} = {}) {
+  const resp = await localMutableFetch('/api/log/export', {
+    method: 'POST',
+    headers: {'Content-Type': 'application/json'},
+    body: JSON.stringify({
+      text,
+      filename: buildExecutionLogFilename(),
+    }),
+  });
+  const data = await resp.json();
+  if (!resp.ok) {
+    throw new Error((data && data.message) || ('HTTP ' + resp.status));
+  }
+  appendLine('Log guardado en: ' + data.path, 'ok');
+  flashButtonLabel(button, successLabel);
+}
+
+function getDesktopClipboardApi() {
+  const bridge = window.pywebview && window.pywebview.api;
+  if (bridge && typeof bridge.copy_text_to_clipboard === 'function') {
+    return bridge;
+  }
+  return null;
+}
+
+function buildClipboardFailureMessage(error) {
+  const message = error && error.message ? error.message : String(error || '');
+  if (message.indexOf('Descargar log') !== -1) return message;
+  return (message || 'Portapapeles no disponible') + ' Usa Descargar log (.txt).';
+}
+
+function markExecutionLogCopied() {
+  appendLine('Log copiado al portapapeles.', 'ok');
+  flashButtonLabel(btnCopyLog, 'Copiado');
+}
+
+async function copyExecutionLogText(text) {
+  if (!text) throw new Error('No hay contenido de log para copiar.');
+
+  const desktopApi = getDesktopClipboardApi();
+  if (desktopApi) {
+    await desktopApi.copy_text_to_clipboard(text);
+    markExecutionLogCopied();
+    return;
+  }
+
+  if (IS_DESKTOP_NATIVE || pywebviewBridgeReady) {
+    throw new Error('Clipboard nativo no disponible. Usa Descargar log (.txt).');
+  }
+
+  if (navigator.clipboard && typeof navigator.clipboard.writeText === 'function') {
+    await navigator.clipboard.writeText(text);
+    markExecutionLogCopied();
+    return;
+  }
+
+  throw new Error('Portapapeles no disponible en este navegador. Usa Descargar log (.txt).');
+}
+
+async function copyExecutionLog() {
   const text = getExecutionLogText();
   if (!text) {
     flashButtonLabel(btnCopyLog, 'Sin log');
     return;
   }
 
-  copyTextWithFallback(text).then(() => {
-    flashButtonLabel(btnCopyLog, '¡Copiado!');
-  }).catch(() => {
-    window.prompt('Copia este log:', text);
-    flashButtonLabel(btnCopyLog, 'Listo');
-  });
+  try {
+    await copyExecutionLogText(text);
+  } catch (e) {
+    appendLine('No se pudo copiar log: ' + buildClipboardFailureMessage(e), 'err');
+    flashButtonLabel(btnCopyLog, 'Error');
+  }
 }
 
 async function downloadExecutionLog() {
@@ -1806,20 +1890,7 @@ async function downloadExecutionLog() {
   }
 
   try {
-    const resp = await fetch('/api/log/export', {
-      method: 'POST',
-      headers: {'Content-Type': 'application/json'},
-      body: JSON.stringify({
-        text,
-        filename: buildExecutionLogFilename(),
-      }),
-    });
-    const data = await resp.json();
-    if (!resp.ok) {
-      throw new Error((data && data.message) || ('HTTP ' + resp.status));
-    }
-    appendLine('Log guardado en: ' + data.path, 'ok');
-    flashButtonLabel(btnDownloadLog, 'Guardado');
+    await exportExecutionLogText(text, {button: btnDownloadLog, successLabel: 'Guardado'});
   } catch (e) {
     appendLine('No se pudo guardar log: ' + e.message, 'err');
     flashButtonLabel(btnDownloadLog, 'Error');
@@ -1861,7 +1932,7 @@ btnRun.addEventListener('click', async () => {
   abortCtrl = new AbortController();
 
   try {
-    const resp = await fetch('/api/run', {
+    const resp = await localMutableFetch('/api/run', {
       method: 'POST',
       headers: {'Content-Type': 'application/json'},
       body: JSON.stringify({config: getConfig(), filters: getFilters()}),
@@ -1923,7 +1994,7 @@ btnStop.addEventListener('click', async () => {
   if (stopRequestInFlight) return;
   beginStopUiState();
   try {
-    const resp = await fetch('/api/stop', {method: 'POST'});
+    const resp = await localMutableFetch('/api/stop', {method: 'POST'});
     let payload = {};
     try {
       payload = await resp.json();
@@ -1965,7 +2036,7 @@ if (btnRunPd2) btnRunPd2.addEventListener('click', async () => {
   btnStop.disabled = false;
   abortCtrl = new AbortController();
   try {
-    const resp = await fetch('/api/run-pd2', {
+    const resp = await localMutableFetch('/api/run-pd2', {
       method: 'POST',
       headers: {'Content-Type': 'application/json'},
       body: JSON.stringify({
@@ -2874,7 +2945,7 @@ async function addWatchlist() {
   const price = parseFloat(document.getElementById('wl-price').value);
   if (!appid || !price) return;
   try {
-    const r = await fetch('/api/watchlist', {method:'POST', headers:{'Content-Type':'application/json'}, body:JSON.stringify({appid, name, target_price:price})});
+    const r = await localMutableFetch('/api/watchlist', {method:'POST', headers:{'Content-Type':'application/json'}, body:JSON.stringify({appid, name, target_price:price})});
     const d = await r.json(); renderWatchlist(d.items);
     document.getElementById('wl-appid').value = '';
     document.getElementById('wl-name').value = '';
@@ -2883,7 +2954,7 @@ async function addWatchlist() {
 }
 async function removeWatchlist(appid) {
   try {
-    const r = await fetch('/api/watchlist/delete', {method:'POST', headers:{'Content-Type':'application/json'}, body:JSON.stringify({appid})});
+    const r = await localMutableFetch('/api/watchlist/delete', {method:'POST', headers:{'Content-Type':'application/json'}, body:JSON.stringify({appid})});
     const d = await r.json(); renderWatchlist(d.items);
   } catch(e) {}
 }

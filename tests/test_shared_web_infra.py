@@ -3,8 +3,22 @@ from __future__ import annotations
 import signal
 import subprocess
 import unittest
+from unittest.mock import patch
 
-from shared_web_infra import stop_process
+from shared_web_infra import (
+    LOCAL_CSRF_HEADER,
+    create_local_session_token,
+    has_valid_local_origin_or_referer,
+    is_valid_local_anti_csrf_request,
+    is_valid_local_token_header,
+    is_valid_loopback_host,
+    is_valid_loopback_host_header,
+    local_anti_csrf_forbidden_payload,
+    local_host_forbidden_payload,
+    redact_sensitive_text,
+    safe_public_error_payload,
+    stop_process,
+)
 
 
 class _FakeProc:
@@ -30,6 +44,145 @@ class _FakeProc:
         if self._timeout:
             raise subprocess.TimeoutExpired(cmd="fake", timeout=timeout)
         return 0
+
+
+class LocalAntiCsrfTests(unittest.TestCase):
+    def test_create_local_session_token_returns_unique_url_safe_values(self) -> None:
+        with patch(
+            "shared_web_infra.secrets.token_urlsafe",
+            side_effect=["a" * 43, "b" * 43],
+        ) as token_urlsafe:
+            first = create_local_session_token()
+            second = create_local_session_token()
+
+        self.assertIsInstance(first, str)
+        self.assertIsInstance(second, str)
+        self.assertGreaterEqual(len(first), 32)
+        self.assertRegex(first, r"^[A-Za-z0-9_-]+={0,2}$")
+        self.assertNotEqual(first, second)
+        token_urlsafe.assert_called_with(32)
+
+    def test_is_valid_local_token_header_accepts_exact_expected_token(self) -> None:
+        headers = {LOCAL_CSRF_HEADER: "expected-token"}
+
+        self.assertTrue(is_valid_local_token_header(headers, "expected-token"))
+
+    def test_is_valid_local_token_header_rejects_missing_or_invalid_token(self) -> None:
+        self.assertFalse(is_valid_local_token_header({}, "expected-token"))
+        self.assertFalse(
+            is_valid_local_token_header(
+                {LOCAL_CSRF_HEADER: "attacker-token"},
+                "expected-token",
+            )
+        )
+
+    def test_has_valid_local_origin_or_referer_accepts_loopback_hosts_on_server_port(self) -> None:
+        server_port = 8765
+
+        self.assertTrue(
+            has_valid_local_origin_or_referer(
+                {"Origin": "http://localhost:8765"},
+                server_port,
+            )
+        )
+        self.assertTrue(
+            has_valid_local_origin_or_referer(
+                {"Origin": "http://127.0.0.1:8765"},
+                server_port,
+            )
+        )
+        self.assertTrue(
+            has_valid_local_origin_or_referer(
+                {"Referer": "http://[::1]:8765/app/index.html"},
+                server_port,
+            )
+        )
+
+    def test_has_valid_local_origin_or_referer_rejects_external_or_wrong_port_values(self) -> None:
+        self.assertFalse(
+            has_valid_local_origin_or_referer(
+                {"Origin": "http://evil.example:8765"},
+                8765,
+            )
+        )
+        self.assertFalse(
+            has_valid_local_origin_or_referer(
+                {"Referer": "http://localhost:9999/app/index.html"},
+                8765,
+            )
+        )
+
+    def test_absent_origin_and_referer_are_allowed_only_with_valid_token(self) -> None:
+        token = "expected-token"
+
+        self.assertTrue(
+            is_valid_local_anti_csrf_request(
+                {LOCAL_CSRF_HEADER: token},
+                token,
+                8765,
+            )
+        )
+        self.assertFalse(
+            is_valid_local_anti_csrf_request(
+                {},
+                token,
+                8765,
+            )
+        )
+
+    def test_local_anti_csrf_forbidden_payload_does_not_expose_sensitive_values(self) -> None:
+        expected_token = "expected-token-SECRET"
+        payload = local_anti_csrf_forbidden_payload()
+        rendered = str(payload)
+
+        self.assertEqual(payload["error"], "forbidden")
+        self.assertNotIn(expected_token, rendered)
+        self.assertNotIn("/home/adolfo/Documents/Deals", rendered)
+        self.assertNotIn("Traceback", rendered)
+        self.assertNotIn("SECRET", rendered)
+
+
+class LocalHostValidationTests(unittest.TestCase):
+    def test_is_valid_loopback_host_accepts_loopback_hosts_on_server_port(self) -> None:
+        for host in ("localhost:8765", "127.0.0.1:8765", "[::1]:8765"):
+            with self.subTest(host=host):
+                self.assertTrue(is_valid_loopback_host(host, 8765))
+
+    def test_is_valid_loopback_host_rejects_missing_malformed_external_and_wrong_port(self) -> None:
+        invalid_hosts = [
+            None,
+            "",
+            "localhost",
+            "localhost:9999",
+            "evil.example:8765",
+            "192.168.1.20:8765",
+            "0.0.0.0:8765",
+            "127.0.0.1:bad",
+            "127.0.0.1:8765/path",
+            "user@127.0.0.1:8765",
+            "127.0.0.1:8765 evil.example",
+        ]
+
+        for host in invalid_hosts:
+            with self.subTest(host=host):
+                self.assertFalse(is_valid_loopback_host(host, 8765))
+
+    def test_is_valid_loopback_host_header_reads_host_header(self) -> None:
+        self.assertTrue(
+            is_valid_loopback_host_header({"Host": "127.0.0.1:8765"}, 8765)
+        )
+        self.assertFalse(is_valid_loopback_host_header({}, 8765))
+
+    def test_local_host_forbidden_payload_does_not_expose_sensitive_values(self) -> None:
+        payload = local_host_forbidden_payload()
+        rendered = str(payload)
+
+        self.assertEqual(payload["error"], "forbidden_host")
+        self.assertNotIn("evil.example", rendered)
+        self.assertNotIn("127.0.0.1", rendered)
+        self.assertNotIn("SECRET", rendered)
+        self.assertNotIn("Traceback", rendered)
+        self.assertNotIn("/home/adolfo/Documents/Deals", rendered)
 
 
 class StopProcessTests(unittest.TestCase):
@@ -102,3 +255,41 @@ class StopProcessTests(unittest.TestCase):
         )
 
         self.assertEqual(calls, ["terminate", ("wait", 3.0), "kill"])
+
+
+class PublicErrorRedactionTests(unittest.TestCase):
+    def test_redact_sensitive_text_removes_secrets_paths_and_tracebacks(self) -> None:
+        raw = (
+            "Traceback (most recent call last): key=STEAMSECRET123 "
+            "token=123456:ABCDEFGHIJKLMNOPQRSTUVWXYZabc "
+            "https://discord.com/api/webhooks/123/secret "
+            "/home/adolfo/Documents/Deals/private.txt /usr/bin/python3 "
+            "/etc/hosts /srv/app/config.json /private/tmp/app.log _MEIPASS"
+        )
+
+        redacted = redact_sensitive_text(raw, extra_values=["STEAMSECRET123"])
+
+        self.assertNotIn("Traceback", redacted)
+        self.assertNotIn("STEAMSECRET123", redacted)
+        self.assertNotIn("123456:ABCDEFGHIJKLMNOPQRSTUVWXYZabc", redacted)
+        self.assertNotIn("discord.com/api/webhooks", redacted)
+        self.assertNotIn("/home/adolfo", redacted)
+        self.assertNotIn("/usr/bin/python3", redacted)
+        self.assertNotIn("/etc/hosts", redacted)
+        self.assertNotIn("/srv/app/config.json", redacted)
+        self.assertNotIn("/private/tmp/app.log", redacted)
+        self.assertNotIn("_MEIPASS", redacted)
+        self.assertIn("[redactado]", redacted)
+        self.assertIn("[ruta]", redacted)
+
+    def test_safe_public_error_payload_sanitizes_exception_detail(self) -> None:
+        payload = safe_public_error_payload(
+            "boom",
+            "No se pudo completar.",
+            exc=RuntimeError("falló en /tmp/private con webhook=https://discord.com/api/webhooks/1/abc"),
+        )
+
+        self.assertEqual(payload["error"], "boom")
+        self.assertEqual(payload["message"], "No se pudo completar.")
+        self.assertNotIn("/tmp/private", payload["detail"])
+        self.assertNotIn("discord.com/api/webhooks", payload["detail"])

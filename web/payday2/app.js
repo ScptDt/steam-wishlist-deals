@@ -10,11 +10,28 @@ const PD2_MASKS = Object.freeze([
   '/masks/heist_mask_red.svg',
   '/masks/heist_mask_shadow.svg',
 ]);
+const LOCAL_CSRF_HEADER = 'X-Steam-Tools-Local-Token';
 
 function $(id) { return document.getElementById(id); }
 function esc(s) { const d = document.createElement('div'); d.textContent = s; return d.innerHTML; }
 function fmt(n) { return n.toLocaleString('en', { maximumFractionDigits: 0 }); }
 function togglePw(btn) { const i = btn.previousElementSibling; i.type = i.type === 'password' ? 'text' : 'password'; }
+
+function getLocalSessionToken() {
+  const meta = document.querySelector('meta[name="steam-tools-local-token"]');
+  return meta ? meta.getAttribute('content') || '' : '';
+}
+
+function localMutableHeaders(headers = {}) {
+  return Object.assign({}, headers, {[LOCAL_CSRF_HEADER]: getLocalSessionToken()});
+}
+
+function localMutableFetch(url, options = {}) {
+  return fetch(url, Object.assign({}, options, {
+    method: options.method || 'POST',
+    headers: localMutableHeaders(options.headers || {}),
+  }));
+}
 
 function showActionStatus(message, kind = 'loading', {autoHide = false} = {}) {
   const el = $('action-status');
@@ -214,7 +231,7 @@ function sparkSvg(id) {
 async function toggleOwned(appid) {
   showActionStatus('Guardando cambio del DLC...', 'loading');
   try {
-    const r = await fetch('/api/toggle', {
+    const r = await localMutableFetch('/api/toggle', {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
       body: JSON.stringify({ appid }),
@@ -260,7 +277,7 @@ function renderBundles() {
 async function markBundle(bundleId) {
   showActionStatus('Marcando DLCs del bundle...', 'loading');
   try {
-    const r = await fetch('/api/toggle-bundle', {
+    const r = await localMutableFetch('/api/toggle-bundle', {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
       body: JSON.stringify({ bundle_id: bundleId, action: 'mark' }),
@@ -277,7 +294,7 @@ async function markBundle(bundleId) {
 async function unmarkBundle(bundleId) {
   showActionStatus('Deshaciendo marcado del bundle...', 'loading');
   try {
-    const r = await fetch('/api/toggle-bundle', {
+    const r = await localMutableFetch('/api/toggle-bundle', {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
       body: JSON.stringify({ bundle_id: bundleId, action: 'unmark' }),
@@ -395,7 +412,7 @@ async function doRefresh() {
   appendConsole('Preparando actualización de datos...', 'step');
 
   try {
-    const resp = await fetch('/api/refresh', { method: 'POST' });
+    const resp = await localMutableFetch('/api/refresh', { method: 'POST' });
     if (resp.status === 409) {
       appendConsole('Ya hay una actualizacion en curso.', 'warn');
       showActionStatus('Ya hay una actualización en curso.', 'warn');
@@ -479,7 +496,7 @@ async function saveConfig() {
   setButtonBusy(btn, true);
   showActionStatus('Guardando configuración...', 'loading');
   try {
-    const resp = await fetch('/api/config', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify(cfg) });
+    const resp = await localMutableFetch('/api/config', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify(cfg) });
     if (!resp.ok) throw new Error('HTTP ' + resp.status);
     $('cfg-status').textContent = 'Guardado! Haz click en "Actualizar datos" para aplicar.';
     showActionStatus('Configuración guardada. Usa “Actualizar datos” para refrescar.', 'ok', {autoHide: true});
@@ -509,7 +526,7 @@ async function quickSetup() {
   setButtonBusy(btn, true);
   showActionStatus('Guardando perfil y preparando carga de datos...', 'loading');
   try {
-    const resp = await fetch('/api/config', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify(cfg) });
+    const resp = await localMutableFetch('/api/config', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify(cfg) });
     if (!resp.ok) throw new Error('HTTP ' + resp.status);
     $('cfg-vanity').value = v;
     if (k) $('cfg-key').value = k;

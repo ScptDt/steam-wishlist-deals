@@ -4,7 +4,7 @@ import argparse
 import json
 import re
 import sys
-from dataclasses import asdict, dataclass
+from dataclasses import asdict, dataclass, field
 from pathlib import Path
 from typing import TextIO
 
@@ -28,8 +28,11 @@ class WarmCacheLogSummary:
     individual_fallback_failed_count: int = 0
     http_400_direct_fallback_count: int = 0
     http_400_direct_fallback_batches: int = 0
+    individual_fallback_worker_downgrade_count: int = 0
+    individual_fallback_failure_reasons: dict[str, int] = field(default_factory=dict)
     batch_size: int | None = None
     batch_halving_limit: int | None = None
+    individual_fallback_workers: int | None = None
     deals_count: int | None = None
     min_discount: int | None = None
     wishlist_count: int | None = None
@@ -87,6 +90,16 @@ def _cache_status_from_line(line: str) -> tuple[str | None, float | None]:
     return None, None
 
 
+def _parse_reason_counts(raw_value: str) -> dict[str, int]:
+    reasons: dict[str, int] = {}
+    for part in raw_value.split(","):
+        name, separator, count = part.strip().partition("=")
+        if not separator or not name or not count:
+            continue
+        reasons[name] = _parse_int(count)
+    return reasons
+
+
 def parse_warm_cache_log_text(
     text: str, *, source_path: str | None = None
 ) -> WarmCacheLogSummary:
@@ -111,11 +124,14 @@ def parse_warm_cache_log_text(
 
         if match := re.search(
             r"Tuning precios activo: batch_size=(?P<batch>\d+) · "
-            r"halving_limit=(?P<halving>\d+)",
+            r"halving_limit=(?P<halving>\d+)"
+            r"(?: · fallback_workers=(?P<workers>\d+))?",
             line,
         ):
             values["batch_size"] = _parse_int(match.group("batch"))
             values["batch_halving_limit"] = _parse_int(match.group("halving"))
+            if match.group("workers") is not None:
+                values["individual_fallback_workers"] = _parse_int(match.group("workers"))
 
         if match := re.search(r"Batches degradados por HTTP 400: (?P<count>[\d,]+)", line):
             values["degraded_batch_count"] = _parse_int(match.group("count"))
@@ -140,6 +156,22 @@ def parse_warm_cache_log_text(
         ):
             values["http_400_direct_fallback_count"] = _parse_int(match.group("total"))
             values["http_400_direct_fallback_batches"] = _parse_int(match.group("batches"))
+
+        if match := re.search(
+            r"Fallback individual adaptativo: (?P<count>[\d,]+) bajadas de workers",
+            line,
+        ):
+            values["individual_fallback_worker_downgrade_count"] = _parse_int(
+                match.group("count")
+            )
+
+        if match := re.search(
+            r"Fallback individual fallos por razón: (?P<reasons>.+)$",
+            line,
+        ):
+            values["individual_fallback_failure_reasons"] = _parse_reason_counts(
+                match.group("reasons")
+            )
 
         if match := re.search(r"(?P<deals>[\d,]+) deals \(≥(?P<discount>\d+)%\)", line):
             values["deals_count"] = _parse_int(match.group("deals"))
@@ -350,11 +382,33 @@ def format_warm_cache_summary(summary: WarmCacheLogSummary) -> str:
             f"{_format_value(summary.http_400_direct_fallback_count)} juegos en "
             f"{_format_value(summary.http_400_direct_fallback_batches)} tandas"
         )
-    if summary.batch_size is not None or summary.batch_halving_limit is not None:
+    if summary.individual_fallback_worker_downgrade_count:
         lines.append(
-            f"- Tuning precios: batch_size={_format_value(summary.batch_size)} · "
-            f"halving_limit={_format_value(summary.batch_halving_limit)}"
+            "- Fallback adaptativo: "
+            f"{_format_value(summary.individual_fallback_worker_downgrade_count)} bajadas de workers"
         )
+    if summary.individual_fallback_failure_reasons:
+        reason_parts = [
+            f"{reason}={_format_value(count)}"
+            for reason, count in sorted(
+                summary.individual_fallback_failure_reasons.items()
+            )
+        ]
+        lines.append("- Fallback razones: " + ", ".join(reason_parts))
+    if (
+        summary.batch_size is not None
+        or summary.batch_halving_limit is not None
+        or summary.individual_fallback_workers is not None
+    ):
+        tuning_parts = [
+            f"batch_size={_format_value(summary.batch_size)}",
+            f"halving_limit={_format_value(summary.batch_halving_limit)}",
+        ]
+        if summary.individual_fallback_workers is not None:
+            tuning_parts.append(
+                f"fallback_workers={_format_value(summary.individual_fallback_workers)}"
+            )
+        lines.append("- Tuning precios: " + " · ".join(tuning_parts))
     if summary.min_discount is not None:
         lines.append(f"- Descuento mínimo: {_format_value(summary.min_discount, '%')}")
     if summary.cache_path:

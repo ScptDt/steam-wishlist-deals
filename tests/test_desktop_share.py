@@ -1,26 +1,40 @@
 from __future__ import annotations
 
 import base64
+import contextlib
+import io
 import json
 import signal
 import subprocess
+import sys
 import unittest
 import urllib.parse
 import urllib.request
 import time
+from pathlib import Path
+from tempfile import TemporaryDirectory
 
 from steam_tools_desktop import (
+    ALLOWED_EMBEDDED_SCRIPTS,
+    DesktopClipboardApi,
     FALLBACK_REASON_MESSAGES,
     _build_child_process_env,
     _candidate_urls,
     _config_probe_url,
     _discover_live_url,
+    _desktop_window_url,
     _find_free_port,
     _fallback_url,
+    _normalize_clipboard_text,
     _probe_steam_deals_server,
     _resolve_server_target,
+    _run_embedded_script,
     _wait_server,
+    copy_text_to_qt_clipboard,
     decode_share_payload,
+    main as desktop_main,
+    resolve_allowed_embedded_script,
+    validate_embedded_script_name,
 )
 from shared_web_infra import stop_process
 
@@ -78,6 +92,12 @@ class DesktopLauncherFallbackTests(unittest.TestCase):
             "http://127.0.0.1:8087?desktop_fallback=1&reason=window-timeout",
         )
 
+    def test_desktop_window_url_marks_native_mode_without_affecting_fallback(self) -> None:
+        self.assertEqual(
+            _desktop_window_url("http://127.0.0.1:8087?foo=bar"),
+            "http://127.0.0.1:8087?foo=bar&desktop_native=1",
+        )
+
     def test_config_probe_url_targets_api_config(self) -> None:
         self.assertEqual(
             _config_probe_url("http://127.0.0.1:8087"),
@@ -102,8 +122,18 @@ class DesktopLauncherFallbackTests(unittest.TestCase):
             {"A": "1"},
         )
         self.assertEqual(
-            _build_child_process_env(frozen=True, base_env={"A": "1"}),
-            {"A": "1", "PYINSTALLER_RESET_ENVIRONMENT": "1"},
+            _build_child_process_env(
+                frozen=True,
+                base_env={"A": "1", "HOME": "/home/tester"},
+            ),
+            {
+                "A": "1",
+                "HOME": "/home/tester",
+                "PYINSTALLER_RESET_ENVIRONMENT": "1",
+                "STEAM_DEALS_CACHE_DIR": "/home/tester/.cache/steam_deals",
+                "STEAM_DEALS_LOG_DIR": "/home/tester/.cache/steam_deals/logs",
+                "STEAM_DEALS_OUTPUT_DIR": "/home/tester/SteamTools/output",
+            },
         )
 
     def test_find_free_port_returns_first_bindable_port(self) -> None:
@@ -250,6 +280,207 @@ class DesktopLauncherFallbackTests(unittest.TestCase):
                 "discover_start_port": 8080,
             },
         )
+
+
+class DesktopClipboardApiTests(unittest.TestCase):
+    def test_normalize_clipboard_text_rejects_empty_log(self) -> None:
+        with self.assertRaises(ValueError) as ctx:
+            _normalize_clipboard_text("   ")
+
+        self.assertEqual(str(ctx.exception), "No hay contenido de log para copiar.")
+
+    def test_copy_text_to_qt_clipboard_uses_qapplication_clipboard(self) -> None:
+        copied = []
+
+        class _FakeClipboard:
+            def setText(self, text):
+                copied.append(text)
+
+        class _FakeApp:
+            def clipboard(self):
+                return _FakeClipboard()
+
+        class _FakeQApplication:
+            @staticmethod
+            def instance():
+                return _FakeApp()
+
+        backend = copy_text_to_qt_clipboard(
+            "hello log",
+            qapplication_cls=_FakeQApplication,
+        )
+
+        self.assertEqual(backend, "qt")
+        self.assertEqual(copied, ["hello log"])
+
+    def test_copy_text_to_qt_clipboard_rejects_missing_qapplication(self) -> None:
+        class _FakeQApplication:
+            @staticmethod
+            def instance():
+                return None
+
+        with self.assertRaises(RuntimeError) as ctx:
+            copy_text_to_qt_clipboard("hello", qapplication_cls=_FakeQApplication)
+
+        self.assertEqual(str(ctx.exception), "Clipboard nativo Qt no inicializado.")
+
+    def test_desktop_clipboard_api_returns_safe_success_payload(self) -> None:
+        calls = []
+        api = DesktopClipboardApi(copy_text_fn=lambda text: calls.append(text) or "qt")
+
+        result = api.copy_text_to_clipboard("hello log")
+
+        self.assertEqual(result, {"status": "copied", "backend": "qt"})
+        self.assertEqual(calls, ["hello log"])
+
+    def test_desktop_clipboard_api_hides_backend_error_details(self) -> None:
+        def failing_copy(_text):
+            raise RuntimeError("internal path /tmp/secret-clipboard")
+
+        api = DesktopClipboardApi(copy_text_fn=failing_copy)
+
+        with self.assertRaises(RuntimeError) as ctx:
+            api.copy_text_to_clipboard("hello log")
+
+        message = str(ctx.exception)
+        self.assertEqual(
+            message,
+            "Clipboard nativo no disponible. Usa Descargar log (.txt).",
+        )
+        self.assertNotIn("/tmp/secret-clipboard", message)
+
+
+class DesktopEmbeddedScriptAllowlistTests(unittest.TestCase):
+    def test_allowed_embedded_scripts_are_exact_expected_names(self) -> None:
+        self.assertEqual(
+            ALLOWED_EMBEDDED_SCRIPTS,
+            {"steam_deals_generator.py", "payday2_dlc_tracker.py"},
+        )
+
+    def test_validate_embedded_script_name_accepts_allowed_names(self) -> None:
+        self.assertEqual(
+            validate_embedded_script_name("steam_deals_generator.py"),
+            "steam_deals_generator.py",
+        )
+        self.assertEqual(
+            validate_embedded_script_name("payday2_dlc_tracker.py"),
+            "payday2_dlc_tracker.py",
+        )
+
+    def test_validate_embedded_script_name_rejects_unsafe_names(self) -> None:
+        unsafe_names = [
+            "",
+            "../steam_deals_generator.py",
+            "nested/steam_deals_generator.py",
+            "nested\\steam_deals_generator.py",
+            "/tmp/steam_deals_generator.py",
+            "C:\\temp\\steam_deals_generator.py",
+            "steam_deals_generator.py:alt",
+            "unknown.py",
+        ]
+
+        for raw_name in unsafe_names:
+            with self.subTest(raw_name=raw_name):
+                with self.assertRaises(ValueError) as ctx:
+                    validate_embedded_script_name(raw_name)
+                self.assertEqual(str(ctx.exception), "Script embebido no permitido.")
+                self.assertNotIn("/", str(ctx.exception))
+                self.assertNotIn("\\", str(ctx.exception))
+
+    def test_resolve_allowed_embedded_script_stays_inside_base(self) -> None:
+        with TemporaryDirectory() as temp_dir:
+            base = Path(temp_dir)
+            script = base / "steam_deals_generator.py"
+            script.write_text("print('ok')", encoding="utf-8")
+
+            resolved = resolve_allowed_embedded_script(
+                "steam_deals_generator.py",
+                base_dir=base,
+            )
+
+        self.assertEqual(resolved, script.resolve())
+
+    def test_resolve_allowed_embedded_script_rejects_missing_allowed_script_safely(self) -> None:
+        with TemporaryDirectory() as temp_dir:
+            with self.assertRaises(RuntimeError) as ctx:
+                resolve_allowed_embedded_script(
+                    "steam_deals_generator.py",
+                    base_dir=Path(temp_dir),
+                )
+
+        self.assertEqual(
+            str(ctx.exception),
+            "Script embebido permitido no disponible.",
+        )
+        self.assertNotIn(temp_dir, str(ctx.exception))
+
+    def test_run_embedded_script_preserves_passthrough_args_and_restores_argv(self) -> None:
+        original_argv = ["desktop", "--run-script"]
+        calls = []
+
+        def fake_run_path(path, run_name=None):
+            calls.append((path, run_name, list(sys.argv)))
+
+        with TemporaryDirectory() as temp_dir:
+            base = Path(temp_dir)
+            script = base / "payday2_dlc_tracker.py"
+            script.write_text("print('ok')", encoding="utf-8")
+            previous_argv = sys.argv[:]
+            try:
+                sys.argv = original_argv[:]
+                _run_embedded_script(
+                    "payday2_dlc_tracker.py",
+                    ["--vanity", "wolf"],
+                    base_dir=base,
+                    run_path_fn=fake_run_path,
+                )
+                restored = list(sys.argv)
+            finally:
+                sys.argv = previous_argv
+
+        self.assertEqual(
+            calls,
+            [
+                (
+                    str(script.resolve()),
+                    "__main__",
+                    [str(script.resolve()), "--vanity", "wolf"],
+                )
+            ],
+        )
+        self.assertEqual(restored, original_argv)
+
+    def test_run_embedded_script_rejects_unknown_before_runpy(self) -> None:
+        calls = []
+
+        with TemporaryDirectory() as temp_dir:
+            with self.assertRaises(ValueError):
+                _run_embedded_script(
+                    "unknown.py",
+                    [],
+                    base_dir=Path(temp_dir),
+                    run_path_fn=lambda *_args, **_kwargs: calls.append("run"),
+                )
+
+        self.assertEqual(calls, [])
+
+    def test_main_reports_run_script_validation_errors_without_traceback(self) -> None:
+        previous_argv = sys.argv[:]
+        stderr = io.StringIO()
+        try:
+            sys.argv = ["desktop", "--run-script", "../steam_deals_generator.py"]
+            with contextlib.redirect_stderr(stderr):
+                with self.assertRaises(SystemExit) as ctx:
+                    desktop_main()
+        finally:
+            sys.argv = previous_argv
+
+        output = stderr.getvalue()
+        self.assertEqual(ctx.exception.code, 2)
+        self.assertIn("Script embebido no permitido.", output)
+        self.assertNotIn("Traceback", output)
+        self.assertNotIn("/home/", output)
+        self.assertNotIn("Documents", output)
 
 
 class DesktopCleanShutdownContractTests(unittest.TestCase):

@@ -1264,6 +1264,7 @@ def _resolve_positive_int_env(
     *,
     env=None,
     minimum: int = 1,
+    maximum: int | None = None,
 ) -> int:
     source_env = os.environ if env is None else env
     raw = source_env.get(name)
@@ -1273,7 +1274,11 @@ def _resolve_positive_int_env(
         value = int(str(raw).strip())
     except ValueError:
         return default
-    return value if value >= minimum else default
+    if value < minimum:
+        return default
+    if maximum is not None:
+        return min(value, maximum)
+    return value
 
 
 def resolve_price_fetch_tuning(*, env=None) -> dict[str, int | bool]:
@@ -1289,11 +1294,20 @@ def resolve_price_fetch_tuning(*, env=None) -> dict[str, int | bool]:
         env=env,
         minimum=0,
     )
+    individual_fallback_workers = _resolve_positive_int_env(
+        "STEAM_DEALS_INDIVIDUAL_FALLBACK_WORKERS",
+        PRICE_INDIVIDUAL_FALLBACK_WORKERS,
+        env=env,
+        minimum=1,
+        maximum=PRICE_INDIVIDUAL_FALLBACK_WORKERS_MAX,
+    )
     return {
         "batch_size": batch_size,
         "batch_halving_limit": batch_halving_limit,
+        "individual_fallback_workers": individual_fallback_workers,
         "is_custom": batch_size != BATCH_SIZE
-        or batch_halving_limit != PRICE_BATCH_HALVING_LIMIT,
+        or batch_halving_limit != PRICE_BATCH_HALVING_LIMIT
+        or individual_fallback_workers != PRICE_INDIVIDUAL_FALLBACK_WORKERS,
     }
 
 
@@ -1707,7 +1721,8 @@ def run_price_cache_stage(
         tuning_msg = (
             "Tuning precios activo: "
             f"batch_size={price_tuning['batch_size']} · "
-            f"halving_limit={price_tuning['batch_halving_limit']}"
+            f"halving_limit={price_tuning['batch_halving_limit']} · "
+            f"fallback_workers={price_tuning['individual_fallback_workers']}"
         )
         emit_fn(
             f"  {_dim(tuning_msg)}"
@@ -1725,6 +1740,11 @@ def run_price_cache_stage(
         "individual_fallback_failed_count": 0,
         "http_400_direct_fallback_count": 0,
         "http_400_direct_fallback_batches": 0,
+        "individual_fallback_worker_count": int(
+            price_tuning["individual_fallback_workers"]
+        ),
+        "individual_fallback_worker_downgrade_count": 0,
+        "individual_fallback_failure_reasons": {},
         "null_batch_count": 0,
     }
 
@@ -1741,6 +1761,7 @@ def run_price_cache_stage(
             current_time_fn=current_time_fn,
             batch_size=int(price_tuning["batch_size"]),
             max_batch_halving=int(price_tuning["batch_halving_limit"]),
+            individual_fallback_workers=int(price_tuning["individual_fallback_workers"]),
             stats_out=price_fetch_stats,
         )
     except KeyboardInterrupt as exc:
@@ -1780,6 +1801,21 @@ def run_price_cache_stage(
         emit_fn(
             f"  {_dim(direct_fallback_msg)}"
         )
+    if price_fetch_stats["individual_fallback_worker_downgrade_count"]:
+        downgrade_msg = (
+            "Fallback individual adaptativo: "
+            f"{price_fetch_stats['individual_fallback_worker_downgrade_count']} bajadas de workers"
+        )
+        emit_fn(f"  {_dim(downgrade_msg)}")
+    failure_reasons = price_fetch_stats.get("individual_fallback_failure_reasons")
+    if isinstance(failure_reasons, dict) and failure_reasons:
+        reason_parts = [
+            f"{reason}={count:,}"
+            for reason, count in sorted(failure_reasons.items())
+        ]
+        emit_fn(
+            f"  {_dim('Fallback individual fallos por razón: ' + ', '.join(reason_parts))}"
+        )
     emit_fn(f"  {build_price_cache_completion_message(deals, min_discount, n_fetched)}")
     return {
         "deals": deals,
@@ -1798,9 +1834,17 @@ def run_price_cache_stage(
         "individual_fallback_failed_count": price_fetch_stats["individual_fallback_failed_count"],
         "http_400_direct_fallback_count": price_fetch_stats["http_400_direct_fallback_count"],
         "http_400_direct_fallback_batches": price_fetch_stats["http_400_direct_fallback_batches"],
+        "individual_fallback_worker_count": price_fetch_stats["individual_fallback_worker_count"],
+        "individual_fallback_worker_downgrade_count": price_fetch_stats[
+            "individual_fallback_worker_downgrade_count"
+        ],
+        "individual_fallback_failure_reasons": price_fetch_stats[
+            "individual_fallback_failure_reasons"
+        ],
         "null_batch_count": price_fetch_stats["null_batch_count"],
         "batch_size": int(price_tuning["batch_size"]),
         "batch_halving_limit": int(price_tuning["batch_halving_limit"]),
+        "individual_fallback_workers": int(price_tuning["individual_fallback_workers"]),
     }
 
 
@@ -1839,6 +1883,8 @@ def run_warm_cache_mode(
 # ─────────────────────────────────────────────
 
 BATCH_SIZE = 20
+PRICE_INDIVIDUAL_FALLBACK_WORKERS = 1
+PRICE_INDIVIDUAL_FALLBACK_WORKERS_MAX = 4
 ENTRY_REFRESH_TTL_HOURS = 24
 PRICE_FAILURE_RETRY_HOURS = 2
 
@@ -1881,6 +1927,7 @@ def get_deals_from_wishlist(
     current_time_fn=time.time,
     batch_size: int = BATCH_SIZE,
     max_batch_halving: int = PRICE_BATCH_HALVING_LIMIT,
+    individual_fallback_workers: int = PRICE_INDIVIDUAL_FALLBACK_WORKERS,
     stats_out: dict | None = None,
 ) -> tuple[list[dict], int]:
     if _prices_module is None:
@@ -1911,6 +1958,7 @@ def get_deals_from_wishlist(
         current_time_fn=current_time_fn,
         refresh_ids=refresh_ids,
         max_batch_halving=max_batch_halving,
+        individual_fallback_workers=individual_fallback_workers,
         failure_retry_hours=PRICE_FAILURE_RETRY_HOURS,
         stats_out=stats_out,
     )

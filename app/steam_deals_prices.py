@@ -3,6 +3,7 @@ from __future__ import annotations
 import re
 import time
 import urllib.error
+from concurrent.futures import ThreadPoolExecutor
 
 from shared.cache_utils import load_timestamped_cache as _default_load_timestamped_cache
 from shared.cache_utils import save_timestamped_cache as _default_save_timestamped_cache
@@ -11,9 +12,14 @@ from shared.cache_utils import save_timestamped_cache as _default_save_timestamp
 ENTRY_FETCHED_AT_KEY = "_fetched_at"
 ENTRY_FAILED_AT_KEY = "_failed_at"
 ENTRY_FAILURE_REASON_KEY = "_failure_reason"
+FETCH_ERROR_KEY = "_steam_deals_fetch_error"
 PRICE_DATA_FAILURE_REASON = "no_price_data"
 DEFAULT_FAILURE_RETRY_HOURS = 2.0
 DEFAULT_HTTP_400_CIRCUIT_BREAKER_THRESHOLD = 3
+DEFAULT_INDIVIDUAL_FALLBACK_WORKERS = 1
+MAX_INDIVIDUAL_FALLBACK_WORKERS = 4
+ADAPTIVE_FALLBACK_FAILURE_RATIO = 0.5
+ADAPTIVE_FALLBACK_MIN_BATCH_SIZE = 4
 
 
 def load_price_cache(
@@ -56,9 +62,13 @@ def fetch_single(
         data = get_json(url, headers={"User-Agent": "Mozilla/5.0"})
         sleep_fn(delay)
         return data
-    except Exception:
+    except urllib.error.HTTPError as exc:
         sleep_fn(delay)
-        return None
+        return {FETCH_ERROR_KEY: f"http_{exc.code}"}
+    except Exception as exc:
+        sleep_fn(delay)
+        reason = re.sub(r"[^a-z0-9_]+", "_", type(exc).__name__.lower())
+        return {FETCH_ERROR_KEY: f"error_{reason}"}
 
 
 def parse_release_year(date_str: str) -> int | None:
@@ -123,6 +133,99 @@ def _emit(emit, message: str, **kwargs) -> None:
         emit(message)
 
 
+def _bounded_individual_fallback_workers(worker_count: int | None) -> int:
+    if not isinstance(worker_count, int):
+        return DEFAULT_INDIVIDUAL_FALLBACK_WORKERS
+    return min(
+        MAX_INDIVIDUAL_FALLBACK_WORKERS,
+        max(DEFAULT_INDIVIDUAL_FALLBACK_WORKERS, worker_count),
+    )
+
+
+def _fetch_failure_reason(single: dict | None) -> str | None:
+    if not isinstance(single, dict):
+        return None
+    reason = single.get(FETCH_ERROR_KEY)
+    return reason if isinstance(reason, str) and reason else None
+
+
+def _increment_failure_reason(stats_out: dict | None, reason: str | None) -> None:
+    if not isinstance(stats_out, dict):
+        return
+    safe_reason = reason or PRICE_DATA_FAILURE_REASON
+    reason_counts = stats_out.setdefault("individual_fallback_failure_reasons", {})
+    if isinstance(reason_counts, dict):
+        reason_counts[safe_reason] = int(reason_counts.get(safe_reason, 0) or 0) + 1
+
+
+def _should_downgrade_individual_fallback_workers(
+    *, workers: int, batch_stats: dict[str, int]
+) -> bool:
+    total = int(batch_stats.get("total", 0) or 0)
+    failed = int(batch_stats.get("failed", 0) or 0)
+    if workers <= 1 or total < ADAPTIVE_FALLBACK_MIN_BATCH_SIZE:
+        return False
+    return (failed / total) >= ADAPTIVE_FALLBACK_FAILURE_RATIO
+
+
+def _downgrade_individual_fallback_workers_if_needed(
+    workers: int,
+    batch_stats: dict[str, int],
+    *,
+    stats_out: dict | None,
+    emit,
+    dim,
+) -> int:
+    if not _should_downgrade_individual_fallback_workers(
+        workers=workers,
+        batch_stats=batch_stats,
+    ):
+        return workers
+    if isinstance(stats_out, dict):
+        stats_out["individual_fallback_worker_downgrade_count"] = (
+            int(stats_out.get("individual_fallback_worker_downgrade_count", 0) or 0)
+            + 1
+        )
+    failed = int(batch_stats.get("failed", 0) or 0)
+    total = int(batch_stats.get("total", 0) or 0)
+    _emit(
+        emit,
+        "\n  "
+        + dim(
+            f"Fallback individual adaptativo: {failed}/{total} fallaron con "
+            f"workers={workers}; bajando a 1 worker."
+        ),
+        flush=True,
+    )
+    return DEFAULT_INDIVIDUAL_FALLBACK_WORKERS
+
+
+def _build_empty_fallback_stats() -> dict[str, int]:
+    return {"total": 0, "resolved": 0, "failed": 0}
+
+
+def _merge_fallback_stats(target: dict[str, int], source: dict[str, int]) -> None:
+    for key in ("total", "resolved", "failed"):
+        target[key] = int(target.get(key, 0) or 0) + int(source.get(key, 0) or 0)
+
+
+def _fetch_individual_fallback_entry(
+    appid: str,
+    *,
+    country: str,
+    delay: float,
+    fetch_single_fn,
+    process_app_entry_fn,
+) -> tuple[str, dict | None, str | None]:
+    single = fetch_single_fn(appid, country, delay)
+    fetch_error_reason = _fetch_failure_reason(single)
+    parsed = None
+    if single and not fetch_error_reason:
+        parsed = process_app_entry_fn(appid, single)
+    failure_reason = None if parsed else (fetch_error_reason or PRICE_DATA_FAILURE_REASON)
+    return appid, parsed, failure_reason
+
+
 def _handle_individual_fallback(
     batch: list[str],
     fetched_cache: dict,
@@ -132,8 +235,10 @@ def _handle_individual_fallback(
     now_ts: float,
     fetch_single_fn,
     process_app_entry_fn,
+    individual_fallback_workers: int = DEFAULT_INDIVIDUAL_FALLBACK_WORKERS,
     stats_out: dict | None = None,
-) -> None:
+) -> dict[str, int]:
+    batch_stats = _build_empty_fallback_stats()
     if isinstance(stats_out, dict):
         stats_out["individual_fallback_batches"] = (
             int(stats_out.get("individual_fallback_batches", 0) or 0) + 1
@@ -141,9 +246,35 @@ def _handle_individual_fallback(
         stats_out["individual_fallback_count"] = (
             int(stats_out.get("individual_fallback_count", 0) or 0) + len(batch)
         )
-    for appid in batch:
-        single = fetch_single_fn(appid, country, delay)
-        parsed = process_app_entry_fn(appid, single) if single else None
+    workers = _bounded_individual_fallback_workers(individual_fallback_workers)
+    if workers <= 1 or len(batch) <= 1:
+        results = [
+            _fetch_individual_fallback_entry(
+                appid,
+                country=country,
+                delay=delay,
+                fetch_single_fn=fetch_single_fn,
+                process_app_entry_fn=process_app_entry_fn,
+            )
+            for appid in batch
+        ]
+    else:
+        with ThreadPoolExecutor(max_workers=min(workers, len(batch))) as executor:
+            results = list(
+                executor.map(
+                    lambda appid: _fetch_individual_fallback_entry(
+                        appid,
+                        country=country,
+                        delay=delay,
+                        fetch_single_fn=fetch_single_fn,
+                        process_app_entry_fn=process_app_entry_fn,
+                    ),
+                    batch,
+                )
+            )
+
+    for appid, parsed, failure_reason in results:
+        batch_stats["total"] += 1
         if isinstance(stats_out, dict):
             counter_key = (
                 "individual_fallback_resolved_count"
@@ -151,7 +282,17 @@ def _handle_individual_fallback(
                 else "individual_fallback_failed_count"
             )
             stats_out[counter_key] = int(stats_out.get(counter_key, 0) or 0) + 1
-        fetched_cache[appid] = _cache_result_entry(parsed, now_ts=now_ts)
+        if isinstance(parsed, dict) and parsed:
+            batch_stats["resolved"] += 1
+        else:
+            batch_stats["failed"] += 1
+            _increment_failure_reason(stats_out, failure_reason)
+        fetched_cache[appid] = _cache_result_entry(
+            parsed,
+            now_ts=now_ts,
+            failure_reason=failure_reason or PRICE_DATA_FAILURE_REASON,
+        )
+    return batch_stats
 
 
 def _split_batch(batch: list[str]) -> tuple[list[str], list[str]]:
@@ -174,8 +315,10 @@ def _resolve_batch_with_guardrails(
     warn,
     dim,
     max_batch_halving: int = 3,
+    individual_fallback_workers: int = DEFAULT_INDIVIDUAL_FALLBACK_WORKERS,
     stats_out: dict | None = None,
-) -> None:
+) -> dict[str, int]:
+    aggregate_fallback_stats = _build_empty_fallback_stats()
     pending_batches: list[tuple[list[str], int]] = [(list(batch), 0)]
     while pending_batches:
         current_batch, depth = pending_batches.pop(0)
@@ -247,7 +390,7 @@ def _resolve_batch_with_guardrails(
                 f"\n  {dim('Batch falló, intentando individualmente...')}",
                 flush=True,
             )
-            _handle_individual_fallback(
+            batch_fallback_stats = _handle_individual_fallback(
                 current_batch,
                 fetched_cache,
                 country=country,
@@ -255,8 +398,10 @@ def _resolve_batch_with_guardrails(
                 now_ts=now_ts,
                 fetch_single_fn=fetch_single_fn,
                 process_app_entry_fn=process_app_entry_fn,
+                individual_fallback_workers=individual_fallback_workers,
                 stats_out=stats_out,
             )
+            _merge_fallback_stats(aggregate_fallback_stats, batch_fallback_stats)
             continue
 
         null_count = sum(
@@ -274,7 +419,7 @@ def _resolve_batch_with_guardrails(
                 f"\n  {dim('Batch devolvió todo null, reintentando individualmente...')}",
                 flush=True,
             )
-            _handle_individual_fallback(
+            batch_fallback_stats = _handle_individual_fallback(
                 current_batch,
                 fetched_cache,
                 country=country,
@@ -282,8 +427,10 @@ def _resolve_batch_with_guardrails(
                 now_ts=now_ts,
                 fetch_single_fn=fetch_single_fn,
                 process_app_entry_fn=process_app_entry_fn,
+                individual_fallback_workers=individual_fallback_workers,
                 stats_out=stats_out,
             )
+            _merge_fallback_stats(aggregate_fallback_stats, batch_fallback_stats)
             continue
 
         for appid in current_batch:
@@ -292,6 +439,8 @@ def _resolve_batch_with_guardrails(
                 now_ts=now_ts,
             )
         sleep_fn(delay)
+
+    return aggregate_fallback_stats
 
 
 def _batch_url(batch: list[str], country: str) -> str:
@@ -305,30 +454,44 @@ def _batch_url(batch: list[str], country: str) -> str:
 def _build_deals(
     appids: list[str], fetched_cache: dict, min_discount: int
 ) -> list[dict]:
-    deals = [
-        {
-            "appid": appid,
-            "name": info["name"],
-            "type": info.get("type", "game"),
-            "discount": info["discount_percent"],
-            "price_final": info["price_final"],
-            "price_original": info["price_original"],
-            "price_raw": info.get("price_final_raw", 0),
-            "genres": info["genres"],
-            "release_year": info.get("release_year"),
-            "description": info.get("description", ""),
-            "linux_native": info.get("linux_native", False),
-            "metacritic_score": info.get("metacritic_score"),
-            "metacritic_url": info.get("metacritic_url", ""),
-            "categories": info.get("categories", []),
-        }
-        for appid in appids
-        if (info := fetched_cache.get(appid))
-        and info
-        and info.get("discount_percent", 0) >= min_discount
-    ]
+    deals = []
+    for appid in appids:
+        info = fetched_cache.get(appid)
+        if not _is_deal_cache_entry(info, min_discount):
+            continue
+        deals.append(
+            {
+                "appid": appid,
+                "name": info.get("name", ""),
+                "type": info.get("type", "game"),
+                "discount": info.get("discount_percent", 0),
+                "price_final": info.get("price_final", ""),
+                "price_original": info.get("price_original", ""),
+                "price_raw": info.get("price_final_raw", 0),
+                "genres": info.get("genres", []),
+                "release_year": info.get("release_year"),
+                "description": info.get("description", ""),
+                "linux_native": info.get("linux_native", False),
+                "metacritic_score": info.get("metacritic_score"),
+                "metacritic_url": info.get("metacritic_url", ""),
+                "categories": info.get("categories", []),
+            }
+        )
     deals.sort(key=lambda deal: -deal["discount"])
     return deals
+
+
+def _is_deal_cache_entry(entry: dict | None, min_discount: int) -> bool:
+    if not isinstance(entry, dict) or not entry:
+        return False
+    if ENTRY_FAILED_AT_KEY in entry or ENTRY_FAILURE_REASON_KEY in entry:
+        return False
+    discount_percent = entry.get("discount_percent")
+    if not isinstance(discount_percent, (int, float)):
+        return False
+    if discount_percent < min_discount:
+        return False
+    return all(key in entry for key in ("name", "price_final", "price_original"))
 
 
 def _is_recent_failed_entry(
@@ -400,11 +563,16 @@ def _stamp_entry(entry: dict | None, *, now_ts: float) -> dict:
     return stamped
 
 
-def _cache_result_entry(entry: dict | None, *, now_ts: float) -> dict:
+def _cache_result_entry(
+    entry: dict | None,
+    *,
+    now_ts: float,
+    failure_reason: str = PRICE_DATA_FAILURE_REASON,
+) -> dict:
     if not isinstance(entry, dict) or not entry:
         return {
             ENTRY_FAILED_AT_KEY: now_ts,
-            ENTRY_FAILURE_REASON_KEY: PRICE_DATA_FAILURE_REASON,
+            ENTRY_FAILURE_REASON_KEY: failure_reason or PRICE_DATA_FAILURE_REASON,
         }
     return _stamp_entry(entry, now_ts=now_ts)
 
@@ -438,6 +606,7 @@ def get_deals_from_wishlist(
     max_batch_halving: int = 3,
     failure_retry_hours: float = DEFAULT_FAILURE_RETRY_HOURS,
     http_400_circuit_breaker_threshold: int = DEFAULT_HTTP_400_CIRCUIT_BREAKER_THRESHOLD,
+    individual_fallback_workers: int = DEFAULT_INDIVIDUAL_FALLBACK_WORKERS,
     stats_out: dict | None = None,
 ) -> tuple[list[dict], int]:
     now_ts = float(current_time_fn())
@@ -480,6 +649,12 @@ def get_deals_from_wishlist(
     tracking_stats.setdefault("individual_fallback_failed_count", 0)
     tracking_stats.setdefault("http_400_direct_fallback_count", 0)
     tracking_stats.setdefault("http_400_direct_fallback_batches", 0)
+    tracking_stats.setdefault("individual_fallback_worker_downgrade_count", 0)
+    tracking_stats.setdefault("individual_fallback_failure_reasons", {})
+    tracking_stats.setdefault(
+        "individual_fallback_worker_count",
+        _bounded_individual_fallback_workers(individual_fallback_workers),
+    )
     tracking_stats.setdefault("null_batch_count", 0)
 
     if total > 0:
@@ -500,6 +675,9 @@ def get_deals_from_wishlist(
         http_400_degradation_streak = 0
         use_direct_http_400_fallback = False
         direct_fallback_notice_emitted = False
+        current_fallback_workers = _bounded_individual_fallback_workers(
+            individual_fallback_workers
+        )
         for batch_index, batch in enumerate(batches):
             bar = _build_bar(
                 fetched_count,
@@ -542,7 +720,7 @@ def get_deals_from_wishlist(
                     int(tracking_stats.get("http_400_direct_fallback_count", 0) or 0)
                     + len(batch)
                 )
-                _handle_individual_fallback(
+                batch_fallback_stats = _handle_individual_fallback(
                     batch,
                     fetched_cache,
                     country=country,
@@ -550,7 +728,15 @@ def get_deals_from_wishlist(
                     now_ts=batch_now_ts,
                     fetch_single_fn=fetch_single_fn,
                     process_app_entry_fn=process_app_entry_fn,
+                    individual_fallback_workers=current_fallback_workers,
                     stats_out=tracking_stats,
+                )
+                current_fallback_workers = _downgrade_individual_fallback_workers_if_needed(
+                    current_fallback_workers,
+                    batch_fallback_stats,
+                    stats_out=tracking_stats,
+                    emit=emit,
+                    dim=dim,
                 )
                 fetched_count += len(batch)
                 if (
@@ -564,7 +750,7 @@ def get_deals_from_wishlist(
             degraded_before = int(tracking_stats.get("degraded_batch_count", 0) or 0)
             fallback_before = int(tracking_stats.get("individual_fallback_count", 0) or 0)
 
-            _resolve_batch_with_guardrails(
+            batch_fallback_stats = _resolve_batch_with_guardrails(
                 batch,
                 fetched_cache,
                 country=country,
@@ -578,7 +764,16 @@ def get_deals_from_wishlist(
                 warn=warn,
                 dim=dim,
                 max_batch_halving=max_batch_halving,
+                individual_fallback_workers=current_fallback_workers,
                 stats_out=tracking_stats,
+            )
+
+            current_fallback_workers = _downgrade_individual_fallback_workers_if_needed(
+                current_fallback_workers,
+                batch_fallback_stats,
+                stats_out=tracking_stats,
+                emit=emit,
+                dim=dim,
             )
 
             degraded_delta = (

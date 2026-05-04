@@ -12,6 +12,7 @@ Uso:
 """
 
 import argparse
+import html
 import json
 import signal
 import sys
@@ -24,11 +25,24 @@ from http.server import HTTPServer, BaseHTTPRequestHandler
 from pathlib import Path
 
 from shared_web_infra import (
+    build_secret_subprocess_env,
     build_missing_assets_html,
+    CONFIG_SECRET_ENV_VARS,
+    config_without_secrets,
+    create_local_session_token,
+    is_valid_local_anti_csrf_request,
+    is_valid_loopback_host_header,
     load_html_with_fallback,
     load_text_asset,
+    local_anti_csrf_forbidden_payload,
+    local_host_forbidden_payload,
+    LOCAL_CSRF_HEADER,
+    merge_config_preserving_secrets,
     ProcessStreamUnavailable,
+    public_config,
     read_json_body,
+    redact_sensitive_text,
+    safe_public_error_payload,
     send_html,
     send_json,
     send_text,
@@ -49,6 +63,15 @@ PAYDAY2_FAVICON_FILE = WEB_DIR / "favicon.svg"
 PAYDAY2_MISSING_ASSETS_HTML = build_missing_assets_html(
     "PAYDAY 2 DLC Dashboard",
     "web/payday2/index.html + app.css + app.js",
+)
+LOCAL_SESSION_TOKEN = create_local_session_token()
+PROTECTED_POST_PATHS = frozenset(
+    {
+        "/api/toggle",
+        "/api/toggle-bundle",
+        "/api/refresh",
+        "/api/config",
+    }
 )
 PAYDAY2_MASK_ROUTES = {
     "/masks/heist_mask_blue.svg": WEB_DIR / "masks" / "heist_mask_blue.svg",
@@ -81,6 +104,33 @@ _store_lock = threading.Lock()
 # Running subprocess for refresh
 _refresh_proc = None
 _refresh_lock = threading.Lock()
+
+
+def build_public_config_response(config: dict) -> dict:
+    return public_config(config)
+
+
+def _config_redaction_values(config: dict, env: dict[str, str] | None = None) -> list[str]:
+    values: list[str] = []
+    for config_key, env_name in CONFIG_SECRET_ENV_VARS.items():
+        config_value = config.get(config_key)
+        if config_value:
+            values.append(str(config_value))
+        if env is not None and env.get(env_name):
+            values.append(str(env[env_name]))
+    return values
+
+
+def build_refresh_command_and_env(config: dict) -> tuple[list[str], dict[str, str]]:
+    command_config = config_without_secrets(config)
+    cmd = [
+        sys.executable,
+        str(Path(__file__).resolve().parent / "payday2_dlc_tracker.py"),
+    ]
+    if command_config.get("vanity"):
+        cmd += ["--vanity", command_config["vanity"]]
+
+    return cmd, build_secret_subprocess_env(config)
 
 
 def load_from_cache():
@@ -412,12 +462,23 @@ def unmark_bundle_owned(bundle_id: str) -> dict:
     }
 
 
+def inject_local_session_token(html_text: str, token: str) -> str:
+    token_meta = (
+        '<meta name="steam-tools-local-token" '
+        f'content="{html.escape(token, quote=True)}">'
+    )
+    if "</head>" in html_text:
+        return html_text.replace("</head>", f"{token_meta}\n</head>", 1)
+    return token_meta + "\n" + html_text
+
+
 def load_payday2_html() -> str:
-    return load_html_with_fallback(
+    html_text = load_html_with_fallback(
         PAYDAY2_HTML_FILE,
         [PAYDAY2_CSS_FILE, PAYDAY2_JS_FILE],
         PAYDAY2_MISSING_ASSETS_HTML,
     )
+    return inject_local_session_token(html_text, LOCAL_SESSION_TOKEN)
 
 
 def load_payday2_asset(asset_file: Path) -> str | None:
@@ -458,7 +519,38 @@ class Handler(BaseHTTPRequestHandler):
     def _body(self) -> dict | None:
         return read_json_body(self, max_json_body_bytes=self.max_json_body_bytes)
 
+    def _server_port(self) -> int:
+        server = getattr(self, "server", None)
+        port = getattr(server, "server_port", None)
+        if isinstance(port, int):
+            return port
+        server_address = getattr(server, "server_address", None)
+        if isinstance(server_address, tuple) and len(server_address) >= 2:
+            try:
+                return int(server_address[1])
+            except (TypeError, ValueError):
+                pass
+        return DEFAULT_PORT
+
+    def _require_local_anti_csrf(self) -> bool:
+        if is_valid_local_anti_csrf_request(
+            self.headers,
+            LOCAL_SESSION_TOKEN,
+            self._server_port(),
+        ):
+            return True
+        self._json(local_anti_csrf_forbidden_payload(), 403)
+        return False
+
+    def _require_loopback_host(self) -> bool:
+        if is_valid_loopback_host_header(self.headers, self._server_port()):
+            return True
+        self._json(local_host_forbidden_payload(), 403)
+        return False
+
     def do_GET(self):
+        if not self._require_loopback_host():
+            return
         path = urllib.parse.urlparse(self.path).path
         if path == "/":
             self._html(load_payday2_html())
@@ -489,12 +581,16 @@ class Handler(BaseHTTPRequestHandler):
         elif path == "/api/data":
             self._json(get_data_json())
         elif path == "/api/config":
-            self._json(pd2.load_user_config())
+            self._json(build_public_config_response(pd2.load_user_config()))
         else:
             self.send_error(404)
 
     def do_POST(self):
+        if not self._require_loopback_host():
+            return
         path = urllib.parse.urlparse(self.path).path
+        if path in PROTECTED_POST_PATHS and not self._require_local_anti_csrf():
+            return
         if path == "/api/toggle":
             body = self._body()
             if body is None:
@@ -534,8 +630,7 @@ class Handler(BaseHTTPRequestHandler):
             body = self._body()
             if body is None:
                 return
-            cfg = pd2.load_user_config()
-            cfg.update(body)
+            cfg = merge_config_preserving_secrets(pd2.load_user_config(), body)
             pd2.CONFIG_FILE.parent.mkdir(parents=True, exist_ok=True)
             pd2.CONFIG_FILE.write_text(
                 json.dumps(cfg, ensure_ascii=False, indent=2), encoding="utf-8"
@@ -567,22 +662,22 @@ class Handler(BaseHTTPRequestHandler):
             _store["refreshing"] = True
 
         cfg = pd2.load_user_config()
-        cmd = [
-            sys.executable,
-            str(Path(__file__).resolve().parent / "payday2_dlc_tracker.py"),
-        ]
-        if cfg.get("vanity"):
-            cmd += ["--vanity", cfg["vanity"]]
-        if cfg.get("key"):
-            cmd += ["--key", cfg["key"]]
-        if cfg.get("itad_key"):
-            cmd += ["--itad-key", cfg["itad_key"]]
+        cmd, proc_env = build_refresh_command_and_env(cfg)
+        public_redaction_values = [*cmd, *_config_redaction_values(cfg, proc_env)]
 
         try:
-            proc = start_text_subprocess(cmd)
+            proc = start_text_subprocess(cmd, env=proc_env)
         except Exception as exc:
             finish_refresh()
-            self._json({"error": f"No se pudo iniciar proceso: {exc}"}, 500)
+            self._json(
+                safe_public_error_payload(
+                    "process_start_failed",
+                    "No se pudo iniciar proceso.",
+                    exc=exc,
+                    extra_values=public_redaction_values,
+                ),
+                500,
+            )
             return
 
         with _refresh_lock:
@@ -597,6 +692,10 @@ class Handler(BaseHTTPRequestHandler):
             text = ansi_re.sub("", raw_line).rstrip()
             if not text:
                 return
+            public_text = redact_sensitive_text(
+                text,
+                extra_values=public_redaction_values,
+            )
 
             cls = "normal"
             if "\u2713" in raw_line or "\u2713" in text:
@@ -615,12 +714,15 @@ class Handler(BaseHTTPRequestHandler):
                         "type": "progress",
                         "current": int(m.group(1)),
                         "total": int(m.group(2)),
-                        "label": m.group(3).strip(),
+                        "label": redact_sensitive_text(
+                            m.group(3).strip(),
+                            extra_values=public_redaction_values,
+                        ),
                     }
                 )
                 cls = "step"
 
-            emit_sse({"type": "line", "text": text, "cls": cls})
+            emit_sse({"type": "line", "text": public_text, "cls": cls})
 
         def handle_process_done(done_proc, emit_sse):
             finish_refresh()

@@ -213,9 +213,9 @@ Si en KDE/X11 o en una sesion grafica normal el artefacto ya abre sin ese flag, 
 
 No cerrar el pendiente final de UX nativa con evidencia solo de root; repetir desde tu usuario grafico normal.
 
-### Cache / logs no persisten entre lanzadas
+### Cache / logs / output no persisten entre lanzadas
 
-El desktop actualizado ya no debe guardar cache dentro de `_MEI`. Si quieres calentar cache o dejar evidencia de un run largo fuera de la UI:
+El desktop actualizado ya no debe guardar cache, logs ni reportes por defecto dentro de `_MEI`. Si quieres calentar cache o dejar evidencia de un run largo fuera de la UI:
 
 ```bash
 source .venv/bin/activate
@@ -227,3 +227,5 @@ Opcionalmente puedes separar logs con:
 ```bash
 STEAM_DEALS_LOG_DIR="$HOME/logs/steam-deals" python3 steam_deals_generator.py --vanity gaben --warm-cache
 ```
+
+Si dejas vacío **Dónde guardar reportes** dentro del binario frozen, el default debe resolver a una carpeta persistente tipo `~/SteamTools/output` (o al equivalente del usuario/sesión), no a `/tmp/_MEI.../output`.

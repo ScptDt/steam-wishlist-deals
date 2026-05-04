@@ -3,7 +3,15 @@ from __future__ import annotations
 import unittest
 from pathlib import Path
 
-from steam_deals_paths import resolve_cache_dir, resolve_logs_dir
+from steam_deals_paths import (
+    CACHE_DIR_ENV_VAR,
+    LOG_DIR_ENV_VAR,
+    OUTPUT_DIR_ENV_VAR,
+    build_persistent_runtime_env,
+    resolve_cache_dir,
+    resolve_logs_dir,
+    resolve_reports_output_dir,
+)
 
 
 class DesktopPersistenceContractTests(unittest.TestCase):
@@ -26,6 +34,97 @@ class DesktopPersistenceContractTests(unittest.TestCase):
 
         self.assertEqual(cache_dir, Path("/var/tmp/steam-cache"))
         self.assertEqual(logs_dir, Path("/var/tmp/steam-cache/logs"))
+
+    def test_frozen_windows_uses_local_app_data_cache_root(self) -> None:
+        cache_dir = resolve_cache_dir(
+            Path("C:/Temp/_MEI123"),
+            env={"LOCALAPPDATA": "C:/Users/tester/AppData/Local"},
+            frozen=True,
+            platform="win32",
+        )
+
+        self.assertEqual(
+            cache_dir,
+            Path("C:/Users/tester/AppData/Local/SteamTools/cache"),
+        )
+
+    def test_frozen_macos_uses_library_caches_root(self) -> None:
+        cache_dir = resolve_cache_dir(
+            Path("/var/folders/_MEI123"),
+            env={"HOME": "/Users/tester"},
+            frozen=True,
+            platform="darwin",
+        )
+
+        self.assertEqual(cache_dir, Path("/Users/tester/Library/Caches/SteamTools"))
+
+    def test_frozen_runtime_env_sets_persistent_cache_logs_and_output_defaults(self) -> None:
+        runtime_env = build_persistent_runtime_env(
+            Path("/tmp/_MEI123"),
+            env={"HOME": "/home/tester", "KEEP": "1"},
+            frozen=True,
+            platform="linux",
+        )
+
+        self.assertEqual(runtime_env["KEEP"], "1")
+        self.assertEqual(runtime_env[CACHE_DIR_ENV_VAR], "/home/tester/.cache/steam_deals")
+        self.assertEqual(runtime_env[LOG_DIR_ENV_VAR], "/home/tester/.cache/steam_deals/logs")
+        self.assertEqual(runtime_env[OUTPUT_DIR_ENV_VAR], "/home/tester/SteamTools/output")
+
+    def test_frozen_runtime_env_preserves_existing_path_overrides(self) -> None:
+        runtime_env = build_persistent_runtime_env(
+            Path("/tmp/_MEI123"),
+            env={
+                CACHE_DIR_ENV_VAR: "/var/tmp/steam-cache",
+                LOG_DIR_ENV_VAR: "/var/tmp/steam-logs",
+                OUTPUT_DIR_ENV_VAR: "/var/tmp/steam-output",
+            },
+            frozen=True,
+            platform="linux",
+        )
+
+        self.assertEqual(runtime_env[CACHE_DIR_ENV_VAR], "/var/tmp/steam-cache")
+        self.assertEqual(runtime_env[LOG_DIR_ENV_VAR], "/var/tmp/steam-logs")
+        self.assertEqual(runtime_env[OUTPUT_DIR_ENV_VAR], "/var/tmp/steam-output")
+
+    def test_source_runtime_env_does_not_set_cache_or_logs_defaults(self) -> None:
+        runtime_env = build_persistent_runtime_env(
+            Path("/workspace/deals"),
+            env={"HOME": "/home/tester"},
+            frozen=False,
+            platform="linux",
+        )
+
+        self.assertNotIn(CACHE_DIR_ENV_VAR, runtime_env)
+        self.assertNotIn(LOG_DIR_ENV_VAR, runtime_env)
+        self.assertNotIn(OUTPUT_DIR_ENV_VAR, runtime_env)
+
+    def test_frozen_default_output_uses_persistent_user_folder(self) -> None:
+        output_dir = resolve_reports_output_dir(
+            Path("/tmp/_MEI123"),
+            env={"HOME": "/home/tester"},
+            frozen=True,
+        )
+
+        self.assertEqual(output_dir, Path("/home/tester/SteamTools/output"))
+
+    def test_source_default_output_stays_project_local(self) -> None:
+        output_dir = resolve_reports_output_dir(
+            Path("/workspace/deals"),
+            env={},
+            frozen=False,
+        )
+
+        self.assertEqual(output_dir, Path("/workspace/deals/output"))
+
+    def test_output_override_wins_over_execution_mode(self) -> None:
+        output_dir = resolve_reports_output_dir(
+            Path("/tmp/_MEI123"),
+            env={OUTPUT_DIR_ENV_VAR: "~/custom-output"},
+            frozen=True,
+        )
+
+        self.assertEqual(output_dir, Path("~/custom-output").expanduser())
 
 
 class ResolveCacheDirTests(unittest.TestCase):

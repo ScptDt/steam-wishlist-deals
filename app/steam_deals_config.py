@@ -4,6 +4,8 @@ import argparse
 import sys
 from pathlib import Path
 
+from steam_deals_paths import resolve_reports_output_dir
+from shared_web_infra import resolve_config_secret
 from shared.io_utils import load_json_file as _default_load_json_file
 from shared.io_utils import write_json_file as _default_write_json_file
 
@@ -241,11 +243,18 @@ def _resolve_output_dir(
         return Path(cfg["output_dir"]).expanduser()
     if can_prompt:
         interactive_keys.append("output_dir")
-    script_dir = str(script_path.parent)
-    raw = _ask(
-        input_fn, "Directorio de salida para reportes", script_dir, can_prompt=can_prompt
+    default_output_dir = (
+        resolve_reports_output_dir(script_path.parent, frozen=True)
+        if getattr(sys, "frozen", False)
+        else script_path.parent
     )
-    return Path(raw or script_dir).expanduser()
+    raw = _ask(
+        input_fn,
+        "Directorio de salida para reportes",
+        str(default_output_dir),
+        can_prompt=can_prompt,
+    )
+    return Path(raw or default_output_dir).expanduser()
 
 
 def _resolve_discount(
@@ -286,7 +295,7 @@ def _resolve_family_json(args, cfg: dict):
     return None
 
 
-def _build_filters(args, cfg: dict) -> dict:
+def _build_filters(args, cfg: dict, *, environ=None) -> dict:
     max_workers = (
         args.max_workers if args.max_workers is not None else cfg.get("max_workers")
     )
@@ -319,9 +328,19 @@ def _build_filters(args, cfg: dict) -> dict:
         "warm_cache": args.warm_cache,
         "budget": args.budget,
         "compare": args.compare,
-        "telegram_token": args.telegram_token or cfg.get("telegram_token"),
+        "telegram_token": resolve_config_secret(
+            args.telegram_token,
+            cfg,
+            "telegram_token",
+            environ=environ,
+        ),
         "telegram_chat": args.telegram_chat or cfg.get("telegram_chat"),
-        "discord_webhook": args.discord_webhook or cfg.get("discord_webhook"),
+        "discord_webhook": resolve_config_secret(
+            args.discord_webhook,
+            cfg,
+            "discord_webhook",
+            environ=environ,
+        ),
         "schedule": args.schedule,
         "max_workers": max_workers,
         "md_frontmatter": bool(args.md_frontmatter),
@@ -341,6 +360,7 @@ def get_config(
     stdin=None,
     exit_fn=None,
     argv=None,
+    environ=None,
 ):
     if save_user_config_fn is None:
         save_user_config_fn = lambda cfg: save_user_config(CONFIG_FILE, cfg)
@@ -356,7 +376,7 @@ def get_config(
     cfg = load_user_config_fn()
     can_prompt = _can_prompt(args, stdin, script_path)
     interactive_keys: list[str] = []
-    key = args.key or cfg.get("key") or None
+    key = resolve_config_secret(args.key, cfg, "key", environ=environ) or None
     vanity = (
         _from_arg_cfg_or_ask(
             args.vanity,
@@ -400,7 +420,7 @@ def get_config(
         input_fn=input_fn,
     )
     family_json = _resolve_family_json(args, cfg)
-    itad_key = args.itad_key or cfg.get("itad_key") or None
+    itad_key = resolve_config_secret(args.itad_key, cfg, "itad_key", environ=environ) or None
     no_cache = args.no_cache
 
     if can_prompt and interactive_keys:
@@ -439,5 +459,5 @@ def get_config(
         no_cache,
         family_json,
         itad_key,
-        _build_filters(args, cfg),
+        _build_filters(args, cfg, environ=environ),
     )

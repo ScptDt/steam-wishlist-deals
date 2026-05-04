@@ -14,6 +14,8 @@ import sysconfig
 from dataclasses import dataclass
 from pathlib import Path
 
+from steam_deals_paths import resolve_cache_dir, resolve_logs_dir
+
 
 ROOT = Path(__file__).resolve().parent
 APP_NAME = "SteamToolsDesktop"
@@ -65,6 +67,10 @@ def is_virtualenv() -> bool:
         getattr(sys, "real_prefix", None)
         or sys.prefix != getattr(sys, "base_prefix", sys.prefix)
     )
+
+
+def is_frozen_runtime() -> bool:
+    return bool(getattr(sys, "frozen", False))
 
 
 def get_pep668_marker() -> Path | None:
@@ -152,7 +158,7 @@ def get_check_status_map(checks: list[DoctorCheck]) -> dict[str, str]:
 
 
 def should_offer_local_venv_creation(check_statuses: dict[str, str]) -> bool:
-    if getattr(sys, "frozen", False):
+    if is_frozen_runtime():
         return False
     if get_local_venv_python().exists() or is_local_venv_active():
         return False
@@ -174,7 +180,7 @@ def should_offer_local_requirements_install(check_statuses: dict[str, str]) -> b
 def should_offer_desktop_build(check_statuses: dict[str, str]) -> bool:
     if get_platform_artifact().exists():
         return False
-    if getattr(sys, "frozen", False):
+    if is_frozen_runtime():
         return False
     if check_statuses.get("Módulos locales críticos") == "fail":
         return False
@@ -200,6 +206,13 @@ def get_platform_artifact() -> Path:
 
 
 def check_python_environment() -> DoctorCheck:
+    if is_frozen_runtime():
+        return DoctorCheck(
+            "ok",
+            "Entorno Python",
+            "Runtime Python embebido en el binario; los checks de .venv/PEP 668 no aplican.",
+        )
+
     marker = get_pep668_marker()
     if sys.platform.startswith("linux") and marker and not is_virtualenv():
         return DoctorCheck(
@@ -249,6 +262,13 @@ def check_local_modules() -> DoctorCheck:
 
 
 def check_pywebview_stack() -> DoctorCheck:
+    if is_frozen_runtime():
+        return DoctorCheck(
+            "ok",
+            "pywebview",
+            "Chequeo de paquete source omitido: el binario frozen ya usa el runtime desktop empaquetado.",
+        )
+
     if not module_available("webview"):
         actions = ["python -m pip install -r requirements-desktop.txt", get_revalidate_action()]
         if sys.platform.startswith("linux"):
@@ -294,6 +314,8 @@ def check_pywebview_stack() -> DoctorCheck:
 
 def check_linux_build_host_tools() -> DoctorCheck | None:
     if not sys.platform.startswith("linux"):
+        return None
+    if is_frozen_runtime():
         return None
     missing = [tool for tool in LINUX_BUILD_TOOLS if not command_available(tool)]
     if missing:
@@ -366,6 +388,13 @@ def check_linux_display_stack() -> DoctorCheck | None:
 
 
 def check_pyinstaller_tool() -> DoctorCheck:
+    if is_frozen_runtime():
+        return DoctorCheck(
+            "ok",
+            "PyInstaller",
+            "No se requiere tener PyInstaller instalado para ejecutar este binario empaquetado.",
+        )
+
     if module_available("PyInstaller"):
         return DoctorCheck(
             "ok",
@@ -386,7 +415,7 @@ def check_pyinstaller_tool() -> DoctorCheck:
 
 
 def check_build_configuration() -> DoctorCheck:
-    if getattr(sys, "frozen", False):
+    if is_frozen_runtime():
         return DoctorCheck(
             "ok",
             "Config build PyInstaller",
@@ -438,6 +467,12 @@ def check_build_configuration() -> DoctorCheck:
 def check_macos_backend_runtime() -> DoctorCheck | None:
     if sys.platform != "darwin":
         return None
+    if is_frozen_runtime():
+        return DoctorCheck(
+            "ok",
+            "Backend nativo macOS",
+            "Chequeo source de PyObjC omitido dentro del binario frozen.",
+        )
     missing = [label for module_name, label in MACOS_PYOBJC_MODULES if not module_available(module_name)]
     if missing:
         return DoctorCheck(
@@ -462,6 +497,8 @@ def check_macos_backend_runtime() -> DoctorCheck | None:
 
 def check_macos_build_tools() -> DoctorCheck | None:
     if sys.platform != "darwin":
+        return None
+    if is_frozen_runtime():
         return None
     missing = [tool for tool in MACOS_BUILD_TOOLS if not command_available(tool)]
     if missing:
@@ -629,6 +666,13 @@ def check_windows_session_mode() -> DoctorCheck | None:
 
 
 def check_artifact_presence() -> DoctorCheck:
+    if is_frozen_runtime():
+        return DoctorCheck(
+            "ok",
+            "Artefacto desktop",
+            "Ejecutando desde el artefacto desktop empaquetado.",
+        )
+
     artifact = get_platform_artifact()
     if artifact.exists():
         return DoctorCheck(
@@ -673,6 +717,56 @@ def check_known_build_warnings() -> DoctorCheck:
         "ok",
         "Warnings del último build",
         "Sin warnings conocidos del último build en disco.",
+    )
+
+
+def _path_is_inside(child: Path, parent: Path) -> bool:
+    try:
+        child.resolve(strict=False).relative_to(parent.resolve(strict=False))
+        return True
+    except (OSError, ValueError):
+        return False
+
+
+def check_frozen_runtime() -> DoctorCheck | None:
+    if not is_frozen_runtime():
+        return None
+    if getattr(sys, "_MEIPASS", None):
+        return DoctorCheck(
+            "ok",
+            "Runtime frozen",
+            "PyInstaller frozen detectado; `_MEIPASS` se trata solo como raíz de recursos temporales.",
+        )
+    return DoctorCheck(
+        "warn",
+        "Runtime frozen",
+        "`sys.frozen` está activo pero no se detecta `_MEIPASS`; valida manualmente el empaquetado.",
+        (get_manual_launch_action(),),
+    )
+
+
+def check_frozen_runtime_storage() -> DoctorCheck | None:
+    if not is_frozen_runtime():
+        return None
+    cache_dir = resolve_cache_dir(ROOT, frozen=True)
+    logs_dir = resolve_logs_dir(ROOT, frozen=True)
+    mei_root = getattr(sys, "_MEIPASS", None)
+    if mei_root:
+        mei_path = Path(mei_root)
+        if _path_is_inside(cache_dir, mei_path) or _path_is_inside(logs_dir, mei_path):
+            return DoctorCheck(
+                "fail",
+                "Cache/logs persistentes",
+                "Cache o logs apuntan dentro de `_MEIPASS`; el binario perdería datos al cerrar.",
+                (
+                    "Quita overrides que apunten a `_MEIPASS`.",
+                    "Usa una carpeta persistente de usuario para `STEAM_DEALS_CACHE_DIR` y `STEAM_DEALS_LOG_DIR`.",
+                ),
+            )
+    return DoctorCheck(
+        "ok",
+        "Cache/logs persistentes",
+        "Defaults frozen resuelven fuera de `_MEIPASS` en una ubicación persistente de usuario.",
     )
 
 
@@ -728,7 +822,13 @@ def get_desktop_doctor_fixes(checks: list[DoctorCheck] | None = None) -> list[Do
 
 
 def get_desktop_doctor_checks() -> list[DoctorCheck]:
+    frozen_checks = [
+        check
+        for check in (check_frozen_runtime(), check_frozen_runtime_storage())
+        if check is not None
+    ]
     return [
+        *frozen_checks,
         check_python_environment(),
         check_local_modules(),
         check_pywebview_stack(),
