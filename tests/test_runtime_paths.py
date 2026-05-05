@@ -19,8 +19,8 @@ class DesktopPersistenceContractTests(unittest.TestCase):
         project_dir = Path("/tmp/_MEI123")
         env = {"HOME": "/home/tester"}
 
-        cache_dir = resolve_cache_dir(project_dir, env=env, frozen=True)
-        logs_dir = resolve_logs_dir(project_dir, env=env, frozen=True)
+        cache_dir = resolve_cache_dir(project_dir, env=env, frozen=True, platform="linux")
+        logs_dir = resolve_logs_dir(project_dir, env=env, frozen=True, platform="linux")
 
         self.assertEqual(cache_dir, Path("/home/tester/.cache/steam_deals"))
         self.assertEqual(logs_dir, cache_dir / "logs")
@@ -142,6 +142,7 @@ class ResolveCacheDirTests(unittest.TestCase):
             Path("/tmp/_MEI123"),
             env={"HOME": "/home/tester"},
             frozen=True,
+            platform="linux",
         )
 
         self.assertEqual(cache_dir, Path("/home/tester/.cache/steam_deals"))
@@ -151,6 +152,7 @@ class ResolveCacheDirTests(unittest.TestCase):
             Path("/tmp/_MEI123"),
             env={"HOME": "/home/tester", "XDG_CACHE_HOME": "/var/cache/tester"},
             frozen=True,
+            platform="linux",
         )
 
         self.assertEqual(cache_dir, Path("/var/cache/tester/steam_deals"))
@@ -190,6 +192,7 @@ class ResolveLogsDirTests(unittest.TestCase):
             Path("/tmp/_MEI123"),
             env={"HOME": "/home/tester"},
             frozen=True,
+            platform="linux",
         )
 
         self.assertEqual(logs_dir, Path("/home/tester/.cache/steam_deals/logs"))
