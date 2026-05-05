@@ -1738,6 +1738,11 @@ def run_price_cache_stage(
         "individual_fallback_batches": 0,
         "individual_fallback_resolved_count": 0,
         "individual_fallback_failed_count": 0,
+        "individual_attempts": 0,
+        "individual_no_data": 0,
+        "deferred_by_fallback_budget": 0,
+        "fallback_budget_reason": "",
+        "old_cache_used_count": 0,
         "http_400_direct_fallback_count": 0,
         "http_400_direct_fallback_batches": 0,
         "individual_fallback_worker_count": int(
@@ -1774,6 +1779,16 @@ def run_price_cache_stage(
 
     if n_fetched > 0:
         save_price_cache_fn(steam_id, fetched_cache)
+    if not price_fetch_stats["individual_attempts"]:
+        price_fetch_stats["individual_attempts"] = price_fetch_stats[
+            "individual_fallback_count"
+        ]
+    if not price_fetch_stats["individual_no_data"]:
+        failure_reasons = price_fetch_stats.get("individual_fallback_failure_reasons")
+        if isinstance(failure_reasons, dict):
+            price_fetch_stats["individual_no_data"] = int(
+                failure_reasons.get("no_price_data", 0) or 0
+            )
     if price_fetch_stats["degraded_batch_count"]:
         degraded_msg = (
             f"Batches degradados por HTTP 400: {price_fetch_stats['degraded_batch_count']}"
@@ -1816,6 +1831,23 @@ def run_price_cache_stage(
         emit_fn(
             f"  {_dim('Fallback individual fallos por razón: ' + ', '.join(reason_parts))}"
         )
+    if (
+        price_fetch_stats["individual_attempts"]
+        or price_fetch_stats["deferred_by_fallback_budget"]
+        or price_fetch_stats["old_cache_used_count"]
+    ):
+        budget_msg = (
+            "Fallback budget adaptativo: "
+            f"attempts={price_fetch_stats['individual_attempts']:,} · "
+            f"no_data={price_fetch_stats['individual_no_data']:,} · "
+            f"deferred={price_fetch_stats['deferred_by_fallback_budget']:,} · "
+            f"old_cache_used={price_fetch_stats['old_cache_used_count']:,}"
+        )
+        fallback_budget_reason = str(
+            price_fetch_stats.get("fallback_budget_reason") or "none"
+        )
+        budget_msg = f"{budget_msg} · reason={fallback_budget_reason}"
+        emit_fn(f"  {_dim(budget_msg)}")
     emit_fn(f"  {build_price_cache_completion_message(deals, min_discount, n_fetched)}")
     return {
         "deals": deals,
@@ -1832,6 +1864,13 @@ def run_price_cache_stage(
         "individual_fallback_batches": price_fetch_stats["individual_fallback_batches"],
         "individual_fallback_resolved_count": price_fetch_stats["individual_fallback_resolved_count"],
         "individual_fallback_failed_count": price_fetch_stats["individual_fallback_failed_count"],
+        "individual_attempts": price_fetch_stats["individual_attempts"],
+        "individual_no_data": price_fetch_stats["individual_no_data"],
+        "deferred_by_fallback_budget": price_fetch_stats[
+            "deferred_by_fallback_budget"
+        ],
+        "fallback_budget_reason": price_fetch_stats["fallback_budget_reason"],
+        "old_cache_used_count": price_fetch_stats["old_cache_used_count"],
         "http_400_direct_fallback_count": price_fetch_stats["http_400_direct_fallback_count"],
         "http_400_direct_fallback_batches": price_fetch_stats["http_400_direct_fallback_batches"],
         "individual_fallback_worker_count": price_fetch_stats["individual_fallback_worker_count"],

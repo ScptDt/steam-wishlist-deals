@@ -739,6 +739,11 @@ class WarmCacheTests(unittest.TestCase):
             stats["individual_fallback_batches"] = 2
             stats["individual_fallback_resolved_count"] = 7
             stats["individual_fallback_failed_count"] = 13
+            stats["individual_attempts"] = 20
+            stats["individual_no_data"] = 13
+            stats["deferred_by_fallback_budget"] = 5
+            stats["fallback_budget_reason"] = "no_data_ratio:13/20"
+            stats["old_cache_used_count"] = 2
             received["batch_size"] = kwargs.get("batch_size")
             received["max_batch_halving"] = kwargs.get("max_batch_halving")
             received["individual_fallback_workers"] = kwargs.get("individual_fallback_workers")
@@ -774,6 +779,11 @@ class WarmCacheTests(unittest.TestCase):
         self.assertEqual(result["individual_fallback_count"], 20)
         self.assertEqual(result["individual_fallback_resolved_count"], 7)
         self.assertEqual(result["individual_fallback_failed_count"], 13)
+        self.assertEqual(result["individual_attempts"], 20)
+        self.assertEqual(result["individual_no_data"], 13)
+        self.assertEqual(result["deferred_by_fallback_budget"], 5)
+        self.assertEqual(result["fallback_budget_reason"], "no_data_ratio:13/20")
+        self.assertEqual(result["old_cache_used_count"], 2)
         self.assertEqual(result["batch_size"], 8)
         self.assertEqual(result["batch_halving_limit"], 5)
         self.assertEqual(result["individual_fallback_workers"], 4)
@@ -792,6 +802,12 @@ class WarmCacheTests(unittest.TestCase):
         self.assertTrue(
             any(
                 "Fallback individual aplicado a 20 juegos en 2 tandas (7 resueltos, 13 sin oferta/datos)" in line
+                for line in emitted
+            )
+        )
+        self.assertTrue(
+            any(
+                "Fallback budget adaptativo: attempts=20 · no_data=13 · deferred=5 · old_cache_used=2 · reason=no_data_ratio:13/20" in line
                 for line in emitted
             )
         )
@@ -2251,6 +2267,206 @@ class PriceCacheTests(unittest.TestCase):
         self.assertGreaterEqual(max_active_by_batch["first"], 2)
         self.assertEqual(max_active_by_batch["second"], 1)
         self.assertEqual(stats["individual_fallback_worker_downgrade_count"], 1)
+
+    def test_get_deals_from_wishlist_does_not_defer_before_fallback_budget_minimum(
+        self,
+    ) -> None:
+        now_ts = 200000.0
+        appids = [str(1000 + index) for index in range(60)]
+        fetched_cache = {
+            appid: {"discount_percent": 0, "_fetched_at": now_ts - (30 * 3600)}
+            for appid in appids
+        }
+        single_calls = []
+        stats = {}
+
+        def fake_get_json(url, headers=None):
+            ids = url.split("appids=", 1)[1].split("&", 1)[0].split(",")
+            return {appid: None for appid in ids}
+
+        def fake_fetch_single(appid, _country, _delay):
+            single_calls.append(appid)
+            return None
+
+        deals, total = module_get_deals_from_wishlist(
+            appids,
+            fetched_cache,
+            "steam-id",
+            min_discount=50,
+            get_json=fake_get_json,
+            sleep_fn=lambda _seconds: None,
+            monotonic_fn=lambda: 0.0,
+            current_time_fn=lambda: now_ts,
+            save_price_cache_fn=lambda _steam_id, _cache: None,
+            fetch_single_fn=fake_fetch_single,
+            process_app_entry_fn=lambda appid, data: module_process_app_entry(
+                appid, data, parse_release_year_fn=module_parse_release_year
+            ),
+            emit=lambda *_args, **_kwargs: None,
+            warn=lambda text: text,
+            dim=lambda text: text,
+            batch_size=20,
+            stats_out=stats,
+        )
+
+        self.assertEqual(total, 60)
+        self.assertEqual(deals, [])
+        self.assertEqual(single_calls, appids)
+        self.assertEqual(stats["individual_attempts"], 60)
+        self.assertEqual(stats["individual_no_data"], 60)
+        self.assertEqual(stats["deferred_by_fallback_budget"], 0)
+        self.assertEqual(stats["fallback_budget_reason"], "")
+
+    def test_get_deals_from_wishlist_defers_low_priority_after_fallback_budget(
+        self,
+    ) -> None:
+        now_ts = 200000.0
+        appids = [str(1000 + index) for index in range(100)]
+        fetched_cache = {
+            appid: {"discount_percent": 0, "_fetched_at": now_ts - (30 * 3600)}
+            for appid in appids
+        }
+        single_calls = []
+        stats = {}
+
+        def fake_get_json(url, headers=None):
+            ids = url.split("appids=", 1)[1].split("&", 1)[0].split(",")
+            return {appid: None for appid in ids}
+
+        def fake_fetch_single(appid, _country, _delay):
+            single_calls.append(appid)
+            return None
+
+        deals, total = module_get_deals_from_wishlist(
+            appids,
+            fetched_cache,
+            "steam-id",
+            min_discount=50,
+            get_json=fake_get_json,
+            sleep_fn=lambda _seconds: None,
+            monotonic_fn=lambda: 0.0,
+            current_time_fn=lambda: now_ts,
+            save_price_cache_fn=lambda _steam_id, _cache: None,
+            fetch_single_fn=fake_fetch_single,
+            process_app_entry_fn=lambda appid, data: module_process_app_entry(
+                appid, data, parse_release_year_fn=module_parse_release_year
+            ),
+            emit=lambda *_args, **_kwargs: None,
+            warn=lambda text: text,
+            dim=lambda text: text,
+            batch_size=20,
+            stats_out=stats,
+        )
+
+        self.assertEqual(total, 100)
+        self.assertEqual(deals, [])
+        self.assertEqual(single_calls, appids[:80])
+        self.assertEqual(stats["individual_attempts"], 80)
+        self.assertEqual(stats["individual_no_data"], 80)
+        self.assertEqual(stats["deferred_by_fallback_budget"], 20)
+        self.assertEqual(stats["fallback_budget_reason"], "no_data_ratio:80/80")
+        self.assertTrue(
+            all(
+                fetched_cache[appid].get("_failure_reason") == "fallback_budget_deferred"
+                for appid in appids[80:]
+            )
+        )
+
+    def test_get_deals_from_wishlist_does_not_defer_missing_after_fallback_budget(
+        self,
+    ) -> None:
+        now_ts = 200000.0
+        appids = [str(1000 + index) for index in range(100)]
+        fetched_cache = {}
+        single_calls = []
+        stats = {}
+
+        def fake_get_json(url, headers=None):
+            ids = url.split("appids=", 1)[1].split("&", 1)[0].split(",")
+            return {appid: None for appid in ids}
+
+        def fake_fetch_single(appid, _country, _delay):
+            single_calls.append(appid)
+            return None
+
+        deals, total = module_get_deals_from_wishlist(
+            appids,
+            fetched_cache,
+            "steam-id",
+            min_discount=50,
+            get_json=fake_get_json,
+            sleep_fn=lambda _seconds: None,
+            monotonic_fn=lambda: 0.0,
+            current_time_fn=lambda: now_ts,
+            save_price_cache_fn=lambda _steam_id, _cache: None,
+            fetch_single_fn=fake_fetch_single,
+            process_app_entry_fn=lambda appid, data: module_process_app_entry(
+                appid, data, parse_release_year_fn=module_parse_release_year
+            ),
+            emit=lambda *_args, **_kwargs: None,
+            warn=lambda text: text,
+            dim=lambda text: text,
+            batch_size=20,
+            stats_out=stats,
+        )
+
+        self.assertEqual(total, 100)
+        self.assertEqual(deals, [])
+        self.assertEqual(single_calls, appids)
+        self.assertEqual(stats["individual_attempts"], 100)
+        self.assertEqual(stats["individual_no_data"], 100)
+        self.assertEqual(stats["deferred_by_fallback_budget"], 0)
+        self.assertEqual(stats["fallback_budget_reason"], "")
+
+    def test_get_deals_from_wishlist_preserves_old_deal_when_fallback_has_no_data(
+        self,
+    ) -> None:
+        now_ts = 200000.0
+        old_entry = {
+            "name": "Alpha",
+            "type": "game",
+            "discount_percent": 70,
+            "price_final": "$7",
+            "price_original": "$20",
+            "price_final_raw": 700,
+            "genres": ["action"],
+            "release_year": 2020,
+            "description": "desc",
+            "linux_native": False,
+            "metacritic_score": 80,
+            "metacritic_url": "meta",
+            "categories": [1],
+            "_fetched_at": now_ts - (30 * 3600),
+        }
+        fetched_cache = {"10": dict(old_entry)}
+        stats = {}
+
+        deals, total = module_get_deals_from_wishlist(
+            ["10"],
+            fetched_cache,
+            "steam-id",
+            min_discount=50,
+            get_json=lambda _url, headers=None: {"10": None},
+            sleep_fn=lambda _seconds: None,
+            monotonic_fn=lambda: 0.0,
+            current_time_fn=lambda: now_ts,
+            save_price_cache_fn=lambda _steam_id, _cache: None,
+            fetch_single_fn=lambda _appid, _country, _delay: None,
+            process_app_entry_fn=lambda appid, data: module_process_app_entry(
+                appid, data, parse_release_year_fn=module_parse_release_year
+            ),
+            emit=lambda *_args, **_kwargs: None,
+            warn=lambda text: text,
+            dim=lambda text: text,
+            stats_out=stats,
+        )
+
+        self.assertEqual(total, 1)
+        self.assertEqual([deal["appid"] for deal in deals], ["10"])
+        self.assertEqual(fetched_cache["10"], old_entry)
+        self.assertEqual(stats["individual_attempts"], 1)
+        self.assertEqual(stats["individual_no_data"], 1)
+        self.assertEqual(stats["old_cache_used_count"], 1)
 
 
 class RunOutputTests(unittest.TestCase):

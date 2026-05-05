@@ -26,6 +26,11 @@ class WarmCacheLogSummary:
     individual_fallback_batches: int = 0
     individual_fallback_resolved_count: int = 0
     individual_fallback_failed_count: int = 0
+    individual_attempts: int = 0
+    individual_no_data: int = 0
+    deferred_by_fallback_budget: int = 0
+    fallback_budget_reason: str | None = None
+    old_cache_used_count: int = 0
     http_400_direct_fallback_count: int = 0
     http_400_direct_fallback_batches: int = 0
     individual_fallback_worker_downgrade_count: int = 0
@@ -54,6 +59,7 @@ COMPARISON_COLUMNS = (
     ("HTTP 400", "degraded_batch_count", ""),
     ("Fallback total", "individual_fallback_count", ""),
     ("Fallback sin datos", "individual_fallback_failed_count", ""),
+    ("Budget diferidos", "deferred_by_fallback_budget", ""),
 )
 
 HIGH_FALLBACK_THRESHOLD = 20
@@ -143,6 +149,7 @@ def parse_warm_cache_log_text(
             line,
         ):
             values["individual_fallback_count"] = _parse_int(match.group("total"))
+            values["individual_attempts"] = values["individual_fallback_count"]
             values["individual_fallback_batches"] = _parse_int(match.group("batches"))
             values["individual_fallback_resolved_count"] = _parse_int(
                 match.group("resolved")
@@ -172,6 +179,24 @@ def parse_warm_cache_log_text(
             values["individual_fallback_failure_reasons"] = _parse_reason_counts(
                 match.group("reasons")
             )
+            values["individual_no_data"] = values[
+                "individual_fallback_failure_reasons"
+            ].get("no_price_data", 0)
+
+        if match := re.search(
+            r"Fallback budget adaptativo: attempts=(?P<attempts>[\d,]+) · "
+            r"no_data=(?P<no_data>[\d,]+) · deferred=(?P<deferred>[\d,]+) · "
+            r"old_cache_used=(?P<old_cache>[\d,]+) · reason=(?P<reason>\S+)",
+            line,
+        ):
+            values["individual_attempts"] = _parse_int(match.group("attempts"))
+            values["individual_no_data"] = _parse_int(match.group("no_data"))
+            values["deferred_by_fallback_budget"] = _parse_int(
+                match.group("deferred")
+            )
+            values["old_cache_used_count"] = _parse_int(match.group("old_cache"))
+            reason = match.group("reason")
+            values["fallback_budget_reason"] = None if reason == "none" else reason
 
         if match := re.search(r"(?P<deals>[\d,]+) deals \(≥(?P<discount>\d+)%\)", line):
             values["deals_count"] = _parse_int(match.group("deals"))
@@ -395,6 +420,20 @@ def format_warm_cache_summary(summary: WarmCacheLogSummary) -> str:
             )
         ]
         lines.append("- Fallback razones: " + ", ".join(reason_parts))
+    if (
+        summary.individual_attempts
+        or summary.deferred_by_fallback_budget
+        or summary.old_cache_used_count
+    ):
+        reason = summary.fallback_budget_reason or "none"
+        lines.append(
+            "- Fallback budget: "
+            f"attempts={_format_value(summary.individual_attempts)} · "
+            f"no_data={_format_value(summary.individual_no_data)} · "
+            f"deferred={_format_value(summary.deferred_by_fallback_budget)} · "
+            f"old_cache_used={_format_value(summary.old_cache_used_count)} · "
+            f"reason={reason}"
+        )
     if (
         summary.batch_size is not None
         or summary.batch_halving_limit is not None

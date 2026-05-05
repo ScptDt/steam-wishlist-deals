@@ -20,6 +20,13 @@ DEFAULT_INDIVIDUAL_FALLBACK_WORKERS = 1
 MAX_INDIVIDUAL_FALLBACK_WORKERS = 4
 ADAPTIVE_FALLBACK_FAILURE_RATIO = 0.5
 ADAPTIVE_FALLBACK_MIN_BATCH_SIZE = 4
+FALLBACK_BUDGET_MIN_SAMPLES = 80
+FALLBACK_BUDGET_NO_DATA_RATIO_LIMIT = 0.85
+FALLBACK_BUDGET_NO_DATA_LIMIT = 200
+FALLBACK_BUDGET_FAILURE_REASON = "fallback_budget_deferred"
+LOW_PRIORITY_FALLBACK_CANDIDATES = frozenset(
+    ("stale_without_old_deal", "failure_retry")
+)
 
 
 def load_price_cache(
@@ -156,6 +163,118 @@ def _increment_failure_reason(stats_out: dict | None, reason: str | None) -> Non
     reason_counts = stats_out.setdefault("individual_fallback_failure_reasons", {})
     if isinstance(reason_counts, dict):
         reason_counts[safe_reason] = int(reason_counts.get(safe_reason, 0) or 0) + 1
+    if safe_reason == PRICE_DATA_FAILURE_REASON:
+        stats_out["individual_no_data"] = (
+            int(stats_out.get("individual_no_data", 0) or 0) + 1
+        )
+
+
+def _fallback_budget_reason(stats_out: dict | None) -> str | None:
+    if not isinstance(stats_out, dict):
+        return None
+    attempts = int(
+        stats_out.get("individual_attempts")
+        or stats_out.get("individual_fallback_count", 0)
+        or 0
+    )
+    no_data = int(stats_out.get("individual_no_data", 0) or 0)
+    if attempts < FALLBACK_BUDGET_MIN_SAMPLES:
+        return None
+    if no_data >= FALLBACK_BUDGET_NO_DATA_LIMIT:
+        return f"no_data_limit:{no_data}"
+    if attempts > 0 and (no_data / attempts) >= FALLBACK_BUDGET_NO_DATA_RATIO_LIMIT:
+        return f"no_data_ratio:{no_data}/{attempts}"
+    return None
+
+
+def _is_failure_retry_candidate(
+    entry: dict | None,
+    *,
+    now_ts: float,
+    failure_retry_hours: float,
+) -> bool:
+    if not isinstance(entry, dict):
+        return False
+    failed_at = entry.get(ENTRY_FAILED_AT_KEY)
+    if not isinstance(failed_at, (int, float)):
+        return False
+    return not _is_recent_failed_entry(
+        entry,
+        now_ts,
+        failure_retry_hours=failure_retry_hours,
+    )
+
+
+def _classify_refresh_candidate(
+    appid: str,
+    fetched_cache: dict,
+    *,
+    now_ts: float,
+    min_discount: int,
+    failure_retry_hours: float,
+) -> str:
+    if appid not in fetched_cache:
+        return "missing"
+    entry = fetched_cache.get(appid)
+    if _is_failure_retry_candidate(
+        entry,
+        now_ts=now_ts,
+        failure_retry_hours=failure_retry_hours,
+    ):
+        return "failure_retry"
+    if _is_deal_cache_entry(entry, min_discount):
+        return "stale_with_old_deal"
+    return "stale_without_old_deal"
+
+
+def _defer_low_priority_candidates_by_fallback_budget(
+    batch: list[str],
+    fetched_cache: dict,
+    *,
+    now_ts: float,
+    min_discount: int,
+    failure_retry_hours: float,
+    stats_out: dict | None,
+) -> tuple[list[str], int]:
+    reason = _fallback_budget_reason(stats_out)
+    if reason is None:
+        return batch, 0
+
+    remaining: list[str] = []
+    deferred_count = 0
+    for appid in batch:
+        candidate_kind = _classify_refresh_candidate(
+            appid,
+            fetched_cache,
+            now_ts=now_ts,
+            min_discount=min_discount,
+            failure_retry_hours=failure_retry_hours,
+        )
+        if candidate_kind not in LOW_PRIORITY_FALLBACK_CANDIDATES:
+            remaining.append(appid)
+            continue
+        fetched_cache[appid] = _cache_result_entry(
+            None,
+            now_ts=now_ts,
+            failure_reason=FALLBACK_BUDGET_FAILURE_REASON,
+        )
+        deferred_count += 1
+
+    if deferred_count and isinstance(stats_out, dict):
+        stats_out["deferred_by_fallback_budget"] = (
+            int(stats_out.get("deferred_by_fallback_budget", 0) or 0)
+            + deferred_count
+        )
+        stats_out["fallback_budget_reason"] = reason
+    return remaining, deferred_count
+
+
+def _should_preserve_old_cache_on_fallback_failure(
+    previous_entry: dict | None,
+    *,
+    min_discount: int,
+) -> bool:
+    return _is_deal_cache_entry(previous_entry, min_discount)
 
 
 def _should_downgrade_individual_fallback_workers(
@@ -233,6 +352,7 @@ def _handle_individual_fallback(
     country: str,
     delay: float,
     now_ts: float,
+    min_discount: int,
     fetch_single_fn,
     process_app_entry_fn,
     individual_fallback_workers: int = DEFAULT_INDIVIDUAL_FALLBACK_WORKERS,
@@ -245,6 +365,9 @@ def _handle_individual_fallback(
         )
         stats_out["individual_fallback_count"] = (
             int(stats_out.get("individual_fallback_count", 0) or 0) + len(batch)
+        )
+        stats_out["individual_attempts"] = (
+            int(stats_out.get("individual_attempts", 0) or 0) + len(batch)
         )
     workers = _bounded_individual_fallback_workers(individual_fallback_workers)
     if workers <= 1 or len(batch) <= 1:
@@ -275,6 +398,7 @@ def _handle_individual_fallback(
 
     for appid, parsed, failure_reason in results:
         batch_stats["total"] += 1
+        previous_entry = fetched_cache.get(appid)
         if isinstance(stats_out, dict):
             counter_key = (
                 "individual_fallback_resolved_count"
@@ -284,14 +408,29 @@ def _handle_individual_fallback(
             stats_out[counter_key] = int(stats_out.get(counter_key, 0) or 0) + 1
         if isinstance(parsed, dict) and parsed:
             batch_stats["resolved"] += 1
+            fetched_cache[appid] = _cache_result_entry(
+                parsed,
+                now_ts=now_ts,
+                failure_reason=failure_reason or PRICE_DATA_FAILURE_REASON,
+            )
         else:
             batch_stats["failed"] += 1
             _increment_failure_reason(stats_out, failure_reason)
-        fetched_cache[appid] = _cache_result_entry(
-            parsed,
-            now_ts=now_ts,
-            failure_reason=failure_reason or PRICE_DATA_FAILURE_REASON,
-        )
+            if _should_preserve_old_cache_on_fallback_failure(
+                previous_entry,
+                min_discount=min_discount,
+            ):
+                fetched_cache[appid] = previous_entry
+                if isinstance(stats_out, dict):
+                    stats_out["old_cache_used_count"] = (
+                        int(stats_out.get("old_cache_used_count", 0) or 0) + 1
+                    )
+            else:
+                fetched_cache[appid] = _cache_result_entry(
+                    parsed,
+                    now_ts=now_ts,
+                    failure_reason=failure_reason or PRICE_DATA_FAILURE_REASON,
+                )
     return batch_stats
 
 
@@ -314,6 +453,7 @@ def _resolve_batch_with_guardrails(
     emit,
     warn,
     dim,
+    min_discount: int,
     max_batch_halving: int = 3,
     individual_fallback_workers: int = DEFAULT_INDIVIDUAL_FALLBACK_WORKERS,
     stats_out: dict | None = None,
@@ -396,6 +536,7 @@ def _resolve_batch_with_guardrails(
                 country=country,
                 delay=delay,
                 now_ts=now_ts,
+                min_discount=min_discount,
                 fetch_single_fn=fetch_single_fn,
                 process_app_entry_fn=process_app_entry_fn,
                 individual_fallback_workers=individual_fallback_workers,
@@ -425,6 +566,7 @@ def _resolve_batch_with_guardrails(
                 country=country,
                 delay=delay,
                 now_ts=now_ts,
+                min_discount=min_discount,
                 fetch_single_fn=fetch_single_fn,
                 process_app_entry_fn=process_app_entry_fn,
                 individual_fallback_workers=individual_fallback_workers,
@@ -647,10 +789,15 @@ def get_deals_from_wishlist(
     tracking_stats.setdefault("individual_fallback_batches", 0)
     tracking_stats.setdefault("individual_fallback_resolved_count", 0)
     tracking_stats.setdefault("individual_fallback_failed_count", 0)
+    tracking_stats.setdefault("individual_attempts", 0)
+    tracking_stats.setdefault("individual_no_data", 0)
     tracking_stats.setdefault("http_400_direct_fallback_count", 0)
     tracking_stats.setdefault("http_400_direct_fallback_batches", 0)
     tracking_stats.setdefault("individual_fallback_worker_downgrade_count", 0)
     tracking_stats.setdefault("individual_fallback_failure_reasons", {})
+    tracking_stats.setdefault("deferred_by_fallback_budget", 0)
+    tracking_stats.setdefault("fallback_budget_reason", "")
+    tracking_stats.setdefault("old_cache_used_count", 0)
     tracking_stats.setdefault(
         "individual_fallback_worker_count",
         _bounded_individual_fallback_workers(individual_fallback_workers),
@@ -701,6 +848,24 @@ def get_deals_from_wishlist(
             )
 
             batch_now_ts = float(current_time_fn())
+            batch, deferred_by_budget = _defer_low_priority_candidates_by_fallback_budget(
+                batch,
+                fetched_cache,
+                now_ts=batch_now_ts,
+                min_discount=min_discount,
+                failure_retry_hours=failure_retry_hours,
+                stats_out=tracking_stats,
+            )
+            fetched_count += deferred_by_budget
+            if not batch:
+                if (
+                    save_price_cache_fn is not None
+                    and batch_index > 0
+                    and batch_index % 10 == 0
+                ):
+                    save_price_cache_fn(steam_id, fetched_cache)
+                continue
+
             if use_direct_http_400_fallback:
                 if not direct_fallback_notice_emitted:
                     _emit(
@@ -726,6 +891,7 @@ def get_deals_from_wishlist(
                     country=country,
                     delay=delay,
                     now_ts=batch_now_ts,
+                    min_discount=min_discount,
                     fetch_single_fn=fetch_single_fn,
                     process_app_entry_fn=process_app_entry_fn,
                     individual_fallback_workers=current_fallback_workers,
@@ -763,6 +929,7 @@ def get_deals_from_wishlist(
                 emit=emit,
                 warn=warn,
                 dim=dim,
+                min_discount=min_discount,
                 max_batch_halving=max_batch_halving,
                 individual_fallback_workers=current_fallback_workers,
                 stats_out=tracking_stats,

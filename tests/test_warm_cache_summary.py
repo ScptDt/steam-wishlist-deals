@@ -104,8 +104,28 @@ class WarmCacheSummaryTests(unittest.TestCase):
             summary.individual_fallback_failure_reasons,
             {"http_429": 12, "no_price_data": 34},
         )
+        self.assertEqual(summary.individual_no_data, 34)
         self.assertIn("- Fallback adaptativo: 1 bajadas de workers", output)
         self.assertIn("- Fallback razones: http_429=12, no_price_data=34", output)
+
+    def test_parse_warm_cache_log_text_extracts_fallback_budget_metrics(self) -> None:
+        text = (
+            "Fallback budget adaptativo: attempts=80 · no_data=72 · "
+            "deferred=20 · old_cache_used=3 · reason=no_data_ratio:72/80\n"
+        )
+
+        summary = parse_warm_cache_log_text(text)
+        output = format_warm_cache_summary(summary)
+
+        self.assertEqual(summary.individual_attempts, 80)
+        self.assertEqual(summary.individual_no_data, 72)
+        self.assertEqual(summary.deferred_by_fallback_budget, 20)
+        self.assertEqual(summary.old_cache_used_count, 3)
+        self.assertEqual(summary.fallback_budget_reason, "no_data_ratio:72/80")
+        self.assertIn(
+            "- Fallback budget: attempts=80 · no_data=72 · deferred=20 · old_cache_used=3 · reason=no_data_ratio:72/80",
+            output,
+        )
 
     def test_format_warm_cache_summary_outputs_bitacora_friendly_markdown(self) -> None:
         summary = parse_warm_cache_log_file(FIXTURES / "full.log")
@@ -134,7 +154,7 @@ class WarmCacheSummaryTests(unittest.TestCase):
 
         self.assertIn("## Warm-cache comparison", output)
         self.assertIn(
-            "| minimal.log | 2.1s (-82.1s) | 0 (-2,204) | 0 (-12) | 0 (-3) | 0 (-20) | 0 (-13) |",
+            "| minimal.log | 2.1s (-82.1s) | 0 (-2,204) | 0 (-12) | 0 (-3) | 0 (-20) | 0 (-13) | 0 (sin cambio) |",
             output,
         )
 
