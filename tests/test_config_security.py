@@ -29,6 +29,9 @@ class _FakeSteamConfigHandler:
     def _read_json_body(self):
         return self.body
 
+    def _body(self):
+        return self.body
+
     def _send_json(self, data, status=200):
         self.status = status
         self.json = data

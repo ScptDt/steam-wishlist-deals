@@ -564,9 +564,13 @@ python3 payday2_dlc_tracker.py --budget 500
 python3 payday2_dlc_tracker.py --min-deal 75          # umbral de descuento para recomendar
 python3 payday2_dlc_tracker.py --itad-key TU_KEY      # mínimos históricos
 python3 payday2_dlc_tracker.py --mark-owned 259381    # marcar DLC como comprado
+python3 payday2_dlc_tracker.py --no-cache             # forzar catálogo/precios live
+python3 payday2_dlc_tracker.py --diagnose-dlc 123456  # diagnosticar DLC esperado faltante
 ```
 
 Genera `PAYDAY2_Plan_de_Compra.md` y `.html` con el reporte completo; con `--csv` también genera `.csv`.
+
+Si un DLC nuevo no aparece, primero usa **Forzar catálogo** en `payday2_web.py` o `--no-cache`; si sigue ausente, usa `--diagnose-dlc APPID_O_NOMBRE`. Steam puede no exponer packages/bundles como DLCs del app base `218620`; detalles y estados de diagnóstico en `payday2_guia.md`.
 
 ## Datos locales, caché y config
 
@@ -574,6 +578,6 @@ Genera `PAYDAY2_Plan_de_Compra.md` y `.html` con el reporte completo; con `--csv
 - Watchlist: `~/.config/steam_deals_watchlist.json`.
 - Caché source: `.cache/steam_deals/`.
 - Caché desktop/frozen: ruta persistente de usuario (`~/.cache/steam_deals` o equivalente XDG).
-- PAYDAY 2 usa subcarpeta propia bajo `.cache/steam_deals/payday2/`.
+- PAYDAY 2 usa subcarpeta propia bajo `.cache/steam_deals/payday2/`: catálogo/nombres/bundles hasta 7 días, precios 24h, ownership manual sin TTL e historial hasta 365 días.
 
 Usa `--no-cache` solo cuando quieras forzar re-fetch. Para wishlists grandes, prefiere `--warm-cache`; el flujo de medición y evidencia vive en `docs/runbooks/performance-warm-cache.md`.

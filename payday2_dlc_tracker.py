@@ -136,6 +136,11 @@ def get_config(*, argv=None, environ=None, load_user_config_fn=load_user_config)
         default=None,
         help="Descuento mínimo %% para recomendar compra (default: 50)",
     )
+    parser.add_argument(
+        "--diagnose-dlc",
+        metavar="APPID_OR_NAME",
+        help="Diagnosticar por qué un DLC esperado no aparece en el catálogo",
+    )
     parser.add_argument("--csv", action="store_true", help="Generar CSV")
     args = parser.parse_args(argv)
 
@@ -170,6 +175,7 @@ def get_config(*, argv=None, environ=None, load_user_config_fn=load_user_config)
         "budget": budget,
         "alert_price": alert_price,
         "min_deal": min_deal,
+        "diagnose_dlc": args.diagnose_dlc,
     }
 
 
@@ -510,6 +516,269 @@ def fetch_dlc_prices(
 
     _save_cache(PRICES_CACHE, {"prices": result})
     return result
+
+
+# ============================================─
+# DLC MISSING DIAGNOSTICS
+# ============================================─
+
+DLC_DIAGNOSTIC_LABELS = {
+    "listed_in_base_dlc": "Steam lo lista como DLC de PAYDAY 2",
+    "cache_stale": "Steam lo lista, pero tu caché local está desactualizado",
+    "valid_app_not_linked_to_base": "Existe en Steam, pero no está enlazado como DLC de PAYDAY 2",
+    "package_or_bundle_candidate": "Parece package/bundle/sub, no appid de DLC",
+    "not_found_or_unreleased": "No se encontró como app pública o aún no está disponible",
+    "name_mismatch": "El nombre consultado no coincide con el candidato encontrado",
+}
+
+
+def normalize_dlc_name(value: str) -> str:
+    text = _strip_prefix(str(value or "")).lower()
+    return re.sub(r"[^a-z0-9]+", " ", text).strip()
+
+
+def parse_dlc_diagnostic_query(query: str) -> dict:
+    raw = str(query or "").strip()
+    app_match = re.search(r"/app/(\d+)", raw)
+    if app_match:
+        return {"kind": "appid", "raw": raw, "appid": app_match.group(1)}
+    bundle_match = re.search(r"/(bundle|sub)/(\d+)", raw)
+    if bundle_match:
+        return {
+            "kind": bundle_match.group(1),
+            "raw": raw,
+            "identifier": bundle_match.group(2),
+        }
+    if raw.isdigit():
+        return {"kind": "appid", "raw": raw, "appid": raw}
+    return {"kind": "name", "raw": raw, "name": raw}
+
+
+def _appdetails_entry(payload: dict, appid: str) -> dict:
+    if not isinstance(payload, dict):
+        return {}
+    return payload.get(str(appid), {}) if isinstance(payload.get(str(appid), {}), dict) else {}
+
+
+def _base_dlc_ids(base_appdetails: dict) -> set[str]:
+    entry = _appdetails_entry(base_appdetails, PD2_APPID)
+    return {str(a) for a in entry.get("data", {}).get("dlc", [])}
+
+
+def _cached_name_for_appid(
+    appid: str, mapping_cache: dict, prices_cache: dict
+) -> str:
+    names = mapping_cache.get("names", {}) if isinstance(mapping_cache, dict) else {}
+    if names.get(appid):
+        return str(names[appid])
+    prices = prices_cache.get("prices", {}) if isinstance(prices_cache, dict) else {}
+    return str(prices.get(appid, {}).get("name") or "")
+
+
+def dlc_name_matches(expected: str, actual: str) -> bool:
+    expected_norm = normalize_dlc_name(expected)
+    actual_norm = normalize_dlc_name(actual)
+    if not expected_norm or not actual_norm:
+        return False
+    if expected_norm in actual_norm or actual_norm in expected_norm:
+        return True
+    ignored = {"payday", "pd", "2", "dlc", "pack", "the"}
+    expected_tokens = set(expected_norm.split()) - ignored
+    actual_tokens = set(actual_norm.split()) - ignored
+    if not expected_tokens:
+        return False
+    overlap = expected_tokens & actual_tokens
+    return len(overlap) / len(expected_tokens) >= 0.6
+
+
+def find_cached_dlc_by_name(query: str, mapping_cache: dict, prices_cache: dict) -> str | None:
+    candidates: dict[str, str] = {}
+    for appid, name in (mapping_cache.get("names", {}) or {}).items():
+        candidates[str(appid)] = str(name)
+    for appid, price in (prices_cache.get("prices", {}) or {}).items():
+        if str(appid) not in candidates and isinstance(price, dict) and price.get("name"):
+            candidates[str(appid)] = str(price["name"])
+
+    scored = [
+        (len(normalize_dlc_name(name)), appid)
+        for appid, name in candidates.items()
+        if dlc_name_matches(query, name)
+    ]
+    if not scored:
+        return None
+    return sorted(scored, reverse=True)[0][1]
+
+
+def _diagnostic_action(status: str) -> str:
+    actions = {
+        "listed_in_base_dlc": "El DLC ya está en la fuente live; si no aparece en UI, revisa filtros o recarga datos.",
+        "cache_stale": "Ejecuta `python3 payday2_dlc_tracker.py --no-cache` o usa Forzar catálogo en la Web.",
+        "valid_app_not_linked_to_base": "No lo agregues manualmente: Steam existe, pero no lo publica en `data.dlc` del app 218620.",
+        "package_or_bundle_candidate": "Revisa si es bundle/package/sub en Steam; el tracker solo cataloga appids de DLC enlazados al app base.",
+        "not_found_or_unreleased": "Verifica el appid/nombre o espera a que Steam publique el app como visible.",
+        "name_mismatch": "Confirma el appid exacto; el nombre cacheado/live no coincide de forma segura con tu búsqueda.",
+    }
+    return actions.get(status, "Revisa el appid o nombre y repite el diagnóstico.")
+
+
+def build_expected_dlc_diagnostic(
+    query: str,
+    *,
+    base_appdetails: dict,
+    candidate_appdetails: dict | None = None,
+    dlc_list_cache: dict | None = None,
+    mapping_cache: dict | None = None,
+    prices_cache: dict | None = None,
+    cache_ages: dict | None = None,
+) -> dict:
+    parsed = parse_dlc_diagnostic_query(query)
+    dlc_list_cache = dlc_list_cache or {}
+    mapping_cache = mapping_cache or {}
+    prices_cache = prices_cache or {}
+    cache_ages = cache_ages or {}
+    live_dlc_ids = _base_dlc_ids(base_appdetails)
+
+    if parsed["kind"] in {"bundle", "sub"}:
+        status = "package_or_bundle_candidate"
+        return {
+            "query": query,
+            "query_kind": parsed["kind"],
+            "candidate_appid": None,
+            "candidate_name": "",
+            "in_live_base_dlc": False,
+            "in_cache_catalog": False,
+            "cache_name": "",
+            "cache_price": "",
+            "status": status,
+            "label": DLC_DIAGNOSTIC_LABELS[status],
+            "action": _diagnostic_action(status),
+            "cache_ages": cache_ages,
+        }
+
+    candidate_appid = parsed.get("appid")
+    if not candidate_appid and parsed["kind"] == "name":
+        candidate_appid = find_cached_dlc_by_name(query, mapping_cache, prices_cache)
+    if not candidate_appid:
+        status = "name_mismatch" if parsed["kind"] == "name" else "not_found_or_unreleased"
+        return {
+            "query": query,
+            "query_kind": parsed["kind"],
+            "candidate_appid": None,
+            "candidate_name": "",
+            "in_live_base_dlc": False,
+            "in_cache_catalog": False,
+            "cache_name": "",
+            "cache_price": "",
+            "status": status,
+            "label": DLC_DIAGNOSTIC_LABELS[status],
+            "action": _diagnostic_action(status),
+            "cache_ages": cache_ages,
+        }
+
+    candidate_appid = str(candidate_appid)
+    cached_catalog = {str(a) for a in dlc_list_cache.get("appids", [])}
+    prices = prices_cache.get("prices", {}) or {}
+    candidate_entry = _appdetails_entry(candidate_appdetails or {}, candidate_appid)
+    candidate_data = candidate_entry.get("data", {}) if candidate_entry.get("success") else {}
+    candidate_name = candidate_data.get("name") or _cached_name_for_appid(
+        candidate_appid, mapping_cache, prices_cache
+    )
+    cache_name = _cached_name_for_appid(candidate_appid, mapping_cache, prices_cache)
+    cache_price = str(prices.get(candidate_appid, {}).get("price_fmt") or "")
+    in_live_base_dlc = candidate_appid in live_dlc_ids
+    in_cache_catalog = candidate_appid in cached_catalog
+
+    if parsed["kind"] == "name" and candidate_name and not dlc_name_matches(query, candidate_name):
+        status = "name_mismatch"
+    elif in_live_base_dlc and not in_cache_catalog:
+        status = "cache_stale"
+    elif in_live_base_dlc:
+        status = "listed_in_base_dlc"
+    elif candidate_entry.get("success"):
+        status = "valid_app_not_linked_to_base"
+    else:
+        status = "not_found_or_unreleased"
+
+    return {
+        "query": query,
+        "query_kind": parsed["kind"],
+        "candidate_appid": candidate_appid,
+        "candidate_name": str(candidate_name or ""),
+        "candidate_type": str(candidate_data.get("type") or ""),
+        "in_live_base_dlc": in_live_base_dlc,
+        "in_cache_catalog": in_cache_catalog,
+        "cache_name": cache_name,
+        "cache_price": cache_price,
+        "status": status,
+        "label": DLC_DIAGNOSTIC_LABELS[status],
+        "action": _diagnostic_action(status),
+        "cache_ages": cache_ages,
+    }
+
+
+def _fetch_appdetails_response(
+    appid: str, *, filters: str | None = None, get_json_fn=_get_json
+) -> dict:
+    url = f"https://store.steampowered.com/api/appdetails?appids={appid}&cc=mx"
+    if filters:
+        url += f"&filters={filters}"
+    return get_json_fn(url, headers={"User-Agent": "Mozilla/5.0"})
+
+
+def diagnose_expected_dlc(
+    query: str, *, get_json_fn=_get_json, load_cache_fn=_load_cache
+) -> dict:
+    parsed = parse_dlc_diagnostic_query(query)
+    dlc_list_cache, dlc_list_age = load_cache_fn(DLC_LIST_CACHE)
+    mapping_cache, mapping_age = load_cache_fn(DLC_MAPPING_CACHE)
+    prices_cache, prices_age = load_cache_fn(PRICES_CACHE)
+    base_appdetails = _fetch_appdetails_response(PD2_APPID, get_json_fn=get_json_fn)
+
+    candidate_appid = parsed.get("appid")
+    if not candidate_appid and parsed["kind"] == "name":
+        candidate_appid = find_cached_dlc_by_name(query, mapping_cache, prices_cache)
+    candidate_appdetails = None
+    if candidate_appid:
+        candidate_appdetails = _fetch_appdetails_response(
+            str(candidate_appid),
+            filters="basic,price_overview",
+            get_json_fn=get_json_fn,
+        )
+
+    return build_expected_dlc_diagnostic(
+        query,
+        base_appdetails=base_appdetails,
+        candidate_appdetails=candidate_appdetails,
+        dlc_list_cache=dlc_list_cache,
+        mapping_cache=mapping_cache,
+        prices_cache=prices_cache,
+        cache_ages={
+            "catalog_hours": round(dlc_list_age, 1) if dlc_list_age != float("inf") else None,
+            "names_hours": round(mapping_age, 1) if mapping_age != float("inf") else None,
+            "prices_hours": round(prices_age, 1) if prices_age != float("inf") else None,
+        },
+    )
+
+
+def format_dlc_diagnostic_report(diagnostic: dict) -> str:
+    yes_no = lambda value: "sí" if value else "no"
+    lines = [
+        _bold("Diagnóstico de DLC PAYDAY 2"),
+        f"Consulta: {diagnostic.get('query')}",
+        f"Clasificación: {diagnostic.get('status')} — {diagnostic.get('label')}",
+        f"AppID candidato: {diagnostic.get('candidate_appid') or 'n/d'}",
+        f"Nombre detectado: {diagnostic.get('candidate_name') or 'n/d'}",
+        f"En Steam `data.dlc` del app {PD2_APPID}: {yes_no(diagnostic.get('in_live_base_dlc'))}",
+        f"En cache local de catálogo: {yes_no(diagnostic.get('in_cache_catalog'))}",
+    ]
+    if diagnostic.get("cache_name") or diagnostic.get("cache_price"):
+        lines.append(
+            "Cache local: "
+            f"{diagnostic.get('cache_name') or 'sin nombre'}"
+            f" · {diagnostic.get('cache_price') or 'sin precio'}"
+        )
+    lines.append(f"Acción sugerida: {diagnostic.get('action')}")
+    return "\n".join(lines)
 
 
 # ============================================─
@@ -1577,6 +1846,11 @@ def main():
     NO_CACHE = cfg["no_cache"]
     MIN_DEAL = cfg["min_deal"]
     t0 = time.monotonic()
+
+    if cfg.get("diagnose_dlc"):
+        diagnostic = diagnose_expected_dlc(cfg["diagnose_dlc"])
+        print(format_dlc_diagnostic_report(diagnostic))
+        return
 
     TOTAL = 9 + (1 if KEY else 0) + (1 if ITAD_KEY else 0) + (1 if cfg["csv"] else 0)
     _n = [0]

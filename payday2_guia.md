@@ -55,6 +55,15 @@ Dashboard interactivo con:
 
 También disponible como tab integrado en `steam_deals_web.py`.
 
+### Flujo recomendado
+
+1. Abre `python3 payday2_web.py`.
+2. Configura tu perfil/API key si hace falta.
+3. Usa **Actualizar datos** para el refresh normal: respeta caché/TTL y es el camino recomendado.
+4. Marca DLCs propios manualmente con los checkboxes; Steam no reporta ownership de DLCs de forma fiable.
+5. Usa **Forzar catálogo** solo si esperas DLCs nuevos o sospechas caché viejo. Esa acción equivale a `python3 payday2_dlc_tracker.py --no-cache`.
+6. Si el DLC esperado sigue sin aparecer, usa `--diagnose-dlc APPID_O_NOMBRE` para saber si Steam lo expone como DLC del app base `218620` o si parece app/package/bundle separado.
+
 ## CLI
 
 ```bash
@@ -87,6 +96,10 @@ python3 payday2_dlc_tracker.py --csv
 
 # Ignorar caché / forzar catálogo live
 python3 payday2_dlc_tracker.py --no-cache
+
+# Diagnosticar un DLC esperado que no aparece
+python3 payday2_dlc_tracker.py --diagnose-dlc 123456
+python3 payday2_dlc_tracker.py --diagnose-dlc "Nombre del DLC"
 ```
 
 Genera `PAYDAY2_Plan_de_Compra.md` y `.html` con el reporte completo; si usas `--csv`, también genera `.csv`.
@@ -100,6 +113,7 @@ Genera `PAYDAY2_Plan_de_Compra.md` y `.html` con el reporte completo; si usas `-
 | `--itad-key` | IsThereAnyDeal API Key (mínimos históricos) |
 | `--output` | Directorio de salida |
 | `--no-cache` | Ignorar caché existente |
+| `--diagnose-dlc` | Diagnosticar por appid/nombre si un DLC esperado no aparece en el catálogo |
 | `--budget` | Presupuesto en MXN |
 | `--alert-price` | Alertar si DLC baja de N MXN |
 | `--min-deal` | Descuento mínimo % para recomendar compra (default: 50) |
@@ -115,12 +129,39 @@ Reutiliza la config de Steam Deals en `~/.config/steam_deals.json`. Los campos `
 
 Los datos se cachean en `.cache/steam_deals/payday2/` (dentro del proyecto):
 
-| Dato | TTL |
-|------|-----|
-| Lista de DLCs | 7 días |
-| Precios | 24 horas |
-| Historial de precios | Permanente (últimos 365 días) |
+| Archivo | Dato | TTL / uso |
+|------|------|-----|
+| `dlc_list.json` | AppIDs publicados por Steam en `data.dlc` del app base `218620` | 7 días |
+| `dlc_mapping.json` | Nombres cacheados por appid | 7 días / se refresca junto con catálogo |
+| `prices.json` | Precio, descuento y nombre básico por DLC | 24 horas |
+| `bundles.json` | Bundles detectados desde la tienda de PAYDAY 2 | 7 días |
+| `owned.json` | DLCs marcados manualmente como propios | Sin TTL; no se borra por refresh |
+| `price_history.json` | Snapshots de precios | Permanente, últimos 365 días |
 
-Usa `--no-cache` para forzar re-fetch.
+### Refresh normal vs forzado
 
-Si un DLC nuevo no aparece después de forzar catálogo, puede que Steam aún no lo exponga en `data.dlc` del app base `218620` o que exista como package/bundle separado. No se recomienda hardcodear DLCs manualmente sin confirmación de Steam.
+- **Actualizar datos** en la Web y el CLI normal usan caché si está dentro del TTL.
+- **Forzar catálogo** en la Web y `--no-cache` ignoran caché de catálogo/precios para pedir datos live a Steam.
+- `--no-cache` no debería borrar tus marcados manuales (`owned.json`); solo fuerza re-fetch de datos de Steam.
+- Si Steam no devuelve un appid en `data.dlc`, forzar caché no puede inventarlo de forma segura.
+
+## DLC nuevo no aparece
+
+Usa:
+
+```bash
+python3 payday2_dlc_tracker.py --diagnose-dlc APPID_O_NOMBRE
+```
+
+El diagnóstico clasifica el caso y sugiere una acción:
+
+| Estado | Significado | Acción típica |
+|---|---|---|
+| `listed_in_base_dlc` | Steam live sí lo lista en `data.dlc` del app `218620` | Recarga la UI/revisa filtros; debería entrar al catálogo |
+| `cache_stale` | Steam live lo lista, pero tu cache local aún no | Usa **Forzar catálogo** o `--no-cache` |
+| `valid_app_not_linked_to_base` | El app existe en Steam, pero no está enlazado como DLC de PAYDAY 2 | No hardcodearlo; esperar/confirmar fuente Steam |
+| `package_or_bundle_candidate` | La URL/ID parece bundle/package/sub, no appid de DLC | Revisar como bundle; el tracker solo cataloga appids DLC |
+| `not_found_or_unreleased` | Steam no lo devuelve como app pública | Verificar appid/nombre o esperar publicación |
+| `name_mismatch` | El nombre buscado no coincide de forma segura con el candidato | Confirmar appid exacto |
+
+Steam puede publicar contenido como package/bundle separado o no exponerlo aún en `data.dlc` del app base `218620`. No se recomienda hardcodear DLCs manualmente sin confirmación de Steam.
