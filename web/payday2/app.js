@@ -94,6 +94,7 @@ function renderAll() {
   if (!DATA) return;
   renderHeader();
   renderBanners();
+  renderCacheStatus();
   renderStats();
   renderDonut();
   renderLegend();
@@ -111,6 +112,34 @@ function renderHeader() {
     const d = new Date(DATA.lastRefresh);
     $('hdr-time').textContent = 'Actualizado: ' + d.toLocaleDateString('es-MX') + ' ' + d.toLocaleTimeString('es-MX', { hour: '2-digit', minute: '2-digit' });
   }
+}
+
+function formatCacheAge(section) {
+  if (!section || section.ageHours === null || section.ageHours === undefined) return 'sin cache';
+  if (section.ageHours < 1) return '<1h';
+  return section.ageHours + 'h';
+}
+
+function renderCachePill(label, section) {
+  const count = section && Number.isFinite(section.count) ? section.count : 0;
+  const stale = section && section.stale;
+  const cls = stale ? 'cache-pill stale' : 'cache-pill';
+  const ttl = section && section.ttlHours ? section.ttlHours + 'h TTL' : 'TTL n/d';
+  return '<div class="' + cls + '"><span class="cache-label">' + esc(label) + '</span>' +
+    count + ' items · edad ' + esc(formatCacheAge(section)) + ' · ' + esc(ttl) + '</div>';
+}
+
+function renderCacheStatus() {
+  const el = $('cache-status-card');
+  if (!el || !DATA) return;
+  const status = DATA.cacheStatus || {};
+  el.innerHTML = '<strong>Fuente/cache:</strong> ' + esc(status.source || 'Steam/cache local') +
+    '<div class="cache-status-grid">' +
+    renderCachePill('Catálogo DLC', status.catalog || {}) +
+    renderCachePill('Nombres', status.names || {}) +
+    renderCachePill('Precios', status.prices || {}) +
+    renderCachePill('Bundles', status.bundles || {}) +
+    '</div><div class="cache-diagnostic">' + esc(status.diagnostic || 'Usa “Forzar catálogo” solo si esperas DLCs nuevos o sospechas cache viejo.') + '</div>';
 }
 
 function renderBanners() {
@@ -396,10 +425,12 @@ function switchTab(name) {
   if (panel) panel.classList.add('active');
 }
 
-async function doRefresh() {
+async function doRefresh(options = {}) {
+  const force = !!options.force;
   const btn = $('btn-refresh');
-  setButtonBusy(btn, true);
-  showActionStatus('Actualizando datos de PAYDAY 2... esto puede tardar 1-3 min.', 'loading');
+  const forceBtn = $('btn-force-refresh');
+  setButtonBusy(force ? forceBtn : btn, true);
+  showActionStatus(force ? 'Forzando actualización del catálogo PAYDAY 2 con --no-cache...' : 'Actualizando datos de PAYDAY 2... esto puede tardar 1-3 min.', 'loading');
   window._refreshStart = Date.now();
 
   const panel = $('refresh-panel');
@@ -409,14 +440,18 @@ async function doRefresh() {
   $('prog-bar').style.width = '0%';
   $('prog-bar').style.background = 'linear-gradient(90deg, var(--gold), #b8922e)';
   $('prog-text').textContent = 'Iniciando... (puede tardar 1-3 min con cache vacio)';
-  appendConsole('Preparando actualización de datos...', 'step');
+  appendConsole(force ? 'Preparando actualización forzada de catálogo (--no-cache)...' : 'Preparando actualización de datos...', 'step');
 
   try {
-    const resp = await localMutableFetch('/api/refresh', { method: 'POST' });
+    const resp = await localMutableFetch('/api/refresh', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify(force ? { force: true } : {}),
+    });
     if (resp.status === 409) {
       appendConsole('Ya hay una actualizacion en curso.', 'warn');
       showActionStatus('Ya hay una actualización en curso.', 'warn');
-      setButtonBusy(btn, false);
+      setButtonBusy(force ? forceBtn : btn, false);
       return;
     }
     if (!resp.ok) throw new Error('HTTP ' + resp.status);
@@ -443,11 +478,15 @@ async function doRefresh() {
     showActionStatus('No se pudo actualizar PAYDAY 2: ' + e.message, 'error');
   }
 
-  setButtonBusy(btn, false);
+  setButtonBusy(force ? forceBtn : btn, false);
   await loadData();
   if (!DATA || !DATA.totalDlcs) {
     location.reload();
   }
+}
+
+function doForceRefresh() {
+  return doRefresh({ force: true });
 }
 
 function handleSSE(ev) {

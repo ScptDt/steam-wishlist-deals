@@ -29,6 +29,11 @@
         <span class="spinner"></span>
         Actualizar datos
       </button>
+      <button class="btn-refresh btn-refresh-secondary" id="btn-force-refresh" onclick="doForceRefresh()">
+        <span class="refresh-icon">&#9889;</span>
+        <span class="spinner"></span>
+        Forzar catálogo
+      </button>
     </div>
   </div>
 </div>
@@ -73,6 +78,9 @@
 
     <!-- Banners -->
     <div id="banners"></div>
+
+    <!-- Cache/source status -->
+    <div class="cache-status-card" id="cache-status-card"></div>
 
     <!-- Stats -->
     <div class="stats" id="stats-grid"></div>

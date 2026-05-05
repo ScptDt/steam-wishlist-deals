@@ -210,6 +210,44 @@ class WebAssetsTests(unittest.TestCase):
         self.assertIn("fetch('/api/config')", app_js)
         self.assertNotIn("steam-tools-local-token", index_html)
 
+    def test_payday2_cache_status_and_force_refresh_are_visible(self) -> None:
+        index_html = (ROOT / "web" / "payday2" / "index.html").read_text(
+            encoding="utf-8"
+        )
+        app_js = (ROOT / "web" / "payday2" / "app.js").read_text(
+            encoding="utf-8"
+        )
+        app_css = (ROOT / "web" / "payday2" / "app.css").read_text(
+            encoding="utf-8"
+        )
+
+        self.assertIn('id="btn-force-refresh"', index_html)
+        self.assertIn('id="cache-status-card"', index_html)
+        self.assertIn("function renderCacheStatus", app_js)
+        self.assertIn("doRefresh({ force: true })", app_js)
+        self.assertIn("JSON.stringify(force ? { force: true } : {})", app_js)
+        self.assertIn("status.diagnostic", app_js)
+        self.assertIn(
+            "Steam puede no exponerlo",
+            (ROOT / "payday2_web.py").read_text(encoding="utf-8"),
+        )
+        self.assertIn(".cache-status-card", app_css)
+        self.assertIn(".btn-refresh-secondary", app_css)
+
+    def test_payday2_force_refresh_adds_no_cache_without_secret_argv(self) -> None:
+        cmd, proc_env = payday2_web.build_refresh_command_and_env(
+            {"vanity": "wolf", "key": "SECRET-KEY"},
+            force_refresh=True,
+        )
+        normal_cmd, _normal_env = payday2_web.build_refresh_command_and_env(
+            {"vanity": "wolf", "key": "SECRET-KEY"},
+        )
+
+        self.assertIn("--no-cache", cmd)
+        self.assertNotIn("--no-cache", normal_cmd)
+        self.assertNotIn("SECRET-KEY", " ".join(cmd))
+        self.assertIn("SECRET-KEY", proc_env.values())
+
     def test_payday2_budget_uses_importance_value_copy_and_fields(self) -> None:
         index_html = (ROOT / "web" / "payday2" / "index.html").read_text(
             encoding="utf-8"
@@ -388,6 +426,14 @@ class Payday2BudgetImportanceTests(unittest.TestCase):
                         "history_data": {},
                         "comparison": {},
                         "itad_lows": {},
+                        "cache_status": {
+                            "source": "Steam appdetails data.dlc del app 218620",
+                            "catalog": {"count": 1, "ageHours": 2.0, "ttlHours": 168, "stale": False},
+                            "names": {"count": 1, "ageHours": 2.0, "ttlHours": 168, "stale": False},
+                            "prices": {"count": 1, "ageHours": 2.0, "ttlHours": 24, "stale": False},
+                            "bundles": {"count": 0, "ageHours": None, "ttlHours": 168, "stale": True},
+                            "diagnostic": "diagnóstico seguro",
+                        },
                     }
                 )
 
@@ -400,6 +446,26 @@ class Payday2BudgetImportanceTests(unittest.TestCase):
         self.assertEqual(payload["dlcs"][0]["importanceTier"], "S")
         self.assertGreater(payload["dlcs"][0]["valueScore"], 0)
         self.assertIn("Heist", payload["dlcs"][0]["valueReasons"][0])
+        self.assertEqual(payload["cacheStatus"]["catalog"]["count"], 1)
+
+    def test_payday2_cache_status_payload_reports_counts_and_staleness(self) -> None:
+        payload = payday2_web.build_cache_status_payload(
+            dlc_list_cache={"appids": ["10", "20"], "saved_at": "2026-05-05T00:00:00"},
+            dlc_list_age=2.0,
+            mapping_cache={"names": {"10": "A"}},
+            mapping_age=3.0,
+            prices_cache={"prices": {"10": {}}},
+            prices_age=30.0,
+            bundles_cache={"bundles": [{"bundle_id": "1"}]},
+            bundles_age=float("inf"),
+        )
+
+        self.assertEqual(payload["source"], "Steam appdetails data.dlc del app 218620")
+        self.assertEqual(payload["catalog"]["count"], 2)
+        self.assertEqual(payload["prices"]["count"], 1)
+        self.assertEqual(payload["prices"]["stale"], True)
+        self.assertIsNone(payload["bundles"]["ageHours"])
+        self.assertIn("Steam puede no exponerlo", payload["diagnostic"])
 
 
 class Payday2SteamResolutionTests(unittest.TestCase):

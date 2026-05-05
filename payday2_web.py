@@ -14,6 +14,7 @@ Uso:
 import argparse
 import html
 import json
+import math
 import signal
 import sys
 import threading
@@ -98,6 +99,7 @@ _store = {
     "history_data": {},
     "comparison": {},
     "itad_lows": {},
+    "cache_status": {},
 }
 _store_lock = threading.Lock()
 
@@ -121,7 +123,9 @@ def _config_redaction_values(config: dict, env: dict[str, str] | None = None) ->
     return values
 
 
-def build_refresh_command_and_env(config: dict) -> tuple[list[str], dict[str, str]]:
+def build_refresh_command_and_env(
+    config: dict, *, force_refresh: bool = False
+) -> tuple[list[str], dict[str, str]]:
     command_config = config_without_secrets(config)
     cmd = [
         sys.executable,
@@ -129,8 +133,59 @@ def build_refresh_command_and_env(config: dict) -> tuple[list[str], dict[str, st
     ]
     if command_config.get("vanity"):
         cmd += ["--vanity", command_config["vanity"]]
+    if force_refresh:
+        cmd.append("--no-cache")
 
     return cmd, build_secret_subprocess_env(config)
+
+
+def _cache_age_payload(age_hours: float, ttl_hours: float) -> dict:
+    age = round(float(age_hours), 1) if math.isfinite(float(age_hours)) else None
+    return {
+        "ageHours": age,
+        "ttlHours": ttl_hours,
+        "stale": age is None or age > ttl_hours,
+    }
+
+
+def build_cache_status_payload(
+    *,
+    dlc_list_cache: dict,
+    dlc_list_age: float,
+    mapping_cache: dict,
+    mapping_age: float,
+    prices_cache: dict,
+    prices_age: float,
+    bundles_cache: dict,
+    bundles_age: float,
+) -> dict:
+    catalog = _cache_age_payload(dlc_list_age, pd2.DLC_LIST_TTL)
+    catalog["count"] = len(dlc_list_cache.get("appids", []) or [])
+    catalog["savedAt"] = dlc_list_cache.get("saved_at")
+
+    names = _cache_age_payload(mapping_age, pd2.DLC_LIST_TTL)
+    names["count"] = len(mapping_cache.get("names", {}) or {})
+    names["savedAt"] = mapping_cache.get("saved_at")
+
+    prices = _cache_age_payload(prices_age, pd2.PRICES_TTL)
+    prices["count"] = len(prices_cache.get("prices", {}) or {})
+    prices["savedAt"] = prices_cache.get("saved_at")
+
+    bundles = _cache_age_payload(bundles_age, pd2.BUNDLES_TTL)
+    bundles["count"] = len(bundles_cache.get("bundles", []) or [])
+    bundles["savedAt"] = bundles_cache.get("saved_at")
+
+    return {
+        "source": "Steam appdetails data.dlc del app 218620",
+        "catalog": catalog,
+        "names": names,
+        "prices": prices,
+        "bundles": bundles,
+        "diagnostic": (
+            "Si un DLC no aparece tras forzar actualización, Steam puede no exponerlo "
+            "como DLC del app 218620 o publicarlo como package/bundle separado."
+        ),
+    }
 
 
 def load_from_cache():
@@ -146,18 +201,18 @@ def load_from_cache():
     steam_id = owned_cache.get("steam_id")
 
     # DLC list from cache
-    dlc_list_cache, _ = pd2._load_cache(pd2.DLC_LIST_CACHE)
+    dlc_list_cache, dlc_list_age = pd2._load_cache(pd2.DLC_LIST_CACHE)
     pd2_dlc_appids = [str(a) for a in dlc_list_cache.get("appids", [])]
 
     # Names from cache
-    mapping_cache, _ = pd2._load_cache(pd2.DLC_MAPPING_CACHE)
+    mapping_cache, mapping_age = pd2._load_cache(pd2.DLC_MAPPING_CACHE)
     dlc_names = mapping_cache.get("names", {})
 
     # Owned from cache
     owned = set(str(a) for a in owned_cache.get("appids", [])) if steam_id else set()
 
     # Prices from cache
-    prices_cache, _ = pd2._load_cache(pd2.PRICES_CACHE)
+    prices_cache, prices_age = pd2._load_cache(pd2.PRICES_CACHE)
     prices = prices_cache.get("prices", {})
 
     # Build merged DLC data (no curated DB — just prices + names)
@@ -181,7 +236,7 @@ def load_from_cache():
     itad_lows = {}
 
     # Bundles from cache
-    bundles_cache, _ = pd2._load_cache(pd2.BUNDLES_CACHE)
+    bundles_cache, bundles_age = pd2._load_cache(pd2.BUNDLES_CACHE)
     bundles = bundles_cache.get("bundles", [])
 
     # Price history sparklines
@@ -219,6 +274,16 @@ def load_from_cache():
                 "comparison": comparison,
                 "itad_lows": itad_lows,
                 "bundles": bundles,
+                "cache_status": build_cache_status_payload(
+                    dlc_list_cache=dlc_list_cache,
+                    dlc_list_age=dlc_list_age,
+                    mapping_cache=mapping_cache,
+                    mapping_age=mapping_age,
+                    prices_cache=prices_cache,
+                    prices_age=prices_age,
+                    bundles_cache=bundles_cache,
+                    bundles_age=bundles_age,
+                ),
             }
         )
 
@@ -353,6 +418,7 @@ def get_data_json() -> dict:
                 }
                 for b in s.get("bundles", [])
             ],
+            "cacheStatus": s.get("cache_status", {}),
         }
 
 
@@ -661,8 +727,17 @@ class Handler(BaseHTTPRequestHandler):
         with _store_lock:
             _store["refreshing"] = True
 
+        body = self._body()
+        if body is None:
+            finish_refresh()
+            return
+        force_refresh = bool(body.get("force") or body.get("force_refresh"))
+
         cfg = pd2.load_user_config()
-        cmd, proc_env = build_refresh_command_and_env(cfg)
+        cmd, proc_env = build_refresh_command_and_env(
+            cfg,
+            force_refresh=force_refresh,
+        )
         public_redaction_values = [*cmd, *_config_redaction_values(cfg, proc_env)]
 
         try:

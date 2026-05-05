@@ -49,6 +49,8 @@ Dashboard interactivo con:
 - **Tu Presupuesto Ideal** — "Tengo $500, ¿qué compro?" priorizando importancia/valor del DLC antes que solo el descuento más alto
 - **Próximas ofertas** — Estimación de costo en Summer/Autumn/Winter Sale
 - **Actualizar datos** — Botón que ejecuta el tracker y muestra progreso en vivo
+- **Forzar catálogo** — Acción secundaria que ejecuta el tracker con `--no-cache` cuando esperas DLCs nuevos o sospechas caché viejo
+- **Estado de caché/fuente** — Muestra edad y conteo del catálogo, nombres, precios y bundles cargados desde caché
 - **Config** — Cambia vanity/API keys desde la web
 
 También disponible como tab integrado en `steam_deals_web.py`.
@@ -83,7 +85,7 @@ python3 payday2_dlc_tracker.py --mark-unowned 12345
 # Generar CSV
 python3 payday2_dlc_tracker.py --csv
 
-# Ignorar caché
+# Ignorar caché / forzar catálogo live
 python3 payday2_dlc_tracker.py --no-cache
 ```
 
@@ -120,3 +122,5 @@ Los datos se cachean en `.cache/steam_deals/payday2/` (dentro del proyecto):
 | Historial de precios | Permanente (últimos 365 días) |
 
 Usa `--no-cache` para forzar re-fetch.
+
+Si un DLC nuevo no aparece después de forzar catálogo, puede que Steam aún no lo exponga en `data.dlc` del app base `218620` o que exista como package/bundle separado. No se recomienda hardcodear DLCs manualmente sin confirmación de Steam.
