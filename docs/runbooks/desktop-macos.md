@@ -102,7 +102,25 @@ codesign --verify --deep --strict --verbose=2 dist/SteamToolsDesktop.app
 
 ## 7. Fallback web (mitigacion)
 
-Si la ventana nativa no abre:
+Para validar el modo degradado sin romper la app nativa, fuerza el fallback desde el launcher desktop:
+
+```bash
+STEAM_TOOLS_FORCE_WEB_FALLBACK=1 ./dist/SteamToolsDesktop
+```
+
+Alternativa equivalente en source mode:
+
+```bash
+python steam_tools_desktop.py --force-web-fallback
+```
+
+Esperado:
+- server local en `127.0.0.1`
+- navegador abierto con `?desktop_fallback=1&reason=forced-web-fallback`
+- aviso de fallback desktop visible en la UI
+- no se intenta abrir ventana nativa en este modo forzado
+
+Si la ventana nativa no abre de forma no forzada:
 
 ```bash
 python steam_deals_web.py --no-open --port 8080

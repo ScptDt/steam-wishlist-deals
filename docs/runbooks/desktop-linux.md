@@ -162,7 +162,25 @@ Usa esta lista solo para la evidencia que realmente cierra la **Fase 1**:
 
 ## 6. Fallback web (mitigacion)
 
-Si la ventana nativa no abre o cae el backend Qt:
+Para validar el modo degradado sin romper el backend Qt, fuerza el fallback desde el launcher desktop:
+
+```bash
+STEAM_TOOLS_FORCE_WEB_FALLBACK=1 ./dist/SteamToolsDesktop
+```
+
+Alternativa equivalente en source mode:
+
+```bash
+python steam_tools_desktop.py --force-web-fallback
+```
+
+Esperado:
+- se levanta/reusa el server local en `127.0.0.1`
+- se abre el navegador con `?desktop_fallback=1&reason=forced-web-fallback`
+- la UI muestra el aviso de fallback desktop
+- la ventana nativa no se intenta abrir en este modo forzado
+
+Si la ventana nativa no abre o cae el backend Qt de forma no forzada, también debe caer al navegador. Como mitigación manual puedes levantar solo la Web UI:
 
 ```bash
 python steam_deals_web.py --no-open --port 8080

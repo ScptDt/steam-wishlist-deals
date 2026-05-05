@@ -269,6 +269,7 @@ const GENRE_SUGGESTIONS = [
   'co-op', 'multiplayer', 'singleplayer', 'visual novel', 'rhythm', 'bullet hell', 'tower defense'
 ];
 const DESKTOP_FALLBACK_HINTS = {
+  'forced-web-fallback': 'Fallback web forzado para validar el modo navegador sin intentar abrir la ventana nativa.',
   'missing-webview': 'No se encontro un backend nativo compatible para pywebview. Continuas en la misma Web UI desde tu navegador.',
   'window-timeout': 'La ventana nativa tardo demasiado en iniciar. Se abrio automaticamente la Web UI en el navegador.',
   'window-error': 'La ventana nativa fallo al iniciar. Se abrio automaticamente la Web UI en el navegador.',

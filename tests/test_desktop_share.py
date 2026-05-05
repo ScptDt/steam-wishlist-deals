@@ -14,10 +14,13 @@ import time
 from pathlib import Path
 from tempfile import TemporaryDirectory
 
+import steam_tools_desktop as desktop_module
 from steam_tools_desktop import (
     ALLOWED_EMBEDDED_SCRIPTS,
     DesktopClipboardApi,
     FALLBACK_REASON_MESSAGES,
+    FORCE_WEB_FALLBACK_ENV,
+    FORCE_WEB_FALLBACK_FLAG,
     _build_child_process_env,
     _candidate_urls,
     _config_probe_url,
@@ -29,6 +32,7 @@ from steam_tools_desktop import (
     _probe_steam_deals_server,
     _resolve_server_target,
     _run_embedded_script,
+    _should_force_web_fallback,
     _wait_server,
     copy_text_to_qt_clipboard,
     decode_share_payload,
@@ -191,9 +195,85 @@ class DesktopLauncherFallbackTests(unittest.TestCase):
         )
 
     def test_fallback_reason_messages_keep_known_launcher_reasons(self) -> None:
+        self.assertIn("forced-web-fallback", FALLBACK_REASON_MESSAGES)
         self.assertIn("missing-webview", FALLBACK_REASON_MESSAGES)
         self.assertIn("window-timeout", FALLBACK_REASON_MESSAGES)
         self.assertIn("window-error", FALLBACK_REASON_MESSAGES)
+
+    def test_should_force_web_fallback_accepts_flag_and_truthy_env(self) -> None:
+        self.assertTrue(
+            _should_force_web_fallback(argv=[FORCE_WEB_FALLBACK_FLAG], env={})
+        )
+        self.assertTrue(
+            _should_force_web_fallback(argv=[], env={FORCE_WEB_FALLBACK_ENV: "yes"})
+        )
+        self.assertFalse(
+            _should_force_web_fallback(argv=[], env={FORCE_WEB_FALLBACK_ENV: "0"})
+        )
+
+    def test_main_force_web_fallback_opens_browser_and_keeps_server(self) -> None:
+        class _FakeProc:
+            def __init__(self):
+                self.terminate_called = 0
+                self.kill_called = 0
+
+            def poll(self):
+                return None
+
+            def terminate(self):
+                self.terminate_called += 1
+
+            def wait(self, timeout=None):
+                return 0
+
+            def kill(self):
+                self.kill_called += 1
+
+        fake_proc = _FakeProc()
+        popen_calls = []
+        opened_urls = []
+        stdout = io.StringIO()
+
+        original_argv = sys.argv[:]
+        original_resolve_server_target = desktop_module._resolve_server_target
+        original_discover_live_url = desktop_module._discover_live_url
+        original_popen = desktop_module.subprocess.Popen
+        original_webbrowser_open = desktop_module.webbrowser.open
+        try:
+            sys.argv = ["desktop", FORCE_WEB_FALLBACK_FLAG]
+            desktop_module._resolve_server_target = lambda _port: {
+                "reuse_existing": False,
+                "active_url": "http://127.0.0.1:8090",
+                "launch_port": 8090,
+                "discover_start_port": 8090,
+            }
+            desktop_module._discover_live_url = (
+                lambda _port, timeout=0.0: "http://127.0.0.1:8090"
+            )
+            desktop_module.subprocess.Popen = (
+                lambda *args, **kwargs: popen_calls.append((args, kwargs)) or fake_proc
+            )
+            desktop_module.webbrowser.open = lambda url: opened_urls.append(url) or True
+            with contextlib.redirect_stdout(stdout):
+                desktop_main()
+        finally:
+            sys.argv = original_argv
+            desktop_module._resolve_server_target = original_resolve_server_target
+            desktop_module._discover_live_url = original_discover_live_url
+            desktop_module.subprocess.Popen = original_popen
+            desktop_module.webbrowser.open = original_webbrowser_open
+
+        self.assertEqual(
+            opened_urls,
+            [
+                "http://127.0.0.1:8090?desktop_fallback=1&reason=forced-web-fallback"
+            ],
+        )
+        self.assertTrue(popen_calls)
+        self.assertEqual(fake_proc.terminate_called, 0)
+        self.assertEqual(fake_proc.kill_called, 0)
+        self.assertIn("Fallback web forzado", stdout.getvalue())
+        self.assertIn("URL fallback: http://127.0.0.1:8090", stdout.getvalue())
 
     def test_wait_server_returns_false_after_timeout_when_endpoint_never_responds(
         self,

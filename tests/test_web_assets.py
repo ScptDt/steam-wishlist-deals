@@ -113,6 +113,15 @@ class WebAssetsTests(unittest.TestCase):
             self.assertIn(f"localMutableFetch('{endpoint}'", app_js)
         self.assertNotIn("steam-tools-local-token", index_html)
 
+    def test_desktop_forced_web_fallback_has_user_visible_hint(self) -> None:
+        app_js = (ROOT / "web" / "steam_deals" / "app.js").read_text(
+            encoding="utf-8"
+        )
+
+        self.assertIn("'forced-web-fallback'", app_js)
+        self.assertIn("Fallback web forzado", app_js)
+        self.assertIn("desktop_fallback", app_js)
+
     def test_share_copy_uses_user_friendly_spanish_terms(self) -> None:
         index_html = (ROOT / "web" / "steam_deals" / "index.html").read_text(
             encoding="utf-8"

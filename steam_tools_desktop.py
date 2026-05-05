@@ -31,8 +31,11 @@ HOST = "127.0.0.1"
 PORT = 8080
 PORT_SCAN_SIZE = 10
 URL = f"http://{HOST}:{PORT}"
+FORCE_WEB_FALLBACK_ENV = "STEAM_TOOLS_FORCE_WEB_FALLBACK"
+FORCE_WEB_FALLBACK_FLAG = "--force-web-fallback"
 
 FALLBACK_REASON_MESSAGES = {
+    "forced-web-fallback": "Fallback web forzado para validacion. Abriendo Steam Tools en el navegador.",
     "missing-webview": "pywebview o su backend nativo no estan disponibles. Abriendo Steam Tools en el navegador.",
     "window-timeout": "La ventana nativa no respondio a tiempo. Abriendo Steam Tools en el navegador.",
     "window-error": "La ventana nativa fallo al iniciar. Abriendo Steam Tools en el navegador.",
@@ -54,6 +57,22 @@ def _desktop_window_url(base_url: str) -> str:
     query = dict(urllib.parse.parse_qsl(parsed.query, keep_blank_values=True))
     query["desktop_native"] = "1"
     return urllib.parse.urlunparse(parsed._replace(query=urlencode(query)))
+
+
+def _is_truthy_flag(value: object) -> bool:
+    return str(value or "").strip().lower() in {"1", "true", "yes", "on"}
+
+
+def _should_force_web_fallback(
+    *,
+    argv: list[str] | None = None,
+    env: dict[str, str] | None = None,
+) -> bool:
+    args = sys.argv[1:] if argv is None else list(argv)
+    if FORCE_WEB_FALLBACK_FLAG in args:
+        return True
+    runtime_env = os.environ if env is None else env
+    return _is_truthy_flag(runtime_env.get(FORCE_WEB_FALLBACK_ENV))
 
 
 def _normalize_clipboard_text(text: object) -> str:
@@ -303,7 +322,8 @@ def main() -> None:
     if any(arg in ("-h", "--help") for arg in sys.argv[1:]):
         print(
             "Uso: python steam_tools_desktop.py [--share=BASE64] "
-            "[--internal-web] [--doctor] [--doctor-fix] [--yes] [--run-script <script> [args...]]"
+            "[--internal-web] [--doctor] [--doctor-fix] [--yes] "
+            "[--force-web-fallback] [--run-script <script> [args...]]"
         )
         print("\nOpciones:")
         print("  -h, --help            Muestra esta ayuda y sale")
@@ -312,6 +332,7 @@ def main() -> None:
         print("  --doctor              Ejecuta checks read-only de readiness desktop")
         print("  --doctor-fix          Aplica autofixes seguros (con confirmacion)")
         print("  --yes                 Omite prompt interactivo para --doctor-fix")
+        print("  --force-web-fallback  Fuerza abrir la UI en navegador para validar fallback")
         print("  --run-script FILE ... Ejecuta script embebido con argumentos")
         return
 
@@ -371,6 +392,7 @@ def main() -> None:
         keep_server_alive = True
         print(FALLBACK_REASON_MESSAGES.get(reason, FALLBACK_REASON_MESSAGES["window-error"]))
         fallback_target = _fallback_url(reason, base_url=active_url)
+        print(f"URL fallback: {fallback_target}")
         opened = False
         try:
             opened = webbrowser.open(fallback_target)
@@ -415,6 +437,10 @@ def main() -> None:
         if not discovered_url:
             raise RuntimeError("No se pudo iniciar Steam Deals Web UI para desktop.")
         active_url = discovered_url
+
+        if _should_force_web_fallback():
+            _open_browser_fallback("forced-web-fallback")
+            return
 
         try:
             import webview  # type: ignore[import-not-found]

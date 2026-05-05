@@ -88,7 +88,27 @@ Dentro de la UI desktop:
 
 ## 7. Fallback web (mitigacion)
 
-Si el backend nativo no abre correctamente, esperar fallback a navegador o levantar manualmente la UI web:
+Para validar el modo degradado sin romper WebView2, fuerza el fallback desde el launcher desktop:
+
+```powershell
+$env:STEAM_TOOLS_FORCE_WEB_FALLBACK = "1"
+.\dist\SteamToolsDesktop.exe
+Remove-Item Env:\STEAM_TOOLS_FORCE_WEB_FALLBACK
+```
+
+Alternativa equivalente en source mode:
+
+```powershell
+python .\steam_tools_desktop.py --force-web-fallback
+```
+
+Esperado:
+- server local en `127.0.0.1`
+- navegador abierto con `?desktop_fallback=1&reason=forced-web-fallback`
+- aviso de fallback desktop visible en la UI
+- no se intenta abrir ventana nativa en este modo forzado
+
+Si el backend nativo no abre correctamente de forma no forzada, esperar fallback a navegador o levantar manualmente la UI web:
 
 ```powershell
 python .\steam_deals_web.py --no-open --port 8080
