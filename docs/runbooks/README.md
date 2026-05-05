@@ -21,6 +21,8 @@
 | `evidence-template.md` | Cerrar quick wins sin duplicar evidencia | Plantilla `BITACORA.md`, resumen `PENDIENTES.md`, variantes por slice |
 | `docs-alignment.md` | Antes de cerrar slices que tocan docs | Source-of-truth por tema y checklist anti-drift |
 | `slice-readiness.md` | Antes de implementar cualquier quick win/slice | Mini-ficha de alcance, riesgos, validación, docs, evidencia y no-hacer |
+| `validation-matrix.md` | Elegir validación proporcional por wave/slice | Qué validar, cuándo escalar y qué no repetir |
+| `smoke-test-catalog.md` | Copiar comandos mínimos de test/smoke por wave | Comando, propósito, prerequisito y cuándo no usarlo |
 | `performance-warm-cache.md` | Preparar o medir corridas grandes/wishlists grandes | Warm-cache, logs, fallback individual, duración y artifacts |
 | `features-validation.md` | Validar features específicas sin cargar el README | Frontmatter Obsidian/Notion, `Tu Presupuesto Ideal`, share E2E |
 
@@ -38,6 +40,8 @@
 | Release hygiene/evidencia | `release-hygiene.md`, `evidence-template.md` | `git status`, `git diff --check`, revisión docs | no commitear outputs/logs/reportes generados |
 | Alineación documental | `docs-alignment.md` | revisión docs + `git diff --check` | no duplicar README/runbooks/backlog |
 | Readiness previa al slice | `slice-readiness.md` | mini-ficha proporcional al cambio | no convertirlo en plan largo ni bloquear docs-only triviales |
+| Validación mínima | `validation-matrix.md` | validación proporcional por wave/slice | no ejecutar red/build/`BG00G` si el slice no lo pide |
+| Catálogo de comandos | `smoke-test-catalog.md` | comando mínimo según wave | no copiar comandos largos como smoke rápido |
 | P3 arquitectura/drift | `PENDIENTES.md` + `evidence-template.md` | tests puros/shape compatible por slice | no rediseño UI ni refactor amplio mezclado |
 
 ## Criterio de registro

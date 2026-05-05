@@ -52,4 +52,4 @@ Checklist compacto para arrancar quick wins sin mezclar alcance, validación y e
 
 ## Cierre
 
-Al terminar el slice, usar `docs/runbooks/evidence-template.md` para registrar evidencia y `docs/runbooks/docs-alignment.md` para verificar que README/runbooks/backlog/bitácora no se contradicen.
+Al terminar el slice, usar `docs/runbooks/validation-matrix.md` para confirmar que la validación fue proporcional, `docs/runbooks/evidence-template.md` para registrar evidencia y `docs/runbooks/docs-alignment.md` para verificar que README/runbooks/backlog/bitácora no se contradicen.
