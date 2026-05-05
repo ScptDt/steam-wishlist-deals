@@ -16,6 +16,13 @@ Runbook manual para validar el wrapper desktop de Steam Tools en macOS.
 - La evidencia de Web UI/source o incluso la evidencia Linux/Windows **no sustituye** la evidencia nativa de macOS.
 - La **Fase 1** (Linux desktop binario) va primero; la **Fase 2** (paridad compartida/readiness) prepara el terreno antes del cierre final en macOS.
 
+## Estado actual del checklist P2
+
+- Estado: bloqueado hasta contar con host macOS nativo en sesion grafica local.
+- No usar CI, Linux, Windows, source mode ni fallback web como sustituto de la `.app`.
+- Cuando haya host, ejecutar solo el smoke mínimo con `https://steamcommunity.com/id/joseluis12351`; no usar `BG00G` salvo objetivo explícito de performance/stress.
+- Registrar solo deltas/incidencias en `BITACORA.md`; mantener en `PENDIENTES.md` el resumen de estado.
+
 ## 1. Preparar entorno
 
 ```bash
@@ -69,10 +76,11 @@ Dentro de la app:
 
 1. correr **Doctor desktop** si quieres una segunda validacion desde la UI
 2. correr **Probar config**
-3. lanzar un run real
-4. durante un run suficientemente largo, probar **Detener** una vez para confirmar que no duplica mensajes y que no deja procesos colgados
-5. verificar `.md`, `.html`, `.csv`
-6. cerrar la app
+3. lanzar un run pequeño con `https://steamcommunity.com/id/joseluis12351`
+4. durante un run suficientemente largo, probar **Detener** una vez solo si ese comportamiento cambió o falta evidencia de la build actual
+5. verificar `.md`, `.html`, `.csv` y, si aplican, `.json`/`share.html`
+6. probar **Copiar log** o confirmar fallback accionable sin crash
+7. cerrar la app
 
 Esperado:
 - preflight OK
@@ -105,7 +113,7 @@ codesign --verify --deep --strict --verbose=2 dist/SteamToolsDesktop.app
 Para validar el modo degradado sin romper la app nativa, fuerza el fallback desde el launcher desktop:
 
 ```bash
-STEAM_TOOLS_FORCE_WEB_FALLBACK=1 ./dist/SteamToolsDesktop
+STEAM_TOOLS_FORCE_WEB_FALLBACK=1 dist/SteamToolsDesktop.app/Contents/MacOS/SteamToolsDesktop
 ```
 
 Alternativa equivalente en source mode:
@@ -128,12 +136,17 @@ python steam_deals_web.py --no-open --port 8080
 
 ## 8. Evidencia minima a registrar
 
+- host macOS y tipo de sesion grafica
 - build OK/FAIL
 - `.app` generado o no
 - apertura local OK/FAIL
 - texto exacto del error si Gatekeeper o runtime bloquean
-- outputs `.md`, `.html`, `.csv`
+- Doctor/Probar config OK/FAIL
+- outputs `.md`, `.html`, `.csv` y evidencia adicional `.json`/`share.html` si aplica
+- **Copiar log** OK/FAIL/no probado
+- fallback web forzado o no forzado si aplica
 - cierre limpio
+- procesos colgados sí/no
 - notas de cuarentena/codesign/notarizacion si aplican
 
 ## Problemas comunes

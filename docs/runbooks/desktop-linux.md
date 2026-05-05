@@ -16,6 +16,25 @@ Runbook manual para validar el wrapper desktop de Steam Tools en Linux.
 - Una corrida desde Web UI/source ayuda a validar generator, performance y UX compartida, pero **no sustituye** la evidencia del binario para cerrar Linux desktop.
 - La **Fase 2** (paridad compartida/readiness) y la **Fase 3** (macOS native-host closure) van despues de este cierre Linux.
 
+## Estado actual del checklist P2
+
+Evidencia Linux ya capturada y no redundante:
+
+- build local `dist/SteamToolsDesktop`
+- ventana nativa abierta en sesion grafica normal
+- run desde binario con cache caliente y outputs `.md/.html/.csv/.json/share.html`
+- cierre limpio y sin procesos colgados
+- runtime frozen actualizado con cache/log/output persistentes fuera de `_MEI`
+- Doctor frozen sin falsos FAIL source-only
+- **Copiar log** por puente nativo pywebview/PyQt y fallback navegador estándar
+- fallback web dirigido y constraints desktop/CI documentados
+
+Regla anti-repeticion:
+
+- No repetir `BG00G` ni un E2E largo solo para revalidar lo anterior.
+- Repetir solo si cambia de forma sustancial el binario/runtime, si release exige Ubuntu LTS exacto o si el objetivo explícito es performance.
+- Para un gate visual final basta el smoke mínimo de deltas: abrir binario rebuilt sin env vars, Doctor/Probar config, run pequeño `joseluis12351`, **Copiar log**, outputs básicos y cierre limpio.
+
 ## Flujo recomendado
 
 ### 1. Preparar entorno local
@@ -77,7 +96,7 @@ Esperado:
 
 ## 5. Smoke funcional minimo
 
-> Nota practica: con wishlists muy grandes (por ejemplo 2K+ juegos) este smoke deja de ser una validacion corta. Reservar una ventana amplia; con cache frio puede tardar bastante antes de generar outputs finales.
+> Nota practica: con wishlists muy grandes (por ejemplo 2K+ juegos) este smoke deja de ser una validacion corta. Para checklists P2 de cierre visual usa `https://steamcommunity.com/id/joseluis12351`; reserva `BG00G` solo para performance/stress con ventana explícita.
 
 > Mitigacion recomendada para wishlists grandes: antes del run largo, calienta `prices_cache.json` desde terminal con `--warm-cache`. Esto evita perder tiempo en una ventana desktop abierta solo esperando fetch inicial.
 
@@ -98,10 +117,11 @@ Dentro de la UI desktop:
 
 1. correr **Doctor desktop** si quieres confirmar estado desde la UI
 2. correr **Probar config**
-3. lanzar un run real
-4. durante un run suficientemente largo, probar **Detener** una vez para confirmar que no duplica mensajes y que no deja procesos colgados
-5. esperar outputs `.md`, `.html`, `.csv`
-6. cerrar la app
+3. lanzar un run pequeño con `https://steamcommunity.com/id/joseluis12351` si solo buscas gate visual/no redundante
+4. durante un run suficientemente largo, probar **Detener** una vez solo si ese comportamiento cambió o falta evidencia de la build actual
+5. esperar outputs `.md`, `.html`, `.csv` y, si aplican, `.json`/`share.html`
+6. probar **Copiar log** o confirmar fallback accionable sin crash
+7. cerrar la app
 
 Esperado:
 - preflight OK
@@ -110,7 +130,7 @@ Esperado:
 - outputs generados
 - cierre limpio sin procesos colgados
 
-> Nota actual del Track Stop: la validación manual en browser ya confirmó que `Detener` deja de duplicar mensajes y sí para el run. La confirmación equivalente dentro del desktop binario queda pendiente mientras el launcher/fallback sigue estabilizándose.
+> Nota actual del Track Stop: la validación manual desde binario desktop ya confirmó que `Detener` no duplica mensajes, no congeló la app y permitió cierre correcto. Repetirlo solo ante cambios relacionados.
 
 Tip operativo:
 - si aparece un traceback largo o warning dificil de copiar, usa los botones **Copiar log** / **Descargar log (.txt)** dentro de la UI antes de cerrar la app
@@ -126,22 +146,23 @@ Durante un caso grande (wishlist real / smoke largo), conviene guardar evidencia
 
 ### Checklist de cierre Linux desktop binario
 
-Usa esta lista solo para la evidencia que realmente cierra la **Fase 1**:
+Usa esta lista para evidencia nueva o deltas. La evidencia funcional larga ya capturada vive en `BITACORA.md`; no la repitas si solo faltan caveats visuales.
 
 - [ ] `python steam_tools_desktop.py --doctor` en `.venv` sin FAIL reales
 - [ ] Build local del desktop ejecutado (`python build_desktop.py`) y artefacto `dist/SteamToolsDesktop` presente
 - [ ] Binario abierto en sesion grafica normal (no root)
 - [ ] Ventana nativa visible sin crash inmediato
 - [ ] **Probar config** ejecutado desde la UI
-- [ ] Run largo completado desde el binario desktop (no desde Web UI/source)
+- [ ] Run completado desde el binario desktop (no desde Web UI/source); usar `joseluis12351` para smoke mínimo o wishlist grande solo si hay objetivo explícito
 - [ ] Artefacts confirmados: `.md`, `.html`, `.csv`
-- [ ] `share.html` / `.json` guardados como evidencia adicional si aplican (no sustituyen `.csv` ni cierran Linux por sí solos)
+- [ ] `share.html` / `.json` guardados como evidencia adicional si aplican
+- [ ] **Copiar log** copia el log real o muestra fallback accionable sin crash
 - [ ] Sin fallback no deseado al navegador (o fallback documentado si ocurrio)
 - [ ] Cierre limpio de la app
 - [ ] Sin procesos colgados despues del cierre
 - [ ] Evidencia detallada registrada en `BITACORA.md` con comando, resultado y workaround si hizo falta; dejar en `PENDIENTES.md` solo el resumen que afecte estado o próximo paso
 
-> `--warm-cache` y una corrida larga desde Web UI/source cuentan como preparación y evidencia funcional del generator/Track Performance, pero no sustituyen el cierre final del desktop Linux: para cerrar P2 sigue haciendo falta repetir la corrida dentro del binario y confirmar `.csv` + cierre limpio.
+> `--warm-cache` y una corrida desde Web UI/source cuentan como preparación y evidencia funcional del generator/Track Performance, pero no sustituyen el desktop Linux. A la inversa, la evidencia Linux ya capturada desde binario no obliga a repetir el E2E largo salvo nuevo gate.
 
 ### Plantilla sugerida para la entrada final de bitácora
 
@@ -151,9 +172,10 @@ Usa esta lista solo para la evidencia que realmente cierra la **Fase 1**:
 - Build desktop: OK/FAIL
 - Apertura nativa: OK/FAIL
 - `Probar config`: OK/FAIL
-- Run largo desde binario: OK/FAIL
+- Run desde binario: OK/FAIL
 - Artefactos confirmados: `.md` / `.html` / `.csv`
 - Evidencia adicional: `share.html` / `.json`
+- Copiar log: OK/FAIL/no probado
 - Fallback al navegador: sí/no
 - Cierre limpio: sí/no
 - Procesos colgados: sí/no

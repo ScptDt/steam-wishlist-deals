@@ -14,6 +14,7 @@ Runbook manual para validar el wrapper desktop de Steam Tools en Windows.
 - Este runbook aporta evidencia de apoyo dentro de la **Fase 2 — Paridad compartida y readiness**.
 - Windows sirve como baseline util para launcher, doctor, outputs y fallback, pero **no sustituye** el cierre Linux/macOS exigido por P2.
 - La **Fase 1** sigue siendo Linux desktop binario; la **Fase 3** sigue siendo macOS native-host closure.
+- No usar un smoke Windows exitoso para cerrar macOS ni para repetir evidencia Linux ya capturada; registra solo deltas/incidencias.
 
 ## 1. Preparar entorno
 
@@ -81,10 +82,11 @@ Dentro de la UI desktop:
 
 1. correr **Doctor desktop**
 2. correr **Probar config**
-3. ejecutar un run real
-4. durante un run suficientemente largo, probar **Detener** una vez para confirmar que no duplica mensajes y que no deja procesos colgados
-5. verificar `.md`, `.html`, `.csv`
-6. cerrar la app
+3. ejecutar un run pequeño con `https://steamcommunity.com/id/joseluis12351` si solo buscas baseline rápido
+4. durante un run suficientemente largo, probar **Detener** una vez solo si ese comportamiento cambió o falta evidencia de la build actual
+5. verificar `.md`, `.html`, `.csv` y, si aplican, `.json`/`share.html`
+6. probar **Copiar log** o confirmar fallback accionable sin crash
+7. cerrar la app
 
 ## 7. Fallback web (mitigacion)
 
@@ -121,6 +123,7 @@ python .\steam_deals_web.py --no-open --port 8080
 - apertura local OK/FAIL
 - resultado del smoke script (`SMOKE_OK` / `SMOKE_FAIL`)
 - outputs `.md`, `.html`, `.csv`
+- **Copiar log** OK/FAIL/no probado si se valida la UX desktop
 - cierre limpio
 - notas de WebView2 o fallback browser
 
