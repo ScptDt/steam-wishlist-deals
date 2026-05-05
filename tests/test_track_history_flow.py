@@ -5,7 +5,7 @@ import unittest
 from pathlib import Path
 from tempfile import TemporaryDirectory
 
-from steam_deals_web import compare_history_runs, list_history_runs
+from app.steam_deals_history_dashboard import compare_history_runs, list_history_runs
 
 
 class _FakeHistoryHandler:
@@ -18,6 +18,39 @@ class _FakeHistoryHandler:
 
 
 class TrackHistoryFlowTests(unittest.TestCase):
+    def test_list_history_runs_returns_empty_when_history_dir_is_missing(self) -> None:
+        with TemporaryDirectory() as temp_dir:
+            missing_dir = Path(temp_dir) / "missing-history"
+
+            runs = list_history_runs(missing_dir, max_runs=10)
+
+        self.assertEqual(runs, [])
+
+    def test_list_history_runs_skips_malformed_json_and_non_deal_payloads(self) -> None:
+        with TemporaryDirectory() as temp_dir:
+            history_dir = Path(temp_dir)
+            (history_dir / "run_2026-04-19_100000.json").write_text(
+                "{not-valid-json}", encoding="utf-8"
+            )
+            (history_dir / "run_2026-04-20_100000.json").write_text(
+                json.dumps({"deals": []}, ensure_ascii=False), encoding="utf-8"
+            )
+            (history_dir / "run_2026-04-21_100000.json").write_text(
+                json.dumps(
+                    {
+                        "date": "2026-04-21",
+                        "timestamp": "2026-04-21T10:00:00",
+                        "deals": {"10": {"name": "Alpha", "price_raw": 1000}},
+                    },
+                    ensure_ascii=False,
+                ),
+                encoding="utf-8",
+            )
+
+            runs = list_history_runs(history_dir, max_runs=10)
+
+        self.assertEqual([run["id"] for run in runs], ["run_2026-04-21_100000.json"])
+
     def test_compare_history_runs_adds_same_count_and_richer_analytics(self) -> None:
         with TemporaryDirectory() as temp_dir:
             history_dir = Path(temp_dir)
