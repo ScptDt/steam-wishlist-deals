@@ -5,7 +5,7 @@ Comandos copiables para validar slices sin buscar en la bitácora. Este catálog
 ## Regla base
 
 - Usa `.venv/bin/python` si existe; si no hay venv, reemplaza por `python3`.
-- Si un comando falla, detén el avance: reporta el fallo, propone fix y pide aprobación antes de corregir.
+- Si un comando falla, sigue `stop-on-failure.md`: detén el avance, reporta el fallo, propone fix y pide aprobación antes de corregir.
 - No ejecutes build, smoke manual, red real, `BG00G` ni cold-cache salvo que el slice lo pida explícitamente.
 - Mantén los comandos largos fuera del cierre docs-only.
 

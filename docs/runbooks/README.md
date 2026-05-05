@@ -23,6 +23,7 @@
 | `slice-readiness.md` | Antes de implementar cualquier quick win/slice | Mini-ficha de alcance, riesgos, validación, docs, evidencia y no-hacer |
 | `validation-matrix.md` | Elegir validación proporcional por wave/slice | Qué validar, cuándo escalar y qué no repetir |
 | `smoke-test-catalog.md` | Copiar comandos mínimos de test/smoke por wave | Comando, propósito, prerequisito y cuándo no usarlo |
+| `stop-on-failure.md` | Cuando falla una validación, smoke o build | Detener, reportar, proponer, pedir aprobación y escalar |
 | `performance-warm-cache.md` | Preparar o medir corridas grandes/wishlists grandes | Warm-cache, logs, fallback individual, duración y artifacts |
 | `features-validation.md` | Validar features específicas sin cargar el README | Frontmatter Obsidian/Notion, `Tu Presupuesto Ideal`, share E2E |
 
@@ -42,6 +43,7 @@
 | Readiness previa al slice | `slice-readiness.md` | mini-ficha proporcional al cambio | no convertirlo en plan largo ni bloquear docs-only triviales |
 | Validación mínima | `validation-matrix.md` | validación proporcional por wave/slice | no ejecutar red/build/`BG00G` si el slice no lo pide |
 | Catálogo de comandos | `smoke-test-catalog.md` | comando mínimo según wave | no copiar comandos largos como smoke rápido |
+| Stop-on-failure | `stop-on-failure.md` | detener y pedir aprobación antes de fix/retry | no avanzar sobre base roja |
 | P3 arquitectura/drift | `PENDIENTES.md` + `evidence-template.md` | tests puros/shape compatible por slice | no rediseño UI ni refactor amplio mezclado |
 
 ## Criterio de registro

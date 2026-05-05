@@ -35,6 +35,7 @@ Guía mínima para darle rumbo al repo sin convertirlo en burocracia.
 - Antes de implementar, ubica el cambio en una de estas categorías: producto, UX, infraestructura o documentación.
 - Antes de tocar archivos, deja una mini-ficha proporcional con `docs/runbooks/slice-readiness.md`: objetivo, límites, riesgos, validación mínima, docs/evidencia y “no hacer”.
 - Para escoger pruebas/smokes proporcionados, usa `docs/runbooks/validation-matrix.md`; para comandos copiables, usa `docs/runbooks/smoke-test-catalog.md` y evita red/build/`BG00G` si el slice no lo pide.
+- Si una validación falla, aplica `docs/runbooks/stop-on-failure.md`: reportar, proponer, pedir aprobación y no avanzar sobre base roja.
 - Si el cambio afecta comportamiento visible, valida al menos el slice tocado.
 - Si el cambio altera roadmap, deuda, riesgos o decisiones operativas, refleja el contexto en `PENDIENTES.md`.
 - Si el cambio deja evidencia cronológica detallada, validaciones largas o workarounds históricos, usa `docs/runbooks/evidence-template.md`, regístralo en `BITACORA.md` y deja en `PENDIENTES.md` solo el resumen que afecte estado/prioridad.

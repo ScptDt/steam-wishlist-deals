@@ -33,6 +33,7 @@ Guía compacta para escoger validación proporcional por wave/slice. La matriz d
 
 - `slice-readiness.md`: define alcance, riesgos y validación mínima antes de tocar archivos.
 - `smoke-test-catalog.md`: lista comandos copiables para ejecutar la validación elegida.
+- `stop-on-failure.md`: define qué hacer si la validación elegida falla.
 - `evidence-template.md`: define cómo registrar el resultado sin pegar logs largos.
 - `docs-alignment.md`: evita drift entre README, runbooks, backlog y bitácora.
 - `release-hygiene.md`: define qué artefactos/logs/specs no se versionan después de validar.
