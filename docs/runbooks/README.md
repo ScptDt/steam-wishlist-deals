@@ -20,6 +20,7 @@
 | `release-hygiene.md` | Antes/después de builds, smokes o limpieza de repo | Qué se versiona, qué se ignora, cómo registrar evidencia |
 | `evidence-template.md` | Cerrar quick wins sin duplicar evidencia | Plantilla `BITACORA.md`, resumen `PENDIENTES.md`, variantes por slice |
 | `docs-alignment.md` | Antes de cerrar slices que tocan docs | Source-of-truth por tema y checklist anti-drift |
+| `slice-readiness.md` | Antes de implementar cualquier quick win/slice | Mini-ficha de alcance, riesgos, validación, docs, evidencia y no-hacer |
 | `performance-warm-cache.md` | Preparar o medir corridas grandes/wishlists grandes | Warm-cache, logs, fallback individual, duración y artifacts |
 | `features-validation.md` | Validar features específicas sin cargar el README | Frontmatter Obsidian/Notion, `Tu Presupuesto Ideal`, share E2E |
 
@@ -36,11 +37,13 @@
 | Constraints desktop | `desktop-constraints.md` | install con constraints + tests dirigidos | no upgrades oportunistas |
 | Release hygiene/evidencia | `release-hygiene.md`, `evidence-template.md` | `git status`, `git diff --check`, revisión docs | no commitear outputs/logs/reportes generados |
 | Alineación documental | `docs-alignment.md` | revisión docs + `git diff --check` | no duplicar README/runbooks/backlog |
+| Readiness previa al slice | `slice-readiness.md` | mini-ficha proporcional al cambio | no convertirlo en plan largo ni bloquear docs-only triviales |
 | P3 arquitectura/drift | `PENDIENTES.md` + `evidence-template.md` | tests puros/shape compatible por slice | no rediseño UI ni refactor amplio mezclado |
 
 ## Criterio de registro
 
 - Si el resultado cambia estado/prioridad/próximo paso, actualizar `PENDIENTES.md`.
+- Si cambia un riesgo, blocker, tradeoff o decisión activa, actualizar el registro compacto en `PENDIENTES.md`.
 - Si solo deja evidencia cronológica o detalles de ejecución, registrar en `BITACORA.md`.
 - Si cambia uso público o comandos principales, actualizar `README.md`.
 - No repetir `BG00G`/cold-cache ni smokes largos salvo objetivo performance explícito o gate de release declarado.

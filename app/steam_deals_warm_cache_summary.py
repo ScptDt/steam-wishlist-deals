@@ -21,6 +21,9 @@ class WarmCacheLogSummary:
     missing_count: int = 0
     stale_count: int = 0
     deferred_failure_count: int = 0
+    stale_used_count: int = 0
+    stale_refresh_deferred_count: int = 0
+    ttl_jitter_bucket_counts: dict[str, int] = field(default_factory=dict)
     degraded_batch_count: int = 0
     individual_fallback_count: int = 0
     individual_fallback_batches: int = 0
@@ -56,6 +59,7 @@ COMPARISON_COLUMNS = (
     ("Duración", "elapsed_seconds", "s"),
     ("Refresh candidates", "refresh_candidates", ""),
     ("Cooldown", "deferred_failure_count", ""),
+    ("Stale diferidos", "stale_refresh_deferred_count", ""),
     ("HTTP 400", "degraded_batch_count", ""),
     ("Fallback total", "individual_fallback_count", ""),
     ("Fallback sin datos", "individual_fallback_failed_count", ""),
@@ -106,6 +110,18 @@ def _parse_reason_counts(raw_value: str) -> dict[str, int]:
     return reasons
 
 
+def _parse_ttl_jitter_bucket_counts(raw_value: str) -> dict[str, int]:
+    buckets: dict[str, int] = {}
+    if raw_value.strip() == "none":
+        return buckets
+    for part in raw_value.split(","):
+        bucket, separator, count = part.strip().partition("=")
+        if not separator or not bucket or not count:
+            continue
+        buckets[bucket] = _parse_int(count)
+    return buckets
+
+
 def parse_warm_cache_log_text(
     text: str, *, source_path: str | None = None
 ) -> WarmCacheLogSummary:
@@ -127,6 +143,20 @@ def parse_warm_cache_log_text(
 
         if match := re.search(r"(?P<count>[\d,]+) fallos recientes en cooldown", line):
             values["deferred_failure_count"] = _parse_int(match.group("count"))
+
+        if match := re.search(
+            r"Stale-while-revalidate: stale_used=(?P<used>[\d,]+) · "
+            r"stale_deferred=(?P<deferred>[\d,]+) · "
+            r"ttl_jitter_buckets=(?P<buckets>.+)$",
+            line,
+        ):
+            values["stale_used_count"] = _parse_int(match.group("used"))
+            values["stale_refresh_deferred_count"] = _parse_int(
+                match.group("deferred")
+            )
+            values["ttl_jitter_bucket_counts"] = _parse_ttl_jitter_bucket_counts(
+                match.group("buckets")
+            )
 
         if match := re.search(
             r"Tuning precios activo: batch_size=(?P<batch>\d+) · "
@@ -393,6 +423,9 @@ def format_warm_cache_summary(summary: WarmCacheLogSummary) -> str:
             f"({_format_value(summary.missing_count)} nuevos, "
             f"{_format_value(summary.stale_count)} stale, "
             f"{_format_value(summary.deferred_failure_count)} cooldown)",
+            "- Stale-while-revalidate: "
+            f"{_format_value(summary.stale_used_count)} usados, "
+            f"{_format_value(summary.stale_refresh_deferred_count)} diferidos",
             f"- Batches degradados HTTP 400: {_format_value(summary.degraded_batch_count)}",
             "- Fallback individual: "
             f"{_format_value(summary.individual_fallback_count)} juegos en "
@@ -434,6 +467,12 @@ def format_warm_cache_summary(summary: WarmCacheLogSummary) -> str:
             f"old_cache_used={_format_value(summary.old_cache_used_count)} · "
             f"reason={reason}"
         )
+    if summary.ttl_jitter_bucket_counts:
+        bucket_parts = [
+            f"{bucket}={_format_value(count)}"
+            for bucket, count in sorted(summary.ttl_jitter_bucket_counts.items())
+        ]
+        lines.append("- TTL jitter buckets: " + ", ".join(bucket_parts))
     if (
         summary.batch_size is not None
         or summary.batch_halving_limit is not None

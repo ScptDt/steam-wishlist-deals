@@ -1382,6 +1382,10 @@ def select_scoped_cache(
     entry_ttl_hours: float | None = None,
     failure_retry_hours: float = 2.0,
     preserve_expired_payload: bool = False,
+    stale_grace_hours: float = 0.0,
+    ttl_jitter_hours: int | float = 0,
+    max_stale_refresh_per_run: int | None = None,
+    min_discount: int = 0,
 ):
     if _cache_policy_module is None:
         raise RuntimeError("Cache policy module is not available")
@@ -1395,6 +1399,10 @@ def select_scoped_cache(
         entry_ttl_hours=entry_ttl_hours,
         failure_retry_hours=failure_retry_hours,
         preserve_expired_payload=preserve_expired_payload,
+        stale_grace_hours=stale_grace_hours,
+        ttl_jitter_hours=ttl_jitter_hours,
+        max_stale_refresh_per_run=max_stale_refresh_per_run,
+        min_discount=min_discount,
     )
 
 
@@ -1642,6 +1650,26 @@ def _format_price_refresh_details(price_cache_policy, *, action_label: str) -> s
     return status_msg
 
 
+def _count_ttl_jitter_buckets(price_cache_policy) -> dict[int, int]:
+    buckets = getattr(price_cache_policy, "ttl_jitter_buckets", {}) or {}
+    if not isinstance(buckets, dict):
+        return {}
+    counts: dict[int, int] = {}
+    for raw_bucket in buckets.values():
+        if not isinstance(raw_bucket, int):
+            continue
+        counts[raw_bucket] = counts.get(raw_bucket, 0) + 1
+    return dict(sorted(counts.items()))
+
+
+def _format_ttl_jitter_bucket_counts(bucket_counts: dict[int, int]) -> str:
+    if not bucket_counts:
+        return "none"
+    return ", ".join(
+        f"{bucket}h={count:,}" for bucket, count in sorted(bucket_counts.items())
+    )
+
+
 def format_price_cache_status(price_cache_policy, cache_age: float) -> str:
     status = getattr(price_cache_policy, "status", "empty")
     if status == "bypass":
@@ -1698,6 +1726,10 @@ def run_price_cache_stage(
         entry_ttl_hours=ENTRY_REFRESH_TTL_HOURS,
         failure_retry_hours=PRICE_FAILURE_RETRY_HOURS,
         preserve_expired_payload=True,
+        stale_grace_hours=PRICE_STALE_GRACE_HOURS,
+        ttl_jitter_hours=PRICE_TTL_JITTER_HOURS,
+        max_stale_refresh_per_run=PRICE_MAX_STALE_REFRESH_PER_RUN,
+        min_discount=min_discount,
     )
     fetched_cache = price_cache_policy.cache
 
@@ -1711,10 +1743,24 @@ def run_price_cache_stage(
         tuple(getattr(price_cache_policy, "deferred_failure_ids", ()) or ())
     )
     stale_count = max(0, len(refresh_ids) - missing_count)
+    stale_used_count = len(tuple(getattr(price_cache_policy, "stale_used_ids", ()) or ()))
+    stale_refresh_deferred_count = len(
+        tuple(getattr(price_cache_policy, "stale_refresh_deferred_ids", ()) or ())
+    )
+    ttl_jitter_bucket_counts = _count_ttl_jitter_buckets(price_cache_policy)
     if refresh_ids:
         emit_fn(
             f"  {_dim(f'Refresh candidates: {len(refresh_ids):,} ({missing_count} nuevos, {stale_count} stale)')}"
         )
+    if stale_used_count or stale_refresh_deferred_count:
+        stale_msg = (
+            "Stale-while-revalidate: "
+            f"stale_used={stale_used_count:,} · "
+            f"stale_deferred={stale_refresh_deferred_count:,} · "
+            "ttl_jitter_buckets="
+            f"{_format_ttl_jitter_bucket_counts(ttl_jitter_bucket_counts)}"
+        )
+        emit_fn(f"  {_dim(stale_msg)}")
 
     price_tuning = resolve_price_fetch_tuning(env=env)
     if price_tuning["is_custom"]:
@@ -1733,6 +1779,9 @@ def run_price_cache_stage(
         "missing_count": missing_count,
         "stale_count": stale_count,
         "deferred_failure_count": deferred_failure_count,
+        "stale_used_count": stale_used_count,
+        "stale_refresh_deferred_count": stale_refresh_deferred_count,
+        "ttl_jitter_bucket_counts": ttl_jitter_bucket_counts,
         "degraded_batch_count": 0,
         "individual_fallback_count": 0,
         "individual_fallback_batches": 0,
@@ -1859,6 +1908,11 @@ def run_price_cache_stage(
         "missing_count": price_fetch_stats["missing_count"],
         "stale_count": price_fetch_stats["stale_count"],
         "deferred_failure_count": price_fetch_stats["deferred_failure_count"],
+        "stale_used_count": price_fetch_stats["stale_used_count"],
+        "stale_refresh_deferred_count": price_fetch_stats[
+            "stale_refresh_deferred_count"
+        ],
+        "ttl_jitter_bucket_counts": price_fetch_stats["ttl_jitter_bucket_counts"],
         "degraded_batch_count": price_fetch_stats["degraded_batch_count"],
         "individual_fallback_count": price_fetch_stats["individual_fallback_count"],
         "individual_fallback_batches": price_fetch_stats["individual_fallback_batches"],
@@ -1926,6 +1980,9 @@ PRICE_INDIVIDUAL_FALLBACK_WORKERS = 1
 PRICE_INDIVIDUAL_FALLBACK_WORKERS_MAX = 4
 ENTRY_REFRESH_TTL_HOURS = 24
 PRICE_FAILURE_RETRY_HOURS = 2
+PRICE_TTL_JITTER_HOURS = 6
+PRICE_STALE_GRACE_HOURS = 72
+PRICE_MAX_STALE_REFRESH_PER_RUN = 200
 
 
 def _fetch_single(appid: str, country: str, delay: float) -> dict | None:

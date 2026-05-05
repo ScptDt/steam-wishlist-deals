@@ -127,6 +127,27 @@ class WarmCacheSummaryTests(unittest.TestCase):
             output,
         )
 
+    def test_parse_warm_cache_log_text_extracts_stale_revalidate_metrics(self) -> None:
+        text = (
+            "Stale-while-revalidate: stale_used=50 · stale_deferred=50 · "
+            "ttl_jitter_buckets=0h=10, 1h=12\n"
+        )
+
+        summary = parse_warm_cache_log_text(text)
+        output = format_warm_cache_summary(summary)
+
+        self.assertEqual(summary.stale_used_count, 50)
+        self.assertEqual(summary.stale_refresh_deferred_count, 50)
+        self.assertEqual(
+            summary.ttl_jitter_bucket_counts,
+            {"0h": 10, "1h": 12},
+        )
+        self.assertIn(
+            "- Stale-while-revalidate: 50 usados, 50 diferidos",
+            output,
+        )
+        self.assertIn("- TTL jitter buckets: 0h=10, 1h=12", output)
+
     def test_format_warm_cache_summary_outputs_bitacora_friendly_markdown(self) -> None:
         summary = parse_warm_cache_log_file(FIXTURES / "full.log")
 
@@ -154,7 +175,7 @@ class WarmCacheSummaryTests(unittest.TestCase):
 
         self.assertIn("## Warm-cache comparison", output)
         self.assertIn(
-            "| minimal.log | 2.1s (-82.1s) | 0 (-2,204) | 0 (-12) | 0 (-3) | 0 (-20) | 0 (-13) | 0 (sin cambio) |",
+            "| minimal.log | 2.1s (-82.1s) | 0 (-2,204) | 0 (-12) | 0 (sin cambio) | 0 (-3) | 0 (-20) | 0 (-13) | 0 (sin cambio) |",
             output,
         )
 

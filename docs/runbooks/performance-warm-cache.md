@@ -69,6 +69,7 @@ python3 steam_deals_warm_cache_summary.py \
 - [ ] Tamaño aproximado de wishlist.
 - [ ] `Refresh candidates: X (N nuevos, M stale)`.
 - [ ] `fallos recientes en cooldown`, si aparece.
+- [ ] `Stale-while-revalidate`, si aparece: `stale_used`, `stale_deferred` y buckets de jitter.
 - [ ] `Batches degradados por HTTP 400`, si aparece.
 - [ ] `Fallback individual aplicado a X juegos en Y tandas`.
 - [ ] `Fallback individual directo por HTTP 400 repetido`, si aparece.
@@ -87,6 +88,7 @@ python3 steam_deals_warm_cache_summary.py \
 | Nuevos |  |  |  |
 | Stale |  |  |  |
 | Fallos en cooldown |  |  |  |
+| Stale usados/diferidos |  |  |  |
 | Batches degradados HTTP 400 |  |  |  |
 | Fallback individual total |  |  |  |
 | Fallback directo HTTP 400 |  |  |  |
@@ -98,6 +100,7 @@ python3 steam_deals_warm_cache_summary.py \
 ## Interpretación rápida
 
 - Si la segunda corrida baja mucho `Refresh candidates`, el cache caliente está funcionando.
+- Si `Stale-while-revalidate` difiere stale no crítico, confirma que `missing` sigue en refresh y que los datos viejos útiles se conservan; no lo trates como error si baja el refresh masivo.
 - Si `Fallback individual total` sigue alto con cache caliente, revisar primero batch sizing y distribución de fallos/no-data.
 - Si aparece `Fallback individual directo por HTTP 400 repetido`, compara duración y `Batches degradados HTTP 400` contra una corrida previa: debe reducir splits fallidos, aunque el fallback individual siga siendo el costo dominante.
 - Si `Fallback individual total` cubre casi todos los candidatos y los HTTP 400 degradados ya son bajos, prueba una corrida aislada con `STEAM_DEALS_INDIVIDUAL_FALLBACK_WORKERS=4`; si mejora sin `429`, considerar hacerlo preset/configurable.
@@ -126,6 +129,7 @@ python3 steam_deals_warm_cache_summary.py \
 - Refresh candidates:
 - Nuevos/stale:
 - Fallos recientes en cooldown:
+- Stale-while-revalidate usados/diferidos/jitter:
 - Batches degradados HTTP 400:
 - Fallback individual total:
 - Fallback directo HTTP 400:

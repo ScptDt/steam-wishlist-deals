@@ -29,6 +29,7 @@ from steam_deals_cache_policy import (
     clear_cache_files as module_clear_cache_files,
     select_global_cache as module_select_global_cache,
     select_scoped_cache as module_select_scoped_cache,
+    stable_ttl_jitter_hours as module_stable_ttl_jitter_hours,
 )
 from steam_deals_enrichment import (
     fetch_achievements as module_fetch_achievements,
@@ -590,7 +591,7 @@ class WarmCacheTests(unittest.TestCase):
                 price_final="$8",
                 price_original="$20",
                 price_final_raw=800,
-                fetched_at=now_ts - (25 * 3600),
+                fetched_at=now_ts - (40 * 3600),
             ),
         }
 
@@ -613,7 +614,7 @@ class WarmCacheTests(unittest.TestCase):
             current_time_fn=lambda: now_ts,
         )
 
-        self.assertEqual(received["refresh_ids"], ("20", "30"))
+        self.assertEqual(received["refresh_ids"], ("30", "20"))
         self.assertEqual(result["n_fetched"], 2)
         self.assertTrue(any("2 por fetchear" in line for line in emitted))
 
@@ -628,7 +629,7 @@ class WarmCacheTests(unittest.TestCase):
                 price_final="$10",
                 price_original="$20",
                 price_final_raw=1000,
-                fetched_at=now_ts - (25 * 3600),
+                fetched_at=now_ts - (40 * 3600),
             ),
             "20": self._price_cache_entry(
                 name="Bravo",
@@ -665,7 +666,7 @@ class WarmCacheTests(unittest.TestCase):
         self.assertEqual(result["missing_count"], 1)
         self.assertEqual(result["stale_count"], 1)
         self.assertEqual(result["deferred_failure_count"], 1)
-        self.assertEqual(received["refresh_ids"], ("10", "30"))
+        self.assertEqual(received["refresh_ids"], ("30", "10"))
         self.assertIn("20", received["cache"])
         self.assertIn("40", received["cache"])
         self.assertTrue(any("Caché expirada" in line for line in emitted))
@@ -728,7 +729,7 @@ class WarmCacheTests(unittest.TestCase):
                 price_final="$8",
                 price_original="$20",
                 price_final_raw=800,
-                fetched_at=now_ts - (25 * 3600),
+                fetched_at=now_ts - (40 * 3600),
             ),
         }
 
@@ -808,6 +809,56 @@ class WarmCacheTests(unittest.TestCase):
         self.assertTrue(
             any(
                 "Fallback budget adaptativo: attempts=20 · no_data=13 · deferred=5 · old_cache_used=2 · reason=no_data_ratio:13/20" in line
+                for line in emitted
+            )
+        )
+
+    def test_run_price_cache_stage_reports_stale_revalidate_metrics(self) -> None:
+        emitted = []
+        received = {}
+        now_ts = 1_700_000_000.0
+        appids = [str(1000 + index) for index in range(250)]
+        fetched_cache = {
+            appid: self._price_cache_entry(
+                name=f"Game {appid}",
+                discount_percent=0,
+                price_final="$10",
+                price_original="$20",
+                price_final_raw=1000,
+                fetched_at=now_ts - (40 * 3600),
+            )
+            for appid in appids
+        }
+
+        def fake_get_deals(_wishlist, _cache, _steam_id, **kwargs):
+            refresh_ids = tuple(kwargs.get("refresh_ids") or ())
+            received["refresh_ids"] = refresh_ids
+            return ([], len(refresh_ids))
+
+        result = run_price_cache_stage(
+            appids,
+            "steam-id",
+            no_cache=False,
+            min_discount=50,
+            rate_limit=1.5,
+            load_price_cache_fn=lambda _steam_id: (fetched_cache, 2.0),
+            select_cache_fn=module_select_scoped_cache,
+            clear_cache_files_fn=lambda _paths: (),
+            get_deals_from_wishlist_fn=fake_get_deals,
+            save_price_cache_fn=lambda *_args, **_kwargs: None,
+            emit_fn=emitted.append,
+            current_time_fn=lambda: now_ts,
+        )
+
+        self.assertEqual(len(received["refresh_ids"]), 200)
+        self.assertEqual(result["refresh_candidate_count"], 200)
+        self.assertEqual(result["stale_count"], 200)
+        self.assertEqual(result["stale_used_count"], 50)
+        self.assertEqual(result["stale_refresh_deferred_count"], 50)
+        self.assertTrue(result["ttl_jitter_bucket_counts"])
+        self.assertTrue(
+            any(
+                "Stale-while-revalidate: stale_used=50 · stale_deferred=50" in line
                 for line in emitted
             )
         )
@@ -1603,6 +1654,135 @@ class PriceCacheTests(unittest.TestCase):
         self.assertEqual(decision.missing_ids, ())
         self.assertEqual(decision.refresh_ids, ("10",))
         self.assertEqual(decision.deferred_failure_ids, ("20",))
+
+    def test_stable_ttl_jitter_bucket_is_deterministic(self) -> None:
+        first = module_stable_ttl_jitter_hours("12345", 6)
+        second = module_stable_ttl_jitter_hours("12345", 6)
+
+        self.assertEqual(first, second)
+        self.assertGreaterEqual(first, 0)
+        self.assertLessEqual(first, 6)
+        self.assertEqual(module_stable_ttl_jitter_hours("12345", 0), 0)
+
+    def test_select_scoped_cache_uses_ttl_jitter_before_marking_stale(self) -> None:
+        now_ts = 1_700_000_000.0
+        appid = "12345"
+        jitter_bucket = module_stable_ttl_jitter_hours(appid, 6)
+        fetched_at = now_ts - ((24 + jitter_bucket - 0.1) * 3600)
+
+        decision = module_select_scoped_cache(
+            [appid],
+            {
+                appid: {
+                    "discount_percent": 70,
+                    "name": "Alpha",
+                    "price_final": "$10",
+                    "price_original": "$20",
+                    "_fetched_at": fetched_at,
+                }
+            },
+            2.0,
+            no_cache=False,
+            ttl_hours=24,
+            current_time_fn=lambda: now_ts,
+            entry_ttl_hours=24,
+            preserve_expired_payload=True,
+            ttl_jitter_hours=6,
+            stale_grace_hours=72,
+            max_stale_refresh_per_run=10,
+            min_discount=50,
+        )
+
+        self.assertEqual(decision.refresh_ids, ())
+        self.assertEqual(decision.fresh_ids, (appid,))
+        self.assertEqual(decision.ttl_jitter_buckets[appid], jitter_bucket)
+
+    def test_select_scoped_cache_limits_mass_stale_refresh_with_grace(self) -> None:
+        now_ts = 1_700_000_000.0
+        appids = [str(1000 + index) for index in range(10)]
+        cached = {
+            appid: {
+                "discount_percent": 0,
+                "name": f"Game {appid}",
+                "price_final": "$10",
+                "price_original": "$20",
+                "_fetched_at": now_ts - (30 * 3600),
+            }
+            for appid in appids
+        }
+
+        decision = module_select_scoped_cache(
+            appids,
+            cached,
+            2.0,
+            no_cache=False,
+            ttl_hours=24,
+            current_time_fn=lambda: now_ts,
+            entry_ttl_hours=24,
+            preserve_expired_payload=True,
+            ttl_jitter_hours=0,
+            stale_grace_hours=72,
+            max_stale_refresh_per_run=3,
+            min_discount=50,
+        )
+
+        self.assertEqual(len(decision.refresh_ids), 3)
+        self.assertEqual(len(decision.stale_usable_ids), 10)
+        self.assertEqual(len(decision.stale_refresh_deferred_ids), 7)
+        self.assertEqual(decision.stale_used_ids, decision.stale_refresh_deferred_ids)
+
+    def test_select_scoped_cache_keeps_missing_priority_with_stale_grace(self) -> None:
+        now_ts = 1_700_000_000.0
+        cached = {
+            "20": {
+                "discount_percent": 70,
+                "name": "Bravo",
+                "price_final": "$10",
+                "price_original": "$20",
+                "_fetched_at": now_ts - (30 * 3600),
+            },
+            "30": {
+                "discount_percent": 0,
+                "name": "Charlie",
+                "price_final": "$10",
+                "price_original": "$20",
+                "_fetched_at": now_ts - (30 * 3600),
+            },
+        }
+
+        decision = module_select_scoped_cache(
+            ["20", "10", "30"],
+            cached,
+            2.0,
+            no_cache=False,
+            ttl_hours=24,
+            current_time_fn=lambda: now_ts,
+            entry_ttl_hours=24,
+            preserve_expired_payload=True,
+            ttl_jitter_hours=0,
+            stale_grace_hours=72,
+            max_stale_refresh_per_run=2,
+            min_discount=50,
+        )
+
+        self.assertEqual(decision.missing_ids, ("10",))
+        self.assertEqual(decision.refresh_ids, ("10", "20", "30"))
+
+    def test_select_scoped_cache_bypass_ignores_stale_revalidate_policy(self) -> None:
+        decision = module_select_scoped_cache(
+            ["10", "20"],
+            {"10": {"discount_percent": 70}},
+            2.0,
+            no_cache=True,
+            ttl_hours=24,
+            stale_grace_hours=72,
+            ttl_jitter_hours=6,
+            max_stale_refresh_per_run=1,
+        )
+
+        self.assertEqual(decision.status, "bypass")
+        self.assertEqual(decision.refresh_ids, ("10", "20"))
+        self.assertEqual(decision.stale_refresh_deferred_ids, ())
 
     def test_select_global_cache_bypasses_when_no_cache_is_enabled(self) -> None:
         decision = module_select_global_cache(
