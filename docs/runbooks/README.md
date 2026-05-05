@@ -13,15 +13,34 @@
 
 | Runbook | Cuándo usarlo | Evidencia principal |
 |---|---|---|
-| `desktop-linux.md` | Cerrar Fase 1 — Linux desktop binario | Build, apertura nativa, smoke largo desde binario, `.md/.html/.csv`, cierre limpio |
-| `desktop-macos.md` | Cerrar Fase 3 — macOS native-host closure | Build `.app`, apertura local, smoke funcional, cierre limpio |
-| `desktop-windows.md` | Mantener baseline de apoyo en Windows | Build `.exe`, smoke rápido/manual, WebView2/fallback si aplica |
+| `desktop-linux.md` | Cerrar o retestar deltas de Fase 1 — Linux desktop binario | Evidencia ya capturada, smoke mínimo no redundante, `.md/.html/.csv`, copiar log y cierre limpio |
+| `desktop-macos.md` | Cerrar Fase 3 — macOS native-host closure cuando haya host | Build `.app`, apertura local, smoke funcional pequeño, cierre limpio |
+| `desktop-windows.md` | Mantener baseline de apoyo en Windows | Build `.exe`, smoke rápido/manual, WebView2/fallback si aplica; no sustituye Linux/macOS |
 | `desktop-constraints.md` | Refrescar o auditar dependencias desktop | Constraints versionados, comando de instalación, validación mínima |
+| `release-hygiene.md` | Antes/después de builds, smokes o limpieza de repo | Qué se versiona, qué se ignora, cómo registrar evidencia |
+| `evidence-template.md` | Cerrar quick wins sin duplicar evidencia | Plantilla `BITACORA.md`, resumen `PENDIENTES.md`, variantes por slice |
+| `docs-alignment.md` | Antes de cerrar slices que tocan docs | Source-of-truth por tema y checklist anti-drift |
 | `performance-warm-cache.md` | Preparar o medir corridas grandes/wishlists grandes | Warm-cache, logs, fallback individual, duración y artifacts |
 | `features-validation.md` | Validar features específicas sin cargar el README | Frontmatter Obsidian/Notion, `Tu Presupuesto Ideal`, share E2E |
+
+## Selector rápido por wave/tipo
+
+| Objetivo | Usa | Validación mínima | No repetir / blocker |
+|---|---|---|---|
+| P0 seguridad local | `PENDIENTES.md` + `evidence-template.md` | tests dirigidos de seguridad/web | no `BG00G`; parar si falla seguridad |
+| P0 performance | `performance-warm-cache.md` | fixtures/fake tests o parser offline | `BG00G` solo si medir performance es objetivo explícito |
+| PAYDAY 2 data/UX | `features-validation.md` + `evidence-template.md` | cache/fake/live según slice | no hardcodear DLCs sin diagnóstico |
+| P2 desktop Linux | `desktop-linux.md` | smoke mínimo con `joseluis12351` si solo hay deltas | no repetir E2E largo salvo gate release/runtime |
+| P2 desktop macOS | `desktop-macos.md` | `.app` en host macOS nativo | CI/Windows/source no sustituyen host nativo |
+| Windows baseline | `desktop-windows.md` | build/smoke rápido/manual | apoyo solamente; no cierra Linux/macOS |
+| Constraints desktop | `desktop-constraints.md` | install con constraints + tests dirigidos | no upgrades oportunistas |
+| Release hygiene/evidencia | `release-hygiene.md`, `evidence-template.md` | `git status`, `git diff --check`, revisión docs | no commitear outputs/logs/reportes generados |
+| Alineación documental | `docs-alignment.md` | revisión docs + `git diff --check` | no duplicar README/runbooks/backlog |
+| P3 arquitectura/drift | `PENDIENTES.md` + `evidence-template.md` | tests puros/shape compatible por slice | no rediseño UI ni refactor amplio mezclado |
 
 ## Criterio de registro
 
 - Si el resultado cambia estado/prioridad/próximo paso, actualizar `PENDIENTES.md`.
 - Si solo deja evidencia cronológica o detalles de ejecución, registrar en `BITACORA.md`.
 - Si cambia uso público o comandos principales, actualizar `README.md`.
+- No repetir `BG00G`/cold-cache ni smokes largos salvo objetivo performance explícito o gate de release declarado.

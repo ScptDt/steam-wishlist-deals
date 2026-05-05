@@ -6,6 +6,7 @@ __pycache__/
 .venv/
 .pytest_cache/
 logs/
+output/
 *.pyc
 Steam Deals*.md
 Steam Deals*.html

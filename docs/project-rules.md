@@ -25,17 +25,19 @@ Guía mínima para darle rumbo al repo sin convertirlo en burocracia.
 ## Higiene del repo
 
 - Se versiona: código fuente, tests, docs permanentes, runbooks y configuración útil del proyecto.
-- No se versiona: `.tmp/`, `.pytest_cache/`, `logs/`, reportes generados `Steam Deals*.md/.html/.json/.csv` y `PAYDAY2_Plan_de_Compra.*`.
+- No se versiona: `.tmp/`, `.pytest_cache/`, `logs/`, `output/`, `.cache/`, `build/`, `dist/`, `*.spec`, reportes generados `Steam Deals*.md/.html/.json/.csv` y `PAYDAY2_Plan_de_Compra.*`.
 - El caché local en `.cache/steam_deals` sí se conserva localmente; no debe borrarse por limpieza rutinaria si ayuda a corridas grandes.
 - Si un archivo generado merece conservarse como ejemplo, debe moverse a una ubicación intencional (`docs/` o `tests/fixtures/`) con nombre estable y contexto claro.
+- Detalle operativo: `docs/runbooks/release-hygiene.md`.
 
 ## Cómo meter trabajo nuevo sin perder rumbo
 
 - Antes de implementar, ubica el cambio en una de estas categorías: producto, UX, infraestructura o documentación.
 - Si el cambio afecta comportamiento visible, valida al menos el slice tocado.
 - Si el cambio altera roadmap, deuda o decisiones operativas, refleja el contexto en `PENDIENTES.md`.
-- Si el cambio deja evidencia cronológica detallada, validaciones largas o workarounds históricos, regístralo en `BITACORA.md` y deja en `PENDIENTES.md` solo el resumen que afecte estado/prioridad.
+- Si el cambio deja evidencia cronológica detallada, validaciones largas o workarounds históricos, usa `docs/runbooks/evidence-template.md`, regístralo en `BITACORA.md` y deja en `PENDIENTES.md` solo el resumen que afecte estado/prioridad.
 - Si el cambio modifica uso, setup o flujo de trabajo, actualiza `README.md` o el runbook correspondiente.
+- Para evitar drift entre docs, usa `docs/runbooks/docs-alignment.md` antes de cerrar el slice.
 
 ## Regla práctica de decisión
 

@@ -73,11 +73,11 @@ Resumen corto para mantener rumbo y evitar ruido en el repo:
 - **`BITACORA.md` guarda la evidencia cronológica detallada**: validaciones, workarounds, avances históricos y notas operativas largas.
 - **La Web UI es la UX principal**; desktop debe seguir reutilizando la misma UI y no abrir otro frontend separado.
 - **`CLI` es la superficie operativa** para automatización, flags avanzados y corridas reproducibles.
-- **Artefactos temporales o generados no se versionan**: `.tmp/`, `.pytest_cache/`, `logs/`, reportes `Steam Deals*.md/.html/.json/.csv` y `PAYDAY2_Plan_de_Compra.*` son locales.
+- **Artefactos temporales o generados no se versionan**: `.tmp/`, `.pytest_cache/`, `logs/`, `output/`, `.cache/`, `build/`, `dist/`, `*.spec`, reportes `Steam Deals*.md/.html/.json/.csv` y `PAYDAY2_Plan_de_Compra.*` son locales.
 - **El caché local sí se conserva**: `./.cache/steam_deals` o la ruta persistente equivalente no se limpia por rutina porque acelera corridas reales.
 - **Si necesitas un ejemplo o fixture**, guárdalo en `tests/fixtures/` o `docs/` con nombre intencional, no como salida cruda de una corrida real.
 
-Reglas ampliadas y criterios de organización: `docs/project-rules.md`.
+Reglas ampliadas y criterios de organización: `docs/project-rules.md` y `docs/runbooks/release-hygiene.md`.
 
 ### Ruta rápida recomendada
 1. **Web UI (Steam Deals):** `python3 steam_deals_web.py`
