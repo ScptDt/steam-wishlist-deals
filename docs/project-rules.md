@@ -41,6 +41,7 @@ Guía mínima para darle rumbo al repo sin convertirlo en burocracia.
 - Si el cambio deja evidencia cronológica detallada, validaciones largas o workarounds históricos, usa `docs/runbooks/evidence-template.md`, regístralo en `BITACORA.md` y deja en `PENDIENTES.md` solo el resumen que afecte estado/prioridad.
 - Si el cambio modifica uso, setup o flujo de trabajo, actualiza `README.md` o el runbook correspondiente.
 - Para evitar drift entre docs, usa `docs/runbooks/docs-alignment.md` antes de cerrar el slice.
+- Cuando haya varios frentes posibles, el selector de siguiente acción en `PENDIENTES.md` decide qué slice tomar sin abrir más planificación paralela.
 
 ## Regla práctica de decisión
 
