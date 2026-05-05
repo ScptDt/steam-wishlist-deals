@@ -16,6 +16,7 @@
 | `desktop-linux.md` | Cerrar Fase 1 — Linux desktop binario | Build, apertura nativa, smoke largo desde binario, `.md/.html/.csv`, cierre limpio |
 | `desktop-macos.md` | Cerrar Fase 3 — macOS native-host closure | Build `.app`, apertura local, smoke funcional, cierre limpio |
 | `desktop-windows.md` | Mantener baseline de apoyo en Windows | Build `.exe`, smoke rápido/manual, WebView2/fallback si aplica |
+| `desktop-constraints.md` | Refrescar o auditar dependencias desktop | Constraints versionados, comando de instalación, validación mínima |
 | `performance-warm-cache.md` | Preparar o medir corridas grandes/wishlists grandes | Warm-cache, logs, fallback individual, duración y artifacts |
 | `features-validation.md` | Validar features específicas sin cargar el README | Frontmatter Obsidian/Notion, `Tu Presupuesto Ideal`, share E2E |
 

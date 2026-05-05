@@ -19,6 +19,8 @@ ROOT = Path(__file__).resolve().parent
 APP_NAME = "SteamToolsDesktop"
 ICON_SOURCE_FILE = ROOT / "assets" / "steam_tools_icon.svg"
 GENERATED_WINDOWS_ICON_FILE = ROOT / ".tmp" / "desktop-icon" / "steam_tools_icon.ico"
+DESKTOP_REQUIREMENTS_FILE = ROOT / "requirements-desktop.txt"
+DESKTOP_CONSTRAINTS_FILE = ROOT / "constraints" / "desktop.txt"
 DATA_FILES = [
     ("assets/steam_tools_icon.svg", "assets"),
     ("steam_deals_web.py", "."),
@@ -118,6 +120,20 @@ def append_icon_arg(
     cmd.extend(["--icon", str(icon_path or ensure_windows_icon())])
 
 
+def build_dependency_install_command() -> list[str]:
+    cmd = [
+        sys.executable,
+        "-m",
+        "pip",
+        "install",
+        "-r",
+        str(DESKTOP_REQUIREMENTS_FILE),
+    ]
+    if DESKTOP_CONSTRAINTS_FILE.exists():
+        cmd.extend(["-c", str(DESKTOP_CONSTRAINTS_FILE)])
+    return cmd
+
+
 def main() -> None:
     parser = argparse.ArgumentParser(
         description="Build desktop executable for Steam Tools"
@@ -131,16 +147,7 @@ def main() -> None:
     args = parser.parse_args()
 
     if not args.skip_install:
-        run(
-            [
-                sys.executable,
-                "-m",
-                "pip",
-                "install",
-                "-r",
-                str(ROOT / "requirements-desktop.txt"),
-            ]
-        )
+        run(build_dependency_install_command())
 
     mode_flag = "--onedir" if args.onedir else "--onefile"
 

@@ -21,7 +21,7 @@ Runbook manual para validar el wrapper desktop de Steam Tools en Windows.
 py -3 --version
 py -3 -m venv .venv
 .\.venv\Scripts\Activate.ps1
-python -m pip install -r requirements-desktop.txt
+python -m pip install -r requirements-desktop.txt -c constraints/desktop.txt
 ```
 
 ## 2. Ejecutar Desktop Doctor

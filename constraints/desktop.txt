@@ -1,0 +1,26 @@
+# Desktop dependency constraints for reproducible pywebview/PyInstaller builds.
+#
+# Intent lives in requirements-desktop.txt. Install with:
+#   python -m pip install -r requirements-desktop.txt -c constraints/desktop.txt
+#
+# Refresh policy:
+# - Do not update these pins opportunistically while implementing features.
+# - Refresh in a clean virtualenv, then run py_compile, targeted desktop tests,
+#   Desktop Doctor/build/smoke as appropriate, and record evidence in BITACORA.md.
+# - These pins were captured from the validated Linux desktop environment on
+#   2026-05-05; macOS/Windows host validation remains platform-specific.
+
+altgraph==0.17.5
+bottle==0.13.4
+packaging==26.2
+proxy_tools==0.1.0
+pyinstaller==6.20.0
+pyinstaller-hooks-contrib==2026.4
+PyQt6==6.11.0; sys_platform == "linux"
+PyQt6-Qt6==6.11.0; sys_platform == "linux"
+PyQt6-WebEngine==6.11.0; sys_platform == "linux"
+PyQt6-WebEngine-Qt6==6.11.0; sys_platform == "linux"
+PyQt6_sip==13.11.1; sys_platform == "linux"
+pywebview==6.2.1
+QtPy==2.4.3; sys_platform == "linux"
+typing_extensions==4.15.0

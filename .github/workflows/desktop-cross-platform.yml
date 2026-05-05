@@ -26,7 +26,7 @@ jobs:
           python-version: "3.11"
 
       - name: Install desktop dependencies
-        run: python -m pip install -r requirements-desktop.txt
+        run: python -m pip install -r requirements-desktop.txt -c constraints/desktop.txt
 
       - name: Build desktop artifact
         run: python build_desktop.py

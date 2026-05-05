@@ -1,3 +1,6 @@
+# Intent file for desktop dependencies.
+# Use constraints/desktop.txt for reproducible installs:
+#   python -m pip install -r requirements-desktop.txt -c constraints/desktop.txt
 pywebview[qt]>=5.0; sys_platform == "linux"
 pywebview>=5.0; sys_platform != "linux"
 pyinstaller>=6.0

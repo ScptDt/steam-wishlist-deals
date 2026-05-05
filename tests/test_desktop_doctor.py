@@ -77,5 +77,16 @@ class DesktopDoctorFrozenRuntimeTests(unittest.TestCase):
         self.assertEqual(check.title, "Cache/logs persistentes")
 
 
+class DesktopDoctorDependencyCommandTests(unittest.TestCase):
+    def test_desktop_dependency_install_action_uses_constraints(self) -> None:
+        command = desktop_doctor.build_desktop_dependency_install_command("python")
+        action = desktop_doctor.get_desktop_dependency_install_action()
+
+        self.assertEqual(command[:5], ("python", "-m", "pip", "install", "-r"))
+        self.assertIn("-c", command)
+        self.assertIn(str(desktop_doctor.DESKTOP_CONSTRAINTS_FILE), command)
+        self.assertIn("constraints/desktop.txt", action)
+
+
 if __name__ == "__main__":
     unittest.main()

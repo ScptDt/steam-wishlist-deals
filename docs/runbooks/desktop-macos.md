@@ -22,7 +22,7 @@ Runbook manual para validar el wrapper desktop de Steam Tools en macOS.
 python3 --version && python3 -m pip --version
 python3 -m venv .venv
 source .venv/bin/activate
-python -m pip install -r requirements-desktop.txt
+python -m pip install -r requirements-desktop.txt -c constraints/desktop.txt
 ```
 
 ## 2. Ejecutar Desktop Doctor

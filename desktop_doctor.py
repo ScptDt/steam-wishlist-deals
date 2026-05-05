@@ -19,6 +19,8 @@ from steam_deals_paths import resolve_cache_dir, resolve_logs_dir
 
 ROOT = Path(__file__).resolve().parent
 APP_NAME = "SteamToolsDesktop"
+DESKTOP_REQUIREMENTS_FILE = ROOT / "requirements-desktop.txt"
+DESKTOP_CONSTRAINTS_FILE = ROOT / "constraints" / "desktop.txt"
 STATUS_PREFIXES = {"ok": "[OK]", "warn": "[WARN]", "fail": "[FAIL]"}
 REQUIRED_BUILD_PACKAGES = ("shared", "renderers", "app")
 REQUIRED_HIDDEN_IMPORTS = ("steam_deals_generator", "payday2_dlc_tracker")
@@ -113,6 +115,24 @@ def format_command(parts: tuple[str, ...]) -> str:
     return " ".join(shlex.quote(part) for part in parts)
 
 
+def build_desktop_dependency_install_command(python_executable: str) -> tuple[str, ...]:
+    command = (
+        python_executable,
+        "-m",
+        "pip",
+        "install",
+        "-r",
+        str(DESKTOP_REQUIREMENTS_FILE),
+    )
+    if DESKTOP_CONSTRAINTS_FILE.exists():
+        command += ("-c", str(DESKTOP_CONSTRAINTS_FILE))
+    return command
+
+
+def get_desktop_dependency_install_action(python_command: str = "python") -> str:
+    return format_command(build_desktop_dependency_install_command(python_command))
+
+
 def get_revalidate_action() -> str:
     return "Revalida con `python steam_tools_desktop.py --doctor`."
 
@@ -144,7 +164,7 @@ def build_fix_command_strings(fix_id: str) -> tuple[str, ...]:
             format_command((sys.executable, "-m", "venv", str(get_local_venv_dir()))),
         ),
         "install-local-desktop-deps": (
-            format_command((local_python, "-m", "pip", "install", "-r", str(ROOT / "requirements-desktop.txt"))),
+            format_command(build_desktop_dependency_install_command(local_python)),
         ),
         "build-desktop-artifact": (
             format_command((local_python, str(ROOT / "build_desktop.py"), "--skip-install")),
@@ -222,7 +242,7 @@ def check_python_environment() -> DoctorCheck:
             (
                 "python3 -m venv .venv",
                 "source .venv/bin/activate",
-                "python -m pip install -r requirements-desktop.txt",
+                get_desktop_dependency_install_action(),
                 "Evita `--break-system-packages` salvo en entornos desechables.",
                 get_revalidate_action(),
             ),
@@ -270,7 +290,7 @@ def check_pywebview_stack() -> DoctorCheck:
         )
 
     if not module_available("webview"):
-        actions = ["python -m pip install -r requirements-desktop.txt", get_revalidate_action()]
+        actions = [get_desktop_dependency_install_action(), get_revalidate_action()]
         if sys.platform.startswith("linux"):
             actions.insert(1, get_linux_python_vs_system_action())
         elif sys.platform == "darwin":
@@ -297,7 +317,7 @@ def check_pywebview_stack() -> DoctorCheck:
             "Backend nativo Linux (Qt)",
             "Faltan módulos Python del backend Qt esperado para Linux.",
             (
-                "python -m pip install -r requirements-desktop.txt",
+                get_desktop_dependency_install_action(),
                 get_linux_python_vs_system_action(),
                 f"Pendientes: {', '.join(missing)}",
                 "Revalida imports con `python -c 'import qtpy, PyQt6, PyQt6.QtWebEngineWidgets'`.",
@@ -406,7 +426,7 @@ def check_pyinstaller_tool() -> DoctorCheck:
         "PyInstaller",
         "PyInstaller no está disponible; podrás correr desktop source pero no empaquetar el binario.",
         (
-            "python -m pip install -r requirements-desktop.txt",
+            get_desktop_dependency_install_action(),
             "Para builds reproducibles, usa siempre la `.venv` del proyecto en vez del Python global.",
             "Después ejecuta `python build_desktop.py`.",
             get_revalidate_action(),
@@ -803,7 +823,7 @@ def get_desktop_doctor_fixes(checks: list[DoctorCheck] | None = None) -> list[Do
             DoctorFix(
                 "install-local-desktop-deps",
                 "Instalar deps desktop en `.venv`",
-                "Ejecuta `requirements-desktop.txt` dentro de la `.venv` local para dejar `pywebview` + `PyInstaller` listos sin tocar paquetes del sistema.",
+                "Ejecuta `requirements-desktop.txt` con `constraints/desktop.txt` dentro de la `.venv` local para dejar `pywebview` + `PyInstaller` listos sin tocar paquetes del sistema.",
                 build_fix_command_strings("install-local-desktop-deps"),
             )
         )
@@ -951,14 +971,7 @@ def apply_desktop_doctor_fixes(*, confirm: bool = False, emit=print) -> dict:
             (sys.executable, "-m", "venv", str(get_local_venv_dir())), emit=capture
         ),
         "install-local-desktop-deps": lambda: run_fix_command(
-            (
-                str(get_local_venv_python()),
-                "-m",
-                "pip",
-                "install",
-                "-r",
-                str(ROOT / "requirements-desktop.txt"),
-            ),
+            build_desktop_dependency_install_command(str(get_local_venv_python())),
             emit=capture,
         ),
         "build-desktop-artifact": lambda: run_fix_command(

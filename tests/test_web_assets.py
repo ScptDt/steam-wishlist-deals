@@ -302,6 +302,19 @@ class WebAssetsTests(unittest.TestCase):
         self.assertEqual(ico_bytes[:4], b"\x00\x00\x01\x00")
         self.assertGreater(len(ico_bytes), 100)
 
+    def test_desktop_dependency_installs_use_constraints(self) -> None:
+        constraints = (ROOT / "constraints" / "desktop.txt").read_text(
+            encoding="utf-8"
+        )
+        install_cmd = build_desktop.build_dependency_install_command()
+
+        self.assertIn("pyinstaller==6.20.0", constraints)
+        self.assertIn("pywebview==6.2.1", constraints)
+        self.assertIn("PyQt6==6.11.0", constraints)
+        self.assertIn(str(ROOT / "requirements-desktop.txt"), install_cmd)
+        self.assertIn("-c", install_cmd)
+        self.assertIn(str(ROOT / "constraints" / "desktop.txt"), install_cmd)
+
 
 class Payday2BudgetImportanceTests(unittest.TestCase):
     def test_budget_prioritizes_gameplay_heist_over_cheap_cosmetic(self) -> None:

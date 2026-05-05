@@ -99,13 +99,13 @@ python3 --version
 ```bash
 python3 -m venv .venv
 source .venv/bin/activate
-python -m pip install -r requirements-desktop.txt
+python -m pip install -r requirements-desktop.txt -c constraints/desktop.txt
 python steam_tools_desktop.py
 ```
 
 Desktop agrega dependencias solo para la ventana nativa / empaquetado. El flujo funcional sigue siendo el mismo server/UI local.
 
-> En Debian/Ubuntu y otros entornos con Python marcado como `externally-managed` (PEP 668), usa `.venv` para instalar `requirements-desktop.txt` en vez de `pip` global del sistema.
+> En Debian/Ubuntu y otros entornos con Python marcado como `externally-managed` (PEP 668), usa `.venv` para instalar `requirements-desktop.txt` con `constraints/desktop.txt` en vez de `pip` global del sistema.
 
 ## Uso rápido
 
@@ -357,7 +357,7 @@ El desktop reutiliza la misma Web UI con `pywebview`; no hay frontend separado. 
 ```bash
 python3 -m venv .venv
 source .venv/bin/activate
-python -m pip install -r requirements-desktop.txt
+python -m pip install -r requirements-desktop.txt -c constraints/desktop.txt
 python steam_tools_desktop.py
 ```
 
@@ -391,13 +391,13 @@ El doctor reporta `OK / WARN / FAIL` para readiness desktop:
 - checks específicos por OS: macOS (PyObjC/tooling local), Windows (WebView2/sesión) y Linux (Wayland/X11 + tooling host cuando aplica)
 - presencia del artefacto desktop y warnings conocidos del último build
 
-También está disponible desde la Web UI con los botones **Doctor desktop** y **Autofix desktop**. El autofix es opt-in y local: puede crear `.venv`, instalar `requirements-desktop.txt` dentro del entorno y lanzar build local, pero no instala paquetes del sistema ni modifica configuración persistente.
+También está disponible desde la Web UI con los botones **Doctor desktop** y **Autofix desktop**. El autofix es opt-in y local: puede crear `.venv`, instalar `requirements-desktop.txt` con `constraints/desktop.txt` dentro del entorno y lanzar build local, pero no instala paquetes del sistema ni modifica configuración persistente.
 
 La consola compartida (web + desktop) permite **Copiar log** y **Descargar log (.txt)** para conservar errores largos durante validación manual.
 
 ### Dependencias nativas por plataforma
 
-`requirements-desktop.txt` instala las dependencias Python del desktop. Algunos backends nativos pueden requerir runtime o librerías del sistema:
+`requirements-desktop.txt` declara la intención de dependencias Python del desktop y `constraints/desktop.txt` fija la resolución validada para builds reproducibles. Algunos backends nativos pueden requerir runtime o librerías del sistema:
 
 - **Windows**: Microsoft Edge WebView2 Runtime.
 - **Linux**: backend Qt/GTK/WebKit y librerías nativas según distro/sesión gráfica; usar `.venv` en Debian/Ubuntu con PEP 668.
@@ -416,6 +416,7 @@ README solo conserva la orientación rápida. Los checklists completos, comandos
 - Linux desktop: `docs/runbooks/desktop-linux.md`
 - macOS desktop: `docs/runbooks/desktop-macos.md`
 - Windows desktop: `docs/runbooks/desktop-windows.md`
+- Constraints desktop: `docs/runbooks/desktop-constraints.md`
 - Performance/warm-cache: `docs/runbooks/performance-warm-cache.md`
 - Features específicas: `docs/runbooks/features-validation.md`
 

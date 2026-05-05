@@ -24,7 +24,7 @@ Runbook manual para validar el wrapper desktop de Steam Tools en Linux.
 python3 --version && python3 -m pip --version
 python3 -m venv .venv
 source .venv/bin/activate
-python -m pip install -r requirements-desktop.txt
+python -m pip install -r requirements-desktop.txt -c constraints/desktop.txt
 ```
 
 Esperado:
@@ -215,7 +215,11 @@ Confirmar primero deps Python del repo:
 python -c 'import qtpy, PyQt6, PyQt6.QtWebEngineWidgets'
 ```
 
-Si eso falla, reinstalar `requirements-desktop.txt` dentro de `.venv`.
+Si eso falla, reinstalar `requirements-desktop.txt` con `constraints/desktop.txt` dentro de `.venv`.
+
+```bash
+python -m pip install -r requirements-desktop.txt -c constraints/desktop.txt
+```
 
 ### Qt falla en Wayland
 
