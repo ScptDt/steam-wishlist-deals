@@ -745,9 +745,19 @@ class WarmCacheTests(unittest.TestCase):
             stats["deferred_by_fallback_budget"] = 5
             stats["fallback_budget_reason"] = "no_data_ratio:13/20"
             stats["old_cache_used_count"] = 2
+            stats["processed_count"] = 1
+            stats["deferred_by_time_budget"] = 1
+            stats["time_budget_exhausted"] = True
+            stats["next_resume_hint"] = "20"
             received["batch_size"] = kwargs.get("batch_size")
             received["max_batch_halving"] = kwargs.get("max_batch_halving")
             received["individual_fallback_workers"] = kwargs.get("individual_fallback_workers")
+            received["max_refresh_candidates_per_run"] = kwargs.get(
+                "max_refresh_candidates_per_run"
+            )
+            received["refresh_time_budget_seconds"] = kwargs.get(
+                "refresh_time_budget_seconds"
+            )
             return ([{"appid": "10"}, {"appid": "20"}, {"appid": "30"}], 2)
 
         result = run_price_cache_stage(
@@ -767,12 +777,16 @@ class WarmCacheTests(unittest.TestCase):
                 "STEAM_DEALS_PRICE_BATCH_SIZE": "8",
                 "STEAM_DEALS_PRICE_BATCH_HALVING_LIMIT": "5",
                 "STEAM_DEALS_INDIVIDUAL_FALLBACK_WORKERS": "4",
+                "STEAM_DEALS_MAX_REFRESH_CANDIDATES_PER_RUN": "1",
+                "STEAM_DEALS_PRICE_REFRESH_TIME_BUDGET_SECONDS": "2.5",
             },
         )
 
         self.assertEqual(received["batch_size"], 8)
         self.assertEqual(received["max_batch_halving"], 5)
         self.assertEqual(received["individual_fallback_workers"], 4)
+        self.assertEqual(received["max_refresh_candidates_per_run"], 1)
+        self.assertEqual(received["refresh_time_budget_seconds"], 2.5)
         self.assertEqual(result["refresh_candidate_count"], 2)
         self.assertEqual(result["missing_count"], 1)
         self.assertEqual(result["stale_count"], 1)
@@ -785,15 +799,21 @@ class WarmCacheTests(unittest.TestCase):
         self.assertEqual(result["deferred_by_fallback_budget"], 5)
         self.assertEqual(result["fallback_budget_reason"], "no_data_ratio:13/20")
         self.assertEqual(result["old_cache_used_count"], 2)
+        self.assertEqual(result["processed_count"], 1)
+        self.assertEqual(result["deferred_by_time_budget"], 1)
+        self.assertEqual(result["time_budget_exhausted"], True)
+        self.assertEqual(result["next_resume_hint"], "20")
         self.assertEqual(result["batch_size"], 8)
         self.assertEqual(result["batch_halving_limit"], 5)
         self.assertEqual(result["individual_fallback_workers"], 4)
+        self.assertEqual(result["max_refresh_candidates_per_run"], 1)
+        self.assertEqual(result["refresh_time_budget_seconds"], 2.5)
         self.assertTrue(
             any("Refresh candidates: 2 (1 nuevos, 1 stale)" in line for line in emitted)
         )
         self.assertTrue(
             any(
-                "Tuning precios activo: batch_size=8 · halving_limit=5 · fallback_workers=4" in line
+                "Tuning precios activo: batch_size=8 · halving_limit=5 · fallback_workers=4 · max_refresh_candidates=1 · time_budget_seconds=2.5" in line
                 for line in emitted
             )
         )
@@ -803,6 +823,12 @@ class WarmCacheTests(unittest.TestCase):
         self.assertTrue(
             any(
                 "Fallback individual aplicado a 20 juegos en 2 tandas (7 resueltos, 13 sin oferta/datos)" in line
+                for line in emitted
+            )
+        )
+        self.assertTrue(
+            any(
+                "Refresh budget resumible: processed=1 · deferred=1 · exhausted=true · next_resume_hint=20" in line
                 for line in emitted
             )
         )
@@ -862,6 +888,45 @@ class WarmCacheTests(unittest.TestCase):
                 for line in emitted
             )
         )
+
+    def test_run_price_cache_stage_no_cache_bypasses_refresh_budget(self) -> None:
+        received = {}
+        cleared = []
+
+        def fake_get_deals(_wishlist, _cache, _steam_id, **kwargs):
+            received["refresh_ids"] = tuple(kwargs.get("refresh_ids") or ())
+            received["max_refresh_candidates_per_run"] = kwargs.get(
+                "max_refresh_candidates_per_run"
+            )
+            received["refresh_time_budget_seconds"] = kwargs.get(
+                "refresh_time_budget_seconds"
+            )
+            return ([{"appid": "10"}, {"appid": "20"}, {"appid": "30"}], 3)
+
+        result = run_price_cache_stage(
+            ["10", "20", "30"],
+            "steam-id",
+            no_cache=True,
+            min_discount=50,
+            rate_limit=1.5,
+            load_price_cache_fn=lambda _steam_id: ({"10": {"discount_percent": 70}}, 2.0),
+            select_cache_fn=module_select_scoped_cache,
+            clear_cache_files_fn=lambda paths: cleared.extend(paths) or (),
+            get_deals_from_wishlist_fn=fake_get_deals,
+            save_price_cache_fn=lambda *_args, **_kwargs: None,
+            emit_fn=lambda *_args, **_kwargs: None,
+            current_time_fn=lambda: 1_700_000_000.0,
+            env={
+                "STEAM_DEALS_MAX_REFRESH_CANDIDATES_PER_RUN": "1",
+                "STEAM_DEALS_PRICE_REFRESH_TIME_BUDGET_SECONDS": "1",
+            },
+        )
+
+        self.assertEqual(received["refresh_ids"], ("10", "20", "30"))
+        self.assertIsNone(received["max_refresh_candidates_per_run"])
+        self.assertIsNone(received["refresh_time_budget_seconds"])
+        self.assertEqual(result["n_fetched"], 3)
+        self.assertTrue(cleared)
 
     def test_get_deals_from_wishlist_skips_fetch_when_all_entries_are_fresh(
         self,
@@ -1484,6 +1549,8 @@ class PriceCacheTests(unittest.TestCase):
                 "batch_size": 20,
                 "batch_halving_limit": 3,
                 "individual_fallback_workers": 1,
+                "max_refresh_candidates_per_run": 400,
+                "refresh_time_budget_seconds": 600.0,
                 "is_custom": False,
             },
         )
@@ -1493,12 +1560,16 @@ class PriceCacheTests(unittest.TestCase):
                     "STEAM_DEALS_PRICE_BATCH_SIZE": "8",
                     "STEAM_DEALS_PRICE_BATCH_HALVING_LIMIT": "5",
                     "STEAM_DEALS_INDIVIDUAL_FALLBACK_WORKERS": "4",
+                    "STEAM_DEALS_MAX_REFRESH_CANDIDATES_PER_RUN": "100",
+                    "STEAM_DEALS_PRICE_REFRESH_TIME_BUDGET_SECONDS": "2.5",
                 }
             ),
             {
                 "batch_size": 8,
                 "batch_halving_limit": 5,
                 "individual_fallback_workers": 4,
+                "max_refresh_candidates_per_run": 100,
+                "refresh_time_budget_seconds": 2.5,
                 "is_custom": True,
             },
         )
@@ -1518,6 +1589,8 @@ class PriceCacheTests(unittest.TestCase):
                 "batch_size": 20,
                 "batch_halving_limit": 3,
                 "individual_fallback_workers": 1,
+                "max_refresh_candidates_per_run": 400,
+                "refresh_time_budget_seconds": 600.0,
                 "is_custom": False,
             },
         )
@@ -2496,6 +2569,220 @@ class PriceCacheTests(unittest.TestCase):
         self.assertEqual(stats["individual_no_data"], 60)
         self.assertEqual(stats["deferred_by_fallback_budget"], 0)
         self.assertEqual(stats["fallback_budget_reason"], "")
+
+    def test_get_deals_from_wishlist_limits_refresh_candidates_and_marks_resume(
+        self,
+    ) -> None:
+        now_ts = 200000.0
+        fetched_cache = {
+            "20": {
+                "name": "Old Deal",
+                "type": "game",
+                "discount_percent": 70,
+                "price_final": "$7",
+                "price_original": "$20",
+                "price_final_raw": 700,
+                "genres": ["action"],
+                "release_year": 2020,
+                "description": "desc",
+                "linux_native": False,
+                "metacritic_score": 80,
+                "metacritic_url": "meta",
+                "categories": [1],
+                "_fetched_at": now_ts - (30 * 3600),
+            },
+            "30": {"discount_percent": 0, "_fetched_at": now_ts - (30 * 3600)},
+            "40": {"_failed_at": now_ts - (3 * 3600), "_failure_reason": "no_price_data"},
+        }
+        requested_ids = []
+        save_calls = []
+        stats = {}
+
+        def fake_get_json(url, headers=None):
+            ids = url.split("appids=", 1)[1].split("&", 1)[0].split(",")
+            requested_ids.extend(ids)
+            return {
+                appid: {
+                    "success": True,
+                    "data": {
+                        "name": f"Game {appid}",
+                        "type": "game",
+                        "price_overview": {
+                            "discount_percent": 75,
+                            "final_formatted": "$5",
+                            "initial_formatted": "$20",
+                            "final": 500,
+                        },
+                        "genres": [{"description": "Action"}],
+                        "release_date": {"coming_soon": False, "date": "2020"},
+                        "short_description": "desc",
+                        "platforms": {"linux": False},
+                        "metacritic": {"score": 80, "url": "meta"},
+                        "categories": [{"id": 1}],
+                    },
+                }
+                for appid in ids
+            }
+
+        deals, total = module_get_deals_from_wishlist(
+            ["10", "20", "30", "40"],
+            fetched_cache,
+            "steam-id",
+            min_discount=50,
+            get_json=fake_get_json,
+            sleep_fn=lambda _seconds: None,
+            monotonic_fn=lambda: 0.0,
+            current_time_fn=lambda: now_ts,
+            save_price_cache_fn=lambda _steam_id, _cache: save_calls.append("save"),
+            fetch_single_fn=lambda _appid, _country, _delay: None,
+            process_app_entry_fn=lambda appid, data: module_process_app_entry(
+                appid, data, parse_release_year_fn=module_parse_release_year
+            ),
+            emit=lambda *_args, **_kwargs: None,
+            warn=lambda text: text,
+            dim=lambda text: text,
+            refresh_ids=("40", "30", "20", "10"),
+            batch_size=20,
+            max_refresh_candidates_per_run=2,
+            stats_out=stats,
+        )
+
+        self.assertEqual(total, 2)
+        self.assertEqual(requested_ids, ["10", "20"])
+        self.assertEqual(stats["refresh_candidate_count"], 4)
+        self.assertEqual(stats["processed_count"], 2)
+        self.assertEqual(stats["deferred_by_time_budget"], 2)
+        self.assertEqual(stats["time_budget_exhausted"], True)
+        self.assertEqual(stats["next_resume_hint"], "30")
+        self.assertTrue(save_calls)
+        self.assertEqual(
+            fetched_cache["30"].get("_deferred_reason"),
+            "time_budget_deferred",
+        )
+        self.assertEqual(
+            fetched_cache["40"].get("_deferred_priority"),
+            "failure_retry",
+        )
+        self.assertEqual([deal["appid"] for deal in deals], ["10", "20"])
+
+        requested_ids.clear()
+        resume_stats = {}
+        resumed_deals, resumed_total = module_get_deals_from_wishlist(
+            ["10", "20", "30", "40"],
+            fetched_cache,
+            "steam-id",
+            min_discount=50,
+            get_json=fake_get_json,
+            sleep_fn=lambda _seconds: None,
+            monotonic_fn=lambda: 0.0,
+            current_time_fn=lambda: now_ts + 60,
+            save_price_cache_fn=lambda _steam_id, _cache: None,
+            fetch_single_fn=lambda _appid, _country, _delay: None,
+            process_app_entry_fn=lambda appid, data: module_process_app_entry(
+                appid, data, parse_release_year_fn=module_parse_release_year
+            ),
+            emit=lambda *_args, **_kwargs: None,
+            warn=lambda text: text,
+            dim=lambda text: text,
+            batch_size=20,
+            max_refresh_candidates_per_run=2,
+            stats_out=resume_stats,
+        )
+
+        self.assertEqual(resumed_total, 2)
+        self.assertEqual(requested_ids, ["30", "40"])
+        self.assertEqual(resume_stats["deferred_by_time_budget"], 0)
+        self.assertEqual(
+            [deal["appid"] for deal in resumed_deals],
+            ["10", "20", "30", "40"],
+        )
+
+    def test_get_deals_from_wishlist_time_budget_defers_remaining_old_deals(
+        self,
+    ) -> None:
+        now_ts = 200000.0
+        fetched_cache = {
+            appid: {
+                "name": f"Game {appid}",
+                "type": "game",
+                "discount_percent": 70,
+                "price_final": "$7",
+                "price_original": "$20",
+                "price_final_raw": 700,
+                "genres": ["action"],
+                "release_year": 2020,
+                "description": "desc",
+                "linux_native": False,
+                "metacritic_score": 80,
+                "metacritic_url": "meta",
+                "categories": [1],
+                "_fetched_at": now_ts - (30 * 3600),
+            }
+            for appid in ("10", "20", "30")
+        }
+        save_calls = []
+        stats = {}
+        monotonic_values = iter([0.0, 2.0])
+
+        def fake_get_json(url, headers=None):
+            ids = url.split("appids=", 1)[1].split("&", 1)[0].split(",")
+            return {
+                appid: {
+                    "success": True,
+                    "data": {
+                        "name": f"Fresh {appid}",
+                        "type": "game",
+                        "price_overview": {
+                            "discount_percent": 80,
+                            "final_formatted": "$4",
+                            "initial_formatted": "$20",
+                            "final": 400,
+                        },
+                        "genres": [{"description": "Action"}],
+                        "release_date": {"coming_soon": False, "date": "2020"},
+                        "short_description": "desc",
+                        "platforms": {"linux": False},
+                        "metacritic": {"score": 80, "url": "meta"},
+                        "categories": [{"id": 1}],
+                    },
+                }
+                for appid in ids
+            }
+
+        deals, total = module_get_deals_from_wishlist(
+            ["10", "20", "30"],
+            fetched_cache,
+            "steam-id",
+            min_discount=50,
+            get_json=fake_get_json,
+            sleep_fn=lambda _seconds: None,
+            monotonic_fn=lambda: next(monotonic_values),
+            current_time_fn=lambda: now_ts,
+            save_price_cache_fn=lambda _steam_id, _cache: save_calls.append("save"),
+            fetch_single_fn=lambda _appid, _country, _delay: None,
+            process_app_entry_fn=lambda appid, data: module_process_app_entry(
+                appid, data, parse_release_year_fn=module_parse_release_year
+            ),
+            emit=lambda *_args, **_kwargs: None,
+            warn=lambda text: text,
+            dim=lambda text: text,
+            batch_size=1,
+            refresh_time_budget_seconds=1.0,
+            stats_out=stats,
+        )
+
+        self.assertEqual(total, 1)
+        self.assertEqual(stats["processed_count"], 1)
+        self.assertEqual(stats["deferred_by_time_budget"], 2)
+        self.assertEqual(stats["next_resume_hint"], "20")
+        self.assertTrue(save_calls)
+        self.assertEqual(fetched_cache["10"].get("name"), "Fresh 10")
+        self.assertEqual(fetched_cache["20"].get("name"), "Game 20")
+        self.assertEqual(
+            fetched_cache["20"].get("_deferred_reason"),
+            "time_budget_deferred",
+        )
+        self.assertEqual({deal["appid"] for deal in deals}, {"10", "20", "30"})
 
     def test_get_deals_from_wishlist_defers_low_priority_after_fallback_budget(
         self,

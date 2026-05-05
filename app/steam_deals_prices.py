@@ -27,6 +27,17 @@ FALLBACK_BUDGET_FAILURE_REASON = "fallback_budget_deferred"
 LOW_PRIORITY_FALLBACK_CANDIDATES = frozenset(
     ("stale_without_old_deal", "failure_retry")
 )
+TIME_BUDGET_DEFERRED_REASON = "time_budget_deferred"
+ENTRY_DEFERRED_AT_KEY = "_deferred_at"
+ENTRY_DEFERRED_REASON_KEY = "_deferred_reason"
+ENTRY_DEFERRED_PRIORITY_KEY = "_deferred_priority"
+ENTRY_NEXT_RETRY_AFTER_KEY = "_next_retry_after"
+REFRESH_CANDIDATE_PRIORITY = {
+    "missing": 0,
+    "stale_with_old_deal": 1,
+    "stale_without_old_deal": 2,
+    "failure_retry": 3,
+}
 
 
 def load_price_cache(
@@ -216,6 +227,16 @@ def _classify_refresh_candidate(
     if appid not in fetched_cache:
         return "missing"
     entry = fetched_cache.get(appid)
+    if (
+        isinstance(entry, dict)
+        and entry.get(ENTRY_DEFERRED_REASON_KEY) == TIME_BUDGET_DEFERRED_REASON
+    ):
+        deferred_priority = entry.get(ENTRY_DEFERRED_PRIORITY_KEY)
+        if (
+            isinstance(deferred_priority, str)
+            and deferred_priority in REFRESH_CANDIDATE_PRIORITY
+        ):
+            return deferred_priority
     if _is_failure_retry_candidate(
         entry,
         now_ts=now_ts,
@@ -267,6 +288,106 @@ def _defer_low_priority_candidates_by_fallback_budget(
         )
         stats_out["fallback_budget_reason"] = reason
     return remaining, deferred_count
+
+
+def _prioritize_refresh_candidates(
+    refresh_ids: list[str] | tuple[str, ...],
+    fetched_cache: dict,
+    *,
+    now_ts: float,
+    min_discount: int,
+    failure_retry_hours: float,
+) -> list[str]:
+    indexed_ids = list(enumerate(refresh_ids))
+    return [
+        appid
+        for _index, appid in sorted(
+            indexed_ids,
+            key=lambda item: (
+                REFRESH_CANDIDATE_PRIORITY.get(
+                    _classify_refresh_candidate(
+                        item[1],
+                        fetched_cache,
+                        now_ts=now_ts,
+                        min_discount=min_discount,
+                        failure_retry_hours=failure_retry_hours,
+                    ),
+                    len(REFRESH_CANDIDATE_PRIORITY),
+                ),
+                item[0],
+            ),
+        )
+    ]
+
+
+def _mark_time_budget_deferred_candidates(
+    deferred_ids: list[str] | tuple[str, ...],
+    fetched_cache: dict,
+    *,
+    now_ts: float,
+    min_discount: int,
+    failure_retry_hours: float,
+    stats_out: dict | None,
+) -> int:
+    if not deferred_ids:
+        return 0
+
+    for appid in deferred_ids:
+        candidate_kind = _classify_refresh_candidate(
+            appid,
+            fetched_cache,
+            now_ts=now_ts,
+            min_discount=min_discount,
+            failure_retry_hours=failure_retry_hours,
+        )
+        previous_entry = fetched_cache.get(appid)
+        entry = dict(previous_entry) if isinstance(previous_entry, dict) else {}
+        entry[ENTRY_DEFERRED_AT_KEY] = now_ts
+        entry[ENTRY_DEFERRED_REASON_KEY] = TIME_BUDGET_DEFERRED_REASON
+        entry[ENTRY_DEFERRED_PRIORITY_KEY] = candidate_kind
+        entry[ENTRY_NEXT_RETRY_AFTER_KEY] = now_ts
+        fetched_cache[appid] = entry
+
+    if isinstance(stats_out, dict):
+        stats_out["deferred_by_time_budget"] = (
+            int(stats_out.get("deferred_by_time_budget", 0) or 0) + len(deferred_ids)
+        )
+        stats_out["time_budget_exhausted"] = True
+        if not stats_out.get("next_resume_hint"):
+            stats_out["next_resume_hint"] = str(deferred_ids[0])
+    return len(deferred_ids)
+
+
+def _apply_refresh_candidate_limit(
+    refresh_ids: list[str],
+    fetched_cache: dict,
+    *,
+    max_refresh_candidates_per_run: int | None,
+    now_ts: float,
+    min_discount: int,
+    failure_retry_hours: float,
+    stats_out: dict | None,
+) -> list[str]:
+    if max_refresh_candidates_per_run is None:
+        return refresh_ids
+    try:
+        candidate_limit = int(max_refresh_candidates_per_run)
+    except (TypeError, ValueError):
+        return refresh_ids
+    if candidate_limit <= 0 or len(refresh_ids) <= candidate_limit:
+        return refresh_ids
+
+    selected = refresh_ids[:candidate_limit]
+    deferred = refresh_ids[candidate_limit:]
+    _mark_time_budget_deferred_candidates(
+        deferred,
+        fetched_cache,
+        now_ts=now_ts,
+        min_discount=min_discount,
+        failure_retry_hours=failure_retry_hours,
+        stats_out=stats_out,
+    )
+    return selected
 
 
 def _should_preserve_old_cache_on_fallback_failure(
@@ -749,10 +870,12 @@ def get_deals_from_wishlist(
     failure_retry_hours: float = DEFAULT_FAILURE_RETRY_HOURS,
     http_400_circuit_breaker_threshold: int = DEFAULT_HTTP_400_CIRCUIT_BREAKER_THRESHOLD,
     individual_fallback_workers: int = DEFAULT_INDIVIDUAL_FALLBACK_WORKERS,
+    max_refresh_candidates_per_run: int | None = None,
+    refresh_time_budget_seconds: float | None = None,
     stats_out: dict | None = None,
 ) -> tuple[list[dict], int]:
     now_ts = float(current_time_fn())
-    to_fetch = (
+    planned_fetch = (
         list(refresh_ids)
         if refresh_ids is not None
         else [
@@ -767,10 +890,30 @@ def get_deals_from_wishlist(
             )
         ]
     )
+    tracking_stats = stats_out if isinstance(stats_out, dict) else {}
+    planned_fetch = _prioritize_refresh_candidates(
+        planned_fetch,
+        fetched_cache,
+        now_ts=now_ts,
+        min_discount=min_discount,
+        failure_retry_hours=failure_retry_hours,
+    )
+    tracking_stats.setdefault("refresh_candidate_count", len(planned_fetch))
+    tracking_stats.setdefault("processed_count", 0)
+    tracking_stats.setdefault("deferred_by_time_budget", 0)
+    tracking_stats.setdefault("time_budget_exhausted", False)
+    tracking_stats.setdefault("next_resume_hint", "")
+    to_fetch = _apply_refresh_candidate_limit(
+        planned_fetch,
+        fetched_cache,
+        max_refresh_candidates_per_run=max_refresh_candidates_per_run,
+        now_ts=now_ts,
+        min_discount=min_discount,
+        failure_retry_hours=failure_retry_hours,
+        stats_out=tracking_stats,
+    )
     total = len(to_fetch)
     delay = rate_limit
-    tracking_stats = stats_out if isinstance(stats_out, dict) else {}
-    tracking_stats.setdefault("refresh_candidate_count", total)
     tracking_stats.setdefault(
         "deferred_failure_count",
         sum(
@@ -804,6 +947,15 @@ def get_deals_from_wishlist(
     )
     tracking_stats.setdefault("null_batch_count", 0)
 
+    if (
+        tracking_stats.get("deferred_by_time_budget")
+        and save_price_cache_fn is not None
+    ):
+        save_price_cache_fn(steam_id, fetched_cache)
+    deferred_before_processing = int(
+        tracking_stats.get("deferred_by_time_budget", 0) or 0
+    )
+
     if total > 0:
         batches = [
             to_fetch[index : index + batch_size]
@@ -826,6 +978,30 @@ def get_deals_from_wishlist(
             individual_fallback_workers
         )
         for batch_index, batch in enumerate(batches):
+            if (
+                refresh_time_budget_seconds is not None
+                and float(refresh_time_budget_seconds) > 0
+                and batch_index > 0
+                and (monotonic_fn() - start) >= float(refresh_time_budget_seconds)
+            ):
+                remaining = [
+                    appid
+                    for pending_batch in batches[batch_index:]
+                    for appid in pending_batch
+                ]
+                deferred_now = _mark_time_budget_deferred_candidates(
+                    remaining,
+                    fetched_cache,
+                    now_ts=float(current_time_fn()),
+                    min_discount=min_discount,
+                    failure_retry_hours=failure_retry_hours,
+                    stats_out=tracking_stats,
+                )
+                fetched_count += deferred_now
+                if save_price_cache_fn is not None:
+                    save_price_cache_fn(steam_id, fetched_cache)
+                break
+
             bar = _build_bar(
                 fetched_count,
                 total,
@@ -971,4 +1147,10 @@ def get_deals_from_wishlist(
 
         _emit(emit, f"\r  {'':70}\r", end="", flush=True)
 
-    return _build_deals(appids, fetched_cache, min_discount), total
+    deferred_during_processing = (
+        int(tracking_stats.get("deferred_by_time_budget", 0) or 0)
+        - deferred_before_processing
+    )
+    processed_total = max(0, total - deferred_during_processing)
+    tracking_stats["processed_count"] = processed_total
+    return _build_deals(appids, fetched_cache, min_discount), processed_total

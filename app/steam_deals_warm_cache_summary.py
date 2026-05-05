@@ -34,6 +34,10 @@ class WarmCacheLogSummary:
     deferred_by_fallback_budget: int = 0
     fallback_budget_reason: str | None = None
     old_cache_used_count: int = 0
+    processed_count: int = 0
+    deferred_by_time_budget: int = 0
+    time_budget_exhausted: bool = False
+    next_resume_hint: str | None = None
     http_400_direct_fallback_count: int = 0
     http_400_direct_fallback_batches: int = 0
     individual_fallback_worker_downgrade_count: int = 0
@@ -64,6 +68,7 @@ COMPARISON_COLUMNS = (
     ("Fallback total", "individual_fallback_count", ""),
     ("Fallback sin datos", "individual_fallback_failed_count", ""),
     ("Budget diferidos", "deferred_by_fallback_budget", ""),
+    ("Refresh diferidos", "deferred_by_time_budget", ""),
 )
 
 HIGH_FALLBACK_THRESHOLD = 20
@@ -227,6 +232,19 @@ def parse_warm_cache_log_text(
             values["old_cache_used_count"] = _parse_int(match.group("old_cache"))
             reason = match.group("reason")
             values["fallback_budget_reason"] = None if reason == "none" else reason
+
+        if match := re.search(
+            r"Refresh budget resumible: processed=(?P<processed>[\d,]+) · "
+            r"deferred=(?P<deferred>[\d,]+) · "
+            r"exhausted=(?P<exhausted>true|false) · "
+            r"next_resume_hint=(?P<hint>\S+)",
+            line,
+        ):
+            values["processed_count"] = _parse_int(match.group("processed"))
+            values["deferred_by_time_budget"] = _parse_int(match.group("deferred"))
+            values["time_budget_exhausted"] = match.group("exhausted") == "true"
+            hint = match.group("hint")
+            values["next_resume_hint"] = None if hint == "none" else hint
 
         if match := re.search(r"(?P<deals>[\d,]+) deals \(≥(?P<discount>\d+)%\)", line):
             values["deals_count"] = _parse_int(match.group("deals"))
@@ -466,6 +484,20 @@ def format_warm_cache_summary(summary: WarmCacheLogSummary) -> str:
             f"deferred={_format_value(summary.deferred_by_fallback_budget)} · "
             f"old_cache_used={_format_value(summary.old_cache_used_count)} · "
             f"reason={reason}"
+        )
+    if (
+        summary.processed_count
+        or summary.deferred_by_time_budget
+        or summary.time_budget_exhausted
+    ):
+        hint = summary.next_resume_hint or "none"
+        exhausted = str(bool(summary.time_budget_exhausted)).lower()
+        lines.append(
+            "- Refresh budget: "
+            f"processed={_format_value(summary.processed_count)} · "
+            f"deferred={_format_value(summary.deferred_by_time_budget)} · "
+            f"exhausted={exhausted} · "
+            f"next_resume_hint={hint}"
         )
     if summary.ttl_jitter_bucket_counts:
         bucket_parts = [

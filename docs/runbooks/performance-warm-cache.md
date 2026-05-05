@@ -70,6 +70,7 @@ python3 steam_deals_warm_cache_summary.py \
 - [ ] `Refresh candidates: X (N nuevos, M stale)`.
 - [ ] `fallos recientes en cooldown`, si aparece.
 - [ ] `Stale-while-revalidate`, si aparece: `stale_used`, `stale_deferred` y buckets de jitter.
+- [ ] `Refresh budget resumible`, si aparece: `processed`, `deferred`, `exhausted` y `next_resume_hint`.
 - [ ] `Batches degradados por HTTP 400`, si aparece.
 - [ ] `Fallback individual aplicado a X juegos en Y tandas`.
 - [ ] `Fallback individual directo por HTTP 400 repetido`, si aparece.
@@ -89,6 +90,7 @@ python3 steam_deals_warm_cache_summary.py \
 | Stale |  |  |  |
 | Fallos en cooldown |  |  |  |
 | Stale usados/diferidos |  |  |  |
+| Refresh budget procesados/diferidos |  |  |  |
 | Batches degradados HTTP 400 |  |  |  |
 | Fallback individual total |  |  |  |
 | Fallback directo HTTP 400 |  |  |  |
@@ -101,6 +103,7 @@ python3 steam_deals_warm_cache_summary.py \
 
 - Si la segunda corrida baja mucho `Refresh candidates`, el cache caliente está funcionando.
 - Si `Stale-while-revalidate` difiere stale no crítico, confirma que `missing` sigue en refresh y que los datos viejos útiles se conservan; no lo trates como error si baja el refresh masivo.
+- Si `Refresh budget resumible` marca `exhausted=true`, conserva el mismo cache y repite warm-cache normal para continuar desde `next_resume_hint`; no fuerces `--no-cache` salvo benchmark explícito.
 - Si `Fallback individual total` sigue alto con cache caliente, revisar primero batch sizing y distribución de fallos/no-data.
 - Si aparece `Fallback individual directo por HTTP 400 repetido`, compara duración y `Batches degradados HTTP 400` contra una corrida previa: debe reducir splits fallidos, aunque el fallback individual siga siendo el costo dominante.
 - Si `Fallback individual total` cubre casi todos los candidatos y los HTTP 400 degradados ya son bajos, prueba una corrida aislada con `STEAM_DEALS_INDIVIDUAL_FALLBACK_WORKERS=4`; si mejora sin `429`, considerar hacerlo preset/configurable.
@@ -130,6 +133,7 @@ python3 steam_deals_warm_cache_summary.py \
 - Nuevos/stale:
 - Fallos recientes en cooldown:
 - Stale-while-revalidate usados/diferidos/jitter:
+- Refresh budget processed/deferred/exhausted/resume:
 - Batches degradados HTTP 400:
 - Fallback individual total:
 - Fallback directo HTTP 400:

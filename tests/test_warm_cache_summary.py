@@ -127,6 +127,24 @@ class WarmCacheSummaryTests(unittest.TestCase):
             output,
         )
 
+    def test_parse_warm_cache_log_text_extracts_refresh_budget_metrics(self) -> None:
+        text = (
+            "Refresh budget resumible: processed=80 · deferred=20 · "
+            "exhausted=true · next_resume_hint=12345\n"
+        )
+
+        summary = parse_warm_cache_log_text(text)
+        output = format_warm_cache_summary(summary)
+
+        self.assertEqual(summary.processed_count, 80)
+        self.assertEqual(summary.deferred_by_time_budget, 20)
+        self.assertEqual(summary.time_budget_exhausted, True)
+        self.assertEqual(summary.next_resume_hint, "12345")
+        self.assertIn(
+            "- Refresh budget: processed=80 · deferred=20 · exhausted=true · next_resume_hint=12345",
+            output,
+        )
+
     def test_parse_warm_cache_log_text_extracts_stale_revalidate_metrics(self) -> None:
         text = (
             "Stale-while-revalidate: stale_used=50 · stale_deferred=50 · "
@@ -175,7 +193,7 @@ class WarmCacheSummaryTests(unittest.TestCase):
 
         self.assertIn("## Warm-cache comparison", output)
         self.assertIn(
-            "| minimal.log | 2.1s (-82.1s) | 0 (-2,204) | 0 (-12) | 0 (sin cambio) | 0 (-3) | 0 (-20) | 0 (-13) | 0 (sin cambio) |",
+            "| minimal.log | 2.1s (-82.1s) | 0 (-2,204) | 0 (-12) | 0 (sin cambio) | 0 (-3) | 0 (-20) | 0 (-13) | 0 (sin cambio) | 0 (sin cambio) |",
             output,
         )
 

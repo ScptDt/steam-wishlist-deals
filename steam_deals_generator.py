@@ -1281,7 +1281,25 @@ def _resolve_positive_int_env(
     return value
 
 
-def resolve_price_fetch_tuning(*, env=None) -> dict[str, int | bool]:
+def _resolve_positive_float_env(
+    name: str,
+    default: float | None,
+    *,
+    env=None,
+    minimum: float = 0.0,
+) -> float | None:
+    source_env = os.environ if env is None else env
+    raw = source_env.get(name)
+    if raw is None or str(raw).strip() == "":
+        return default
+    try:
+        value = float(str(raw).strip())
+    except ValueError:
+        return default
+    return value if value >= minimum else default
+
+
+def resolve_price_fetch_tuning(*, env=None) -> dict[str, int | float | bool | None]:
     batch_size = _resolve_positive_int_env(
         "STEAM_DEALS_PRICE_BATCH_SIZE",
         BATCH_SIZE,
@@ -1301,13 +1319,29 @@ def resolve_price_fetch_tuning(*, env=None) -> dict[str, int | bool]:
         minimum=1,
         maximum=PRICE_INDIVIDUAL_FALLBACK_WORKERS_MAX,
     )
+    max_refresh_candidates_per_run = _resolve_positive_int_env(
+        "STEAM_DEALS_MAX_REFRESH_CANDIDATES_PER_RUN",
+        PRICE_MAX_REFRESH_CANDIDATES_PER_RUN,
+        env=env,
+        minimum=0,
+    )
+    refresh_time_budget_seconds = _resolve_positive_float_env(
+        "STEAM_DEALS_PRICE_REFRESH_TIME_BUDGET_SECONDS",
+        PRICE_REFRESH_TIME_BUDGET_SECONDS,
+        env=env,
+        minimum=0.0,
+    )
     return {
         "batch_size": batch_size,
         "batch_halving_limit": batch_halving_limit,
         "individual_fallback_workers": individual_fallback_workers,
+        "max_refresh_candidates_per_run": max_refresh_candidates_per_run,
+        "refresh_time_budget_seconds": refresh_time_budget_seconds,
         "is_custom": batch_size != BATCH_SIZE
         or batch_halving_limit != PRICE_BATCH_HALVING_LIMIT
-        or individual_fallback_workers != PRICE_INDIVIDUAL_FALLBACK_WORKERS,
+        or individual_fallback_workers != PRICE_INDIVIDUAL_FALLBACK_WORKERS
+        or max_refresh_candidates_per_run != PRICE_MAX_REFRESH_CANDIDATES_PER_RUN
+        or refresh_time_budget_seconds != PRICE_REFRESH_TIME_BUDGET_SECONDS,
     }
 
 
@@ -1763,6 +1797,22 @@ def run_price_cache_stage(
         emit_fn(f"  {_dim(stale_msg)}")
 
     price_tuning = resolve_price_fetch_tuning(env=env)
+    resolved_max_refresh_candidates = price_tuning["max_refresh_candidates_per_run"]
+    resolved_time_budget_seconds = price_tuning["refresh_time_budget_seconds"]
+    max_refresh_candidates_per_run = None
+    if not no_cache and isinstance(resolved_max_refresh_candidates, int):
+        max_refresh_candidates_per_run = (
+            resolved_max_refresh_candidates
+            if resolved_max_refresh_candidates > 0
+            else None
+        )
+    refresh_time_budget_seconds = None
+    if not no_cache and isinstance(resolved_time_budget_seconds, (int, float)):
+        refresh_time_budget_seconds = (
+            float(resolved_time_budget_seconds)
+            if float(resolved_time_budget_seconds) > 0
+            else None
+        )
     if price_tuning["is_custom"]:
         tuning_msg = (
             "Tuning precios activo: "
@@ -1770,6 +1820,24 @@ def run_price_cache_stage(
             f"halving_limit={price_tuning['batch_halving_limit']} · "
             f"fallback_workers={price_tuning['individual_fallback_workers']}"
         )
+        if (
+            price_tuning.get("max_refresh_candidates_per_run")
+            != PRICE_MAX_REFRESH_CANDIDATES_PER_RUN
+            and max_refresh_candidates_per_run is not None
+        ):
+            tuning_msg = (
+                f"{tuning_msg} · "
+                f"max_refresh_candidates={max_refresh_candidates_per_run}"
+            )
+        if (
+            price_tuning.get("refresh_time_budget_seconds")
+            != PRICE_REFRESH_TIME_BUDGET_SECONDS
+            and refresh_time_budget_seconds is not None
+        ):
+            tuning_msg = (
+                f"{tuning_msg} · "
+                f"time_budget_seconds={refresh_time_budget_seconds:g}"
+            )
         emit_fn(
             f"  {_dim(tuning_msg)}"
         )
@@ -1792,6 +1860,10 @@ def run_price_cache_stage(
         "deferred_by_fallback_budget": 0,
         "fallback_budget_reason": "",
         "old_cache_used_count": 0,
+        "processed_count": 0,
+        "deferred_by_time_budget": 0,
+        "time_budget_exhausted": False,
+        "next_resume_hint": "",
         "http_400_direct_fallback_count": 0,
         "http_400_direct_fallback_batches": 0,
         "individual_fallback_worker_count": int(
@@ -1816,6 +1888,8 @@ def run_price_cache_stage(
             batch_size=int(price_tuning["batch_size"]),
             max_batch_halving=int(price_tuning["batch_halving_limit"]),
             individual_fallback_workers=int(price_tuning["individual_fallback_workers"]),
+            max_refresh_candidates_per_run=max_refresh_candidates_per_run,
+            refresh_time_budget_seconds=refresh_time_budget_seconds,
             stats_out=price_fetch_stats,
         )
     except KeyboardInterrupt as exc:
@@ -1897,6 +1971,20 @@ def run_price_cache_stage(
         )
         budget_msg = f"{budget_msg} · reason={fallback_budget_reason}"
         emit_fn(f"  {_dim(budget_msg)}")
+    if (
+        price_fetch_stats["processed_count"]
+        or price_fetch_stats["deferred_by_time_budget"]
+        or price_fetch_stats["time_budget_exhausted"]
+    ):
+        resume_hint = str(price_fetch_stats.get("next_resume_hint") or "none")
+        time_budget_msg = (
+            "Refresh budget resumible: "
+            f"processed={price_fetch_stats['processed_count']:,} · "
+            f"deferred={price_fetch_stats['deferred_by_time_budget']:,} · "
+            f"exhausted={str(bool(price_fetch_stats['time_budget_exhausted'])).lower()} · "
+            f"next_resume_hint={resume_hint}"
+        )
+        emit_fn(f"  {_dim(time_budget_msg)}")
     emit_fn(f"  {build_price_cache_completion_message(deals, min_discount, n_fetched)}")
     return {
         "deals": deals,
@@ -1925,6 +2013,10 @@ def run_price_cache_stage(
         ],
         "fallback_budget_reason": price_fetch_stats["fallback_budget_reason"],
         "old_cache_used_count": price_fetch_stats["old_cache_used_count"],
+        "processed_count": price_fetch_stats["processed_count"],
+        "deferred_by_time_budget": price_fetch_stats["deferred_by_time_budget"],
+        "time_budget_exhausted": price_fetch_stats["time_budget_exhausted"],
+        "next_resume_hint": price_fetch_stats["next_resume_hint"],
         "http_400_direct_fallback_count": price_fetch_stats["http_400_direct_fallback_count"],
         "http_400_direct_fallback_batches": price_fetch_stats["http_400_direct_fallback_batches"],
         "individual_fallback_worker_count": price_fetch_stats["individual_fallback_worker_count"],
@@ -1938,6 +2030,8 @@ def run_price_cache_stage(
         "batch_size": int(price_tuning["batch_size"]),
         "batch_halving_limit": int(price_tuning["batch_halving_limit"]),
         "individual_fallback_workers": int(price_tuning["individual_fallback_workers"]),
+        "max_refresh_candidates_per_run": max_refresh_candidates_per_run,
+        "refresh_time_budget_seconds": refresh_time_budget_seconds,
     }
 
 
@@ -1983,6 +2077,8 @@ PRICE_FAILURE_RETRY_HOURS = 2
 PRICE_TTL_JITTER_HOURS = 6
 PRICE_STALE_GRACE_HOURS = 72
 PRICE_MAX_STALE_REFRESH_PER_RUN = 200
+PRICE_MAX_REFRESH_CANDIDATES_PER_RUN = 400
+PRICE_REFRESH_TIME_BUDGET_SECONDS = 600.0
 
 
 def _fetch_single(appid: str, country: str, delay: float) -> dict | None:
@@ -2025,6 +2121,8 @@ def get_deals_from_wishlist(
     max_batch_halving: int = PRICE_BATCH_HALVING_LIMIT,
     individual_fallback_workers: int = PRICE_INDIVIDUAL_FALLBACK_WORKERS,
     stats_out: dict | None = None,
+    max_refresh_candidates_per_run: int | None = None,
+    refresh_time_budget_seconds: float | None = None,
 ) -> tuple[list[dict], int]:
     if _prices_module is None:
         raise RuntimeError("Prices module is not available")
@@ -2056,6 +2154,8 @@ def get_deals_from_wishlist(
         max_batch_halving=max_batch_halving,
         individual_fallback_workers=individual_fallback_workers,
         failure_retry_hours=PRICE_FAILURE_RETRY_HOURS,
+        max_refresh_candidates_per_run=max_refresh_candidates_per_run,
+        refresh_time_budget_seconds=refresh_time_budget_seconds,
         stats_out=stats_out,
     )
 
