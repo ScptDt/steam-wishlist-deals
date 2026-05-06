@@ -374,18 +374,37 @@ def _html_recommended_collection_item(item: dict) -> str:
 </li>'''
 
 
+def _recommended_collection_item_key(item: dict) -> str:
+    appid = str(item.get("appid") or "").strip()
+    if appid:
+        return f"appid:{appid}"
+    name = str(item.get("name") or "").strip().casefold()
+    return f"name:{name}" if name else ""
+
+
 def _html_recommended_collections(collections: list[dict]) -> str:
     collection_cards = []
+    seen_item_keys: set[str] = set()
     for collection in collections or []:
         items = [item for item in collection.get("items", []) if isinstance(item, dict)]
         if not items:
+            continue
+        visible_items = []
+        for item in items:
+            item_key = _recommended_collection_item_key(item)
+            if item_key and item_key in seen_item_keys:
+                continue
+            visible_items.append(item)
+            if item_key:
+                seen_item_keys.add(item_key)
+        if not visible_items:
             continue
         collection_id = str(collection.get("id") or "collection")
         title = str(collection.get("title") or collection.get("label") or "Colección")
         description = str(
             collection.get("description") or "Juegos agrupados con señales ya calculadas."
         )
-        items_html = "".join(_html_recommended_collection_item(item) for item in items)
+        items_html = "".join(_html_recommended_collection_item(item) for item in visible_items)
         collection_cards.append(f'''<article class="recommended-collection-card" data-recommended-collection="{_html_esc(collection_id)}">
   <h3>{_html_esc(title)}</h3>
   <p>{_html_esc(description)}</p>
@@ -395,7 +414,7 @@ def _html_recommended_collections(collections: list[dict]) -> str:
         return ""
     return f'''<section class="recommended-collections" data-recommended-collections-section>
   <h2>Colecciones recomendadas</h2>
-  <p class="section-desc">Secciones curadas con datos ya calculados del reporte: score, descuento, compatibilidad, reviews y géneros/etiquetas disponibles.</p>
+  <p class="section-desc">Secciones curadas con datos ya calculados del reporte: score, descuento, compatibilidad, reviews y géneros/etiquetas disponibles. Si un juego encaja en varias secciones, se muestra solo en la primera tarjeta para reducir repetición.</p>
   <div class="recommended-collections-grid">{"".join(collection_cards)}</div>
 </section>'''
 

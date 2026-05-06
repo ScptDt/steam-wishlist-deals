@@ -169,6 +169,22 @@ def _dedupe_collection_items(items: list[dict], limit: int) -> list[dict]:
     return deduped
 
 
+def _select_diverse_collection_items(
+    items: list[dict],
+    limit: int,
+    used_appids: set[str],
+) -> tuple[list[dict], set[str]]:
+    candidates = _dedupe_collection_items(items, len(items))
+    preferred = [item for item in candidates if item.get("appid") not in used_appids]
+    selected = preferred[:limit]
+    if len(selected) < min(limit, len(candidates)):
+        selected_appids = {str(item.get("appid")) for item in selected}
+        fallback = [item for item in candidates if item.get("appid") not in selected_appids]
+        selected = [*selected, *fallback[: limit - len(selected)]]
+    next_used = {str(item.get("appid")) for item in selected if item.get("appid")}
+    return selected, used_appids | next_used
+
+
 def _collection_payload(collection_id: str, items: list[dict]) -> dict | None:
     if not items:
         return None
@@ -270,14 +286,24 @@ def build_recommended_collections(
         )
     ]
 
-    collections = [
-        _collection_payload("recommended_for_you", _dedupe_collection_items(recommended, max_items_per_collection)),
-        _collection_payload("best_savings", _dedupe_collection_items(best_savings, max_items_per_collection)),
-        _collection_payload("steam_deck", _dedupe_collection_items(deck_ready, max_items_per_collection)),
-        _collection_payload("acclaimed", _dedupe_collection_items(acclaimed, max_items_per_collection)),
-        _collection_payload("genre_style", _dedupe_collection_items(genre_style, max_items_per_collection)),
+    collection_candidates = [
+        ("recommended_for_you", recommended),
+        ("best_savings", best_savings),
+        ("steam_deck", deck_ready),
+        ("acclaimed", acclaimed),
+        ("genre_style", genre_style),
     ]
-    return [collection for collection in collections if collection is not None]
+    collections: list[dict] = []
+    used_appids: set[str] = set()
+    for collection_id, candidates in collection_candidates:
+        items, used_appids = _select_diverse_collection_items(
+            candidates,
+            max_items_per_collection,
+            used_appids,
+        )
+        if collection := _collection_payload(collection_id, items):
+            collections.append(collection)
+    return collections
 
 
 def _priority_score(priority: int) -> int:

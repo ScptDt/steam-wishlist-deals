@@ -294,15 +294,70 @@ class RecommendedCollectionsTests(unittest.TestCase):
         )
         self.assertEqual(
             [item["appid"] for item in by_id["best_savings"]["items"]],
-            ["a", "b"],
+            ["b", "a"],
         )
         self.assertEqual(
             [item["appid"] for item in by_id["steam_deck"]["items"]],
             ["a", "c"],
         )
         self.assertIn("reviews muy positivas", by_id["recommended_for_you"]["items"][0]["reason"])
-        self.assertIn("90% de descuento", by_id["best_savings"]["items"][0]["reason"])
+        self.assertIn("85% de descuento", by_id["best_savings"]["items"][0]["reason"])
         self.assertIn("Action", by_id["genre_style"]["items"][0]["reason"])
+
+    def test_build_recommended_collections_prefers_cross_collection_diversity(self) -> None:
+        deals = [
+            {
+                "appid": str(index),
+                "name": f"Game {index}",
+                "discount": 90 - index,
+                "price_final": f"${index}",
+                "price_raw": 100 * index,
+                "genres": ["Action"],
+                "metacritic_score": 90,
+            }
+            for index in range(1, 11)
+        ]
+        top_picks = [
+            {
+                "appid": deal["appid"],
+                "name": deal["name"],
+                "score": 100 - index,
+                "deck": 3,
+                "review": {"pct": 92},
+                "score_reasons": ["score alto"],
+            }
+            for index, deal in enumerate(deals, start=1)
+        ]
+
+        collections = build_recommended_collections(
+            deals,
+            top_picks,
+            max_items_per_collection=2,
+        )
+        appids = [item["appid"] for collection in collections for item in collection["items"]]
+
+        self.assertEqual(
+            [collection["id"] for collection in collections],
+            ["recommended_for_you", "best_savings", "steam_deck", "acclaimed", "genre_style"],
+        )
+        self.assertEqual(len(appids), 10)
+        self.assertEqual(len(appids), len(set(appids)))
+        self.assertEqual(
+            [[item["appid"] for item in collection["items"]] for collection in collections],
+            [["1", "2"], ["3", "4"], ["5", "6"], ["7", "8"], ["9", "10"]],
+        )
+
+    def test_build_recommended_collections_falls_back_when_pool_is_small(self) -> None:
+        collections = build_recommended_collections(
+            self._deals_fixture(),
+            self._top_picks_fixture(),
+            max_items_per_collection=2,
+        )
+        appids = [item["appid"] for collection in collections for item in collection["items"]]
+
+        self.assertGreater(len(appids), len(set(appids)))
+        self.assertEqual({"a", "b", "c"}, set(appids))
+        self.assertTrue(all(collection["items"] for collection in collections))
 
     def test_build_recommended_collections_is_bounded_and_deduped_per_collection(self) -> None:
         collections = build_recommended_collections(
@@ -5415,6 +5470,50 @@ class RankTopPicksTests(unittest.TestCase):
         self.assertIn("Score 95.4", html)
         self.assertIn("-90%", html)
         self.assertIn("$10", html)
+
+    def test_generate_html_dedupes_recommended_collection_items_across_cards(self) -> None:
+        html = generate_html(
+            deals=[],
+            backlog_on_sale=[],
+            have_on_sale=[],
+            vanity="gaben",
+            owned={},
+            wishlist_appids=[],
+            min_discount=50,
+            genres=[],
+            recommended_collections=[
+                {
+                    "id": "first",
+                    "title": "Primera colección",
+                    "items": [
+                        {"appid": "10", "name": "Alpha", "reason": "score alto"},
+                        {"appid": "20", "name": "Bravo", "reason": "buen descuento"},
+                    ],
+                },
+                {
+                    "id": "second",
+                    "title": "Segunda colección",
+                    "items": [
+                        {"appid": "10", "name": "Alpha", "reason": "también deck"},
+                        {"appid": "30", "name": "Charlie", "reason": "alternativa visible"},
+                    ],
+                },
+                {
+                    "id": "only_duplicates",
+                    "title": "Solo duplicados",
+                    "items": [
+                        {"appid": "10", "name": "Alpha", "reason": "ya mostrado"},
+                    ],
+                },
+            ],
+        )
+
+        self.assertIn('data-recommended-collection="first"', html)
+        self.assertIn('data-recommended-collection="second"', html)
+        self.assertNotIn('data-recommended-collection="only_duplicates"', html)
+        self.assertEqual(html.count('href="https://store.steampowered.com/app/10/"'), 1)
+        self.assertIn("Charlie", html)
+        self.assertIn("se muestra solo en la primera tarjeta", html)
 
     def test_generate_html_omits_recommended_collections_when_empty(self) -> None:
         html = generate_html(
