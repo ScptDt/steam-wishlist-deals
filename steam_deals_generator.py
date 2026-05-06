@@ -97,12 +97,14 @@ except Exception:
 try:
     from steam_deals_recommendations import (
         build_gift_ideas as _build_gift_ideas_impl,
+        build_recommended_collections as _build_recommended_collections_impl,
         compute_budget_picks as _compute_budget_picks_impl,
         compute_value_score as _compute_value_score_impl,
         rank_top_picks as _rank_top_picks_impl,
     )
 except Exception:
     _build_gift_ideas_impl = None
+    _build_recommended_collections_impl = None
     _compute_budget_picks_impl = None
     _compute_value_score_impl = None
     _rank_top_picks_impl = None
@@ -2675,6 +2677,22 @@ def compute_budget_picks(deals, budget_mxn, top_picks, watchlist_alerts=None):
         raise RuntimeError("Recommendations module is not available")
     return _compute_budget_picks_impl(
         deals, budget_mxn, top_picks, watchlist_alerts=watchlist_alerts
+    )
+
+
+def build_recommended_collections(
+    deals: list[dict],
+    top_picks: list[dict] | None = None,
+    *,
+    max_items_per_collection: int = 4,
+) -> list[dict]:
+    """Build deterministic recommendation collections from existing report data."""
+    if _build_recommended_collections_impl is None:
+        raise RuntimeError("Recommendations module is not available")
+    return _build_recommended_collections_impl(
+        deals,
+        top_picks=top_picks,
+        max_items_per_collection=max_items_per_collection,
     )
 
 

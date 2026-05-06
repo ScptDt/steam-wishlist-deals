@@ -155,6 +155,7 @@ from steam_deals_generator import (
     analyze_trends,
     build_warm_cache_emit,
     build_final_summary as generator_build_final_summary,
+    build_recommended_collections,
     build_smart_alert_counts as generator_build_smart_alert_counts,
     build_gift_ideas,
     compute_budget_picks,
@@ -210,6 +211,117 @@ class ComputeValueScoreTests(unittest.TestCase):
         )
 
         self.assertAlmostEqual(score, 93.8)
+
+
+class RecommendedCollectionsTests(unittest.TestCase):
+    def _deals_fixture(self) -> list[dict]:
+        return [
+            {
+                "appid": "a",
+                "name": "Alpha",
+                "discount": 90,
+                "price_final": "$10",
+                "price_raw": 1000,
+                "genres": ["Action", "Story Rich"],
+                "metacritic_score": 90,
+            },
+            {
+                "appid": "b",
+                "name": "Bravo",
+                "discount": 85,
+                "price_final": "$12",
+                "price_raw": 1200,
+                "genres": ["Strategy"],
+                "metacritic_score": 70,
+            },
+            {
+                "appid": "c",
+                "name": "Charlie",
+                "discount": 55,
+                "price_final": "$8",
+                "price_raw": 800,
+                "genres": ["Action", "Singleplayer"],
+                "metacritic_score": 82,
+            },
+        ]
+
+    def _top_picks_fixture(self) -> list[dict]:
+        return [
+            {
+                "appid": "a",
+                "name": "Alpha",
+                "score": 95.4,
+                "deck": 3,
+                "review": {"pct": 92},
+                "recommendation": "Comprar ahora",
+                "score_reasons": ["reviews muy positivas", "Deck Verified"],
+            },
+            {
+                "appid": "c",
+                "name": "Charlie",
+                "score": 82.0,
+                "deck": 2,
+                "review": {"pct": 88},
+                "recommendation": "Muy buena oferta",
+                "score_reasons": ["reviews sólidas"],
+            },
+            {
+                "appid": "b",
+                "name": "Bravo",
+                "score": 70.0,
+                "deck": 0,
+                "review": {"pct": 74},
+                "recommendation": "Vale la pena",
+                "score_reasons": ["descuento fuerte"],
+            },
+        ]
+
+    def test_build_recommended_collections_groups_existing_report_signals(self) -> None:
+        collections = build_recommended_collections(
+            self._deals_fixture(),
+            self._top_picks_fixture(),
+            max_items_per_collection=2,
+        )
+        by_id = {collection["id"]: collection for collection in collections}
+
+        self.assertEqual(
+            [collection["id"] for collection in collections],
+            ["recommended_for_you", "best_savings", "steam_deck", "acclaimed", "genre_style"],
+        )
+        self.assertEqual(
+            [item["appid"] for item in by_id["recommended_for_you"]["items"]],
+            ["a", "c"],
+        )
+        self.assertEqual(
+            [item["appid"] for item in by_id["best_savings"]["items"]],
+            ["a", "b"],
+        )
+        self.assertEqual(
+            [item["appid"] for item in by_id["steam_deck"]["items"]],
+            ["a", "c"],
+        )
+        self.assertIn("reviews muy positivas", by_id["recommended_for_you"]["items"][0]["reason"])
+        self.assertIn("90% de descuento", by_id["best_savings"]["items"][0]["reason"])
+        self.assertIn("Action", by_id["genre_style"]["items"][0]["reason"])
+
+    def test_build_recommended_collections_is_bounded_and_deduped_per_collection(self) -> None:
+        collections = build_recommended_collections(
+            [*self._deals_fixture(), self._deals_fixture()[0]],
+            self._top_picks_fixture(),
+            max_items_per_collection=1,
+        )
+
+        for collection in collections:
+            appids = [item["appid"] for item in collection["items"]]
+            self.assertEqual(len(appids), 1)
+            self.assertEqual(len(appids), len(set(appids)))
+
+    def test_build_recommended_collections_returns_empty_for_no_candidates(self) -> None:
+        self.assertEqual(build_recommended_collections([], []), [])
+        self.assertEqual(
+            build_recommended_collections(self._deals_fixture(), max_items_per_collection=0),
+            [],
+        )
 
 
 class ConfigTests(unittest.TestCase):

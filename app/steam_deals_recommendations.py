@@ -36,11 +36,248 @@ BUDGET_VARIANTS = (
 )
 
 
+RECOMMENDED_COLLECTION_DEFINITIONS = (
+    {
+        "id": "recommended_for_you",
+        "title": "Recomendado para ti",
+        "label": "Recomendado para ti",
+        "description": "Mezcla señales de score, wishlist y calidad para empezar por lo más prometedor.",
+        "source_signals": ["top_picks", "score_reasons", "score"],
+    },
+    {
+        "id": "best_savings",
+        "title": "Mayor ahorro",
+        "label": "Mayor ahorro",
+        "description": "Ordena ofertas por descuentos fuertes sin recalibrar el score base.",
+        "source_signals": ["discount", "price_raw"],
+    },
+    {
+        "id": "steam_deck",
+        "title": "Steam Deck",
+        "label": "Steam Deck",
+        "description": "Destaca juegos Verified o Playable cuando esa señal está disponible.",
+        "source_signals": ["top_picks.deck", "deck"],
+    },
+    {
+        "id": "acclaimed",
+        "title": "Aclamados",
+        "label": "Aclamados",
+        "description": "Prioriza juegos con reviews o Metacritic fuertes.",
+        "source_signals": ["review", "review_pct", "metacritic_score"],
+    },
+    {
+        "id": "genre_style",
+        "title": "Por género/estilo",
+        "label": "Por género/estilo",
+        "description": "Agrupa ofertas alrededor del género o estilo más repetido en los datos actuales.",
+        "source_signals": ["genres", "tags"],
+    },
+)
+
+
 def build_gift_ideas(friend_set, deals, owned):
     """Find deals that the friend wants but you don't own."""
     owned_set = set(owned.keys())
     matching = [deal for deal in deals if deal["appid"] in friend_set and deal["appid"] not in owned_set]
     return sorted(matching, key=lambda deal: -deal["discount"])
+
+
+def _safe_number(value, default: float = 0.0) -> float:
+    try:
+        return float(value)
+    except (TypeError, ValueError):
+        return default
+
+
+def _collection_appid(item: dict) -> str:
+    return str(item.get("appid") or item.get("steam_appid") or "").strip()
+
+
+def _merge_collection_sources(deals: list[dict], top_picks: list[dict] | None) -> list[dict]:
+    by_appid: dict[str, dict] = {}
+    ordered_appids: list[str] = []
+    for deal in deals or []:
+        appid = _collection_appid(deal)
+        if not appid:
+            continue
+        by_appid[appid] = dict(deal)
+        ordered_appids.append(appid)
+    for pick in top_picks or []:
+        appid = _collection_appid(pick)
+        if not appid:
+            continue
+        by_appid[appid] = {**by_appid.get(appid, {}), **dict(pick)}
+        if appid not in ordered_appids:
+            ordered_appids.append(appid)
+    return [by_appid[appid] for appid in ordered_appids]
+
+
+def _review_pct(item: dict) -> int | None:
+    review = item.get("review")
+    if isinstance(review, dict) and review.get("pct") is not None:
+        return int(_safe_number(review.get("pct")))
+    for key in ("review_pct", "reviews_pct", "positive_review_pct"):
+        if item.get(key) is not None:
+            return int(_safe_number(item.get(key)))
+    return None
+
+
+def _deck_category(item: dict) -> int:
+    for key in ("deck", "deck_cat", "deck_category", "steam_deck"):
+        if item.get(key) is not None:
+            return int(_safe_number(item.get(key)))
+    return 0
+
+
+def _style_terms(item: dict) -> list[str]:
+    terms: list[str] = []
+    for key in ("genres", "tags"):
+        raw = item.get(key)
+        if isinstance(raw, dict):
+            terms.extend(str(term).strip() for term in raw.keys())
+        elif isinstance(raw, list):
+            for value in raw:
+                if isinstance(value, dict):
+                    terms.append(str(value.get("description") or value.get("name") or "").strip())
+                else:
+                    terms.append(str(value).strip())
+    return [term for term in terms if term]
+
+
+def _collection_item(item: dict, reason: str) -> dict:
+    return {
+        "appid": _collection_appid(item),
+        "name": item.get("name") or item.get("steam_name") or "Juego desconocido",
+        "reason": reason,
+        "score": round(_safe_number(item.get("score")), 1) if item.get("score") is not None else None,
+        "discount": int(_safe_number(item.get("discount"))),
+        "price_final": item.get("price_final") or item.get("price") or "",
+    }
+
+
+def _dedupe_collection_items(items: list[dict], limit: int) -> list[dict]:
+    seen: set[str] = set()
+    deduped: list[dict] = []
+    for item in items:
+        appid = item.get("appid")
+        if not appid or appid in seen:
+            continue
+        seen.add(appid)
+        deduped.append(item)
+        if len(deduped) >= limit:
+            break
+    return deduped
+
+
+def _collection_payload(collection_id: str, items: list[dict]) -> dict | None:
+    if not items:
+        return None
+    definition = next(
+        item for item in RECOMMENDED_COLLECTION_DEFINITIONS if item["id"] == collection_id
+    )
+    return {**definition, "items": items}
+
+
+def _sort_by_score_discount_name(items: list[dict]) -> list[dict]:
+    return sorted(
+        items,
+        key=lambda item: (
+            -_safe_number(item.get("score")),
+            -_safe_number(item.get("discount")),
+            str(item.get("name") or ""),
+            _collection_appid(item),
+        ),
+    )
+
+
+def _top_style_term(items: list[dict]) -> str:
+    counts: dict[str, tuple[int, str]] = {}
+    for item in items:
+        for term in _style_terms(item):
+            key = term.lower()
+            count, label = counts.get(key, (0, term))
+            counts[key] = (count + 1, label)
+    if not counts:
+        return ""
+    return sorted(counts.values(), key=lambda value: (-value[0], value[1].lower()))[0][1]
+
+
+def build_recommended_collections(
+    deals: list[dict],
+    top_picks: list[dict] | None = None,
+    *,
+    max_items_per_collection: int = 4,
+) -> list[dict]:
+    """Build deterministic recommendation collections from already available report data."""
+    if max_items_per_collection <= 0:
+        return []
+    sources = _merge_collection_sources(deals, top_picks)
+    if not sources:
+        return []
+
+    recommended = [
+        _collection_item(
+            item,
+            (item.get("score_reasons") or [item.get("recommendation") or "score alto"])[0],
+        )
+        for item in _sort_by_score_discount_name([item for item in sources if item.get("score") is not None])
+    ]
+    best_savings = [
+        _collection_item(item, f"{int(_safe_number(item.get('discount')))}% de descuento")
+        for item in sorted(
+            sources,
+            key=lambda item: (
+                -_safe_number(item.get("discount")),
+                -_safe_number(item.get("score")),
+                str(item.get("name") or ""),
+            ),
+        )
+        if _safe_number(item.get("discount")) > 0
+    ]
+    deck_ready = [
+        _collection_item(
+            item,
+            "Steam Deck Verified" if _deck_category(item) == 3 else "Steam Deck Playable",
+        )
+        for item in sorted(
+            [item for item in sources if _deck_category(item) in {2, 3}],
+            key=lambda item: (-_deck_category(item), -_safe_number(item.get("score")), str(item.get("name") or "")),
+        )
+    ]
+    acclaimed = [
+        _collection_item(
+            item,
+            f"Reviews {review}% positivas" if (review := _review_pct(item)) is not None and review >= 85 else f"Metacritic {int(_safe_number(item.get('metacritic_score')))}",
+        )
+        for item in sorted(
+            [
+                item for item in sources
+                if (_review_pct(item) is not None and _review_pct(item) >= 85)
+                or _safe_number(item.get("metacritic_score")) >= 80
+            ],
+            key=lambda item: (
+                -max(_review_pct(item) or 0, int(_safe_number(item.get("metacritic_score")))),
+                -_safe_number(item.get("score")),
+                str(item.get("name") or ""),
+            ),
+        )
+    ]
+    style_term = _top_style_term(sources)
+    genre_style = [
+        _collection_item(item, f"Coincide con {style_term}, una señal repetida en estas ofertas")
+        for item in _sort_by_score_discount_name(
+            [item for item in sources if style_term and style_term.lower() in {term.lower() for term in _style_terms(item)}]
+        )
+    ]
+
+    collections = [
+        _collection_payload("recommended_for_you", _dedupe_collection_items(recommended, max_items_per_collection)),
+        _collection_payload("best_savings", _dedupe_collection_items(best_savings, max_items_per_collection)),
+        _collection_payload("steam_deck", _dedupe_collection_items(deck_ready, max_items_per_collection)),
+        _collection_payload("acclaimed", _dedupe_collection_items(acclaimed, max_items_per_collection)),
+        _collection_payload("genre_style", _dedupe_collection_items(genre_style, max_items_per_collection)),
+    ]
+    return [collection for collection in collections if collection is not None]
 
 
 def _priority_score(priority: int) -> int:
