@@ -23,6 +23,7 @@ import runpy
 from pathlib import Path
 from urllib.parse import urlencode
 
+from share_payload import decode_share_payload as _decode_share_payload
 from steam_deals_paths import build_persistent_runtime_env
 
 
@@ -300,22 +301,7 @@ def _run_embedded_script(
 
 
 def decode_share_payload(data_encoded: str) -> dict:
-    import base64
-    import json
-
-    normalized = urllib.parse.unquote(str(data_encoded or "").strip()).replace(" ", "+")
-    if not normalized:
-        raise ValueError("share payload vacío")
-    padding = len(normalized) % 4
-    if padding:
-        normalized += "=" * (4 - padding)
-
-    payload = json.loads(base64.b64decode(normalized).decode("utf-8"))
-    if not isinstance(payload, dict):
-        raise ValueError("share payload inválido")
-    if "price_original" not in payload and payload.get("original_price") is not None:
-        payload["price_original"] = payload.get("original_price")
-    return payload
+    return _decode_share_payload(data_encoded)
 
 
 def main() -> None:
@@ -359,9 +345,10 @@ def main() -> None:
                 print(f"    Discount: {game_data.get('discount', 'N/A')}%")
                 if game_data.get("min_hist"):
                     print(f"    Historical Low: {game_data['min_hist']}")
-                print(
-                    f"    URL: https://store.steampowered.com/app/{game_data.get('appid', '')}/"
-                )
+                steam_url = game_data.get("steam_url") or game_data.get("url")
+                if not steam_url:
+                    steam_url = f"https://store.steampowered.com/app/{game_data.get('appid', '')}/"
+                print(f"    URL: {steam_url}")
                 return
             except Exception as e:
                 print(f"Error parsing shared deal: {e}")

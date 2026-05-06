@@ -4,6 +4,8 @@ from datetime import date
 import json
 import re
 
+from share_payload import normalize_share_payload
+
 from .common import html_escape
 
 
@@ -226,19 +228,18 @@ def _build_share_payload(
     discount: int,
     min_hist: str,
 ) -> dict[str, object]:
-    return {
-        "name": name,
-        "steam_name": name,
-        "appid": appid,
-        "price": price,
-        "price_final": price,
-        "price_original": original_price,
-        "original_price": original_price,
-        "discount": discount,
-        "min_hist": min_hist,
-        "min_historical": min_hist,
-        "url": STORE_URL.format(appid=appid),
-    }
+    """Build data-share-game payloads through the shared Share contract."""
+    return normalize_share_payload(
+        {
+            "name": name,
+            "appid": appid,
+            "price": price,
+            "price_original": original_price,
+            "discount": discount,
+            "min_hist": min_hist,
+            "url": STORE_URL.format(appid=appid),
+        }
+    )
 
 
 def _share_payload_attr(payload: dict[str, object]) -> str:
@@ -904,14 +905,14 @@ function formatShareMoney(value) {
 }
 function buildShareGamePayload(game) {
   const source = game && typeof game === 'object' ? game : {};
-  const appid = String(source.appid || '').trim();
+  const appid = String(source.appid || source.steam_appid || '').trim();
   if (!appid) return null;
   const name = source.name || source.steam_name || 'Juego desconocido';
   const currentPrice = parseShareMoney(source.price ?? source.price_final);
   const originalPrice = parseShareMoney(source.price_original ?? source.original_price) ?? currentPrice;
   const discount = Number(source.discount || 0) || 0;
-  const minHist = parseShareMoney(source.min_hist ?? source.min_historical);
-  const steamUrl = source.url || ('https://store.steampowered.com/app/' + appid + '/');
+  const minHist = parseShareMoney(source.min_hist ?? source.historical_low ?? source.min_historical);
+  const steamUrl = 'https://store.steampowered.com/app/' + appid + '/';
   const priceLabel = formatShareMoney(currentPrice);
   const originalLabel = formatShareMoney(originalPrice != null ? originalPrice : currentPrice);
   const minHistLabel = formatShareMoney(minHist);
@@ -923,9 +924,11 @@ function buildShareGamePayload(game) {
     displayOriginalPrice: originalPrice != null && currentPrice != null && originalPrice > currentPrice ? (originalLabel + ' MXN') : '',
     displayMinHist: minHistLabel ? (minHistLabel + ' MXN') : '',
     payload: {
+      v: Number(source.v || 1) || 1,
       name,
-      steam_name: name,
+      steam_name: source.steam_name || name,
       appid,
+      steam_appid: appid,
       price: priceLabel || '',
       price_final: priceLabel || '',
       price_original: originalLabel || priceLabel || '',
@@ -933,6 +936,8 @@ function buildShareGamePayload(game) {
       discount,
       min_hist: minHistLabel || '',
       min_historical: minHistLabel || '',
+      historical_low: minHistLabel || '',
+      steam_url: steamUrl,
       url: steamUrl,
     },
   };
@@ -1405,8 +1410,11 @@ def generate_html(
             source_deal = deals_by_appid.get(tp["appid"], {})
             min_hist = historical_lows.get(tp["appid"])
             min_hist_str = f"${min_hist['price']:.0f}" if min_hist else ""
-            original_price = _html_esc(
-                str(tp.get("price_original") or source_deal.get("price_original") or tp.get("price_final") or "")
+            original_price = str(
+                tp.get("price_original")
+                or source_deal.get("price_original")
+                or tp.get("price_final")
+                or ""
             )
             recommendation = _html_esc(tp.get("recommendation", ""))
             recommendation_filter = _html_esc(tp.get("recommendation") or "Sin recomendación")

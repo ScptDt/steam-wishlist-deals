@@ -15,6 +15,16 @@ from pathlib import Path
 from tempfile import TemporaryDirectory
 
 import steam_tools_desktop as desktop_module
+from share_payload import (
+    build_steamtools_share_url,
+    decode_share_payload as decode_contract_share_payload,
+    encode_share_payload,
+    normalize_share_payload,
+)
+from shared.share_payload import (
+    build_steamtools_share_url as build_shared_share_url,
+    normalize_share_payload as normalize_shared_share_payload,
+)
 from steam_tools_desktop import (
     ALLOWED_EMBEDDED_SCRIPTS,
     DesktopClipboardApi,
@@ -41,6 +51,84 @@ from steam_tools_desktop import (
     validate_embedded_script_name,
 )
 from shared_web_infra import stop_process
+
+
+class SharePayloadContractTests(unittest.TestCase):
+    def test_normalizes_legacy_aliases_to_canonical_payload(self) -> None:
+        payload = normalize_share_payload(
+            {
+                "steam_appid": 10,
+                "steam_name": "Alpha",
+                "price": "$10",
+                "original_price": "$20",
+                "discount": "50",
+                "historical_low": "$7",
+                "url": "https://example.invalid/not-used",
+            }
+        )
+
+        self.assertEqual(payload["v"], 1)
+        self.assertEqual(payload["appid"], "10")
+        self.assertEqual(payload["steam_appid"], "10")
+        self.assertEqual(payload["name"], "Alpha")
+        self.assertEqual(payload["price_original"], "$20")
+        self.assertEqual(payload["original_price"], "$20")
+        self.assertEqual(payload["min_hist"], "$7")
+        self.assertEqual(payload["historical_low"], "$7")
+        self.assertEqual(payload["steam_url"], "https://store.steampowered.com/app/10/")
+        self.assertEqual(payload["url"], "https://store.steampowered.com/app/10/")
+
+    def test_encodes_decodes_and_builds_share_url(self) -> None:
+        raw = {
+            "appid": "20",
+            "name": "Niño Bravo",
+            "price": "$15",
+            "price_original": "$30",
+            "discount": 50,
+            "min_hist": "$12",
+        }
+        expected = normalize_share_payload(raw)
+
+        encoded = encode_share_payload(raw)
+        decoded = decode_contract_share_payload(encoded)
+        share_url = build_steamtools_share_url(raw)
+
+        self.assertEqual(decoded, expected)
+        self.assertEqual(share_url, f"steamtools://share?data={encoded}")
+        self.assertEqual(decode_contract_share_payload(share_url), expected)
+
+    def test_decodes_url_encoded_payload_without_padding(self) -> None:
+        encoded = encode_share_payload({"appid": "30", "name": "Charlie"}).rstrip("=")
+        url_encoded = urllib.parse.quote(encoded)
+
+        payload = decode_contract_share_payload(url_encoded)
+
+        self.assertEqual(payload["appid"], "30")
+        self.assertEqual(payload["name"], "Charlie")
+
+    def test_invalid_payloads_return_empty_when_not_strict(self) -> None:
+        list_payload = base64.b64encode(b"[]").decode("ascii")
+
+        self.assertEqual(normalize_share_payload(None), {})
+        self.assertEqual(normalize_share_payload({"appid": "40"}), {})
+        self.assertEqual(decode_contract_share_payload("not-json", strict=False), {})
+        self.assertEqual(decode_contract_share_payload(list_payload, strict=False), {})
+        with self.assertRaises(ValueError):
+            decode_contract_share_payload("not-json")
+        with self.assertRaises(ValueError) as ctx:
+            normalize_share_payload({"appid": "40"}, strict=True)
+        self.assertEqual(str(ctx.exception), "share payload inválido")
+
+    def test_root_module_preserves_shared_contract_compatibility(self) -> None:
+        raw = {
+            "steam_appid": 50,
+            "name": "Delta",
+            "original_price": "$30",
+            "historical_low": "$10",
+        }
+
+        self.assertEqual(normalize_share_payload(raw), normalize_shared_share_payload(raw))
+        self.assertEqual(build_steamtools_share_url(raw), build_shared_share_url(raw))
 
 
 class DecodeSharePayloadTests(unittest.TestCase):
@@ -79,6 +167,64 @@ class DecodeSharePayloadTests(unittest.TestCase):
 
         self.assertEqual(payload["name"], "Bravo")
         self.assertEqual(payload["price_original"], "$30")
+
+    def test_accepts_full_steamtools_share_url(self) -> None:
+        raw = {
+            "steam_appid": "30",
+            "name": "Charlie",
+            "original_price": "$40",
+            "historical_low": "$12",
+        }
+
+        payload = decode_share_payload(build_steamtools_share_url(raw))
+
+        self.assertEqual(payload["appid"], "30")
+        self.assertEqual(payload["price_original"], "$40")
+        self.assertEqual(payload["min_hist"], "$12")
+        self.assertEqual(payload["steam_url"], "https://store.steampowered.com/app/30/")
+
+    def test_main_share_output_uses_contract_fields(self) -> None:
+        share_url = build_steamtools_share_url(
+            {
+                "appid": "40",
+                "name": "Delta",
+                "price": "$8",
+                "price_original": "$16",
+                "discount": 50,
+                "min_hist": "$6",
+            }
+        )
+        stdout = io.StringIO()
+        original_argv = sys.argv[:]
+
+        try:
+            sys.argv = ["desktop", f"--share={share_url}"]
+            with contextlib.redirect_stdout(stdout):
+                desktop_main()
+        finally:
+            sys.argv = original_argv
+
+        output = stdout.getvalue()
+        self.assertIn("Shared Deal: Delta", output)
+        self.assertIn("Price: $8 (was $16)", output)
+        self.assertIn("Historical Low: $6", output)
+        self.assertIn("URL: https://store.steampowered.com/app/40/", output)
+
+    def test_main_share_invalid_payload_reports_safe_error(self) -> None:
+        stdout = io.StringIO()
+        original_argv = sys.argv[:]
+
+        try:
+            sys.argv = ["desktop", "--share=not-json"]
+            with contextlib.redirect_stdout(stdout):
+                desktop_main()
+        finally:
+            sys.argv = original_argv
+
+        output = stdout.getvalue()
+        self.assertIn("Error parsing shared deal: share payload inválido", output)
+        self.assertNotIn("Traceback", output)
+        self.assertNotIn(str(Path.cwd()), output)
 
 
 class DesktopLauncherFallbackTests(unittest.TestCase):

@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import html as html_module
 import json
 import threading
 import time
@@ -24,6 +25,11 @@ from steam_deals_config import (
     save_user_config as module_save_user_config,
 )
 from shared_web_infra import CONFIG_SECRET_ENV_VARS
+from share_payload import (
+    build_steamtools_share_url,
+    decode_share_payload,
+    normalize_share_payload,
+)
 from steam_deals_alerts import build_smart_alert_counts as module_build_smart_alert_counts
 from steam_deals_cache_policy import (
     clear_cache_files as module_clear_cache_files,
@@ -169,6 +175,13 @@ from steam_deals_generator import (
     run_warm_cache_mode,
     rank_top_picks,
 )
+
+
+def _first_share_payload_from_html(html_text: str) -> dict:
+    marker = 'data-share-game="'
+    start = html_text.index(marker) + len(marker)
+    end = html_text.index('"', start)
+    return json.loads(html_module.unescape(html_text[start:end]))
 
 
 class ComputeValueScoreTests(unittest.TestCase):
@@ -5234,6 +5247,24 @@ class RankTopPicksTests(unittest.TestCase):
         self.assertIn("original_price", html)
         self.assertIn("price_original", html)
         self.assertIn("min_historical", html)
+        self.assertIn("steam_appid: appid", html)
+        self.assertIn("historical_low: minHistLabel", html)
+        payload = _first_share_payload_from_html(html)
+        self.assertEqual(payload["appid"], "a")
+        self.assertEqual(payload["steam_appid"], "a")
+        self.assertEqual(payload["price"], "$10")
+        self.assertEqual(payload["price_final"], "$10")
+        self.assertEqual(payload["price_original"], "$20")
+        self.assertEqual(payload["original_price"], "$20")
+        self.assertEqual(payload["min_hist"], "$5")
+        self.assertEqual(payload["min_historical"], "$5")
+        self.assertEqual(payload["historical_low"], "$5")
+        self.assertEqual(payload["steam_url"], "https://store.steampowered.com/app/a/")
+        self.assertEqual(payload["url"], "https://store.steampowered.com/app/a/")
+        self.assertEqual(
+            decode_share_payload(build_steamtools_share_url(payload)),
+            normalize_share_payload(payload),
+        )
 
     def test_generate_share_html_renders_share_buttons_with_normalized_payload(self) -> None:
         html = generate_share_html(
@@ -5265,6 +5296,30 @@ class RankTopPicksTests(unittest.TestCase):
         self.assertIn("data-share-game=", html)
         self.assertIn("original_price", html)
         self.assertIn("min_historical", html)
+        self.assertIn("steam_appid: appid", html)
+        self.assertIn("historical_low: minHistLabel", html)
+        payload = _first_share_payload_from_html(html)
+        self.assertEqual(payload["steam_appid"], "a")
+        self.assertEqual(payload["price_final"], "$10")
+        self.assertEqual(payload["original_price"], "$20")
+        self.assertEqual(payload["historical_low"], "$5")
+        self.assertEqual(
+            payload,
+            normalize_share_payload(
+                {
+                    "appid": "a",
+                    "name": "Alpha",
+                    "price": "$10",
+                    "price_original": "$20",
+                    "discount": 90,
+                    "min_hist": "$5",
+                }
+            ),
+        )
+        self.assertEqual(
+            decode_share_payload(build_steamtools_share_url(payload)),
+            normalize_share_payload(payload),
+        )
 
     def test_generate_html_share_surfaces_include_modal_and_share_actions(self) -> None:
         html = generate_html(
@@ -5309,6 +5364,19 @@ class RankTopPicksTests(unittest.TestCase):
         self.assertIn("data-share-game=", html)
         self.assertIn("bindShareModalInteractions", html)
         self.assertNotIn("Compartir Deal", html)
+        self.assertEqual(
+            _first_share_payload_from_html(html),
+            normalize_share_payload(
+                {
+                    "appid": "a",
+                    "name": "Alpha",
+                    "price": "$10",
+                    "price_original": "$20",
+                    "discount": 90,
+                    "min_hist": "$5",
+                }
+            ),
+        )
 
     def test_generate_share_html_surfaces_include_modal_and_share_actions(self) -> None:
         html = generate_share_html(

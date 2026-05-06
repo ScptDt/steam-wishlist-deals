@@ -2329,11 +2329,11 @@ function formatShareMoney(value) {
 
 function buildShareGamePayload(game, report = null) {
   const source = game && typeof game === 'object' ? game : {};
-  const appid = String(source.appid || '').trim();
+  const appid = String(source.appid || source.steam_appid || '').trim();
   if (!appid) return null;
 
   const reportDeals = Array.isArray(report && report.deals) ? report.deals : [];
-  const fallbackDeal = reportDeals.find((deal) => String((deal && deal.appid) || '') === appid) || {};
+  const fallbackDeal = reportDeals.find((deal) => String((deal && (deal.appid || deal.steam_appid)) || '') === appid) || {};
   const historicalLows = report && typeof report.historical_lows === 'object' ? (report.historical_lows || {}) : {};
   const historicalLow = historicalLows[appid] || null;
 
@@ -2341,7 +2341,7 @@ function buildShareGamePayload(game, report = null) {
   const currentPrice = parseShareMoney(source.price ?? source.price_final ?? fallbackDeal.price ?? fallbackDeal.price_final);
   const originalPrice = parseShareMoney(source.price_original ?? source.original_price ?? fallbackDeal.price_original ?? fallbackDeal.original_price) ?? currentPrice;
   const discount = Number(source.discount ?? fallbackDeal.discount ?? 0) || 0;
-  const minHist = parseShareMoney(source.min_hist ?? source.min_historical ?? (historicalLow && historicalLow.price));
+  const minHist = parseShareMoney(source.min_hist ?? source.historical_low ?? source.min_historical ?? fallbackDeal.min_hist ?? fallbackDeal.historical_low ?? fallbackDeal.min_historical ?? (historicalLow && historicalLow.price));
   const steamUrl = `https://store.steampowered.com/app/${appid}/`;
 
   const priceLabel = formatShareMoney(currentPrice);
@@ -2357,9 +2357,11 @@ function buildShareGamePayload(game, report = null) {
     displayOriginalPrice: originalPrice != null && currentPrice != null && originalPrice > currentPrice ? `${originalLabel} MXN` : '',
     displayMinHist: minHistLabel ? `${minHistLabel} MXN` : '',
     payload: {
+      v: Number(source.v || fallbackDeal.v || 1) || 1,
       name,
-      steam_name: name,
+      steam_name: source.steam_name || fallbackDeal.steam_name || name,
       appid,
+      steam_appid: appid,
       price: priceLabel || '',
       price_final: priceLabel || '',
       price_original: originalLabel || priceLabel || '',
@@ -2367,6 +2369,8 @@ function buildShareGamePayload(game, report = null) {
       discount,
       min_hist: minHistLabel || '',
       min_historical: minHistLabel || '',
+      historical_low: minHistLabel || '',
+      steam_url: steamUrl,
       url: steamUrl,
     },
   };
