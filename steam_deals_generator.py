@@ -2941,8 +2941,11 @@ def generate_share_html(
     deck_compat=None,
     historical_lows=None,
     profile_display_name: str | None = None,
+    recommended_collections: list[dict] | None = None,
 ):
     """Generate a lightweight shareable HTML page with the deals list."""
+    if recommended_collections is None:
+        recommended_collections = build_recommended_collections(deals, top_picks=top_picks)
     if _generate_share_html_renderer is not None:
         return _generate_share_html_renderer(
             deals,
@@ -2954,6 +2957,7 @@ def generate_share_html(
             deck_compat=deck_compat,
             historical_lows=historical_lows,
             profile_display_name=profile_display_name,
+            recommended_collections=recommended_collections,
         )
     if _generate_share_html_fallback_renderer is None:
         raise RuntimeError("Share HTML fallback renderer module is not available")
@@ -2967,6 +2971,7 @@ def generate_share_html(
         deck_compat=deck_compat,
         historical_lows=historical_lows,
         profile_display_name=profile_display_name,
+        recommended_collections=recommended_collections,
     )
 
 
@@ -3644,6 +3649,7 @@ def main():
         deck_compat=deck_data,
         historical_lows=historical_lows,
         profile_display_name=profile_display_name,
+        recommended_collections=recommended_collections,
     )
 
     step("Generando JSON...")

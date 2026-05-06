@@ -5573,6 +5573,92 @@ class RankTopPicksTests(unittest.TestCase):
         self.assertIn("Score = recomendación compuesta para priorizar qué revisar primero.", html)
         self.assertIn("Mínimo histórico en Steam", html)
 
+    def test_generate_share_html_renders_recommended_collections(self) -> None:
+        html = generate_share_html(
+            deals=[],
+            vanity="gaben",
+            min_discount=50,
+            top_picks=[
+                {
+                    "appid": "10",
+                    "name": "Alpha",
+                    "discount": 90,
+                    "price_final": "$10",
+                    "score": 95.4,
+                    "score_reasons": ["reviews muy positivas"],
+                    "deck": 3,
+                    "review": {"pct": 92, "desc": "Very Positive", "total": 100},
+                    "genres": ["Action"],
+                }
+            ],
+        )
+
+        self.assertIn("data-recommended-collections-section", html)
+        self.assertIn("Colecciones recomendadas", html)
+        self.assertIn('data-recommended-collection="recommended_for_you"', html)
+        self.assertIn("Recomendado para ti", html)
+        self.assertIn("reviews muy positivas", html)
+        self.assertIn("Score 95.4", html)
+        self.assertIn("-90%", html)
+        self.assertIn("$10", html)
+        self.assertIn('href="https://store.steampowered.com/app/10/"', html)
+        self.assertIn('class="collection-share"', html)
+
+    def test_generate_share_html_omits_recommended_collections_when_empty(self) -> None:
+        html = generate_share_html(
+            deals=[],
+            vanity="gaben",
+            min_discount=50,
+            top_picks=[
+                {
+                    "appid": "10",
+                    "name": "Alpha",
+                    "discount": 90,
+                    "price_final": "$10",
+                    "score": 95.4,
+                }
+            ],
+            recommended_collections=[],
+        )
+
+        self.assertNotIn("data-recommended-collections-section", html)
+        self.assertNotIn("Colecciones recomendadas", html)
+
+    def test_generate_share_html_escapes_recommended_collection_data(self) -> None:
+        html = generate_share_html(
+            deals=[],
+            vanity="gaben",
+            min_discount=50,
+            recommended_collections=[
+                {
+                    "id": 'bad" onclick="alert(1)',
+                    "title": "<script>alert(1)</script>",
+                    "description": "<img src=x onerror=alert(2)>",
+                    "items": [
+                        {
+                            "appid": '10" onclick="alert(3)',
+                            "name": "<b>Alpha</b>",
+                            "reason": "<script>alert(4)</script>",
+                            "score": "95.4",
+                            "discount": "not-a-number",
+                            "price_final": '" onmouseover="alert(5)',
+                        }
+                    ],
+                }
+            ],
+        )
+
+        self.assertIn("data-recommended-collections-section", html)
+        self.assertIn("&lt;script&gt;alert(1)&lt;/script&gt;", html)
+        self.assertIn("&lt;b&gt;Alpha&lt;/b&gt;", html)
+        self.assertNotIn("<script>alert(1)</script>", html)
+        self.assertNotIn("<script>alert(4)</script>", html)
+        self.assertNotIn("<img src=x", html)
+        self.assertNotIn('data-recommended-collection="bad" onclick=', html)
+        self.assertNotIn('/app/10" onclick=', html)
+        self.assertNotIn("alert(3)", html)
+        self.assertNotIn("data-share-game=", html)
+
     def test_generate_html_share_payload_keeps_aliases_for_renderer_buttons(self) -> None:
         html = generate_html(
             deals=[

@@ -52,6 +52,14 @@ def _render_share_button(payload: dict[str, object]) -> str:
         '&#128279; Compartir</button>'
     )
 
+
+def _safe_int(value: object, default: int = 0) -> int:
+    try:
+        return int(value or default)
+    except (TypeError, ValueError):
+        return default
+
+
 _STYLE = """
 * { box-sizing: border-box; margin: 0; padding: 0; }
 body {
@@ -81,6 +89,21 @@ tr:hover { background: #1a3a5c; }
 .share-card { background:#16202d; border:1px solid #2a475e; border-radius:6px; overflow:hidden; display:flex; flex-direction:column; }
 .share-card-body { padding:.4rem .6rem; }
 .share-card-actions { padding:0 .6rem .6rem; display:flex; justify-content:flex-end; }
+.recommended-collections { margin: 1rem 0 .5rem; }
+.recommended-collections > p { color:#8f98a0; font-size:.78rem; margin:0 0 .55rem; }
+.recommended-collections-grid { display:grid; grid-template-columns:repeat(auto-fill,minmax(220px,1fr)); gap:.5rem; }
+.recommended-collection-card { background:#16202d; border:1px solid #2a475e; border-radius:8px; padding:.65rem; }
+.recommended-collection-card h3 { color:#66c0f4; font-size:.95rem; margin-bottom:.25rem; }
+.recommended-collection-card p { color:#8f98a0; font-size:.76rem; margin-bottom:.45rem; }
+.recommended-collection-card ol { list-style:none; display:flex; flex-direction:column; gap:.45rem; }
+.recommended-collection-item { border-top:1px solid #2a475e; padding-top:.45rem; }
+.collection-item-main { display:flex; justify-content:space-between; gap:.5rem; align-items:flex-start; }
+.collection-item-reason { color:#8f98a0; font-size:.74rem; margin-top:.12rem; }
+.collection-item-meta { display:flex; gap:.35rem; flex-wrap:wrap; justify-content:flex-end; font-size:.72rem; color:#c7d5e0; }
+.collection-discount { color:#6cc644; font-weight:700; }
+.collection-score { color:#f0b232; }
+.collection-price { color:#c7d5e0; }
+.collection-share { display:flex; justify-content:flex-end; margin-top:.35rem; }
 .share-modal {
   display: none;
   position: fixed;
@@ -386,6 +409,88 @@ def _render_top_pick_card(
     )
 
 
+def _render_collection_item(item: dict) -> str:
+    appid = str(item.get("appid") or item.get("steam_appid") or "").strip()
+    name = str(item.get("name") or item.get("steam_name") or "Juego desconocido")
+    reason = str(item.get("reason") or "Recomendado por las señales del reporte.")
+    score = item.get("score")
+    discount = _safe_int(item.get("discount"))
+    price_final = str(item.get("price_final") or item.get("price") or "")
+    name_html = (
+        f'<a href="{STORE_URL.format(appid=appid)}" target="_blank">'
+        f"{html_escape(name)}</a>"
+        if appid.isdigit()
+        else html_escape(name)
+    )
+    score_html = (
+        f'<span class="collection-score">Score {html_escape(str(score))}</span>'
+        if score not in (None, "")
+        else ""
+    )
+    discount_html = (
+        f'<span class="collection-discount">-{discount}%</span>' if discount else ""
+    )
+    price_html = (
+        f'<span class="collection-price">{html_escape(price_final)}</span>'
+        if price_final
+        else ""
+    )
+    meta_html = "".join(part for part in (score_html, discount_html, price_html) if part)
+    share_html = ""
+    if appid.isdigit():
+        share_payload = _build_share_payload(
+            name=name,
+            appid=appid,
+            price=price_final,
+            original_price=str(item.get("price_original") or price_final),
+            discount=discount,
+            min_hist=str(item.get("min_hist") or item.get("historical_low") or ""),
+        )
+        share_html = (
+            f'<div class="collection-share">{_render_share_button(share_payload)}</div>'
+        )
+    item_main = (
+        f'<div><strong>{name_html}</strong>'
+        f'<div class="collection-item-reason">{html_escape(reason)}</div></div>'
+    )
+    return f'''<li class="recommended-collection-item">
+  <div class="collection-item-main">
+    {item_main}
+    <div class="collection-item-meta">{meta_html}</div>
+  </div>
+  {share_html}
+</li>'''
+
+
+def _render_recommended_collections(collections: list[dict]) -> str:
+    collection_cards: list[str] = []
+    for collection in collections or []:
+        if not isinstance(collection, dict):
+            continue
+        items = [item for item in collection.get("items", []) if isinstance(item, dict)]
+        if not items:
+            continue
+        collection_id = str(collection.get("id") or "collection")
+        title = str(collection.get("title") or collection.get("label") or "Colección")
+        description = str(
+            collection.get("description") or "Juegos agrupados con señales ya calculadas."
+        )
+        items_html = "".join(_render_collection_item(item) for item in items)
+        collection_id_html = html_escape(collection_id)
+        collection_cards.append(f'''<article class="recommended-collection-card" data-recommended-collection="{collection_id_html}">
+  <h3>{html_escape(title)}</h3>
+  <p>{html_escape(description)}</p>
+  <ol>{items_html}</ol>
+</article>''')
+    if not collection_cards:
+        return ""
+    return f'''<section class="recommended-collections" data-recommended-collections-section>
+  <h2 style="margin:1rem 0 .35rem">Colecciones recomendadas</h2>
+  <p>Secciones curadas con datos ya calculados del reporte: score, descuento, compatibilidad, reviews y géneros/etiquetas disponibles.</p>
+  <div class="recommended-collections-grid">{"".join(collection_cards)}</div>
+</section>'''
+
+
 def generate_share_html(
     deals,
     vanity,
@@ -396,12 +501,14 @@ def generate_share_html(
     deck_compat=None,
     historical_lows=None,
     profile_display_name: str | None = None,
+    recommended_collections: list[dict] | None = None,
 ):
     """Generate a lightweight shareable HTML page with the deals list."""
     reviews = reviews or {}
     deck_compat = deck_compat or {}
     historical_lows = historical_lows or {}
     top_picks = top_picks or []
+    recommended_collections = recommended_collections or []
     today = date.today().strftime("%Y-%m-%d")
     title = f"Steam Deals — {profile_display_name or vanity}"
     deals_by_appid = {deal["appid"]: deal for deal in deals}
@@ -427,6 +534,8 @@ def generate_share_html(
             f"{pick_cards}</div>"
         )
 
+    collections_html = _render_recommended_collections(recommended_collections)
+
     sale_line = f" — {html_escape(sale_name)}" if sale_name else ""
     return f"""<!DOCTYPE html>
 <html lang="es"><head><meta charset="UTF-8"><meta name="viewport" content="width=device-width,initial-scale=1.0">
@@ -436,6 +545,7 @@ def generate_share_html(
 <h1>&#127918; {html_escape(title)}{sale_line}</h1>
 <div class="meta">{today} | {len(deals)} deals (&ge;{min_discount}%) | Precios en MXN</div>
 {picks_html}
+{collections_html}
 <h2 style="margin:1rem 0 .5rem">Todos los Deals</h2>
 <table><thead><tr><th>%</th><th>Precio</th><th>Reseñas</th><th>Compatibilidad</th><th>Juego</th></tr></thead><tbody>{rows}</tbody></table>
 <div style="margin-top:1.5rem;text-align:center;color:#8f98a0;font-size:.75rem">Generado con Steam Deals Generator</div>
