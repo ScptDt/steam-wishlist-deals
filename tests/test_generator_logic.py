@@ -5345,6 +5345,38 @@ class RankTopPicksTests(unittest.TestCase):
         self.assertIn("bindShareModalInteractions", html)
         self.assertNotIn("Compartir Deal", html)
 
+    def test_generate_share_html_fallback_surfaces_share_actions(self) -> None:
+        original_renderer = generate_share_html.__globals__.get(
+            "_generate_share_html_renderer"
+        )
+        try:
+            generate_share_html.__globals__["_generate_share_html_renderer"] = None
+            html = generate_share_html(
+                deals=[
+                    {
+                        "appid": "a",
+                        "name": "Alpha",
+                        "discount": 90,
+                        "price_final": "$10",
+                        "price_original": "$20",
+                    }
+                ],
+                vanity="gaben",
+                min_discount=50,
+                historical_lows={"a": {"price": 5, "date": "2026-04-20"}},
+            )
+        finally:
+            generate_share_html.__globals__["_generate_share_html_renderer"] = (
+                original_renderer
+            )
+
+        self.assertIn('id="share-modal"', html)
+        self.assertIn("Copiar link steamtools://", html)
+        self.assertIn("data-share-game=", html)
+        self.assertIn("original_price", html)
+        self.assertIn("min_historical", html)
+        self.assertIn("bindShareModalInteractions", html)
+
     def test_generate_md_includes_budget_recommendation_context(self) -> None:
         md = generate_md(
             deals=[],
