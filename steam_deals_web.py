@@ -37,6 +37,7 @@ from steam_deals_paths import (
 )
 from desktop_doctor import apply_desktop_doctor_fixes, build_desktop_doctor_report
 from app.steam_deals_history_dashboard import compare_history_runs, list_history_runs
+from shared.tool_modules import PAYDAY2_TOOL_ID, get_tool_entrypoint
 
 from shared_web_infra import (
     build_missing_assets_html,
@@ -69,9 +70,10 @@ from shared_web_infra import (
     stream_process_as_sse,
 )
 
-SCRIPT_PATH = Path(__file__).resolve().parent / "steam_deals_generator.py"
-PD2_SCRIPT_PATH = Path(__file__).resolve().parent / "payday2_dlc_tracker.py"
 PROJECT_DIR = Path(__file__).resolve().parent
+SCRIPT_PATH = PROJECT_DIR / "steam_deals_generator.py"
+PD2_ENTRYPOINT = get_tool_entrypoint(PAYDAY2_TOOL_ID)
+PD2_SCRIPT_PATH = PROJECT_DIR / PD2_ENTRYPOINT
 CONFIG_FILE = Path.home() / ".config" / "steam_deals.json"
 DEFAULT_PORT = 8080
 WEB_DIR = PROJECT_DIR / "web" / "steam_deals"
@@ -572,7 +574,7 @@ def build_command(config: dict, filters: dict) -> list[str]:
 
 def build_pd2_command(config: dict, filters: dict) -> list[str]:
     if getattr(sys, "frozen", False):
-        cmd = [sys.executable, "--run-script", "payday2_dlc_tracker.py"]
+        cmd = [sys.executable, "--run-script", PD2_ENTRYPOINT]
     else:
         cmd = [sys.executable, str(PD2_SCRIPT_PATH)]
 
