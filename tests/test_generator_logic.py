@@ -5321,6 +5321,63 @@ class RankTopPicksTests(unittest.TestCase):
         self.assertIn("data-top-pick-filter-count", html)
         self.assertIn("No hay Top Picks con esa recomendación.", html)
 
+    def test_generate_html_renders_recommended_collections(self) -> None:
+        html = generate_html(
+            deals=[],
+            backlog_on_sale=[],
+            have_on_sale=[],
+            vanity="gaben",
+            owned={},
+            wishlist_appids=["a"],
+            min_discount=50,
+            genres=[],
+            top_picks=[
+                {
+                    "appid": "a",
+                    "name": "Alpha",
+                    "discount": 90,
+                    "price_final": "$10",
+                    "score": 95.4,
+                    "score_reasons": ["reviews muy positivas"],
+                    "deck": 3,
+                    "review": {"pct": 92, "desc": "Very Positive", "total": 100},
+                    "genres": ["Action"],
+                }
+            ],
+        )
+
+        self.assertIn("data-recommended-collections-section", html)
+        self.assertIn("Colecciones recomendadas", html)
+        self.assertIn('data-recommended-collection="recommended_for_you"', html)
+        self.assertIn("Recomendado para ti", html)
+        self.assertIn("reviews muy positivas", html)
+        self.assertIn("Score 95.4", html)
+        self.assertIn("-90%", html)
+        self.assertIn("$10", html)
+
+    def test_generate_html_omits_recommended_collections_when_empty(self) -> None:
+        html = generate_html(
+            deals=[],
+            backlog_on_sale=[],
+            have_on_sale=[],
+            vanity="gaben",
+            owned={},
+            wishlist_appids=["a"],
+            min_discount=50,
+            genres=[],
+            top_picks=[
+                {
+                    "appid": "a",
+                    "name": "Alpha",
+                    "score": 95.4,
+                }
+            ],
+            recommended_collections=[],
+        )
+
+        self.assertNotIn("data-recommended-collections-section", html)
+        self.assertNotIn("Colecciones recomendadas", html)
+
     def test_generate_html_uses_safe_fallbacks_for_empty_visible_stats(self) -> None:
         html = generate_html(
             deals=[],

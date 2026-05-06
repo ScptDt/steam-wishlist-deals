@@ -2850,7 +2850,10 @@ def generate_html(
     price_history: dict | None = None,
     profile_display_name: str | None = None,
     active_promo_context: dict | None = None,
+    recommended_collections: list[dict] | None = None,
 ) -> str:
+    if recommended_collections is None:
+        recommended_collections = build_recommended_collections(deals, top_picks=top_picks)
     if _generate_html_renderer is not None:
         return _generate_html_renderer(
             deals,
@@ -2878,6 +2881,7 @@ def generate_html(
             budget_result=budget_result,
             compare_data=compare_data,
             gift_ideas=gift_ideas,
+            recommended_collections=recommended_collections,
             local_trends=local_trends,
             price_history=price_history,
             profile_display_name=profile_display_name,
@@ -2913,6 +2917,7 @@ def generate_html(
         budget_result=budget_result,
         compare_data=compare_data,
         gift_ideas=gift_ideas,
+        recommended_collections=recommended_collections,
         local_trends=local_trends,
         price_history=price_history,
         profile_display_name=profile_display_name,
@@ -3549,6 +3554,7 @@ def main():
     watchlist_alerts = engagement_outputs.watchlist_alerts
     budget_result = engagement_outputs.budget_result
     gift_ideas = engagement_outputs.gift_ideas
+    recommended_collections = build_recommended_collections(deals, top_picks=top_picks)
 
     # Generar MD
     step("Generando Markdown...")
@@ -3614,6 +3620,7 @@ def main():
         budget_result=budget_result,
         compare_data=compare_data,
         gift_ideas=gift_ideas,
+        recommended_collections=recommended_collections,
         local_trends=local_trends,
         price_history=price_history,
         profile_display_name=profile_display_name,
@@ -3635,7 +3642,6 @@ def main():
     )
 
     step("Generando JSON...")
-    recommended_collections = build_recommended_collections(deals, top_picks=top_picks)
     json_content = generate_json(
         deals,
         backlog_on_sale,

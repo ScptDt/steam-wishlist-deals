@@ -340,6 +340,63 @@ def _html_shuffle_one_game(candidates: list[dict]) -> str:
 </section>'''
 
 
+def _html_recommended_collection_item(item: dict) -> str:
+    appid = str(item.get("appid") or "").strip()
+    name = str(item.get("name") or "Juego desconocido")
+    reason = str(item.get("reason") or "Recomendado por las señales del reporte.")
+    score = item.get("score")
+    discount = int(item.get("discount") or 0)
+    price_final = str(item.get("price_final") or "")
+    score_html = (
+        f'<span class="collection-score">Score {_html_esc(str(score))}</span>'
+        if score not in (None, "")
+        else ""
+    )
+    discount_html = (
+        f'<span class="collection-discount">-{discount}%</span>' if discount else ""
+    )
+    price_html = (
+        f'<span class="collection-price">{_html_esc(price_final)}</span>'
+        if price_final
+        else ""
+    )
+    meta_html = "".join(part for part in (score_html, discount_html, price_html) if part)
+    name_html = _html_link(name, appid) if appid else _html_esc(name)
+    return f'''<li class="recommended-collection-item">
+  <div class="collection-item-main">
+    <strong>{name_html}</strong>
+    <div class="collection-item-reason">{_html_esc(reason)}</div>
+  </div>
+  <div class="collection-item-meta">{meta_html}</div>
+</li>'''
+
+
+def _html_recommended_collections(collections: list[dict]) -> str:
+    collection_cards = []
+    for collection in collections or []:
+        items = [item for item in collection.get("items", []) if isinstance(item, dict)]
+        if not items:
+            continue
+        collection_id = str(collection.get("id") or "collection")
+        title = str(collection.get("title") or collection.get("label") or "Colección")
+        description = str(
+            collection.get("description") or "Juegos agrupados con señales ya calculadas."
+        )
+        items_html = "".join(_html_recommended_collection_item(item) for item in items)
+        collection_cards.append(f'''<article class="recommended-collection-card" data-recommended-collection="{_html_esc(collection_id)}">
+  <h3>{_html_esc(title)}</h3>
+  <p>{_html_esc(description)}</p>
+  <ol>{items_html}</ol>
+</article>''')
+    if not collection_cards:
+        return ""
+    return f'''<section class="recommended-collections" data-recommended-collections-section>
+  <h2>Colecciones recomendadas</h2>
+  <p class="section-desc">Secciones curadas con datos ya calculados del reporte: score, descuento, compatibilidad, reviews y géneros/etiquetas disponibles.</p>
+  <div class="recommended-collections-grid">{"".join(collection_cards)}</div>
+</section>'''
+
+
 def _html_budget_pick_context(pick: dict) -> str:
     recommendation = _html_esc(pick.get("recommendation", ""))
     reasons = _html_esc(" · ".join(pick.get("score_reasons", [])))
@@ -660,6 +717,23 @@ a.pick-card:hover { border-color: var(--accent-blue); transform: translateY(-2px
 .shuffle-next-btn:focus-visible { outline: 2px solid var(--accent-blue); outline-offset: 2px; }
 .shuffle-counter { color: var(--text-secondary); font-size: .75rem; }
 @media (max-width: 767px) { .shuffle-card { grid-template-columns: 1fr; } .shuffle-actions { align-items: stretch; } }
+.recommended-collections { margin: 0 0 1.5rem; }
+.recommended-collections h2 { font-size: 1.2rem; margin-bottom: .3rem; }
+.recommended-collections-grid { display: grid; grid-template-columns: repeat(auto-fit, minmax(250px, 1fr)); gap: .75rem; }
+.recommended-collection-card { background: var(--bg-card); border: 1px solid var(--border); border-radius: 8px; padding: .85rem; }
+.recommended-collection-card h3 { font-size: .95rem; color: var(--accent-blue); margin-bottom: .25rem; }
+.recommended-collection-card p { color: var(--text-secondary); font-size: .76rem; line-height: 1.4; margin-bottom: .65rem; }
+.recommended-collection-card ol { list-style: none; display: flex; flex-direction: column; gap: .55rem; }
+.recommended-collection-item { display: flex; align-items: flex-start; justify-content: space-between; gap: .65rem; padding-top: .55rem; border-top: 1px solid rgba(102,192,244,.12); }
+.recommended-collection-item:first-child { padding-top: 0; border-top: 0; }
+.collection-item-main { min-width: 0; }
+.collection-item-main strong { display: block; font-size: .82rem; line-height: 1.3; }
+.collection-item-reason { color: var(--text-secondary); font-size: .74rem; line-height: 1.35; margin-top: .2rem; }
+.collection-item-meta { display: flex; flex-direction: column; align-items: flex-end; gap: .18rem; white-space: nowrap; font-size: .73rem; }
+.collection-score { color: var(--accent-blue); font-weight: 700; }
+.collection-discount { color: var(--accent-green); font-weight: 700; }
+.collection-price { color: var(--text-secondary); }
+@media (max-width: 767px) { .recommended-collection-item { flex-direction: column; gap: .3rem; } .collection-item-meta { align-items: flex-start; flex-direction: row; flex-wrap: wrap; } }
 .share-btn-mini { position: absolute; top: .4rem; right: .4rem; background: var(--bg-card); border: 1px solid var(--border); border-radius: 4px; padding: .3rem .5rem; cursor: pointer; font-size: .9rem; opacity: 0.6; transition: opacity .2s; }
 .share-btn-mini:hover { opacity: 1; background: var(--accent-blue); }
 .share-modal { display: none; position: fixed; inset: 0; background: rgba(0,0,0,0.7); z-index: 1000; align-items: center; justify-content: center; }
@@ -1297,6 +1371,7 @@ def generate_html(
     budget_result: dict | None = None,
     compare_data: dict | None = None,
     gift_ideas: list[dict] | None = None,
+    recommended_collections: list[dict] | None = None,
     local_trends: dict[str, dict] | None = None,
     price_history: dict | None = None,
     profile_display_name: str | None = None,
@@ -1324,6 +1399,7 @@ def generate_html(
     deck_compat_data = deck_compat or {}
     current_prices = current_prices or {}
     top_picks = top_picks or []
+    recommended_collections = recommended_collections or []
     achievements_data = achievements_data or {}
     watchlist_alerts = watchlist_alerts or []
     price_history_games = (price_history or {}).get("games", {})
@@ -1416,6 +1492,8 @@ def generate_html(
                 or tp.get("price_final")
                 or ""
             )
+            display_discount = int(tp.get("discount") or source_deal.get("discount") or 0)
+            display_price = str(tp.get("price_final") or source_deal.get("price_final") or "")
             recommendation = _html_esc(tp.get("recommendation", ""))
             recommendation_filter = _html_esc(tp.get("recommendation") or "Sin recomendación")
             why_text = _html_esc(" · ".join(tp.get("score_reasons", [])))
@@ -1427,9 +1505,9 @@ def generate_html(
             share_payload = _build_share_payload(
                 name=tp["name"],
                 appid=tp["appid"],
-                price=str(tp.get("price_final") or ""),
+                price=display_price,
                 original_price=original_price,
-                discount=int(tp.get("discount") or 0),
+                discount=display_discount,
                 min_hist=min_hist_str,
             )
             cards.append(f'''<div class="pick-card {rank_cls}" data-top-pick-card data-recommendation="{recommendation_filter}">
@@ -1439,7 +1517,7 @@ def generate_html(
       <div class="pick-rank">#{idx}</div>
       <div class="pick-score" title="Score = recomendación compuesta para priorizar qué revisar primero.">Score {_html_esc(str(tp["score"]))}</div>
       <div class="pick-name">{_html_esc(tp["name"])}{prio_html}</div>
-      <div class="pick-details"><span class="pick-discount">-{tp["discount"]}%</span><span class="pick-price">{_html_esc(tp["price_final"])}</span></div>
+      <div class="pick-details"><span class="pick-discount">-{display_discount}%</span><span class="pick-price">{_html_esc(display_price)}</span></div>
       <div class="pick-meta">{rev_html} &middot; {mc_html} &middot; {dk_html} &middot; {mp_html}</div>
       {why_html}
     </div>
@@ -1453,6 +1531,8 @@ def generate_html(
   {_html_recommendation_guide()}
   <div class="picks-grid">{"".join(cards)}</div>
 </section>""")
+
+    parts.append(_html_recommended_collections(recommended_collections))
 
     if watchlist_alerts:
         wl_rows = []
