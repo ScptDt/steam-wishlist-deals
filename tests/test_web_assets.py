@@ -224,6 +224,8 @@ class WebAssetsTests(unittest.TestCase):
         self.assertIn('id="btn-force-refresh"', index_html)
         self.assertIn('id="cache-status-card"', index_html)
         self.assertIn("function renderCacheStatus", app_js)
+        self.assertIn("function setRefreshButtonsBusy", app_js)
+        self.assertIn("setRefreshButtonsBusy(true)", app_js)
         self.assertIn("doRefresh({ force: true })", app_js)
         self.assertIn("JSON.stringify(force ? { force: true } : {})", app_js)
         self.assertIn("status.diagnostic", app_js)
@@ -247,6 +249,13 @@ class WebAssetsTests(unittest.TestCase):
         self.assertNotIn("--no-cache", normal_cmd)
         self.assertNotIn("SECRET-KEY", " ".join(cmd))
         self.assertIn("SECRET-KEY", proc_env.values())
+        self.assertEqual(
+            (payday2_web.parse_force_refresh_flag({"force": True}),
+             payday2_web.parse_force_refresh_flag({"force_refresh": "true"}),
+             payday2_web.parse_force_refresh_flag({"force": "false"}),
+             payday2_web.parse_force_refresh_flag({})),
+            (True, True, False, False),
+        )
 
     def test_payday2_budget_uses_importance_value_copy_and_fields(self) -> None:
         index_html = (ROOT / "web" / "payday2" / "index.html").read_text(

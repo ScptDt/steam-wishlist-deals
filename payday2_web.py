@@ -139,6 +139,16 @@ def build_refresh_command_and_env(
     return cmd, build_secret_subprocess_env(config)
 
 
+def parse_force_refresh_flag(body: dict) -> bool:
+    for key in ("force", "force_refresh"):
+        value = body.get(key)
+        if value is True:
+            return True
+        if isinstance(value, str) and value.strip().lower() in {"1", "true", "yes", "on"}:
+            return True
+    return False
+
+
 def _cache_age_payload(age_hours: float, ttl_hours: float) -> dict:
     age = round(float(age_hours), 1) if math.isfinite(float(age_hours)) else None
     return {
@@ -731,7 +741,7 @@ class Handler(BaseHTTPRequestHandler):
         if body is None:
             finish_refresh()
             return
-        force_refresh = bool(body.get("force") or body.get("force_refresh"))
+        force_refresh = parse_force_refresh_flag(body)
 
         cfg = pd2.load_user_config()
         cmd, proc_env = build_refresh_command_and_env(

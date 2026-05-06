@@ -57,6 +57,11 @@ function setButtonBusy(btn, busy) {
   btn.classList.toggle('loading', !!busy);
 }
 
+function setRefreshButtonsBusy(busy) {
+  setButtonBusy($('btn-refresh'), busy);
+  setButtonBusy($('btn-force-refresh'), busy);
+}
+
 function renderRandomMask() {
   const img = $('pd2-mask-img');
   if (!img || PD2_MASKS.length === 0) return;
@@ -427,9 +432,7 @@ function switchTab(name) {
 
 async function doRefresh(options = {}) {
   const force = !!options.force;
-  const btn = $('btn-refresh');
-  const forceBtn = $('btn-force-refresh');
-  setButtonBusy(force ? forceBtn : btn, true);
+  setRefreshButtonsBusy(true);
   showActionStatus(force ? 'Forzando actualización del catálogo PAYDAY 2 con --no-cache...' : 'Actualizando datos de PAYDAY 2... esto puede tardar 1-3 min.', 'loading');
   window._refreshStart = Date.now();
 
@@ -451,7 +454,7 @@ async function doRefresh(options = {}) {
     if (resp.status === 409) {
       appendConsole('Ya hay una actualizacion en curso.', 'warn');
       showActionStatus('Ya hay una actualización en curso.', 'warn');
-      setButtonBusy(force ? forceBtn : btn, false);
+      setRefreshButtonsBusy(false);
       return;
     }
     if (!resp.ok) throw new Error('HTTP ' + resp.status);
@@ -478,7 +481,7 @@ async function doRefresh(options = {}) {
     showActionStatus('No se pudo actualizar PAYDAY 2: ' + e.message, 'error');
   }
 
-  setButtonBusy(force ? forceBtn : btn, false);
+  setRefreshButtonsBusy(false);
   await loadData();
   if (!DATA || !DATA.totalDlcs) {
     location.reload();

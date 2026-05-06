@@ -109,7 +109,7 @@ Genera `PAYDAY2_Plan_de_Compra.md` y `.html` con el reporte completo; si usas `-
 | Flag | Descripción |
 |------|-------------|
 | `--vanity` | Vanity URL, Steam ID, o link de perfil |
-| `--key` | Steam API Key (detecta DLCs propios) |
+| `--key` | Steam API Key (resuelve perfil/juegos base; ownership de DLCs sigue siendo manual) |
 | `--itad-key` | IsThereAnyDeal API Key (mínimos históricos) |
 | `--output` | Directorio de salida |
 | `--no-cache` | Ignorar caché existente |
