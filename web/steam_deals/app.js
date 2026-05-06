@@ -2785,12 +2785,14 @@ function renderLatestReportActions(files = null) {
   return `
     <div class="latest-report-actions" aria-label="Acciones rápidas del último reporte">
       <div class="latest-report-actions-copy">
-        <strong>Acciones del último reporte</strong>
-        <span>Empieza por el HTML interactivo. Usa Share, JSON o la carpeta solo si necesitas compartir, revisar datos o mover archivos.</span>
+        <strong>Siguiente mejor paso</strong>
+        <span>Acciones del último reporte: abre el HTML interactivo para revisar ofertas. Share sirve para compartir; JSON y carpeta quedan como opciones técnicas.</span>
       </div>
       <div class="latest-report-action-row">
         ${htmlAction}
         ${shareAction}
+      </div>
+      <div class="latest-report-action-row latest-report-action-row-secondary" aria-label="Opciones técnicas del último reporte">
         <a class="file-link latest-report-action" href="${latestReportUrl()}" target="_blank" rel="noopener noreferrer">&#123;&#125; ${jsonLabel}</a>
         <button type="button" class="file-link file-link-button latest-report-action" data-latest-action="copy-json-url">&#128203; Copiar URL JSON</button>
         <button type="button" class="file-link file-link-button latest-report-action" data-latest-action="open-folder">&#128193; Carpeta de reportes</button>

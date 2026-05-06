@@ -59,6 +59,8 @@ class WebAssetsTests(unittest.TestCase):
         self.assertIn("findLatestPrimaryHtmlReport", app_js)
         self.assertIn("renderLatestReportActions", app_js)
         self.assertIn("Acciones del último reporte", app_js)
+        self.assertIn("Siguiente mejor paso", app_js)
+        self.assertIn("Opciones técnicas del último reporte", app_js)
         self.assertIn("Abrir reporte interactivo", app_js)
         self.assertIn("Copiar URL JSON", app_js)
         self.assertIn('data-latest-action="open-folder"', app_js)
@@ -67,7 +69,11 @@ class WebAssetsTests(unittest.TestCase):
         self.assertIn("Descargar CSV", app_js)
         self.assertIn("a.setAttribute('download', action.name)", app_js)
         self.assertIn("Los artefactos se muestran por tipo", app_js)
+        self.assertIn('<details class="metrics-guide"', index_html)
+        self.assertIn("Guía rápida opcional", index_html)
         self.assertIn(".latest-report-actions", app_css)
+        self.assertIn(".latest-report-action-row-secondary", app_css)
+        self.assertIn(".metrics-guide-summary-hint", app_css)
         self.assertNotIn("Ver último HTML", index_html)
 
     def test_execution_log_copy_uses_native_bridge_then_browser_clipboard(self) -> None:

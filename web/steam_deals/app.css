@@ -772,6 +772,17 @@ details .details-body .field:last-child {
   flex-wrap: wrap;
   gap: 0.45rem;
 }
+.latest-report-action-row:empty {
+  display: none;
+}
+.latest-report-action-row-secondary {
+  margin-top: 0.45rem;
+  padding-top: 0.55rem;
+  border-top: 1px solid rgba(255,255,255,0.08);
+}
+.latest-report-action-row-secondary .latest-report-action {
+  background: rgba(12, 20, 30, 0.18);
+}
 .latest-report-action-primary {
   background: var(--accent);
   border-color: var(--accent);
@@ -1104,23 +1115,40 @@ details .details-body .field:last-child {
 
 .metrics-guide {
   margin: 0.15rem 0 1rem;
-  padding: 0.85rem 0.95rem;
+  padding: 0;
   border-radius: 8px;
   border: 1px solid var(--card-border);
   background: linear-gradient(180deg, var(--bg2), var(--bg));
 }
 
 .metrics-guide-title {
-  margin-bottom: 0.6rem;
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  justify-content: space-between;
+  gap: 0.45rem;
+  margin: 0;
+  padding: 0.72rem 0.9rem;
   color: var(--accent);
   font-size: 0.82rem;
   font-weight: 700;
+}
+
+.metrics-guide[open] .metrics-guide-title {
+  border-bottom: 1px solid var(--card-border);
+}
+
+.metrics-guide-summary-hint {
+  color: var(--text2);
+  font-size: 0.74rem;
+  font-weight: 500;
 }
 
 .metrics-guide-grid {
   display: grid;
   grid-template-columns: repeat(auto-fit, minmax(210px, 1fr));
   gap: 0.6rem;
+  padding: 0.85rem 0.95rem;
 }
 
 .metrics-guide-item {
