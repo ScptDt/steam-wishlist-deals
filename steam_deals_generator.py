@@ -2757,11 +2757,14 @@ def generate_md(
     budget_result: dict | None = None,
     compare_data: dict | None = None,
     gift_ideas: list[dict] | None = None,
+    recommended_collections: list[dict] | None = None,
     include_frontmatter: bool = False,
     active_promo_context: dict | None = None,
 ) -> str:
     if _generate_md_renderer is None:
         raise RuntimeError("Markdown renderer module is not available")
+    if recommended_collections is None:
+        recommended_collections = build_recommended_collections(deals, top_picks=top_picks)
     return _generate_md_renderer(
         deals,
         backlog_on_sale,
@@ -2793,6 +2796,7 @@ def generate_md(
         budget_result=budget_result,
         compare_data=compare_data,
         gift_ideas=gift_ideas,
+        recommended_collections=recommended_collections,
         include_frontmatter=include_frontmatter,
         active_promo_context=active_promo_context,
         group_by_tier=group_by_tier,
@@ -3588,6 +3592,7 @@ def main():
         budget_result=budget_result,
         compare_data=compare_data,
         gift_ideas=gift_ideas,
+        recommended_collections=recommended_collections,
         family_appids=family_renderer_kwargs.get("family_appids"),
         include_frontmatter=bool(FILTERS.get("md_frontmatter")),
         active_promo_context=active_promo_context,

@@ -5209,6 +5209,67 @@ class RankTopPicksTests(unittest.TestCase):
         self.assertIn("reviews muy positivas", md)
         self.assertIn("Score = recomendación compuesta para priorizar qué revisar primero.", md)
 
+    def test_generate_md_renders_recommended_collections(self) -> None:
+        md = generate_md(
+            deals=[],
+            backlog_on_sale=[],
+            have_on_sale=[],
+            vanity="gaben",
+            owned={},
+            wishlist_appids=["a"],
+            min_discount=50,
+            genres=[],
+            top_picks=[
+                {
+                    "appid": "a",
+                    "name": "Alpha",
+                    "discount": 90,
+                    "price_final": "$10",
+                    "score": 95.4,
+                    "review": {"pct": 92, "desc": "Very Positive", "total": 100},
+                    "deck": 3,
+                    "linux_native": False,
+                    "categories": [2],
+                    "score_reasons": ["reviews muy positivas"],
+                }
+            ],
+        )
+
+        self.assertIn("## 🧠 Colecciones recomendadas", md)
+        self.assertIn("### Recomendado para ti", md)
+        self.assertIn("reviews muy positivas", md)
+        self.assertIn("Score 95.4", md)
+        self.assertIn("-90%", md)
+        self.assertIn("$10", md)
+
+    def test_generate_md_omits_recommended_collections_when_empty(self) -> None:
+        md = generate_md(
+            deals=[],
+            backlog_on_sale=[],
+            have_on_sale=[],
+            vanity="gaben",
+            owned={},
+            wishlist_appids=["a"],
+            min_discount=50,
+            genres=[],
+            top_picks=[
+                {
+                    "appid": "a",
+                    "name": "Alpha",
+                    "discount": 90,
+                    "price_final": "$10",
+                    "score": 95.4,
+                    "review": {"pct": 92, "desc": "Very Positive", "total": 100},
+                    "deck": 3,
+                    "linux_native": False,
+                    "categories": [2],
+                }
+            ],
+            recommended_collections=[],
+        )
+
+        self.assertNotIn("Colecciones recomendadas", md)
+
     def test_generate_md_surfaces_active_promo_context(self) -> None:
         md = generate_md(
             deals=[],

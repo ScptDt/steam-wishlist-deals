@@ -217,6 +217,57 @@ def _build_budget_replacement_lines(selected: list[dict]) -> list[str]:
     ]
 
 
+def _recommended_collection_item_line(item: dict) -> str:
+    appid = str(item.get("appid") or "").strip()
+    name = str(item.get("name") or "Juego desconocido")
+    title = _link(name, appid) if appid else _md_esc(name)
+    reason = str(item.get("reason") or "Recomendado por las señales del reporte.")
+    meta = []
+    if item.get("score") not in (None, ""):
+        meta.append(f"Score {_md_esc(str(item.get('score')))}")
+    discount = int(item.get("discount") or 0)
+    if discount:
+        meta.append(f"-{discount}%")
+    price_final = str(item.get("price_final") or "")
+    if price_final:
+        meta.append(_md_esc(price_final))
+    meta_text = f" ({' · '.join(meta)})" if meta else ""
+    return f"- {title} — {_md_esc(reason)}{meta_text}"
+
+
+def _build_recommended_collection_lines(collections: list[dict]) -> list[str]:
+    sections = []
+    for collection in collections or []:
+        items = [item for item in collection.get("items", []) if isinstance(item, dict)]
+        if not items:
+            continue
+        title = str(collection.get("title") or collection.get("label") or "Colección")
+        description = str(
+            collection.get("description") or "Juegos agrupados con señales ya calculadas."
+        )
+        sections.extend(
+            [
+                f"### {_md_esc(title)}",
+                "",
+                f"> {_md_esc(description)}",
+                "",
+                *[_recommended_collection_item_line(item) for item in items],
+                "",
+            ]
+        )
+    if not sections:
+        return []
+    return [
+        "## 🧠 Colecciones recomendadas",
+        "",
+        "> Secciones curadas con datos ya calculados del reporte: score, descuento, compatibilidad, reviews y géneros/etiquetas disponibles.",
+        "",
+        *sections,
+        "---",
+        "",
+    ]
+
+
 def generate_md(
     deals: list[dict],
     backlog_on_sale: list[dict],
@@ -248,6 +299,7 @@ def generate_md(
     budget_result: dict | None = None,
     compare_data: dict | None = None,
     gift_ideas: list[dict] | None = None,
+    recommended_collections: list[dict] | None = None,
     include_frontmatter: bool = False,
     active_promo_context: dict | None = None,
     *,
@@ -277,6 +329,7 @@ def generate_md(
     active_bundles_data = active_bundles or {}
     current_prices = current_prices or {}
     top_picks = top_picks or []
+    recommended_collections = recommended_collections or []
     watchlist_alerts = watchlist_alerts or []
     comp = comparison or {}
     owned_and_wishlisted = sorted(
@@ -383,6 +436,8 @@ def generate_md(
                     bullet += f" · {reasons}"
                 lines.append(bullet)
         lines += ["", "---", ""]
+
+    lines += _build_recommended_collection_lines(recommended_collections)
 
     if watchlist_alerts:
         lines += [
