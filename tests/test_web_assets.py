@@ -28,6 +28,10 @@ class WebAssetsTests(unittest.TestCase):
             encoding="utf-8"
         )
 
+        self.assertIn('class="card history-card-compact" id="history-card"', index_html)
+        self.assertIn('<details class="history-panel">', index_html)
+        self.assertIn("Comparar ejecuciones anteriores", index_html)
+        self.assertIn("Mantiene filtros y gráficas bajo demanda", index_html)
         self.assertIn('class="row row-spaced history-search-row"', index_html)
         self.assertIn("Buscar en el histórico", index_html)
         self.assertIn("Comparar 2 recientes", index_html)
@@ -40,6 +44,8 @@ class WebAssetsTests(unittest.TestCase):
         self.assertIn("volumen de ofertas por ejecución", app_js)
         self.assertNotIn("Pagina ${historyPage} de ${totalPages}", app_js)
         self.assertNotIn("include_same activo", app_js)
+        self.assertIn(".history-card-compact", app_css)
+        self.assertIn(".history-panel-body", app_css)
         self.assertIn(".history-search-row", app_css)
         self.assertIn(".history-quick-card", app_css)
         self.assertIn("@media (max-width: 640px)", app_css)

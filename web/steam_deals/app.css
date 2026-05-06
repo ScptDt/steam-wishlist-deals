@@ -1134,8 +1134,66 @@ details .details-body .field:last-child {
 }
 
 /* Historical runs MVP */
+.history-card-compact {
+  padding-bottom: 1rem;
+}
+
+.history-card-head {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: flex-start;
+  justify-content: space-between;
+  gap: 0.55rem;
+  margin-bottom: 0.7rem;
+}
+
+.history-card-head h2 {
+  margin-bottom: 0;
+}
+
+.history-card-head-hint {
+  max-width: 320px;
+  color: var(--text2);
+  font-size: 0.76rem;
+  line-height: 1.45;
+  text-align: right;
+}
+
+.history-panel {
+  margin-bottom: 0;
+  border-radius: 8px;
+  border: 1px solid var(--card-border);
+  background: rgba(42, 71, 94, 0.16);
+}
+
+.history-card-summary {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  justify-content: space-between;
+  gap: 0.45rem;
+  padding: 0.72rem 0.85rem;
+  color: var(--accent);
+  font-size: 0.84rem;
+  font-weight: 700;
+}
+
+.history-panel[open] .history-card-summary {
+  border-bottom: 1px solid var(--card-border);
+}
+
+.history-card-summary-hint {
+  color: var(--text2);
+  font-size: 0.74rem;
+  font-weight: 500;
+}
+
+.history-panel-body {
+  padding: 0.8rem 0.85rem 0.9rem;
+}
+
 .history-card-intro {
-  margin: 0.4rem 0 0.85rem;
+  margin: 0;
   color: var(--text2);
   font-size: 0.82rem;
   line-height: 1.5;

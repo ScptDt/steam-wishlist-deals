@@ -390,8 +390,17 @@
     <div id="wl-list" class="wl-list"></div>
   </div>
 
-  <div class="card" id="history-card">
-    <h2>&#128200; Histórico de ejecuciones</h2>
+  <div class="card history-card-compact" id="history-card">
+    <div class="history-card-head">
+      <h2>&#128200; Histórico de ejecuciones</h2>
+      <div class="history-card-head-hint">Opcional: compara runs cuando quieras revisar cambios de precio.</div>
+    </div>
+    <details class="history-panel">
+      <summary class="history-card-summary">
+        <span>Comparar ejecuciones anteriores</span>
+        <span class="history-card-summary-hint">Mantiene filtros y gráficas bajo demanda para no distraer del run principal</span>
+      </summary>
+      <div class="history-panel-body">
     <p class="history-card-intro">Compara ejecuciones para entender qué cambió en la wishlist. Si quieres una lectura rápida, usa el atajo de <strong>Comparar últimas 2</strong> y deja la comparación manual para cuando necesites más control.</p>
     <div class="row">
       <div class="field">
@@ -490,6 +499,8 @@
         <tbody id="history-table-body"></tbody>
       </table>
     </div>
+      </div>
+    </details>
   </div>
 
   </div><!-- /panel-deals -->
