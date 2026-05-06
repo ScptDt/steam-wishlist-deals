@@ -3053,11 +3053,14 @@ def generate_json(
     budget_result=None,
     compare_data=None,
     gift_ideas=None,
+    recommended_collections=None,
     profile_display_name: str | None = None,
     active_promo_context: dict | None = None,
 ) -> str:
     if _generate_json_renderer is None:
         raise RuntimeError("JSON renderer module is not available")
+    if recommended_collections is None:
+        recommended_collections = build_recommended_collections(deals, top_picks=top_picks)
     return _generate_json_renderer(
         deals,
         backlog_on_sale,
@@ -3089,6 +3092,7 @@ def generate_json(
         budget_result=budget_result,
         compare_data=compare_data,
         gift_ideas=gift_ideas,
+        recommended_collections=recommended_collections,
         profile_display_name=profile_display_name,
         active_promo_context=active_promo_context,
     )
@@ -3631,6 +3635,7 @@ def main():
     )
 
     step("Generando JSON...")
+    recommended_collections = build_recommended_collections(deals, top_picks=top_picks)
     json_content = generate_json(
         deals,
         backlog_on_sale,
@@ -3661,6 +3666,7 @@ def main():
         budget_result=budget_result,
         compare_data=compare_data,
         gift_ideas=gift_ideas,
+        recommended_collections=recommended_collections,
         profile_display_name=profile_display_name,
         active_promo_context=active_promo_context,
         **family_renderer_kwargs,

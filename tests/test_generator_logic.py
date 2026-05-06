@@ -3293,6 +3293,103 @@ class StopApiContractTests(unittest.TestCase):
         self.assertEqual(data["comparison"]["new_deals"], ["10"])
         self.assertEqual(data["top_picks"][0]["score"], 95.4)
 
+    def test_generate_json_builds_recommended_collections_from_report_data(self) -> None:
+        payload = generate_json(
+            deals=[
+                {
+                    "appid": "10",
+                    "name": "Portal 2",
+                    "discount": 90,
+                    "price_final": "$5",
+                    "price_raw": 500,
+                    "genres": ["Puzzle", "Action"],
+                    "metacritic_score": 95,
+                },
+                {
+                    "appid": "20",
+                    "name": "Hades",
+                    "discount": 80,
+                    "price_final": "$8",
+                    "price_raw": 800,
+                    "genres": ["Action", "Roguelike"],
+                },
+            ],
+            backlog_on_sale=[],
+            have_on_sale=[],
+            vanity="gaben",
+            owned={},
+            wishlist_appids=["10", "20"],
+            min_discount=50,
+            genres=[],
+            top_picks=[
+                {
+                    "appid": "10",
+                    "name": "Portal 2",
+                    "score": 95.4,
+                    "deck": 3,
+                    "review": {"pct": 96},
+                    "score_reasons": ["reviews muy positivas"],
+                },
+                {
+                    "appid": "20",
+                    "name": "Hades",
+                    "score": 88.0,
+                    "deck": 2,
+                    "review": {"pct": 93},
+                    "score_reasons": ["descuento fuerte"],
+                },
+            ],
+        )
+
+        data = json.loads(payload)
+        collection_ids = [collection["id"] for collection in data["recommended_collections"]]
+
+        self.assertEqual(
+            collection_ids,
+            ["recommended_for_you", "best_savings", "steam_deck", "acclaimed", "genre_style"],
+        )
+        self.assertEqual(data["summary"]["recommended_collections_count"], 5)
+        self.assertEqual(data["recommended_collections"][0]["source_signals"][0], "top_picks")
+        self.assertEqual(data["recommended_collections"][0]["items"][0]["appid"], "10")
+        self.assertIn("reviews muy positivas", data["recommended_collections"][0]["items"][0]["reason"])
+        self.assertIn("Action", data["recommended_collections"][-1]["items"][0]["reason"])
+
+    def test_generate_json_respects_explicit_empty_recommended_collections(self) -> None:
+        payload = generate_json(
+            deals=[{"appid": "10", "name": "Portal 2", "discount": 80}],
+            backlog_on_sale=[],
+            have_on_sale=[],
+            vanity="gaben",
+            owned={},
+            wishlist_appids=["10"],
+            min_discount=50,
+            genres=["puzzle"],
+            top_picks=[{"appid": "10", "name": "Portal 2", "score": 95.4}],
+            recommended_collections=[],
+        )
+
+        data = json.loads(payload)
+
+        self.assertEqual(data["summary"]["recommended_collections_count"], 0)
+        self.assertEqual(data["recommended_collections"], [])
+
+    def test_generate_json_defaults_recommended_collections_to_empty_list(self) -> None:
+        payload = generate_json(
+            deals=[],
+            backlog_on_sale=[],
+            have_on_sale=[],
+            vanity="gaben",
+            owned={},
+            wishlist_appids=[],
+            min_discount=50,
+            genres=[],
+        )
+
+        data = json.loads(payload)
+
+        self.assertEqual(data["summary"]["recommended_collections_count"], 0)
+        self.assertEqual(data["recommended_collections"], [])
+
     def test_generate_json_includes_active_promo_context_when_provided(self) -> None:
         promo_context = {
             "sale_name": "Steam Farming Fest",
