@@ -353,6 +353,10 @@ La bitácora cronológica detallada, evidencia operativa y entradas antiguas viv
 - [ ] [Track] Recomendaciones personalizadas por actividad y biblioteca. [Estado: propuesto. Falta: sugerir juegos similares y mejores deals según últimos juegos jugados, más jugados, horas, géneros y relaciones marcadas (`me gusta` / `similar a`). Evidencia: ranking personalizado con razones visibles.]
   - Incluir análisis de biblioteca: tiempo total (HLTB), distribución por género y precio promedio.
   - Reutilizar la lógica social cuando aplique, pero adaptada al propio perfil del usuario.
+- [ ] [Track] Colecciones inteligentes tipo “Recomendado para ti” inspiradas en secciones estilo Fanatical. [Estado: propuesto desde auditoría de referencias visuales 2026-05-06. Falta: definir secciones curadas con datos propios de Steam Tools, por ejemplo `Recomendado para ti`, `Mayor ahorro`, `Steam Deck`, `Aclamados`, `Favoritos de comunidad`, `Por género/estilo` y `Story rich/Singleplayer`, explicando por qué aparece cada juego. Evidencia esperada: colecciones determinísticas en reporte/UI con razones visibles y sin depender de Fanatical real.]
+  - Las Quick Wins de este track deben ser habilitadores rápidos del track, no tracks paralelos: inventario de señales existentes, contrato/fixtures de colecciones, helper puro inicial o un primer render acotado.
+  - No integrar Fanatical API ni multi-store en este track inicial; Fanatical queda como referencia de UX/agrupación. La integración real con stores vive en `Expansion de Datos`.
+- [ ] [Quick Win] Definir el contrato inicial de colecciones recomendadas usando solo datos ya existentes del reporte. [Estado: propuesto como habilitador del track de colecciones inteligentes. Falta: mapear señales disponibles (`score`, descuento, reviews, tags/géneros, Steam Deck, top picks, histórico local, watchlist/budget cuando aplique) a 4-6 secciones iniciales y fixtures esperadas, sin cambiar scoring base ni hacer red nueva. Evidencia: mini-fixture o tests puros que demuestren agrupación determinística y razones legibles.]
 
 ### Producto / Plataforma
 
