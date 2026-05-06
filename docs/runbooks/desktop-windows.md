@@ -82,11 +82,14 @@ Dentro de la UI desktop:
 
 1. correr **Doctor desktop**
 2. correr **Probar config**
-3. ejecutar un run pequeño con `https://steamcommunity.com/id/joseluis12351` si solo buscas baseline rápido
-4. durante un run suficientemente largo, probar **Detener** una vez solo si ese comportamiento cambió o falta evidencia de la build actual
-5. verificar `.md`, `.html`, `.csv` y, si aplican, `.json`/`share.html`
-6. probar **Copiar log** o confirmar fallback accionable sin crash
-7. cerrar la app
+3. ejecutar Steam Deals con ambos perfiles según objetivo:
+   - baseline rápido: `https://steamcommunity.com/id/joseluis12351` para validar flujo corto, Share, colecciones recomendadas y outputs básicos
+   - validación larga/stress: `BG00G` solo si el objetivo explícito es performance, stress de outputs, Shuffle con variedad o desktop/binario largo
+4. no usar `BG00G` como quick smoke ni con cold-cache accidental; si se usa, aislar cache/logs y registrarlo como medición larga
+5. durante un run suficientemente largo, probar **Detener** una vez solo si ese comportamiento cambió o falta evidencia de la build actual
+6. verificar `.md`, `.html`, `.csv` y, si aplican, `.json`/`share.html`
+7. probar **Copiar log** o confirmar fallback accionable sin crash
+8. cerrar la app
 
 ## 7. Fallback web (mitigacion)
 
@@ -123,6 +126,7 @@ python .\steam_deals_web.py --no-open --port 8080
 - apertura local OK/FAIL
 - resultado del smoke script (`SMOKE_OK` / `SMOKE_FAIL`)
 - outputs `.md`, `.html`, `.csv`
+- perfil usado: `joseluis12351` para smoke rápido y/o `BG00G` para validación larga/stress explícita
 - **Copiar log** OK/FAIL/no probado si se valida la UX desktop
 - cierre limpio
 - notas de WebView2 o fallback browser
