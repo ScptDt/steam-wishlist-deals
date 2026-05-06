@@ -2139,10 +2139,14 @@ const GENERATED_FILE_ACTION_ORDER = Object.freeze(
   }, {})
 );
 
+function generatedFileHref(filePath) {
+  return '/files/' + encodeURIComponent(getGeneratedFileName(filePath));
+}
+
 function buildGeneratedFileAction(filePath) {
   const name = getGeneratedFileName(filePath);
   const ext = getGeneratedFileExtension(name);
-  const href = '/files/' + encodeURIComponent(name);
+  const href = generatedFileHref(name);
   if (ext === '.html' && isShareHtmlFile(name)) {
     return {
       name,
@@ -2281,6 +2285,17 @@ function showFiles(files) {
     fileLinks.classList.remove('hidden');
   } else {
     fileLinks.classList.add('hidden');
+  }
+}
+
+async function fetchGeneratedFilesList() {
+  try {
+    const resp = await fetch('/api/files');
+    if (!resp.ok) return null;
+    const files = await resp.json();
+    return Array.isArray(files) ? files : null;
+  } catch (e) {
+    return null;
   }
 }
 
@@ -2743,7 +2758,59 @@ function hideLatestReportCard() {
   el.innerHTML = '';
 }
 
-function renderLatestReportCard(report) {
+function findLatestShareHtmlReport(files) {
+  return (Array.isArray(files) ? files : [])
+    .map(getGeneratedFileName)
+    .find(name => isShareHtmlFile(name));
+}
+
+function findLatestJsonReport(files) {
+  return (Array.isArray(files) ? files : [])
+    .map(getGeneratedFileName)
+    .find(name => getGeneratedFileExtension(name) === '.json');
+}
+
+function renderLatestReportActions(files = null) {
+  const htmlName = findLatestPrimaryHtmlReport(files);
+  const shareName = findLatestShareHtmlReport(files);
+  const jsonName = findLatestJsonReport(files);
+  const htmlAction = htmlName ? `
+    <a class="file-link latest-report-action latest-report-action-primary" href="${generatedFileHref(htmlName)}" target="_blank" rel="noopener noreferrer">&#128202; Abrir reporte interactivo</a>
+  ` : '';
+  const shareAction = shareName ? `
+    <a class="file-link latest-report-action" href="${generatedFileHref(shareName)}" target="_blank" rel="noopener noreferrer">&#128279; Abrir Share HTML</a>
+  ` : '';
+  const jsonLabel = jsonName ? 'Abrir JSON técnico' : 'Abrir JSON técnico';
+
+  return `
+    <div class="latest-report-actions" aria-label="Acciones rápidas del último reporte">
+      <div class="latest-report-actions-copy">
+        <strong>Acciones del último reporte</strong>
+        <span>Empieza por el HTML interactivo. Usa Share, JSON o la carpeta solo si necesitas compartir, revisar datos o mover archivos.</span>
+      </div>
+      <div class="latest-report-action-row">
+        ${htmlAction}
+        ${shareAction}
+        <a class="file-link latest-report-action" href="${latestReportUrl()}" target="_blank" rel="noopener noreferrer">&#123;&#125; ${jsonLabel}</a>
+        <button type="button" class="file-link file-link-button latest-report-action" data-latest-action="copy-json-url">&#128203; Copiar URL JSON</button>
+        <button type="button" class="file-link file-link-button latest-report-action" data-latest-action="open-folder">&#128193; Carpeta de reportes</button>
+      </div>
+    </div>
+  `;
+}
+
+function bindLatestReportQuickActions() {
+  const el = latestReportCardEl();
+  if (!el) return;
+  el.querySelectorAll('[data-latest-action="copy-json-url"]').forEach((btn) => {
+    btn.addEventListener('click', () => copyLatestReportUrl(btn));
+  });
+  el.querySelectorAll('[data-latest-action="open-folder"]').forEach((btn) => {
+    btn.addEventListener('click', () => openOutputFolderUI(btn));
+  });
+}
+
+function renderLatestReportCard(report, files = null) {
   if (report) {
     latestBudgetUiState = createLatestBudgetUiState(report);
   }
@@ -2782,10 +2849,12 @@ function renderLatestReportCard(report) {
         </div>
       `).join('')}
     </div>
+    ${renderLatestReportActions(files)}
     ${renderLatestShareTopPicks(activeReport)}
     ${renderLatestBudgetPanel(activeReport)}
   `;
   el.classList.remove('hidden');
+  bindLatestReportQuickActions();
   bindLatestShareActions();
   bindLatestBudgetActions();
 }
@@ -2796,12 +2865,17 @@ async function syncLatestReportCard(files = null) {
     return;
   }
   try {
+    const reportFiles = Array.isArray(files) ? files : await fetchGeneratedFilesList();
+    if (Array.isArray(reportFiles) && !hasJsonArtifact(reportFiles)) {
+      hideLatestReportCard();
+      return;
+    }
     const resp = await fetch('/api/latest-report');
     if (!resp.ok) {
       hideLatestReportCard();
       return;
     }
-    renderLatestReportCard(await resp.json());
+    renderLatestReportCard(await resp.json(), reportFiles);
   } catch (e) {
     hideLatestReportCard();
   }
@@ -2829,7 +2903,7 @@ function hasJsonArtifact(files) {
 function showLatestReportEmptyState(message) {
   const el = latestReportEmptyStateEl();
   if (!el) return;
-  el.innerHTML = `<strong>Sin reporte JSON todavia.</strong><span>${message}</span>`;
+  el.innerHTML = `<strong>Sin reporte listo todavía.</strong><span>${message}</span>`;
   el.classList.remove('hidden');
 }
 
@@ -2846,7 +2920,7 @@ async function syncLatestReportEmptyState(files = null) {
     return;
   }
   if (Array.isArray(files)) {
-    showLatestReportEmptyState('Corre Steam Deals una vez en este directorio para habilitar Abrir/Copiar JSON.');
+    showLatestReportEmptyState('Corre Steam Deals una vez en este directorio para habilitar el resumen, las descargas y las acciones rápidas.');
     return;
   }
   try {
@@ -2857,7 +2931,7 @@ async function syncLatestReportEmptyState(files = null) {
       return;
     }
   } catch (e) {}
-  showLatestReportEmptyState('Corre Steam Deals una vez en este directorio para habilitar Abrir/Copiar JSON.');
+  showLatestReportEmptyState('Corre Steam Deals una vez en este directorio para habilitar el resumen, las descargas y las acciones rápidas.');
 }
 
 function isShareHtmlFile(filePath) {

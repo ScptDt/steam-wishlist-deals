@@ -48,18 +48,27 @@ class WebAssetsTests(unittest.TestCase):
         index_html = (ROOT / "web" / "steam_deals" / "index.html").read_text(
             encoding="utf-8"
         )
+        app_css = (ROOT / "web" / "steam_deals" / "app.css").read_text(
+            encoding="utf-8"
+        )
         app_js = (ROOT / "web" / "steam_deals" / "app.js").read_text(
             encoding="utf-8"
         )
 
-        self.assertIn("Ver último HTML", index_html)
+        self.assertIn("Abrir último reporte", index_html)
         self.assertIn("findLatestPrimaryHtmlReport", app_js)
+        self.assertIn("renderLatestReportActions", app_js)
+        self.assertIn("Acciones del último reporte", app_js)
         self.assertIn("Abrir reporte interactivo", app_js)
+        self.assertIn("Copiar URL JSON", app_js)
+        self.assertIn('data-latest-action="open-folder"', app_js)
         self.assertIn("Descargar Markdown", app_js)
         self.assertIn("Descargar JSON", app_js)
         self.assertIn("Descargar CSV", app_js)
         self.assertIn("a.setAttribute('download', action.name)", app_js)
         self.assertIn("Los artefactos se muestran por tipo", app_js)
+        self.assertIn(".latest-report-actions", app_css)
+        self.assertNotIn("Ver último HTML", index_html)
 
     def test_execution_log_copy_uses_native_bridge_then_browser_clipboard(self) -> None:
         app_js = (ROOT / "web" / "steam_deals" / "app.js").read_text(
@@ -158,7 +167,7 @@ class WebAssetsTests(unittest.TestCase):
 
         self.assertIn('placeholder="output/"', index_html)
         self.assertIn("Si lo dejas vacío, los reportes se guardan", index_html)
-        self.assertIn("Ver carpeta", index_html)
+        self.assertIn("Carpeta de reportes", index_html)
         self.assertIn("Generar reportes", index_html)
         self.assertIn("/api/open-output-folder", app_js)
         self.assertIn("openOutputFolderUI", app_js)
