@@ -345,7 +345,10 @@ def _html_recommended_collection_item(item: dict) -> str:
     name = str(item.get("name") or "Juego desconocido")
     reason = str(item.get("reason") or "Recomendado por las señales del reporte.")
     score = item.get("score")
-    discount = int(item.get("discount") or 0)
+    try:
+        discount = int(item.get("discount") or 0)
+    except (TypeError, ValueError):
+        discount = 0
     price_final = str(item.get("price_final") or "")
     score_html = (
         f'<span class="collection-score">Score {_html_esc(str(score))}</span>'
@@ -361,7 +364,7 @@ def _html_recommended_collection_item(item: dict) -> str:
         else ""
     )
     meta_html = "".join(part for part in (score_html, discount_html, price_html) if part)
-    name_html = _html_link(name, appid) if appid else _html_esc(name)
+    name_html = _html_link(name, appid) if appid.isdigit() else _html_esc(name)
     return f'''<li class="recommended-collection-item">
   <div class="collection-item-main">
     <strong>{name_html}</strong>

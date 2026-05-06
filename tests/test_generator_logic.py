@@ -5378,6 +5378,44 @@ class RankTopPicksTests(unittest.TestCase):
         self.assertNotIn("data-recommended-collections-section", html)
         self.assertNotIn("Colecciones recomendadas", html)
 
+    def test_generate_html_escapes_recommended_collection_data(self) -> None:
+        html = generate_html(
+            deals=[],
+            backlog_on_sale=[],
+            have_on_sale=[],
+            vanity="gaben",
+            owned={},
+            wishlist_appids=[],
+            min_discount=50,
+            genres=[],
+            recommended_collections=[
+                {
+                    "id": 'bad" onclick="alert(1)',
+                    "title": "<script>alert(1)</script>",
+                    "description": "<img src=x onerror=alert(2)>",
+                    "items": [
+                        {
+                            "appid": '10" onclick="alert(3)',
+                            "name": "<b>Alpha</b>",
+                            "reason": "<script>alert(4)</script>",
+                            "score": "95.4",
+                            "discount": "not-a-number",
+                            "price_final": '" onmouseover="alert(5)',
+                        }
+                    ],
+                }
+            ],
+        )
+
+        self.assertIn("data-recommended-collections-section", html)
+        self.assertIn("&lt;script&gt;alert(1)&lt;/script&gt;", html)
+        self.assertIn("&lt;b&gt;Alpha&lt;/b&gt;", html)
+        self.assertNotIn("<script>alert(1)</script>", html)
+        self.assertNotIn("<script>alert(4)</script>", html)
+        self.assertNotIn("<img src=x", html)
+        self.assertNotIn("/app/10\" onclick=", html)
+        self.assertNotIn("alert(3)", html)
+
     def test_generate_html_uses_safe_fallbacks_for_empty_visible_stats(self) -> None:
         html = generate_html(
             deals=[],
