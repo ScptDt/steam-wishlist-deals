@@ -539,32 +539,38 @@
     <button class="btn btn-ghost" id="btn-open-last" title="Abre el último reporte interactivo; Markdown, JSON y CSV quedan disponibles abajo">&#128194; Abrir último reporte</button>
     <button class="btn btn-ghost" id="btn-open-output-folder" title="Abre o crea la carpeta donde se guardan los reportes">&#128193; Carpeta de reportes</button>
   </div>
-  <div class="actions-help" aria-label="Ayuda rápida para botones utilitarios">
-    <div class="actions-help-item">
-      <strong>Probar config</strong>
-      <span>Revisa tu perfil, rutas y claves antes de empezar un run completo.</span>
+  <details class="actions-help-panel" aria-label="Ayuda rápida para botones utilitarios">
+    <summary class="actions-help-title">
+      <span>¿Qué hace cada botón utilitario?</span>
+      <span class="actions-help-summary-hint">Ayuda opcional para no distraer del botón Generar reportes</span>
+    </summary>
+    <div class="actions-help">
+      <div class="actions-help-item">
+        <strong>Probar config</strong>
+        <span>Revisa tu perfil, rutas y claves antes de empezar un run completo.</span>
+      </div>
+      <div class="actions-help-item">
+        <strong>Doctor desktop</strong>
+        <span>Diagnostica si el modo desktop está listo en este equipo y qué falta revisar.</span>
+      </div>
+      <div class="actions-help-item">
+        <strong>Autofix desktop</strong>
+        <span>Intenta aplicar arreglos seguros del entorno desktop sin tocar tu configuración principal.</span>
+      </div>
+      <div class="actions-help-item">
+        <strong>Limpiar cache</strong>
+        <span>Borra datos temporales locales para forzar una descarga nueva en la siguiente corrida.</span>
+      </div>
+      <div class="actions-help-item">
+        <strong>Abrir último reporte</strong>
+        <span>Abre el HTML interactivo más reciente; las descargas técnicas quedan agrupadas al terminar el run.</span>
+      </div>
+      <div class="actions-help-item">
+        <strong>Carpeta de reportes</strong>
+        <span>Abre la carpeta de salida local; si el campo está vacío, usa <code>output/</code>.</span>
+      </div>
     </div>
-    <div class="actions-help-item">
-      <strong>Doctor desktop</strong>
-      <span>Diagnostica si el modo desktop está listo en este equipo y qué falta revisar.</span>
-    </div>
-    <div class="actions-help-item">
-      <strong>Autofix desktop</strong>
-      <span>Intenta aplicar arreglos seguros del entorno desktop sin tocar tu configuración principal.</span>
-    </div>
-    <div class="actions-help-item">
-      <strong>Limpiar cache</strong>
-      <span>Borra datos temporales locales para forzar una descarga nueva en la siguiente corrida.</span>
-    </div>
-    <div class="actions-help-item">
-      <strong>Abrir último reporte</strong>
-      <span>Abre el HTML interactivo más reciente; las descargas técnicas quedan agrupadas al terminar el run.</span>
-    </div>
-    <div class="actions-help-item">
-      <strong>Carpeta de reportes</strong>
-      <span>Abre la carpeta de salida local; si el campo está vacío, usa <code>output/</code>.</span>
-    </div>
-  </div>
+  </details>
 
   <div class="actions actions-margin-md">
     <button class="btn btn-primary" id="btn-run">&#128640; Generar reportes</button>

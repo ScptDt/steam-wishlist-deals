@@ -551,8 +551,40 @@ details .details-body .field:last-child {
   gap: 0.55rem;
 }
 
-.actions-help {
+.actions-help-panel {
   margin: -0.1rem 0 1rem;
+  padding: 0;
+  border-radius: 8px;
+  border: 1px solid var(--card-border);
+  background: linear-gradient(180deg, rgba(42, 71, 94, 0.18), rgba(12, 20, 30, 0.14));
+}
+
+.actions-help-title {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  justify-content: space-between;
+  gap: 0.45rem;
+  margin: 0;
+  padding: 0.66rem 0.8rem;
+  color: var(--accent);
+  font-size: 0.82rem;
+  font-weight: 700;
+}
+
+.actions-help-panel[open] .actions-help-title {
+  border-bottom: 1px solid var(--card-border);
+}
+
+.actions-help-summary-hint {
+  color: var(--text2);
+  font-size: 0.74rem;
+  font-weight: 500;
+}
+
+.actions-help {
+  margin: 0;
+  padding: 0.75rem;
 }
 
 .actions-help-item,
