@@ -2639,6 +2639,85 @@ function renderLatestShareTopPicks(report) {
   `;
 }
 
+function latestRecommendedCollectionItemKey(item) {
+  const source = item && typeof item === 'object' ? item : {};
+  const appid = String(source.appid || source.steam_appid || '').trim();
+  if (appid) return `appid:${appid}`;
+  const name = String(source.name || source.steam_name || '').trim().toLowerCase();
+  return name ? `name:${name}` : '';
+}
+
+function renderLatestRecommendedCollectionItem(item) {
+  const source = item && typeof item === 'object' ? item : {};
+  const appid = String(source.appid || source.steam_appid || '').trim();
+  const name = source.name || source.steam_name || 'Juego desconocido';
+  const reason = source.reason || 'Recomendado por las señales del último reporte.';
+  const score = source.score;
+  const discount = Number(source.discount || 0) || 0;
+  const price = source.price_final || source.price || '';
+  const meta = [];
+  if (score !== null && score !== undefined && score !== '') meta.push(`Score ${score}`);
+  if (discount > 0) meta.push(`-${discount}%`);
+  if (price) meta.push(price);
+  const nameHtml = /^\d+$/.test(appid)
+    ? `<a href="https://store.steampowered.com/app/${escapeHtml(appid)}/" target="_blank" rel="noopener noreferrer">${escapeHtml(name)}</a>`
+    : `<span>${escapeHtml(name)}</span>`;
+  return `
+    <li class="latest-collection-item">
+      <div class="latest-collection-item-main">
+        <strong>${nameHtml}</strong>
+        <span>${escapeHtml(reason)}</span>
+      </div>
+      ${meta.length ? `<div class="latest-collection-item-meta">${escapeHtml(meta.join(' · '))}</div>` : ''}
+    </li>
+  `;
+}
+
+function renderLatestRecommendedCollections(report) {
+  const collections = Array.isArray(report && report.recommended_collections)
+    ? report.recommended_collections
+    : [];
+  if (!collections.length) return '';
+  const seenItemKeys = new Set();
+  const cards = collections.slice(0, 4).map((collection) => {
+    const source = collection && typeof collection === 'object' ? collection : {};
+    const items = Array.isArray(source.items) ? source.items.filter(item => item && typeof item === 'object') : [];
+    const visibleItems = [];
+    items.forEach((item) => {
+      const itemKey = latestRecommendedCollectionItemKey(item);
+      if (itemKey && seenItemKeys.has(itemKey)) return;
+      visibleItems.push(item);
+    });
+    const selectedItems = visibleItems.slice(0, 3);
+    selectedItems.forEach((item) => {
+      const itemKey = latestRecommendedCollectionItemKey(item);
+      if (itemKey) seenItemKeys.add(itemKey);
+    });
+    if (!selectedItems.length) return '';
+    const title = source.title || source.label || 'Colección';
+    const description = source.description || 'Señales agrupadas desde el último reporte.';
+    const hiddenCount = Math.max(0, visibleItems.length - selectedItems.length);
+    return `
+      <article class="latest-collection-card" data-latest-recommended-collection="${escapeHtml(source.id || 'collection')}">
+        <h4>${escapeHtml(title)}</h4>
+        <p>${escapeHtml(description)}</p>
+        <ol>${selectedItems.map(renderLatestRecommendedCollectionItem).join('')}</ol>
+        ${hiddenCount ? `<div class="latest-collection-more">${escapeHtml(hiddenCount)} más en el reporte interactivo</div>` : ''}
+      </article>
+    `;
+  }).filter(Boolean).join('');
+  if (!cards) return '';
+  return `
+    <div class="latest-collections-section" data-latest-recommended-collections>
+      <div class="latest-collections-head">
+        <div class="latest-collections-title">Colecciones recomendadas</div>
+        <div class="latest-collections-subtitle">Atajos curados desde el último reporte: score, ahorro, Steam Deck, reviews y géneros disponibles.</div>
+      </div>
+      <div class="latest-collections-grid">${cards}</div>
+    </div>
+  `;
+}
+
 function renderLatestBudgetPanel(report) {
   const budgetResult = report && typeof report === 'object' ? (report.budget_result || null) : null;
   if (!budgetResult) return '';
@@ -2852,6 +2931,7 @@ function renderLatestReportCard(report, files = null) {
       `).join('')}
     </div>
     ${renderLatestReportActions(files)}
+    ${renderLatestRecommendedCollections(activeReport)}
     ${renderLatestShareTopPicks(activeReport)}
     ${renderLatestBudgetPanel(activeReport)}
   `;

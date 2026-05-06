@@ -171,6 +171,27 @@ class WebAssetsTests(unittest.TestCase):
         self.assertNotIn("Compartir Top Picks", app_js)
         self.assertNotIn("payload más reciente", app_js)
 
+    def test_latest_report_renders_recommended_collections(self) -> None:
+        app_js = (ROOT / "web" / "steam_deals" / "app.js").read_text(
+            encoding="utf-8"
+        )
+        app_css = (ROOT / "web" / "steam_deals" / "app.css").read_text(
+            encoding="utf-8"
+        )
+
+        self.assertIn("function renderLatestRecommendedCollections", app_js)
+        self.assertIn("report.recommended_collections", app_js)
+        self.assertIn("data-latest-recommended-collections", app_js)
+        self.assertIn("data-latest-recommended-collection", app_js)
+        self.assertIn("Colecciones recomendadas", app_js)
+        self.assertIn("Atajos curados desde el último reporte", app_js)
+        self.assertIn("latestRecommendedCollectionItemKey", app_js)
+        self.assertIn("renderLatestRecommendedCollections(activeReport)", app_js)
+        self.assertIn(".latest-collections-section", app_css)
+        self.assertIn(".latest-collections-grid", app_css)
+        self.assertIn(".latest-collection-card", app_css)
+        self.assertIn(".latest-collection-item-meta", app_css)
+
     def test_output_folder_actions_explain_default_folder_and_open_button(self) -> None:
         index_html = (ROOT / "web" / "steam_deals" / "index.html").read_text(
             encoding="utf-8"

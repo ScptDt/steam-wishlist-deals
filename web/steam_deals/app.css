@@ -887,6 +887,99 @@ details .details-body .field:last-child {
 .latest-share-open-link {
   padding: 0.45rem 0.75rem;
 }
+.latest-collections-section {
+  margin-top: 0.95rem;
+  padding-top: 0.95rem;
+  border-top: 1px solid rgba(255,255,255,0.06);
+}
+.latest-collections-head {
+  margin-bottom: 0.55rem;
+}
+.latest-collections-title {
+  color: var(--text);
+  font-size: 0.88rem;
+  font-weight: 700;
+  margin-bottom: 0.22rem;
+}
+.latest-collections-subtitle {
+  color: var(--text2);
+  font-size: 0.76rem;
+  line-height: 1.45;
+}
+.latest-collections-grid {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(190px, 1fr));
+  gap: 0.55rem;
+}
+.latest-collection-card {
+  padding: 0.75rem 0.8rem;
+  border-radius: 8px;
+  border: 1px solid var(--card-border);
+  background: var(--bg);
+}
+.latest-collection-card h4 {
+  margin: 0 0 0.22rem;
+  color: var(--accent);
+  font-size: 0.84rem;
+}
+.latest-collection-card p {
+  margin: 0 0 0.55rem;
+  color: var(--text2);
+  font-size: 0.73rem;
+  line-height: 1.4;
+}
+.latest-collection-card ol {
+  list-style: none;
+  display: flex;
+  flex-direction: column;
+  gap: 0.48rem;
+}
+.latest-collection-item {
+  display: flex;
+  align-items: flex-start;
+  justify-content: space-between;
+  gap: 0.55rem;
+  padding-top: 0.48rem;
+  border-top: 1px solid rgba(255,255,255,0.06);
+}
+.latest-collection-item:first-child {
+  padding-top: 0;
+  border-top: 0;
+}
+.latest-collection-item-main {
+  min-width: 0;
+}
+.latest-collection-item-main strong,
+.latest-collection-item-main a {
+  color: var(--text);
+  font-size: 0.78rem;
+  text-decoration: none;
+}
+.latest-collection-item-main a:hover {
+  color: var(--accent);
+}
+.latest-collection-item-main span {
+  display: block;
+  margin-top: 0.18rem;
+  color: var(--text2);
+  font-size: 0.71rem;
+  line-height: 1.35;
+}
+.latest-collection-item-meta,
+.latest-collection-more {
+  color: var(--text2);
+  font-size: 0.7rem;
+  line-height: 1.35;
+}
+.latest-collection-item-meta {
+  flex: 0 0 auto;
+  text-align: right;
+}
+.latest-collection-more {
+  margin-top: 0.5rem;
+  padding-top: 0.45rem;
+  border-top: 1px solid rgba(255,255,255,0.06);
+}
 .latest-budget-panel {
   margin-top: 0.95rem;
   padding-top: 0.95rem;
@@ -1127,6 +1220,7 @@ details .details-body .field:last-child {
 
   .latest-share-trigger,
   .latest-share-open-link,
+  .latest-collection-item,
   .latest-budget-replacements-actions .btn,
   .latest-budget-variant-btn {
     min-height: 44px;
