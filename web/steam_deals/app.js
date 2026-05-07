@@ -2416,6 +2416,24 @@ function latestPromoPrimaryTitle(context) {
   return primaryTitle || String((context && context.sale_name) || '').trim();
 }
 
+function latestPromoExtraTitles(context, primaryTitle) {
+  const titles = [];
+  (Array.isArray(context && context.promos) ? context.promos : []).forEach((promo) => {
+    if (!promo || typeof promo !== 'object') return;
+    const title = String(promo.title || '').trim();
+    if (!title || title === primaryTitle || titles.includes(title)) return;
+    titles.push(title);
+  });
+  return titles;
+}
+
+function latestPromoDisplayLabel(context, primaryTitle, extraTitles) {
+  const explicitLabel = String((context && context.display_label) || '').trim();
+  if (explicitLabel) return explicitLabel;
+  if (!primaryTitle) return '';
+  return extraTitles.length ? `${primaryTitle} + ${extraTitles.length} promos adicionales` : primaryTitle;
+}
+
 function renderLatestPromoContext(report) {
   const meta = report && typeof report === 'object' ? (report.meta || {}) : {};
   const context = meta && typeof meta.active_promo_context === 'object'
@@ -2424,18 +2442,16 @@ function renderLatestPromoContext(report) {
   if (!context) return '';
   const primaryTitle = latestPromoPrimaryTitle(context);
   if (!primaryTitle) return '';
+  const extraTitles = latestPromoExtraTitles(context, primaryTitle);
+  const displayLabel = latestPromoDisplayLabel(context, primaryTitle, extraTitles);
   const categoryLabels = Array.isArray(context.categories)
     ? context.categories.filter(Boolean).map(latestPromoCategoryLabel).slice(0, 4)
     : [];
-  const extraTitles = [];
-  (Array.isArray(context.promos) ? context.promos : []).forEach((promo) => {
-    if (!promo || typeof promo !== 'object') return;
-    const title = String(promo.title || '').trim();
-    if (!title || title === primaryTitle || extraTitles.includes(title)) return;
-    extraTitles.push(title);
-  });
   const categoriesHtml = categoryLabels.length
     ? `<div class="latest-promo-pills">${categoryLabels.map(label => `<span>${escapeHtml(label)}</span>`).join('')}</div>`
+    : '';
+  const primaryHtml = displayLabel !== primaryTitle
+    ? `<div class="latest-promo-extra">Promo principal: ${escapeHtml(primaryTitle)}</div>`
     : '';
   const extrasHtml = extraTitles.length
     ? `<div class="latest-promo-extra">También activas: ${escapeHtml(extraTitles.slice(0, 3).join(', '))}</div>`
@@ -2446,8 +2462,9 @@ function renderLatestPromoContext(report) {
         <div class="latest-promo-title">Contexto de promo activa</div>
         <div class="latest-promo-subtitle">Contexto del último JSON local: ayuda a interpretar la promo activa; no es predicción ni cambia el score.</div>
       </div>
-      <div class="latest-promo-primary"><span>Promo principal</span><strong>${escapeHtml(primaryTitle)}</strong></div>
+      <div class="latest-promo-primary"><span>Resumen de promos</span><strong>${escapeHtml(displayLabel)}</strong></div>
       ${categoriesHtml}
+      ${primaryHtml}
       ${extrasHtml}
     </div>
   `;

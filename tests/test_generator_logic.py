@@ -5176,6 +5176,9 @@ class SteamAdapterTests(unittest.TestCase):
             ["weeklong", "fest", "themed"],
         )
         self.assertEqual(context["categories"], ["fest", "themed", "weeklong"])
+        self.assertEqual(context["category_label"], "Fest · Oferta temática · Weeklong")
+        self.assertEqual(context["display_label"], "Steam Farming Fest + 2 promos adicionales")
+        self.assertEqual(context["additional_promos_count"], 2)
 
     def test_get_active_promo_context_handles_api_errors_as_empty_context(self) -> None:
         context = module_get_active_promo_context(
@@ -5185,6 +5188,8 @@ class SteamAdapterTests(unittest.TestCase):
         self.assertEqual(context["sale_name"], "")
         self.assertEqual(context["primary"], None)
         self.assertEqual(context["promos"], [])
+        self.assertEqual(context["display_label"], "")
+        self.assertEqual(context["additional_promos_count"], 0)
 
     def test_resolve_profile_display_name_prefers_player_summary(self) -> None:
         display_name = module_resolve_profile_display_name(

@@ -271,6 +271,22 @@ def classify_steam_promo_message(message: dict) -> dict:
     }
 
 
+PROMO_CATEGORY_LABELS = {
+    "weeklong": "Weeklong",
+    "midweek": "Midweek",
+    "weekend": "Weekend",
+    "fest": "Fest",
+    "major_sale": "Oferta grande",
+    "themed": "Oferta temática",
+    "unknown": "Otra promo",
+}
+
+
+def promo_category_label(category: str) -> str:
+    key = str(category or "").strip()
+    return PROMO_CATEGORY_LABELS.get(key, key or "Otra promo")
+
+
 def _select_primary_promo(promos: list[dict]) -> dict | None:
     for preferred_type in PROMO_PRIMARY_TYPES:
         for promo in promos:
@@ -282,6 +298,23 @@ def _select_primary_promo(promos: list[dict]) -> dict | None:
     return None
 
 
+def _extra_promo_titles(promos: list[dict], primary_title: str) -> list[str]:
+    titles: list[str] = []
+    for promo in promos:
+        title = str(promo.get("title", "") or "").strip()
+        if title and title != primary_title and title not in titles:
+            titles.append(title)
+    return titles
+
+
+def _promo_display_label(primary_title: str, extra_titles: list[str]) -> str:
+    if not primary_title:
+        return ""
+    if not extra_titles:
+        return primary_title
+    return f"{primary_title} + {len(extra_titles)} promos adicionales"
+
+
 def build_active_promo_context(messages: list[dict]) -> dict:
     promos = [
         classify_steam_promo_message(message)
@@ -290,11 +323,16 @@ def build_active_promo_context(messages: list[dict]) -> dict:
     ]
     primary = _select_primary_promo(promos)
     categories = sorted({promo["category"] for promo in promos if promo.get("category")})
+    primary_title = primary.get("title", "") if primary else ""
+    extra_titles = _extra_promo_titles(promos, primary_title)
     return {
-        "sale_name": primary.get("title", "") if primary else "",
+        "sale_name": primary_title,
         "primary": primary,
         "promos": promos,
         "categories": categories,
+        "category_label": " · ".join(promo_category_label(category) for category in categories),
+        "display_label": _promo_display_label(primary_title, extra_titles),
+        "additional_promos_count": len(extra_titles),
     }
 
 
