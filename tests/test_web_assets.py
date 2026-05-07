@@ -278,6 +278,31 @@ class WebAssetsTests(unittest.TestCase):
         self.assertIn(".file-link-group", app_css)
         self.assertIn(".file-link-button", app_css)
 
+    def test_primary_run_actions_precede_secondary_deals_sections(self) -> None:
+        index_html = (ROOT / "web" / "steam_deals" / "index.html").read_text(
+            encoding="utf-8"
+        )
+        app_js = (ROOT / "web" / "steam_deals" / "app.js").read_text(
+            encoding="utf-8"
+        )
+
+        run_button_index = index_html.index('id="btn-run"')
+        utility_actions_index = index_html.index('id="btn-preflight"')
+        watchlist_index = index_html.index("Alertas de precio")
+        history_index = index_html.index('id="history-card"')
+        pd2_panel_index = index_html.index('id="panel-pd2"')
+
+        self.assertIn('id="panel-deals-secondary"', index_html)
+        self.assertLess(pd2_panel_index, run_button_index)
+        self.assertLess(utility_actions_index, watchlist_index)
+        self.assertLess(run_button_index, watchlist_index)
+        self.assertLess(run_button_index, history_index)
+        self.assertIn("const dealsSecondaryPanel = $('panel-deals-secondary');", app_js)
+        self.assertIn(
+            "if (dealsSecondaryPanel) dealsSecondaryPanel.style.display = isPd2 ? 'none' : 'block';",
+            app_js,
+        )
+
     def test_payday2_dashboard_has_themed_branding_hooks(self) -> None:
         index_html = (ROOT / "web" / "payday2" / "index.html").read_text(
             encoding="utf-8"

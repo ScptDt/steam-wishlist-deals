@@ -1493,10 +1493,12 @@ function switchTab(name) {
   const dealsTab = $('tab-deals');
   const pd2Tab = $('tab-pd2');
   const dealsPanel = $('panel-deals');
+  const dealsSecondaryPanel = $('panel-deals-secondary');
   const pd2Panel = $('panel-pd2');
   const isPd2 = name === 'pd2';
 
   dealsPanel.style.display = isPd2 ? 'none' : 'block';
+  if (dealsSecondaryPanel) dealsSecondaryPanel.style.display = isPd2 ? 'none' : 'block';
   pd2Panel.style.display = isPd2 ? 'block' : 'none';
 
   if (btnRun) btnRun.style.display = isPd2 ? 'none' : '';

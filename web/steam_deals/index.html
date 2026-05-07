@@ -375,6 +375,111 @@
     </details>
   </div>
 
+  </div><!-- /panel-deals -->
+
+  <!-- ═══ TAB: PAYDAY 2 ═══ -->
+  <div id="panel-pd2" style="display:none" role="tabpanel" aria-labelledby="tab-pd2">
+  <div class="card">
+    <h2>&#127918; PAYDAY 2 DLC Tracker</h2>
+    <div class="row">
+      <div class="field">
+        <label>Presupuesto MXN <span class="optional">(opcional)</span></label>
+        <div class="range-wrap">
+          <input type="range" id="pd2_budget" min="0" max="5000" step="50" value="0" oninput="document.getElementById('pd2-bval').textContent=this.value>0?('$'+this.value):'Sin límite'">
+          <span class="range-val" id="pd2-bval">Sin límite</span>
+        </div>
+      </div>
+      <div class="field">
+        <label>Alerta de precio <span class="optional">(MXN)</span></label>
+        <input type="number" id="pd2_alert" min="0" placeholder="Alertar si DLC baja de este precio">
+      </div>
+    </div>
+    <div class="row">
+      <div class="field">
+        <label>Min. descuento para recomendar <span class="optional">(%)</span></label>
+        <input type="number" id="pd2_min_deal" min="0" max="100" value="50" placeholder="50">
+      </div>
+      <div class="field">
+        <label>Directorio de salida</label>
+        <input type="text" id="pd2_output" placeholder="output/">
+        <div class="hint">Por defecto se usa <code>output/</code>, igual que Steam Deals.</div>
+      </div>
+    </div>
+    <div class="checks checks-spaced">
+      <label><input type="checkbox" id="pd2_csv"> Generar CSV</label>
+      <label><input type="checkbox" id="pd2_no_cache"> Ignorar cache</label>
+    </div>
+  </div>
+  </div><!-- /panel-pd2 -->
+
+  <div class="form-error-summary hidden" id="form-error-summary" role="alert" aria-live="polite" tabindex="-1"></div>
+
+  <div class="actions actions-utility actions-margin-sm">
+    <button class="btn btn-ghost" id="btn-preflight" title="Revisa si tu perfil, rutas y claves están listas antes de ejecutar">&#129514; Probar config</button>
+    <button class="btn btn-ghost" id="btn-desktop-doctor" title="Diagnostica si el modo desktop está listo en este equipo">&#129658; Doctor desktop</button>
+    <button class="btn btn-ghost" id="btn-desktop-autofix" title="Intenta aplicar arreglos seguros del entorno desktop">&#128295; Autofix desktop</button>
+    <button class="btn btn-ghost" id="btn-clear-cache" title="Borra caché local para forzar una nueva descarga de datos">&#128465; Limpiar cache</button>
+    <button class="btn btn-ghost" id="btn-open-last" title="Abre el último reporte interactivo; Markdown, JSON y CSV quedan disponibles abajo">&#128194; Abrir último reporte</button>
+    <button class="btn btn-ghost" id="btn-open-output-folder" title="Abre o crea la carpeta donde se guardan los reportes">&#128193; Carpeta de reportes</button>
+  </div>
+  <details class="actions-help-panel" aria-label="Ayuda rápida para botones utilitarios">
+    <summary class="actions-help-title">
+      <span>¿Qué hace cada botón utilitario?</span>
+      <span class="actions-help-summary-hint">Ayuda opcional para no distraer del botón Generar reportes</span>
+    </summary>
+    <div class="actions-help">
+      <div class="actions-help-item">
+        <strong>Probar config</strong>
+        <span>Revisa tu perfil, rutas y claves antes de empezar un run completo.</span>
+      </div>
+      <div class="actions-help-item">
+        <strong>Doctor desktop</strong>
+        <span>Diagnostica si el modo desktop está listo en este equipo y qué falta revisar.</span>
+      </div>
+      <div class="actions-help-item">
+        <strong>Autofix desktop</strong>
+        <span>Intenta aplicar arreglos seguros del entorno desktop sin tocar tu configuración principal.</span>
+      </div>
+      <div class="actions-help-item">
+        <strong>Limpiar cache</strong>
+        <span>Borra datos temporales locales para forzar una descarga nueva en la siguiente corrida.</span>
+      </div>
+      <div class="actions-help-item">
+        <strong>Abrir último reporte</strong>
+        <span>Abre el HTML interactivo más reciente; las descargas técnicas quedan agrupadas al terminar el run.</span>
+      </div>
+      <div class="actions-help-item">
+        <strong>Carpeta de reportes</strong>
+        <span>Abre la carpeta de salida local; si el campo está vacío, usa <code>output/</code>.</span>
+      </div>
+    </div>
+  </details>
+
+  <div class="actions actions-margin-md">
+    <button class="btn btn-primary" id="btn-run">&#128640; Generar reportes</button>
+    <button class="btn btn-primary btn-primary-pd2" id="btn-run-pd2" style="display:none">&#127918; Ejecutar PAYDAY 2</button>
+    <button class="btn btn-danger" id="btn-stop" disabled>&#9209; Detener</button>
+  </div>
+
+  <!-- Output panel -->
+  <div class="card" id="output-card">
+    <div class="output-head">
+      <h2>Ejecución</h2>
+      <p class="output-hint">Sigue el progreso en vivo. Puedes copiar el log o guardarlo localmente durante o al terminar.</p>
+    </div>
+    <div class="progress-container">
+      <div class="progress-bar" id="progress-bar"></div>
+      <div class="progress-text" id="progress-text">Listo</div>
+    </div>
+    <div class="console-actions">
+      <button class="btn" type="button" id="btn-copy-log" disabled>&#128203; Copiar log</button>
+      <button class="btn" type="button" id="btn-download-log" disabled>&#128229; Descargar log (.txt)</button>
+    </div>
+    <div class="console" id="console" role="log" aria-live="polite" aria-label="Consola de ejecución"></div>
+    <div class="file-links hidden" id="file-links"></div>
+  </div>
+
+  <div id="panel-deals-secondary">
   <!-- Watchlist -->
   <div class="card">
     <h2>&#127919; Alertas de precio</h2>
@@ -502,109 +607,6 @@
       </div>
     </details>
   </div>
-
-  </div><!-- /panel-deals -->
-
-  <!-- ═══ TAB: PAYDAY 2 ═══ -->
-  <div id="panel-pd2" style="display:none" role="tabpanel" aria-labelledby="tab-pd2">
-  <div class="card">
-    <h2>&#127918; PAYDAY 2 DLC Tracker</h2>
-    <div class="row">
-      <div class="field">
-        <label>Presupuesto MXN <span class="optional">(opcional)</span></label>
-        <div class="range-wrap">
-          <input type="range" id="pd2_budget" min="0" max="5000" step="50" value="0" oninput="document.getElementById('pd2-bval').textContent=this.value>0?('$'+this.value):'Sin límite'">
-          <span class="range-val" id="pd2-bval">Sin límite</span>
-        </div>
-      </div>
-      <div class="field">
-        <label>Alerta de precio <span class="optional">(MXN)</span></label>
-        <input type="number" id="pd2_alert" min="0" placeholder="Alertar si DLC baja de este precio">
-      </div>
-    </div>
-    <div class="row">
-      <div class="field">
-        <label>Min. descuento para recomendar <span class="optional">(%)</span></label>
-        <input type="number" id="pd2_min_deal" min="0" max="100" value="50" placeholder="50">
-      </div>
-      <div class="field">
-        <label>Directorio de salida</label>
-        <input type="text" id="pd2_output" placeholder="output/">
-        <div class="hint">Por defecto se usa <code>output/</code>, igual que Steam Deals.</div>
-      </div>
-    </div>
-    <div class="checks checks-spaced">
-      <label><input type="checkbox" id="pd2_csv"> Generar CSV</label>
-      <label><input type="checkbox" id="pd2_no_cache"> Ignorar cache</label>
-    </div>
-  </div>
-  </div><!-- /panel-pd2 -->
-
-  <div class="form-error-summary hidden" id="form-error-summary" role="alert" aria-live="polite" tabindex="-1"></div>
-
-  <div class="actions actions-utility actions-margin-sm">
-    <button class="btn btn-ghost" id="btn-preflight" title="Revisa si tu perfil, rutas y claves están listas antes de ejecutar">&#129514; Probar config</button>
-    <button class="btn btn-ghost" id="btn-desktop-doctor" title="Diagnostica si el modo desktop está listo en este equipo">&#129658; Doctor desktop</button>
-    <button class="btn btn-ghost" id="btn-desktop-autofix" title="Intenta aplicar arreglos seguros del entorno desktop">&#128295; Autofix desktop</button>
-    <button class="btn btn-ghost" id="btn-clear-cache" title="Borra caché local para forzar una nueva descarga de datos">&#128465; Limpiar cache</button>
-    <button class="btn btn-ghost" id="btn-open-last" title="Abre el último reporte interactivo; Markdown, JSON y CSV quedan disponibles abajo">&#128194; Abrir último reporte</button>
-    <button class="btn btn-ghost" id="btn-open-output-folder" title="Abre o crea la carpeta donde se guardan los reportes">&#128193; Carpeta de reportes</button>
-  </div>
-  <details class="actions-help-panel" aria-label="Ayuda rápida para botones utilitarios">
-    <summary class="actions-help-title">
-      <span>¿Qué hace cada botón utilitario?</span>
-      <span class="actions-help-summary-hint">Ayuda opcional para no distraer del botón Generar reportes</span>
-    </summary>
-    <div class="actions-help">
-      <div class="actions-help-item">
-        <strong>Probar config</strong>
-        <span>Revisa tu perfil, rutas y claves antes de empezar un run completo.</span>
-      </div>
-      <div class="actions-help-item">
-        <strong>Doctor desktop</strong>
-        <span>Diagnostica si el modo desktop está listo en este equipo y qué falta revisar.</span>
-      </div>
-      <div class="actions-help-item">
-        <strong>Autofix desktop</strong>
-        <span>Intenta aplicar arreglos seguros del entorno desktop sin tocar tu configuración principal.</span>
-      </div>
-      <div class="actions-help-item">
-        <strong>Limpiar cache</strong>
-        <span>Borra datos temporales locales para forzar una descarga nueva en la siguiente corrida.</span>
-      </div>
-      <div class="actions-help-item">
-        <strong>Abrir último reporte</strong>
-        <span>Abre el HTML interactivo más reciente; las descargas técnicas quedan agrupadas al terminar el run.</span>
-      </div>
-      <div class="actions-help-item">
-        <strong>Carpeta de reportes</strong>
-        <span>Abre la carpeta de salida local; si el campo está vacío, usa <code>output/</code>.</span>
-      </div>
-    </div>
-  </details>
-
-  <div class="actions actions-margin-md">
-    <button class="btn btn-primary" id="btn-run">&#128640; Generar reportes</button>
-    <button class="btn btn-primary btn-primary-pd2" id="btn-run-pd2" style="display:none">&#127918; Ejecutar PAYDAY 2</button>
-    <button class="btn btn-danger" id="btn-stop" disabled>&#9209; Detener</button>
-  </div>
-
-  <!-- Output panel -->
-  <div class="card" id="output-card">
-    <div class="output-head">
-      <h2>Ejecución</h2>
-      <p class="output-hint">Sigue el progreso en vivo. Puedes copiar el log o guardarlo localmente durante o al terminar.</p>
-    </div>
-    <div class="progress-container">
-      <div class="progress-bar" id="progress-bar"></div>
-      <div class="progress-text" id="progress-text">Listo</div>
-    </div>
-    <div class="console-actions">
-      <button class="btn" type="button" id="btn-copy-log" disabled>&#128203; Copiar log</button>
-      <button class="btn" type="button" id="btn-download-log" disabled>&#128229; Descargar log (.txt)</button>
-    </div>
-    <div class="console" id="console" role="log" aria-live="polite" aria-label="Consola de ejecución"></div>
-    <div class="file-links hidden" id="file-links"></div>
   </div>
 </div>
 
