@@ -5769,6 +5769,110 @@ class RankTopPicksTests(unittest.TestCase):
         self.assertNotIn("data-recommended-collections-section", html)
         self.assertNotIn("Colecciones recomendadas", html)
 
+    def test_generate_html_renders_personalized_recommendations(self) -> None:
+        html = generate_html(
+            deals=[],
+            backlog_on_sale=[],
+            have_on_sale=[],
+            vanity="gaben",
+            owned={},
+            wishlist_appids=["10"],
+            min_discount=50,
+            genres=[],
+            recommended_collections=[],
+            personalized_recommendations={
+                "items": [
+                    {
+                        "appid": "10",
+                        "name": "Deep Action",
+                        "personalized_score": 100.0,
+                        "affinity_score": 48.0,
+                        "discount": 60,
+                        "price_final": "$99",
+                        "reasons": [
+                            "encaja con tu actividad reciente: Action",
+                            "similar a Hades",
+                        ],
+                    }
+                ],
+                "profile": {
+                    "activity_terms": [{"term": "Action", "weight": 3.0}],
+                    "library_summary": {
+                        "top_terms": [{"term": "Roguelike", "weight": 2.0}],
+                        "total_hltb_hours": 25.0,
+                        "average_price": 185.0,
+                    },
+                },
+            },
+        )
+
+        self.assertIn("data-personalized-recommendations-section", html)
+        self.assertIn("Recomendaciones personalizadas", html)
+        self.assertIn("No cambia el score global", html)
+        self.assertIn("Actividad: Action", html)
+        self.assertIn("Biblioteca: Roguelike", html)
+        self.assertIn("Deep Action", html)
+        self.assertIn("Personal 100.0", html)
+        self.assertIn("Afinidad +48.0", html)
+        self.assertIn("encaja con tu actividad reciente: Action", html)
+        self.assertIn("similar a Hades", html)
+        self.assertIn("steam/apps/10/capsule_231x87.jpg", html)
+
+    def test_generate_html_omits_personalized_recommendations_when_empty(self) -> None:
+        html = generate_html(
+            deals=[],
+            backlog_on_sale=[],
+            have_on_sale=[],
+            vanity="gaben",
+            owned={},
+            wishlist_appids=[],
+            min_discount=50,
+            genres=[],
+            recommended_collections=[],
+            personalized_recommendations={"items": []},
+        )
+
+        self.assertNotIn("data-personalized-recommendations-section", html)
+        self.assertNotIn("Recomendaciones personalizadas", html)
+
+    def test_generate_html_escapes_personalized_recommendation_data(self) -> None:
+        html = generate_html(
+            deals=[],
+            backlog_on_sale=[],
+            have_on_sale=[],
+            vanity="gaben",
+            owned={},
+            wishlist_appids=[],
+            min_discount=50,
+            genres=[],
+            recommended_collections=[],
+            personalized_recommendations={
+                "items": [
+                    {
+                        "appid": '10" onclick="alert(1)',
+                        "name": "<b>Alpha</b>",
+                        "personalized_score": '100" onclick="alert(2)',
+                        "affinity_score": "<script>alert(3)</script>",
+                        "price_final": '" onmouseover="alert(4)',
+                        "reasons": ["<script>alert(5)</script>"],
+                    }
+                ],
+                "profile": {
+                    "activity_terms": [{"term": "<img src=x onerror=alert(6)>"}],
+                    "library_summary": {"top_terms": [{"term": "<script>alert(7)</script>"}]},
+                },
+            },
+        )
+
+        self.assertIn("data-personalized-recommendations-section", html)
+        self.assertIn("&lt;b&gt;Alpha&lt;/b&gt;", html)
+        self.assertIn("&lt;script&gt;alert(5)&lt;/script&gt;", html)
+        self.assertNotIn("<b>Alpha</b>", html)
+        self.assertNotIn("<script>alert(5)</script>", html)
+        self.assertNotIn("/app/10\" onclick=", html)
+        self.assertNotIn('<a class="personalized-item-thumb"', html)
+        self.assertNotIn("alert(1)", html)
+
     def test_generate_html_escapes_recommended_collection_data(self) -> None:
         html = generate_html(
             deals=[],
@@ -5954,6 +6058,110 @@ class RankTopPicksTests(unittest.TestCase):
 
         self.assertNotIn("data-recommended-collections-section", html)
         self.assertNotIn("Colecciones recomendadas", html)
+
+    def test_generate_share_html_renders_personalized_recommendations(self) -> None:
+        html = generate_share_html(
+            deals=[],
+            vanity="gaben",
+            min_discount=50,
+            recommended_collections=[],
+            personalized_recommendations={
+                "source_signals": ["top_picks", "activity", "library"],
+                "profile": {
+                    "activity_terms": [{"term": "roguelike"}],
+                    "library_summary": {
+                        "top_terms": [{"term": "Action"}],
+                        "total_hltb_hours": 25.0,
+                        "average_price": 123.0,
+                    },
+                },
+                "items": [
+                    {
+                        "appid": "10",
+                        "name": "Hades",
+                        "personalized_score": 100.0,
+                        "affinity_score": 18.5,
+                        "discount": 50,
+                        "price_final": "$99",
+                        "price_original": "$199",
+                        "reasons": [
+                            "encaja con tu actividad reciente",
+                            "similar a Dead Cells",
+                        ],
+                    }
+                ],
+            },
+        )
+
+        self.assertIn("data-personalized-recommendations-section", html)
+        self.assertIn("Recomendaciones personalizadas", html)
+        self.assertIn("Actividad: roguelike", html)
+        self.assertIn("Biblioteca: Action", html)
+        self.assertIn("HLTB: 25.0h", html)
+        self.assertIn('data-personalized-recommendation="10"', html)
+        self.assertIn('href="https://store.steampowered.com/app/10/"', html)
+        self.assertIn("Personal 100.0", html)
+        self.assertIn("Afinidad +18.5", html)
+        self.assertIn("encaja con tu actividad reciente", html)
+        self.assertIn("similar a Dead Cells", html)
+        self.assertIn('class="personalized-share"', html)
+        self.assertIn("data-share-game=", html)
+
+    def test_generate_share_html_omits_personalized_recommendations_when_empty(self) -> None:
+        html = generate_share_html(
+            deals=[],
+            vanity="gaben",
+            min_discount=50,
+            top_picks=[],
+            recommended_collections=[],
+            personalized_recommendations={"items": []},
+        )
+
+        self.assertNotIn("data-personalized-recommendations-section", html)
+        self.assertNotIn("Recomendaciones personalizadas", html)
+
+    def test_generate_share_html_escapes_personalized_recommendation_data(self) -> None:
+        html = generate_share_html(
+            deals=[],
+            vanity="gaben",
+            min_discount=50,
+            recommended_collections=[],
+            personalized_recommendations={
+                "profile": {
+                    "activity_terms": [{"term": "<script>alert(0)</script>"}],
+                    "library_summary": {
+                        "top_terms": [{"term": "<img src=x onerror=alert(1)>"}],
+                        "average_price": '9" onclick="alert(2)',
+                    },
+                },
+                "items": [
+                    {
+                        "appid": '10" onclick="alert(3)',
+                        "name": "<b>Alpha</b>",
+                        "personalized_score": '100" onclick="alert(4)',
+                        "affinity_score": '9" onclick="alert(5)',
+                        "discount": "not-a-number",
+                        "price_final": '" onmouseover="alert(6)',
+                        "reasons": ["<script>alert(7)</script>"],
+                    }
+                ],
+            },
+        )
+
+        self.assertIn("data-personalized-recommendations-section", html)
+        self.assertIn("&lt;script&gt;alert(0)&lt;/script&gt;", html)
+        self.assertIn("&lt;img src=x onerror=alert(1)&gt;", html)
+        self.assertIn("&lt;b&gt;Alpha&lt;/b&gt;", html)
+        self.assertIn("&lt;script&gt;alert(7)&lt;/script&gt;", html)
+        self.assertNotIn("<script>alert(0)</script>", html)
+        self.assertNotIn("<script>alert(7)</script>", html)
+        self.assertNotIn("<img src=x", html)
+        self.assertNotIn('data-personalized-recommendation="10" onclick=', html)
+        self.assertNotIn('/app/10" onclick=', html)
+        self.assertNotIn("alert(3)", html)
+        self.assertNotIn("alert(4)", html)
+        self.assertNotIn("alert(5)", html)
+        self.assertNotIn("data-share-game=", html)
 
     def test_generate_share_html_escapes_recommended_collection_data(self) -> None:
         html = generate_share_html(

@@ -430,6 +430,94 @@ def _html_recommended_collections(collections: list[dict]) -> str:
 </section>'''
 
 
+def _html_personalized_profile(profile: dict) -> str:
+    if not isinstance(profile, dict):
+        return ""
+    chips = []
+    activity_terms = [
+        str(term.get("term") or "").strip()
+        for term in profile.get("activity_terms", [])
+        if isinstance(term, dict) and term.get("term")
+    ][:3]
+    if activity_terms:
+        chips.append(f"Actividad: {', '.join(activity_terms)}")
+    library_summary = profile.get("library_summary") or {}
+    library_terms = [
+        str(term.get("term") or "").strip()
+        for term in library_summary.get("top_terms", [])
+        if isinstance(term, dict) and term.get("term")
+    ][:3]
+    if library_terms:
+        chips.append(f"Biblioteca: {', '.join(library_terms)}")
+    total_hours = library_summary.get("total_hltb_hours")
+    if total_hours:
+        chips.append(f"HLTB: {total_hours}h")
+    average_price = library_summary.get("average_price")
+    if average_price is not None:
+        chips.append(f"Precio prom.: ${average_price}")
+    if not chips:
+        return ""
+    return f'''<div class="personalized-profile">{"".join(f'<span>{_html_esc(chip)}</span>' for chip in chips)}</div>'''
+
+
+def _html_personalized_item(item: dict, index: int) -> str:
+    appid = str(item.get("appid") or "").strip()
+    safe_appid = appid if appid.isdigit() else ""
+    name = str(item.get("name") or "Juego desconocido")
+    title_html = _html_link(name, safe_appid) if safe_appid else _html_esc(name)
+    reasons = [str(reason) for reason in item.get("reasons", []) if str(reason).strip()]
+    reasons_html = "".join(
+        f"<li>{_html_esc(reason)}</li>" for reason in (reasons or ["score base del reporte"])
+    )
+    meta = []
+    personalized_score = item.get("personalized_score")
+    if isinstance(personalized_score, (int, float)):
+        meta.append(f'<span>Personal {_html_esc(str(personalized_score))}</span>')
+    affinity_score = item.get("affinity_score")
+    if isinstance(affinity_score, (int, float)):
+        meta.append(f'<span>Afinidad +{_html_esc(str(affinity_score))}</span>')
+    try:
+        discount = int(item.get("discount") or 0)
+    except (TypeError, ValueError):
+        discount = 0
+    if discount:
+        meta.append(f"<span>-{discount}%</span>")
+    price_final = str(item.get("price_final") or "")
+    if price_final:
+        meta.append(f"<span>{_html_esc(price_final)}</span>")
+    meta_html = f'''<div class="personalized-item-meta">{"".join(meta)}</div>''' if meta else ""
+    image_html = ""
+    if safe_appid:
+        image_html = f'''<a class="personalized-item-thumb" href="{STORE_URL.format(appid=safe_appid)}" target="_blank" aria-label="Abrir {_html_esc(name)} en Steam">
+      <img src="{CAPSULE_URL.format(appid=safe_appid)}" alt="" loading="lazy" onerror="this.style.display='none'">
+    </a>'''
+    data_attr = f' data-personalized-recommendation="{_html_esc(safe_appid)}"' if safe_appid else ""
+    return f'''<article class="personalized-item-card"{data_attr}>
+  <div class="personalized-item-rank">#{index}</div>
+  {image_html}
+  <div class="personalized-item-main">
+    <h3>{title_html}</h3>
+    {meta_html}
+    <ul>{reasons_html}</ul>
+  </div>
+</article>'''
+
+
+def _html_personalized_recommendations(payload: dict | None) -> str:
+    if not isinstance(payload, dict):
+        return ""
+    items = [item for item in payload.get("items", []) if isinstance(item, dict)]
+    if not items:
+        return ""
+    cards = "".join(_html_personalized_item(item, index) for index, item in enumerate(items, 1))
+    return f'''<section class="personalized-recommendations" data-personalized-recommendations-section>
+  <h2>Recomendaciones personalizadas</h2>
+  <p class="section-desc">Ranking explicable construido con score del reporte y señales opcionales de actividad, biblioteca y preferencias. No cambia el score global.</p>
+  {_html_personalized_profile(payload.get("profile") or {})}
+  <div class="personalized-recommendations-grid">{cards}</div>
+</section>'''
+
+
 def _html_budget_pick_context(pick: dict) -> str:
     recommendation = _html_esc(pick.get("recommendation", ""))
     reasons = _html_esc(" · ".join(pick.get("score_reasons", [])))
@@ -770,6 +858,20 @@ a.pick-card:hover { border-color: var(--accent-blue); transform: translateY(-2px
 .collection-discount { color: var(--accent-green); font-weight: 700; }
 .collection-price { color: var(--text-secondary); }
 @media (max-width: 767px) { .recommended-collection-item { flex-direction: column; gap: .3rem; } .collection-item-thumb { flex-basis: auto; width: 92px; } .collection-item-meta { align-items: flex-start; flex-direction: row; flex-wrap: wrap; } }
+.personalized-recommendations { margin: 0 0 1.5rem; padding: 1rem; border: 1px solid rgba(108,198,68,.24); border-radius: 10px; background: linear-gradient(135deg, rgba(108,198,68,.08), rgba(12,20,30,.25)); }
+.personalized-recommendations h2 { font-size: 1.2rem; margin-bottom: .3rem; }
+.personalized-profile { display: flex; flex-wrap: wrap; gap: .35rem; margin-bottom: .8rem; }
+.personalized-profile span { border: 1px solid rgba(108,198,68,.28); border-radius: 999px; color: var(--text-secondary); background: rgba(12,20,30,.28); padding: .16rem .55rem; font-size: .74rem; }
+.personalized-recommendations-grid { display: grid; grid-template-columns: repeat(auto-fit, minmax(260px, 1fr)); gap: .75rem; }
+.personalized-item-card { position: relative; display: grid; grid-template-columns: 110px minmax(0, 1fr); gap: .75rem; align-items: start; background: var(--bg-card); border: 1px solid rgba(108,198,68,.24); border-radius: 8px; padding: .75rem; overflow: hidden; }
+.personalized-item-rank { position: absolute; top: .35rem; right: .55rem; color: var(--text-secondary); font-size: .72rem; font-weight: 700; }
+.personalized-item-thumb { display: block; border: 1px solid rgba(102,192,244,.18); border-radius: 6px; overflow: hidden; background: var(--bg-primary); }
+.personalized-item-thumb img { display: block; width: 100%; aspect-ratio: 231/87; object-fit: cover; }
+.personalized-item-main h3 { font-size: .9rem; margin-right: 1.6rem; margin-bottom: .3rem; }
+.personalized-item-meta { display: flex; flex-wrap: wrap; gap: .3rem; color: var(--text-secondary); font-size: .72rem; margin-bottom: .35rem; }
+.personalized-item-meta span:first-child { color: var(--accent-green); font-weight: 700; }
+.personalized-item-main ul { margin-left: 1rem; color: var(--text-secondary); font-size: .75rem; line-height: 1.35; }
+@media (max-width: 767px) { .personalized-item-card { grid-template-columns: 1fr; } }
 .share-btn-mini { position: absolute; top: .4rem; right: .4rem; background: var(--bg-card); border: 1px solid var(--border); border-radius: 4px; padding: .3rem .5rem; cursor: pointer; font-size: .9rem; opacity: 0.6; transition: opacity .2s; }
 .share-btn-mini:hover { opacity: 1; background: var(--accent-blue); }
 .share-modal { display: none; position: fixed; inset: 0; background: rgba(0,0,0,0.7); z-index: 1000; align-items: center; justify-content: center; }
@@ -1408,6 +1510,7 @@ def generate_html(
     compare_data: dict | None = None,
     gift_ideas: list[dict] | None = None,
     recommended_collections: list[dict] | None = None,
+    personalized_recommendations: dict | None = None,
     local_trends: dict[str, dict] | None = None,
     price_history: dict | None = None,
     profile_display_name: str | None = None,
@@ -1436,6 +1539,7 @@ def generate_html(
     current_prices = current_prices or {}
     top_picks = top_picks or []
     recommended_collections = recommended_collections or []
+    personalized_recommendations = personalized_recommendations or {"items": []}
     achievements_data = achievements_data or {}
     watchlist_alerts = watchlist_alerts or []
     price_history_games = (price_history or {}).get("games", {})
@@ -1569,6 +1673,7 @@ def generate_html(
 </section>""")
 
     parts.append(_html_recommended_collections(recommended_collections))
+    parts.append(_html_personalized_recommendations(personalized_recommendations))
 
     if watchlist_alerts:
         wl_rows = []

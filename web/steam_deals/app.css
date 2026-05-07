@@ -1002,6 +1002,100 @@ details .details-body .field:last-child {
   padding-top: 0.45rem;
   border-top: 1px solid rgba(255,255,255,0.06);
 }
+.latest-personalized-section {
+  margin-top: 0.95rem;
+  padding-top: 0.95rem;
+  border-top: 1px solid rgba(255,255,255,0.06);
+}
+.latest-personalized-head {
+  margin-bottom: 0.55rem;
+}
+.latest-personalized-title {
+  color: var(--text);
+  font-size: 0.88rem;
+  font-weight: 700;
+  margin-bottom: 0.22rem;
+}
+.latest-personalized-subtitle {
+  color: var(--text2);
+  font-size: 0.76rem;
+  line-height: 1.45;
+}
+.latest-personalized-profile {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 0.35rem;
+  margin-bottom: 0.55rem;
+}
+.latest-personalized-profile span {
+  padding: 0.16rem 0.48rem;
+  border-radius: 999px;
+  border: 1px solid rgba(108, 198, 68, 0.22);
+  background: rgba(108, 198, 68, 0.08);
+  color: var(--text2);
+  font-size: 0.72rem;
+}
+.latest-personalized-list {
+  list-style: none;
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(190px, 1fr));
+  gap: 0.55rem;
+}
+.latest-personalized-item {
+  display: flex;
+  gap: 0.55rem;
+  padding: 0.72rem 0.8rem;
+  border-radius: 8px;
+  border: 1px solid rgba(108, 198, 68, 0.22);
+  background: var(--bg);
+}
+.latest-personalized-item-rank {
+  flex: 0 0 auto;
+  color: var(--green);
+  font-size: 0.74rem;
+  font-weight: 700;
+}
+.latest-personalized-item-main {
+  min-width: 0;
+}
+.latest-personalized-item-main strong,
+.latest-personalized-item-main a {
+  color: var(--text);
+  font-size: 0.79rem;
+  text-decoration: none;
+}
+.latest-personalized-item-main a:hover {
+  color: var(--accent);
+}
+.latest-personalized-item-main span {
+  display: block;
+}
+.latest-personalized-item-meta {
+  margin-top: 0.2rem;
+  color: var(--green);
+  font-size: 0.71rem;
+  line-height: 1.35;
+}
+.latest-personalized-item-reasons {
+  margin-top: 0.2rem;
+  color: var(--text2);
+  font-size: 0.71rem;
+  line-height: 1.35;
+}
+.latest-personalized-footer {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 0.45rem;
+  margin-top: 0.6rem;
+}
+.latest-personalized-detail-link {
+  padding: 0.42rem 0.72rem;
+}
+.latest-personalized-more {
+  color: var(--text2);
+  font-size: 0.72rem;
+}
 .latest-budget-panel {
   margin-top: 0.95rem;
   padding-top: 0.95rem;

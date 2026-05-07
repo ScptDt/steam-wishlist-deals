@@ -199,6 +199,29 @@ class WebAssetsTests(unittest.TestCase):
         self.assertIn(".latest-collection-card", app_css)
         self.assertIn(".latest-collection-item-meta", app_css)
 
+    def test_latest_report_renders_personalized_recommendations_inside_details(self) -> None:
+        app_js = (ROOT / "web" / "steam_deals" / "app.js").read_text(
+            encoding="utf-8"
+        )
+        app_css = (ROOT / "web" / "steam_deals" / "app.css").read_text(
+            encoding="utf-8"
+        )
+
+        self.assertIn("function renderLatestPersonalizedRecommendations", app_js)
+        self.assertIn("report.personalized_recommendations", app_js)
+        self.assertIn("data-latest-personalized-recommendations", app_js)
+        self.assertIn("data-latest-personalized-recommendation", app_js)
+        self.assertIn("items.slice(0, 3)", app_js)
+        self.assertIn("renderLatestPersonalizedRecommendations(report, files)", app_js)
+        self.assertIn("renderLatestReportDetails(activeReport, files)", app_js)
+        self.assertIn("Recomendaciones personalizadas", app_js)
+        self.assertIn("Ver detalle HTML", app_js)
+        self.assertIn("Ver JSON completo", app_js)
+        self.assertIn(".latest-personalized-section", app_css)
+        self.assertIn(".latest-personalized-list", app_css)
+        self.assertIn(".latest-personalized-item", app_css)
+        self.assertIn(".latest-personalized-footer", app_css)
+
     def test_output_folder_actions_explain_default_folder_and_open_button(self) -> None:
         index_html = (ROOT / "web" / "steam_deals" / "index.html").read_text(
             encoding="utf-8"

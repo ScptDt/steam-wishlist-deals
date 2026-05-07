@@ -104,6 +104,18 @@ tr:hover { background: #1a3a5c; }
 .collection-score { color:#f0b232; }
 .collection-price { color:#c7d5e0; }
 .collection-share { display:flex; justify-content:flex-end; margin-top:.35rem; }
+.personalized-recommendations { margin: 1rem 0 .5rem; }
+.personalized-recommendations > p { color:#8f98a0; font-size:.78rem; margin:0 0 .55rem; }
+.personalized-profile { display:flex; flex-wrap:wrap; gap:.35rem; margin:0 0 .55rem; }
+.personalized-profile span { background:#1b2838; border:1px solid #2a475e; border-radius:999px; padding:.18rem .45rem; font-size:.72rem; color:#c7d5e0; }
+.personalized-recommendations-grid { display:grid; grid-template-columns:repeat(auto-fill,minmax(220px,1fr)); gap:.5rem; }
+.personalized-recommendation-card { background:#16202d; border:1px solid rgba(108,198,68,.35); border-radius:8px; padding:.65rem; }
+.personalized-recommendation-card h3 { color:#66c0f4; font-size:.95rem; margin-bottom:.25rem; }
+.personalized-rank { color:#6cc644; font-size:.78rem; font-weight:700; margin-bottom:.25rem; }
+.personalized-meta { display:flex; flex-wrap:wrap; gap:.35rem; color:#c7d5e0; font-size:.72rem; margin:.25rem 0; }
+.personalized-meta span:first-child { color:#f0b232; }
+.personalized-reasons { color:#8f98a0; font-size:.74rem; margin:.35rem 0 0; padding-left:1rem; }
+.personalized-share { display:flex; justify-content:flex-end; margin-top:.45rem; }
 .share-modal {
   display: none;
   position: fixed;
@@ -491,6 +503,115 @@ def _render_recommended_collections(collections: list[dict]) -> str:
 </section>'''
 
 
+def _render_personalized_profile(profile: dict) -> str:
+    if not isinstance(profile, dict):
+        return ""
+    chips: list[str] = []
+    activity_terms = [
+        str(term.get("term") or "").strip()
+        for term in profile.get("activity_terms", [])
+        if isinstance(term, dict) and term.get("term")
+    ][:3]
+    if activity_terms:
+        chips.append(f"Actividad: {', '.join(activity_terms)}")
+    library_summary = profile.get("library_summary") or {}
+    library_terms = [
+        str(term.get("term") or "").strip()
+        for term in library_summary.get("top_terms", [])
+        if isinstance(term, dict) and term.get("term")
+    ][:3]
+    if library_terms:
+        chips.append(f"Biblioteca: {', '.join(library_terms)}")
+    total_hours = library_summary.get("total_hltb_hours")
+    if total_hours:
+        chips.append(f"HLTB: {total_hours}h")
+    average_price = library_summary.get("average_price")
+    if average_price is not None:
+        chips.append(f"Precio prom.: ${average_price}")
+    if not chips:
+        return ""
+    return f'''<div class="personalized-profile">{"".join(f'<span>{html_escape(chip)}</span>' for chip in chips)}</div>'''
+
+
+def _render_personalized_meta(item: dict) -> str:
+    meta: list[str] = []
+    personalized_score = item.get("personalized_score")
+    if not isinstance(personalized_score, bool) and isinstance(
+        personalized_score, (int, float)
+    ):
+        meta.append(f"Personal {personalized_score}")
+    affinity_score = item.get("affinity_score")
+    if not isinstance(affinity_score, bool) and isinstance(affinity_score, (int, float)):
+        meta.append(f"Afinidad +{affinity_score}")
+    discount = _safe_int(item.get("discount"))
+    if discount:
+        meta.append(f"-{discount}%")
+    price_final = str(item.get("price_final") or item.get("price") or "")
+    if price_final:
+        meta.append(price_final)
+    if not meta:
+        return ""
+    return f'''<div class="personalized-meta">{"".join(f'<span>{html_escape(part)}</span>' for part in meta)}</div>'''
+
+
+def _render_personalized_item(item: dict, index: int) -> str:
+    appid = str(item.get("appid") or item.get("steam_appid") or "").strip()
+    safe_appid = appid if appid.isdigit() else ""
+    name = str(item.get("name") or item.get("steam_name") or "Juego desconocido")
+    name_html = (
+        f'<a href="{STORE_URL.format(appid=safe_appid)}" target="_blank">'
+        f"{html_escape(name)}</a>"
+        if safe_appid
+        else html_escape(name)
+    )
+    reasons = [str(reason) for reason in item.get("reasons", []) if str(reason).strip()]
+    reasons_html = "".join(
+        f"<li>{html_escape(reason)}</li>"
+        for reason in (reasons[:3] or ["score base del reporte"])
+    )
+    share_html = ""
+    if safe_appid:
+        price_final = str(item.get("price_final") or item.get("price") or "")
+        share_payload = _build_share_payload(
+            name=name,
+            appid=safe_appid,
+            price=price_final,
+            original_price=str(item.get("price_original") or price_final),
+            discount=_safe_int(item.get("discount")),
+            min_hist=str(item.get("min_hist") or item.get("historical_low") or ""),
+        )
+        share_html = f'<div class="personalized-share">{_render_share_button(share_payload)}</div>'
+    data_attr = (
+        f' data-personalized-recommendation="{html_escape(safe_appid)}"'
+        if safe_appid
+        else ""
+    )
+    return f'''<article class="personalized-recommendation-card"{data_attr}>
+  <div class="personalized-rank">#{index}</div>
+  <h3>{name_html}</h3>
+  {_render_personalized_meta(item)}
+  <ul class="personalized-reasons">{reasons_html}</ul>
+  {share_html}
+</article>'''
+
+
+def _render_personalized_recommendations(payload: dict | None) -> str:
+    if not isinstance(payload, dict):
+        return ""
+    items = [item for item in payload.get("items", []) if isinstance(item, dict)]
+    if not items:
+        return ""
+    cards = "".join(
+        _render_personalized_item(item, index) for index, item in enumerate(items, 1)
+    )
+    return f'''<section class="personalized-recommendations" data-personalized-recommendations-section>
+  <h2 style="margin:1rem 0 .35rem">Recomendaciones personalizadas</h2>
+  <p>Ranking explicable con score del reporte y señales opcionales de actividad, biblioteca y preferencias. No cambia el score global.</p>
+  {_render_personalized_profile(payload.get("profile") or {})}
+  <div class="personalized-recommendations-grid">{cards}</div>
+</section>'''
+
+
 def generate_share_html(
     deals,
     vanity,
@@ -502,6 +623,7 @@ def generate_share_html(
     historical_lows=None,
     profile_display_name: str | None = None,
     recommended_collections: list[dict] | None = None,
+    personalized_recommendations: dict | None = None,
 ):
     """Generate a lightweight shareable HTML page with the deals list."""
     reviews = reviews or {}
@@ -509,6 +631,7 @@ def generate_share_html(
     historical_lows = historical_lows or {}
     top_picks = top_picks or []
     recommended_collections = recommended_collections or []
+    personalized_recommendations = personalized_recommendations or {"items": []}
     today = date.today().strftime("%Y-%m-%d")
     title = f"Steam Deals — {profile_display_name or vanity}"
     deals_by_appid = {deal["appid"]: deal for deal in deals}
@@ -535,6 +658,9 @@ def generate_share_html(
         )
 
     collections_html = _render_recommended_collections(recommended_collections)
+    personalized_html = _render_personalized_recommendations(
+        personalized_recommendations
+    )
 
     sale_line = f" — {html_escape(sale_name)}" if sale_name else ""
     return f"""<!DOCTYPE html>
@@ -545,6 +671,7 @@ def generate_share_html(
 <h1>&#127918; {html_escape(title)}{sale_line}</h1>
 <div class="meta">{today} | {len(deals)} deals (&ge;{min_discount}%) | Precios en MXN</div>
 {picks_html}
+{personalized_html}
 {collections_html}
 <h2 style="margin:1rem 0 .5rem">Todos los Deals</h2>
 <table><thead><tr><th>%</th><th>Precio</th><th>Reseñas</th><th>Compatibilidad</th><th>Juego</th></tr></thead><tbody>{rows}</tbody></table>

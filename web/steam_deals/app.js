@@ -2718,6 +2718,87 @@ function renderLatestRecommendedCollections(report) {
   `;
 }
 
+function renderLatestPersonalizedRecommendationItem(item, index) {
+  const source = item && typeof item === 'object' ? item : {};
+  const appid = String(source.appid || source.steam_appid || '').trim();
+  const safeAppid = /^\d+$/.test(appid) ? appid : '';
+  const name = source.name || source.steam_name || 'Juego desconocido';
+  const reasons = Array.isArray(source.reasons)
+    ? source.reasons.filter(reason => String(reason || '').trim()).slice(0, 2)
+    : [];
+  const meta = [];
+  if (Number.isFinite(Number(source.personalized_score))) meta.push(`Personal ${source.personalized_score}`);
+  if (Number.isFinite(Number(source.affinity_score))) meta.push(`Afinidad +${source.affinity_score}`);
+  const discount = Number(source.discount || 0) || 0;
+  if (discount > 0) meta.push(`-${discount}%`);
+  const price = source.price_final || source.price || '';
+  if (price) meta.push(price);
+  const nameHtml = safeAppid
+    ? `<a href="https://store.steampowered.com/app/${escapeHtml(safeAppid)}/" target="_blank" rel="noopener noreferrer">${escapeHtml(name)}</a>`
+    : `<span>${escapeHtml(name)}</span>`;
+  return `
+    <li class="latest-personalized-item"${safeAppid ? ` data-latest-personalized-recommendation="${escapeHtml(safeAppid)}"` : ''}>
+      <div class="latest-personalized-item-rank">#${escapeHtml(index)}</div>
+      <div class="latest-personalized-item-main">
+        <strong>${nameHtml}</strong>
+        ${meta.length ? `<span class="latest-personalized-item-meta">${escapeHtml(meta.join(' · '))}</span>` : ''}
+        <span class="latest-personalized-item-reasons">${escapeHtml((reasons.length ? reasons : ['score base del reporte']).join(' · '))}</span>
+      </div>
+    </li>
+  `;
+}
+
+function renderLatestPersonalizedProfile(profile) {
+  const source = profile && typeof profile === 'object' ? profile : {};
+  const librarySummary = source.library_summary && typeof source.library_summary === 'object'
+    ? source.library_summary
+    : {};
+  const activityTerms = Array.isArray(source.activity_terms)
+    ? source.activity_terms.map(term => term && term.term).filter(Boolean).slice(0, 2)
+    : [];
+  const libraryTerms = Array.isArray(librarySummary.top_terms)
+    ? librarySummary.top_terms.map(term => term && term.term).filter(Boolean).slice(0, 2)
+    : [];
+  const chips = [];
+  if (activityTerms.length) chips.push(`Actividad: ${activityTerms.join(', ')}`);
+  if (libraryTerms.length) chips.push(`Biblioteca: ${libraryTerms.join(', ')}`);
+  if (Number(librarySummary.total_hltb_hours) > 0) chips.push(`HLTB: ${librarySummary.total_hltb_hours}h`);
+  if (Number.isFinite(Number(librarySummary.average_price))) chips.push(`Precio prom.: $${librarySummary.average_price}`);
+  if (!chips.length) return '';
+  return `<div class="latest-personalized-profile">${chips.map(chip => `<span>${escapeHtml(chip)}</span>`).join('')}</div>`;
+}
+
+function renderLatestPersonalizedRecommendations(report, files = null) {
+  const payload = report && typeof report === 'object' ? (report.personalized_recommendations || null) : null;
+  const items = Array.isArray(payload && payload.items)
+    ? payload.items.filter(item => item && typeof item === 'object')
+    : [];
+  if (!items.length) return '';
+  const selectedItems = items.slice(0, 3);
+  const hiddenCount = Math.max(0, items.length - selectedItems.length);
+  const htmlName = findLatestPrimaryHtmlReport(files);
+  const htmlLink = htmlName
+    ? `<a class="file-link latest-personalized-detail-link" href="${generatedFileHref(htmlName)}" target="_blank" rel="noopener noreferrer">Ver detalle HTML</a>`
+    : '';
+  return `
+    <div class="latest-personalized-section" data-latest-personalized-recommendations>
+      <div class="latest-personalized-head">
+        <div class="latest-personalized-title">Recomendaciones personalizadas</div>
+        <div class="latest-personalized-subtitle">Hasta 3 juegos del ranking personalizado. Abre el HTML o JSON para revisar el detalle completo.</div>
+      </div>
+      ${renderLatestPersonalizedProfile(payload.profile || {})}
+      <ol class="latest-personalized-list">
+        ${selectedItems.map((item, index) => renderLatestPersonalizedRecommendationItem(item, index + 1)).join('')}
+      </ol>
+      <div class="latest-personalized-footer">
+        ${htmlLink}
+        <a class="file-link latest-personalized-detail-link" href="${latestReportUrl()}" target="_blank" rel="noopener noreferrer">Ver JSON completo</a>
+        ${hiddenCount ? `<span class="latest-personalized-more">${escapeHtml(hiddenCount)} más en el reporte completo</span>` : ''}
+      </div>
+    </div>
+  `;
+}
+
 function renderLatestBudgetPanel(report) {
   const budgetResult = report && typeof report === 'object' ? (report.budget_result || null) : null;
   if (!budgetResult) return '';
@@ -2884,6 +2965,7 @@ function renderLatestReportDetails(report, files = null) {
   const body = [
     renderLatestReportActions(files),
     renderLatestRecommendedCollections(report),
+    renderLatestPersonalizedRecommendations(report, files),
     renderLatestShareTopPicks(report),
     renderLatestBudgetPanel(report),
   ].filter(Boolean).join('');

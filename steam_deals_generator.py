@@ -2887,9 +2887,27 @@ def generate_html(
     profile_display_name: str | None = None,
     active_promo_context: dict | None = None,
     recommended_collections: list[dict] | None = None,
+    personalized_recommendations: dict | None = None,
+    activity_games=None,
+    library_games=None,
+    liked_appids=None,
+    preference_relations=None,
+    hltb_hours=None,
 ) -> str:
     if recommended_collections is None:
         recommended_collections = build_recommended_collections(deals, top_picks=top_picks)
+    if personalized_recommendations is None:
+        personalized_recommendations = build_personalized_recommendations(
+            deals,
+            top_picks=top_picks,
+            activity_games=activity_games,
+            library_games=library_games if library_games is not None else have_on_sale,
+            owned=owned,
+            family_appids=family_appids,
+            liked_appids=liked_appids,
+            preference_relations=preference_relations,
+            hltb_hours=hltb_hours,
+        )
     if _generate_html_renderer is not None:
         return _generate_html_renderer(
             deals,
@@ -2918,6 +2936,7 @@ def generate_html(
             compare_data=compare_data,
             gift_ideas=gift_ideas,
             recommended_collections=recommended_collections,
+            personalized_recommendations=personalized_recommendations,
             local_trends=local_trends,
             price_history=price_history,
             profile_display_name=profile_display_name,
@@ -2954,6 +2973,7 @@ def generate_html(
         compare_data=compare_data,
         gift_ideas=gift_ideas,
         recommended_collections=recommended_collections,
+        personalized_recommendations=personalized_recommendations,
         local_trends=local_trends,
         price_history=price_history,
         profile_display_name=profile_display_name,
@@ -2974,10 +2994,16 @@ def generate_share_html(
     historical_lows=None,
     profile_display_name: str | None = None,
     recommended_collections: list[dict] | None = None,
+    personalized_recommendations: dict | None = None,
 ):
     """Generate a lightweight shareable HTML page with the deals list."""
     if recommended_collections is None:
         recommended_collections = build_recommended_collections(deals, top_picks=top_picks)
+    if personalized_recommendations is None:
+        personalized_recommendations = build_personalized_recommendations(
+            deals,
+            top_picks=top_picks,
+        )
     if _generate_share_html_renderer is not None:
         return _generate_share_html_renderer(
             deals,
@@ -2990,6 +3016,7 @@ def generate_share_html(
             historical_lows=historical_lows,
             profile_display_name=profile_display_name,
             recommended_collections=recommended_collections,
+            personalized_recommendations=personalized_recommendations,
         )
     if _generate_share_html_fallback_renderer is None:
         raise RuntimeError("Share HTML fallback renderer module is not available")
@@ -3004,6 +3031,7 @@ def generate_share_html(
         historical_lows=historical_lows,
         profile_display_name=profile_display_name,
         recommended_collections=recommended_collections,
+        personalized_recommendations=personalized_recommendations,
     )
 
 
@@ -3693,6 +3721,7 @@ def main():
         compare_data=compare_data,
         gift_ideas=gift_ideas,
         recommended_collections=recommended_collections,
+        personalized_recommendations=personalized_recommendations,
         local_trends=local_trends,
         price_history=price_history,
         profile_display_name=profile_display_name,
@@ -3712,6 +3741,7 @@ def main():
         historical_lows=historical_lows,
         profile_display_name=profile_display_name,
         recommended_collections=recommended_collections,
+        personalized_recommendations=personalized_recommendations,
     )
 
     step("Generando JSON...")
