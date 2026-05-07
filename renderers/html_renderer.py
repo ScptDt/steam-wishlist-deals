@@ -267,14 +267,24 @@ def _shuffle_candidate_payload(game: dict, *, source_deal: dict | None = None) -
     source_deal = source_deal or {}
     appid = str(game.get("appid") or source_deal.get("appid") or "").strip()
     name = str(game.get("name") or source_deal.get("name") or "").strip()
-    if not appid or not name:
+    if not appid.isdigit() or not name:
         return None
     discount = int(game.get("discount") or source_deal.get("discount") or 0)
-    score = game.get("score")
+    score = game.get("personalized_score")
+    if score is None:
+        score = game.get("score") if game.get("score") is not None else game.get("base_score")
     recommendation = str(game.get("recommendation") or "").strip()
-    reasons = [str(reason) for reason in (game.get("score_reasons") or []) if reason]
+    reasons = [
+        str(reason)
+        for reason in (game.get("reasons") or game.get("score_reasons") or [])
+        if reason
+    ]
     reason = recommendation or (reasons[0] if reasons else "Buen candidato para revisar sin recorrer toda la lista.")
-    score_text = f"Score {score}" if score not in (None, "") else f"-{discount}% descuento"
+    score_label = "Personal" if game.get("personalized_score") is not None else "Score"
+    score_text = f"{score_label} {score}" if score not in (None, "") else f"-{discount}% descuento"
+    affinity = game.get("affinity_score")
+    if affinity not in (None, "") and reason == "score base del reporte":
+        reason = f"Afinidad +{affinity}"
     return {
         "appid": appid,
         "name": name,
@@ -288,11 +298,25 @@ def _shuffle_candidate_payload(game: dict, *, source_deal: dict | None = None) -
     }
 
 
-def _build_shuffle_candidates(top_picks: list[dict], deals: list[dict], *, limit: int = 12) -> list[dict]:
+def _shuffle_personalized_items(personalized_recommendations: dict | None) -> list[dict]:
+    if not isinstance(personalized_recommendations, dict):
+        return []
+    return [item for item in personalized_recommendations.get("items", []) if isinstance(item, dict)]
+
+
+def _build_shuffle_candidates(
+    top_picks: list[dict],
+    deals: list[dict],
+    *,
+    personalized_recommendations: dict | None = None,
+    limit: int = 12,
+) -> list[dict]:
     deals_by_appid = {str(deal.get("appid")): deal for deal in deals if deal.get("appid")}
-    source_games = top_picks or sorted(
+    personalized_items = _shuffle_personalized_items(personalized_recommendations)
+    source_games = personalized_items or top_picks or sorted(
         deals,
         key=lambda deal: (
+            -float(deal.get("score") or 0),
             -int(deal.get("discount") or 0),
             int(deal.get("price_raw") or 0),
             str(deal.get("name") or "").lower(),
@@ -318,6 +342,11 @@ def _html_shuffle_one_game(candidates: list[dict]) -> str:
     if not candidates:
         return ""
     first = candidates[0]
+    action_html = (
+        '<button type="button" class="btn-reset shuffle-next-btn" data-shuffle-next>Dame otro</button>'
+        if len(candidates) > 1
+        else '<span class="shuffle-single-note">Único candidato destacado</span>'
+    )
     return f'''<section class="shuffle-one" data-shuffle-one data-shuffle-index="0" data-shuffle-candidates="{_share_payload_attr(candidates)}">
   <div class="shuffle-copy">
     <h2>&#127922; Shuffle 1 juego</h2>
@@ -333,7 +362,7 @@ def _html_shuffle_one_game(candidates: list[dict]) -> str:
       <div class="shuffle-reason" data-shuffle-reason>{_html_esc(first['reason'])}</div>
     </div>
     <div class="shuffle-actions">
-      <button type="button" class="btn-reset shuffle-next-btn" data-shuffle-next>Dame otro</button>
+      {action_html}
       <span class="shuffle-counter" data-shuffle-counter>1/{len(candidates)}</span>
     </div>
   </div>
@@ -836,7 +865,7 @@ a.pick-card:hover { border-color: var(--accent-blue); transform: translateY(-2px
 .shuffle-reason { margin-top: .35rem; color: var(--accent-yellow); font-size: .8rem; line-height: 1.4; }
 .shuffle-actions { display: flex; flex-direction: column; gap: .35rem; align-items: flex-end; }
 .shuffle-next-btn:focus-visible { outline: 2px solid var(--accent-blue); outline-offset: 2px; }
-.shuffle-counter { color: var(--text-secondary); font-size: .75rem; }
+.shuffle-counter, .shuffle-single-note { color: var(--text-secondary); font-size: .75rem; }
 @media (max-width: 767px) { .shuffle-card { grid-template-columns: 1fr; } .shuffle-actions { align-items: stretch; } }
 .recommended-collections { margin: 0 0 1.5rem; }
 .recommended-collections h2 { font-size: 1.2rem; margin-bottom: .3rem; }
@@ -1600,7 +1629,15 @@ def generate_html(
         )
     )
 
-    parts.append(_html_shuffle_one_game(_build_shuffle_candidates(top_picks, deals)))
+    parts.append(
+        _html_shuffle_one_game(
+            _build_shuffle_candidates(
+                top_picks,
+                deals,
+                personalized_recommendations=personalized_recommendations,
+            )
+        )
+    )
 
     if top_picks:
         cards = []

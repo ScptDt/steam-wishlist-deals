@@ -4458,7 +4458,7 @@ class HistoryAndTrendTests(unittest.TestCase):
             have_on_sale=[],
             vanity="gaben",
             owned={},
-            wishlist_appids=["a", "b"],
+            wishlist_appids=["10", "20"],
             min_discount=50,
             genres=[],
             local_trends={
@@ -5727,13 +5727,13 @@ class RankTopPicksTests(unittest.TestCase):
             have_on_sale=[],
             vanity="gaben",
             owned={},
-            wishlist_appids=["a", "b"],
+            wishlist_appids=["10", "20"],
             min_discount=50,
             genres=[],
             sale_name="Steam Sale",
             top_picks=[
                 {
-                    "appid": "a",
+                    "appid": "10",
                     "name": "Alpha",
                     "score": 95.4,
                     "discount": 90,
@@ -6855,12 +6855,12 @@ class RankTopPicksTests(unittest.TestCase):
             have_on_sale=[],
             vanity="gaben",
             owned={},
-            wishlist_appids=["a", "b"],
+            wishlist_appids=["10", "20"],
             min_discount=50,
             genres=[],
             top_picks=[
                 {
-                    "appid": "a",
+                    "appid": "10",
                     "name": "Alpha",
                     "discount": 90,
                     "price_final": "$10",
@@ -6870,7 +6870,7 @@ class RankTopPicksTests(unittest.TestCase):
                     "categories": [],
                 },
                 {
-                    "appid": "b",
+                    "appid": "20",
                     "name": "Bravo",
                     "discount": 80,
                     "price_final": "$12",
@@ -6893,11 +6893,64 @@ class RankTopPicksTests(unittest.TestCase):
         self.assertIn("Comprar ahora", html)
         self.assertIn("1/2", html)
 
+    def test_generate_html_shuffle_prefers_personalized_recommendations(self) -> None:
+        html = generate_html(
+            deals=[
+                {
+                    "appid": "30",
+                    "name": "Personal Pick",
+                    "discount": 50,
+                    "price_final": "$9",
+                    "price_original": "$18",
+                    "price_raw": 900,
+                    "categories": [],
+                }
+            ],
+            backlog_on_sale=[],
+            have_on_sale=[],
+            vanity="gaben",
+            owned={},
+            wishlist_appids=["30", "40"],
+            min_discount=50,
+            genres=[],
+            top_picks=[
+                {
+                    "appid": "40",
+                    "name": "Top Pick",
+                    "discount": 90,
+                    "price_final": "$10",
+                    "score": 95.0,
+                    "recommendation": "Comprar ahora",
+                    "categories": [],
+                }
+            ],
+            personalized_recommendations={
+                "items": [
+                    {
+                        "appid": "30",
+                        "name": "Personal Pick",
+                        "discount": 50,
+                        "price_final": "$9",
+                        "personalized_score": 99.0,
+                        "affinity_score": 24.0,
+                        "reasons": ["encaja con tu actividad reciente"],
+                    }
+                ]
+            },
+        )
+
+        self.assertIn("Shuffle 1 juego", html)
+        self.assertIn("Personal Pick", html)
+        self.assertIn("Personal 99.0", html)
+        self.assertIn("encaja con tu actividad reciente", html)
+        self.assertIn("Único candidato destacado", html)
+        self.assertNotIn("Dame otro", html)
+
     def test_generate_html_adds_shuffle_one_game_from_deals_without_top_picks(self) -> None:
         html = generate_html(
             deals=[
                 {
-                    "appid": "a",
+                    "appid": "50",
                     "name": "Alpha",
                     "discount": 70,
                     "price_final": "$10",
@@ -6906,7 +6959,7 @@ class RankTopPicksTests(unittest.TestCase):
                     "categories": [],
                 },
                 {
-                    "appid": "b",
+                    "appid": "60",
                     "name": "Bravo",
                     "discount": 90,
                     "price_final": "$5",
@@ -6919,9 +6972,10 @@ class RankTopPicksTests(unittest.TestCase):
             have_on_sale=[],
             vanity="gaben",
             owned={},
-            wishlist_appids=["a", "b"],
+            wishlist_appids=["50", "60"],
             min_discount=50,
             genres=[],
+            personalized_recommendations={"items": []},
         )
 
         self.assertIn("Shuffle 1 juego", html)
@@ -6929,6 +6983,44 @@ class RankTopPicksTests(unittest.TestCase):
         self.assertIn("-90% descuento", html)
         self.assertIn("Buen candidato para revisar sin recorrer toda la lista.", html)
         self.assertIn("1/2", html)
+
+    def test_generate_html_shuffle_uses_top_picks_when_personalized_empty(self) -> None:
+        html = generate_html(
+            deals=[
+                {
+                    "appid": "70",
+                    "name": "Deal",
+                    "discount": 80,
+                    "price_final": "$8",
+                    "price_original": "$40",
+                    "categories": [],
+                }
+            ],
+            backlog_on_sale=[],
+            have_on_sale=[],
+            vanity="gaben",
+            owned={},
+            wishlist_appids=["70", "80"],
+            min_discount=50,
+            genres=[],
+            top_picks=[
+                {
+                    "appid": "80",
+                    "name": "Top Pick",
+                    "discount": 70,
+                    "price_final": "$10",
+                    "score": 91.0,
+                    "recommendation": "Muy buena oferta",
+                    "categories": [],
+                }
+            ],
+            personalized_recommendations={"items": []},
+        )
+
+        self.assertIn("Top Pick", html)
+        self.assertIn("Score 91.0", html)
+        self.assertIn("Muy buena oferta", html)
+        self.assertIn("Único candidato destacado", html)
 
     def test_generate_html_fallback_adds_shuffle_one_game(self) -> None:
         original_renderer = generate_html.__globals__.get("_generate_html_renderer")
@@ -6940,12 +7032,12 @@ class RankTopPicksTests(unittest.TestCase):
                 have_on_sale=[],
                 vanity="gaben",
                 owned={},
-                wishlist_appids=["a"],
+                wishlist_appids=["90"],
                 min_discount=50,
                 genres=[],
                 top_picks=[
                     {
-                        "appid": "a",
+                        "appid": "90",
                         "name": "Alpha",
                         "discount": 90,
                         "price_final": "$10",
@@ -6961,7 +7053,8 @@ class RankTopPicksTests(unittest.TestCase):
 
         self.assertIn("Shuffle 1 juego", html)
         self.assertIn("data-shuffle-one", html)
-        self.assertIn("Dame otro", html)
+        self.assertNotIn("Dame otro", html)
+        self.assertIn("Único candidato destacado", html)
         self.assertIn("bindShuffleOneGame", html)
         self.assertIn("Alpha", html)
 
