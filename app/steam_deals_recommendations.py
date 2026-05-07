@@ -624,7 +624,6 @@ def _selection_reasons(
     if appid in family_appids:
         reasons.append("ya disponible en biblioteca familiar")
     reasons.extend(str(reason) for reason in candidate.get("reasons") or [] if reason != "score base del reporte")
-    reasons.extend(str(reason) for reason in candidate.get("collection_reasons") or [])
     base_score = _selection_base_score(candidate)
     affinity_score = _safe_number(candidate.get("affinity_score"))
     if candidate.get("personalized_score") is not None and _safe_number(candidate.get("personalized_score")) >= 80:
@@ -635,6 +634,7 @@ def _selection_reasons(
         reasons.append(f"score del reporte fuerte: {base_score:.1f}")
     if _safe_number(candidate.get("discount")) >= 70:
         reasons.append(f"descuento fuerte: {int(_safe_number(candidate.get('discount')))}%")
+    reasons.extend(str(reason) for reason in candidate.get("collection_reasons") or [])
     if not reasons:
         fallback = {
             "conservar": "señales positivas del reporte",

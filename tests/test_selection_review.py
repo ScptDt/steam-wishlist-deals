@@ -89,6 +89,60 @@ class SelectionReviewTests(unittest.TestCase):
         self.assertIn("Steam Deck: Steam Deck Verified", item["reasons"])
         self.assertIn("recommended_collections", review["source_signals"])
 
+    def test_collection_reasons_do_not_displace_stronger_limited_reasons(self) -> None:
+        review = build_selection_review(
+            ["80"],
+            deals=[
+                {"appid": "80", "name": "Curated Gem", "score": 70, "discount": 90},
+            ],
+            personalized_recommendations={
+                "items": [
+                    {
+                        "appid": "80",
+                        "name": "Curated Gem",
+                        "base_score": 70,
+                        "affinity_score": 20,
+                        "personalized_score": 95,
+                        "reasons": ["curated personal fit"],
+                    }
+                ]
+            },
+            recommended_collections=[
+                {
+                    "id": "best_savings",
+                    "label": "Mayor ahorro",
+                    "items": [{"appid": "80", "reason": "90% de descuento"}],
+                }
+            ],
+            max_reasons=2,
+        )
+
+        item = review["items"][0]
+        self.assertEqual(item["reasons"], ["curated personal fit", "score personal alto: 95.0"])
+        self.assertIn("recommended_collection", item["signals"])
+
+    def test_duplicate_collection_reasons_are_deduped(self) -> None:
+        review = build_selection_review(
+            ["90"],
+            recommended_collections=[
+                {
+                    "id": "steam_deck",
+                    "label": "Steam Deck",
+                    "items": [{"appid": "90", "reason": "Steam Deck Verified"}],
+                },
+                {
+                    "id": "steam_deck",
+                    "label": "Steam Deck",
+                    "items": [{"appid": "90", "reason": "Steam Deck Verified"}],
+                },
+            ],
+            max_reasons=4,
+        )
+
+        item = review["items"][0]
+        self.assertEqual(item["reasons"].count("Steam Deck: Steam Deck Verified"), 1)
+        self.assertEqual(item["reasons"], ["Steam Deck: Steam Deck Verified"])
+
     def test_marks_owned_family_invalid_and_duplicate_selection_items(self) -> None:
         review = build_selection_review(
             ["30", {"appid": "40"}, "30", ""],
