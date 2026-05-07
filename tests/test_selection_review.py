@@ -52,6 +52,43 @@ class SelectionReviewTests(unittest.TestCase):
         self.assertEqual(review["summary"]["conservar"], 1)
         self.assertEqual(review["summary"]["dudar"], 1)
 
+    def test_recommended_collections_add_local_signal_without_recalibrating_score(self) -> None:
+        review = build_selection_review(
+            ["70"],
+            deals=[
+                {
+                    "appid": "70",
+                    "name": "Deck Gem",
+                    "score": 74,
+                    "discount": 25,
+                    "genres": ["Adventure"],
+                },
+            ],
+            recommended_collections=[
+                {
+                    "id": "steam_deck",
+                    "label": "Steam Deck",
+                    "items": [
+                        {
+                            "appid": "70",
+                            "name": "Deck Gem",
+                            "reason": "Steam Deck Verified",
+                            "score": 74,
+                            "discount": 25,
+                        }
+                    ],
+                }
+            ],
+            max_reasons=3,
+        )
+
+        item = review["items"][0]
+        self.assertEqual(item["decision"], "dudar")
+        self.assertEqual(item["base_score"], 74.0)
+        self.assertIn("recommended_collection", item["signals"])
+        self.assertIn("Steam Deck: Steam Deck Verified", item["reasons"])
+        self.assertIn("recommended_collections", review["source_signals"])
+
     def test_marks_owned_family_invalid_and_duplicate_selection_items(self) -> None:
         review = build_selection_review(
             ["30", {"appid": "40"}, "30", ""],

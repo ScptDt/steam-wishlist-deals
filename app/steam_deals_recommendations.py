@@ -523,12 +523,47 @@ def _personalized_items(personalized_recommendations) -> list[dict]:
     return _record_list(personalized_recommendations)
 
 
-def _selection_context_by_appid(deals, top_picks, personalized_recommendations) -> dict[str, dict]:
+def _collection_signal_reason(collection: dict, item: dict) -> str:
+    label = str(collection.get("label") or collection.get("title") or collection.get("id") or "").strip()
+    reason = str(item.get("reason") or "").strip()
+    if label and reason:
+        return f"{label}: {reason}"
+    if label:
+        return f"aparece en {label}"
+    return reason
+
+
+def _recommended_collection_contexts(recommended_collections) -> list[dict]:
+    contexts: dict[str, dict] = {}
+    for collection in _record_list(recommended_collections):
+        items = collection.get("items") if isinstance(collection.get("items"), list) else []
+        label = str(collection.get("label") or collection.get("title") or collection.get("id") or "").strip()
+        for item in (item for item in items if isinstance(item, dict)):
+            appid = _collection_appid(item)
+            if not appid:
+                continue
+            current = contexts.get(appid, {})
+            reason = _collection_signal_reason(collection, item)
+            contexts[appid] = {
+                **current,
+                **{key: item[key] for key in ("name", "steam_name", "score", "discount", "price_final", "price") if key in item},
+                "appid": appid,
+                "collection_labels": _dedupe_texts([*(current.get("collection_labels") or []), label]),
+                "collection_reasons": _dedupe_texts([*(current.get("collection_reasons") or []), reason]),
+            }
+    return list(contexts.values())
+
+
+def _selection_context_by_appid(deals, top_picks, personalized_recommendations, recommended_collections=None) -> dict[str, dict]:
     by_appid = {
         _collection_appid(candidate): dict(candidate)
         for candidate in _merge_collection_sources(deals or [], top_picks)
         if _collection_appid(candidate)
     }
+    for item in _recommended_collection_contexts(recommended_collections):
+        appid = _collection_appid(item)
+        if appid:
+            by_appid[appid] = {**item, **by_appid.get(appid, {})}
     for item in _personalized_items(personalized_recommendations):
         appid = _collection_appid(item)
         if appid:
@@ -589,6 +624,7 @@ def _selection_reasons(
     if appid in family_appids:
         reasons.append("ya disponible en biblioteca familiar")
     reasons.extend(str(reason) for reason in candidate.get("reasons") or [] if reason != "score base del reporte")
+    reasons.extend(str(reason) for reason in candidate.get("collection_reasons") or [])
     base_score = _selection_base_score(candidate)
     affinity_score = _safe_number(candidate.get("affinity_score"))
     if candidate.get("personalized_score") is not None and _safe_number(candidate.get("personalized_score")) >= 80:
@@ -629,6 +665,8 @@ def _selection_signals(appid: str, candidate: dict, owned_appids: set[str], fami
         signals.append("price")
     if candidate.get("reasons"):
         signals.append("reasons")
+    if candidate.get("collection_reasons") or candidate.get("collection_labels"):
+        signals.append("recommended_collection")
     return _dedupe_texts(signals) or ["selection_only"]
 
 
@@ -666,6 +704,7 @@ def build_selection_review(
     family_appids=None,
     liked_appids=None,
     preference_relations=None,
+    recommended_collections=None,
     hltb_hours=None,
     max_reasons: int = 2,
 ) -> dict:
@@ -682,7 +721,12 @@ def build_selection_review(
             preference_relations=preference_relations,
             hltb_hours=hltb_hours,
         )
-    context_by_appid = _selection_context_by_appid(deals, top_picks, personalized_recommendations)
+    context_by_appid = _selection_context_by_appid(
+        deals,
+        top_picks,
+        personalized_recommendations,
+        recommended_collections,
+    )
     owned_set = _normalize_appid_set(owned)
     family_set = _normalize_appid_set(family_appids)
     seen_appids: set[str] = set()
@@ -699,7 +743,7 @@ def build_selection_review(
         items.append(_selection_review_item(appid, candidate, owned_set, family_set, max(1, int(_safe_number(max_reasons, 2)))))
     counts = {decision: sum(1 for item in items if item["decision"] == decision) for decision in ("conservar", "dudar", "quitar")}
     return {
-        "source_signals": ["selection", "score", "personalized_recommendations", "owned_family"],
+        "source_signals": ["selection", "score", "personalized_recommendations", "recommended_collections", "owned_family"],
         "items": items,
         "summary": {"total_items": len(items), "duplicate_count": duplicate_count, **counts},
     }

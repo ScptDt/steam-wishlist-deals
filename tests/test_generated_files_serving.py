@@ -682,6 +682,13 @@ class GeneratedFilesServingTests(unittest.TestCase):
                             "liked_appids": ["10"],
                             "relationships": {"10": ["similar a Hades"]},
                         },
+                        "recommended_collections": [
+                            {
+                                "id": "steam_deck",
+                                "label": "Steam Deck",
+                                "items": [{"appid": "10", "reason": "Steam Deck Verified"}],
+                            }
+                        ],
                         "personalized_recommendations": {"items": []},
                     }
                 ),
@@ -699,6 +706,7 @@ class GeneratedFilesServingTests(unittest.TestCase):
         self.assertEqual(by_appid["10"]["decision"], "conservar")
         self.assertIn("personalized_score", by_appid["10"]["signals"])
         self.assertIn("affinity", by_appid["10"]["signals"])
+        self.assertIn("recommended_collection", by_appid["10"]["signals"])
         self.assertEqual(by_appid["30"]["decision"], "quitar")
         self.assertIn("owned", by_appid["30"]["signals"])
         self.assertEqual(by_appid["40"]["decision"], "quitar")
@@ -713,6 +721,9 @@ class GeneratedFilesServingTests(unittest.TestCase):
                     "liked_appids": ["10"],
                     "relations": {"10": ["similar a Hades"]},
                 },
+                "recommended_collections": [
+                    {"id": "steam_deck", "label": "Steam Deck", "items": [{"appid": "10"}]}
+                ],
                 "personalized_recommendations": {"items": []},
             }
         )
@@ -721,6 +732,10 @@ class GeneratedFilesServingTests(unittest.TestCase):
         self.assertEqual(context["library_games"], [{"appid": "30", "name": "Owned Hit"}])
         self.assertEqual(context["liked_appids"], ["10"])
         self.assertEqual(context["preference_relations"], {"10": ["similar a Hades"]})
+        self.assertEqual(
+            context["recommended_collections"],
+            [{"id": "steam_deck", "label": "Steam Deck", "items": [{"appid": "10"}]}],
+        )
         self.assertIsNone(context["personalized_recommendations"])
 
     def test_run_sse_start_error_sanitizes_public_detail(self) -> None:

@@ -375,6 +375,7 @@ def selection_review_context_from_report(report: dict) -> dict:
         "deals": _first_non_empty_report_value(report, ("deals",), (list,), default=[]),
         "top_picks": _first_non_empty_report_value(report, ("top_picks",), (list,), default=[]),
         "personalized_recommendations": _personalized_recommendations_from_report(report),
+        "recommended_collections": _first_non_empty_report_value(report, ("recommended_collections",), (list,), default=[]),
         "activity_games": _first_non_empty_report_value(
             report,
             ("activity_games", "recent_activity", "recently_played"),
