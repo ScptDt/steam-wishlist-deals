@@ -306,6 +306,177 @@ def build_recommended_collections(
     return collections
 
 
+def _normalize_appid_set(values) -> set[str]:
+    if not values:
+        return set()
+    if isinstance(values, dict):
+        return {str(appid) for appid in values if str(appid).strip()}
+    appids: set[str] = set()
+    for value in values:
+        if isinstance(value, dict):
+            appid = _collection_appid(value)
+        else:
+            appid = str(value).strip()
+        if appid:
+            appids.add(appid)
+    return appids
+
+
+def _record_list(records) -> list[dict]:
+    if not records:
+        return []
+    if isinstance(records, dict):
+        return [
+            {"appid": str(appid), **(value if isinstance(value, dict) else {"name": value})}
+            for appid, value in records.items()
+        ]
+    return [dict(record) for record in records if isinstance(record, dict)]
+
+
+def _game_activity_weight(game: dict) -> float:
+    recent_hours = _safe_number(game.get("playtime_2weeks")) / 60
+    total_hours = _safe_number(game.get("playtime_forever")) / 600
+    explicit_hours = _safe_number(game.get("hours_played"))
+    return max(1.0, recent_hours + total_hours + explicit_hours)
+
+
+def _weighted_style_terms(records: list[dict], *, activity_weighted: bool = False) -> list[dict]:
+    weights: dict[str, tuple[float, str]] = {}
+    for record in records:
+        weight = _game_activity_weight(record) if activity_weighted else 1.0
+        for term in _style_terms(record):
+            key = term.lower()
+            current, label = weights.get(key, (0.0, term))
+            weights[key] = (current + weight, label)
+    return [
+        {"term": label, "weight": round(weight, 2)}
+        for weight, label in sorted(weights.values(), key=lambda value: (-value[0], value[1].lower()))
+    ]
+
+
+def _matched_terms(candidate: dict, weighted_terms: list[dict], *, limit: int = 2) -> list[str]:
+    candidate_terms = {term.lower() for term in _style_terms(candidate)}
+    matches = [
+        str(term["term"])
+        for term in weighted_terms
+        if str(term.get("term", "")).lower() in candidate_terms
+    ]
+    return matches[:limit]
+
+
+def _preference_reasons(appid: str, preference_relations) -> list[str]:
+    if not isinstance(preference_relations, dict):
+        return []
+    raw = preference_relations.get(appid) or preference_relations.get(str(appid))
+    if raw is None:
+        return []
+    if isinstance(raw, str):
+        return [raw]
+    if isinstance(raw, list):
+        return [str(reason) for reason in raw if str(reason).strip()]
+    return []
+
+
+def _candidate_base_score(candidate: dict) -> float:
+    if candidate.get("score") is not None:
+        return _safe_number(candidate.get("score"), 50.0)
+    return 50.0
+
+
+def _library_profile_summary(library_games: list[dict], owned_appids: set[str], hltb_hours) -> dict:
+    hltb_hours = hltb_hours or {}
+    appids = {_collection_appid(game) for game in library_games if _collection_appid(game)}
+    prices = [_safe_number(game.get("price_raw")) / 100 for game in library_games if game.get("price_raw") is not None]
+    total_hours = sum(
+        _safe_number(game.get("hltb_hours") or game.get("hours") or hltb_hours.get(_collection_appid(game)))
+        for game in library_games
+    )
+    return {
+        "owned_count": len(owned_appids | appids),
+        "total_hltb_hours": round(total_hours, 1),
+        "top_terms": _weighted_style_terms(library_games)[:5],
+        "average_price": round(sum(prices) / len(prices), 2) if prices else None,
+    }
+
+
+def _personalized_candidate(candidate: dict, *, activity_terms, library_terms, liked_appids, preference_relations) -> dict:
+    appid = _collection_appid(candidate)
+    base_score = _candidate_base_score(candidate)
+    affinity = 0.0
+    reasons: list[str] = []
+    if matches := _matched_terms(candidate, activity_terms):
+        affinity += 16
+        reasons.append(f"encaja con tu actividad reciente: {', '.join(matches)}")
+    if matches := _matched_terms(candidate, library_terms):
+        affinity += 12
+        reasons.append(f"coincide con tu biblioteca: {', '.join(matches)}")
+    if appid in liked_appids:
+        affinity += 14
+        reasons.append("marcado como me gusta")
+    relation_reasons = _preference_reasons(appid, preference_relations)
+    if relation_reasons:
+        affinity += 20
+        reasons.extend(relation_reasons[:2])
+    if not reasons:
+        reasons.append("score base del reporte")
+    return {
+        "appid": appid,
+        "name": candidate.get("name") or candidate.get("steam_name") or "Juego desconocido",
+        "base_score": round(base_score, 1),
+        "affinity_score": round(affinity, 1),
+        "personalized_score": round(min(100.0, base_score + affinity), 1),
+        "reasons": reasons[:4],
+        "discount": int(_safe_number(candidate.get("discount"))),
+        "price_final": candidate.get("price_final") or candidate.get("price") or "",
+    }
+
+
+def build_personalized_recommendations(
+    deals: list[dict],
+    top_picks: list[dict] | None = None,
+    *,
+    activity_games=None,
+    library_games=None,
+    owned=None,
+    family_appids=None,
+    liked_appids=None,
+    preference_relations=None,
+    hltb_hours=None,
+    max_items: int = 10,
+) -> dict:
+    """Build a deterministic personalized ranking from existing report data."""
+    activity_records = _record_list(activity_games)
+    library_records = _record_list(library_games)
+    owned_set = _normalize_appid_set(owned)
+    excluded_appids = owned_set | _normalize_appid_set(family_appids)
+    activity_terms = _weighted_style_terms(activity_records, activity_weighted=True)
+    library_terms = _weighted_style_terms(library_records)
+    candidates = [
+        candidate for candidate in _merge_collection_sources(deals, top_picks)
+        if _collection_appid(candidate) and _collection_appid(candidate) not in excluded_appids
+    ]
+    items = [
+        _personalized_candidate(
+            candidate,
+            activity_terms=activity_terms,
+            library_terms=library_terms,
+            liked_appids=_normalize_appid_set(liked_appids),
+            preference_relations=preference_relations,
+        )
+        for candidate in candidates
+    ]
+    items.sort(key=lambda item: (-item["personalized_score"], -item["affinity_score"], -item["base_score"], item["name"], item["appid"]))
+    return {
+        "source_signals": ["top_picks", "score", "activity", "library", "preferences"],
+        "items": items[:max(0, max_items)],
+        "profile": {
+            "activity_terms": activity_terms[:5],
+            "library_summary": _library_profile_summary(library_records, owned_set, hltb_hours),
+            "excluded_appids_count": len(excluded_appids),
+        },
+    }
+
+
 def _priority_score(priority: int) -> int:
     if priority == 0:
         return 30

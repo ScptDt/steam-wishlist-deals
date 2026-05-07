@@ -155,6 +155,7 @@ from steam_deals_generator import (
     analyze_trends,
     build_warm_cache_emit,
     build_final_summary as generator_build_final_summary,
+    build_personalized_recommendations,
     build_recommended_collections,
     build_smart_alert_counts as generator_build_smart_alert_counts,
     build_gift_ideas,
@@ -377,6 +378,85 @@ class RecommendedCollectionsTests(unittest.TestCase):
             build_recommended_collections(self._deals_fixture(), max_items_per_collection=0),
             [],
         )
+
+
+class PersonalizedRecommendationsTests(unittest.TestCase):
+    def test_build_personalized_recommendations_uses_activity_library_and_preferences(self) -> None:
+        recommendations = build_personalized_recommendations(
+            [
+                {
+                    "appid": "10",
+                    "name": "Deep Action",
+                    "score": 70,
+                    "discount": 60,
+                    "price_final": "$99",
+                    "genres": ["Action", "Roguelike"],
+                },
+                {
+                    "appid": "20",
+                    "name": "Cozy Puzzle",
+                    "score": 88,
+                    "discount": 45,
+                    "price_final": "$79",
+                    "genres": ["Puzzle"],
+                },
+                {
+                    "appid": "30",
+                    "name": "Already Owned",
+                    "score": 99,
+                    "genres": ["Action"],
+                },
+            ],
+            activity_games=[
+                {
+                    "appid": "90",
+                    "name": "Hades",
+                    "playtime_2weeks": 180,
+                    "genres": ["Action", "Roguelike"],
+                }
+            ],
+            library_games=[
+                {"appid": "91", "name": "Dead Cells", "genres": ["Action", "Roguelike"], "price_raw": 25000},
+                {"appid": "92", "name": "Portal", "genres": ["Puzzle"], "price_raw": 12000},
+            ],
+            owned={"30": "Already Owned"},
+            liked_appids={"20"},
+            preference_relations={"10": ["similar a Hades"]},
+            hltb_hours={"91": 25, "92": 8},
+        )
+
+        self.assertEqual([item["appid"] for item in recommendations["items"]], ["10", "20"])
+        self.assertEqual(recommendations["items"][0]["personalized_score"], 100.0)
+        self.assertGreater(
+            recommendations["items"][0]["affinity_score"],
+            recommendations["items"][1]["affinity_score"],
+        )
+        self.assertIn("encaja con tu actividad reciente", " ".join(recommendations["items"][0]["reasons"]))
+        self.assertIn("coincide con tu biblioteca", " ".join(recommendations["items"][0]["reasons"]))
+        self.assertIn("similar a Hades", recommendations["items"][0]["reasons"])
+        self.assertEqual(recommendations["profile"]["library_summary"]["total_hltb_hours"], 33.0)
+        self.assertEqual(recommendations["profile"]["library_summary"]["average_price"], 185.0)
+        self.assertEqual(recommendations["profile"]["excluded_appids_count"], 1)
+
+    def test_build_personalized_recommendations_falls_back_to_base_score(self) -> None:
+        recommendations = build_personalized_recommendations(
+            [
+                {"appid": "a", "name": "Alpha", "score": 60},
+                {"appid": "b", "name": "Bravo", "score": 80},
+            ],
+            max_items=1,
+        )
+
+        self.assertEqual([item["appid"] for item in recommendations["items"]], ["b"])
+        self.assertEqual(recommendations["items"][0]["reasons"], ["score base del reporte"])
+        self.assertEqual(recommendations["profile"]["activity_terms"], [])
+        self.assertEqual(recommendations["profile"]["library_summary"]["owned_count"], 0)
+
+    def test_build_personalized_recommendations_handles_empty_candidates(self) -> None:
+        recommendations = build_personalized_recommendations([], [], max_items=5)
+
+        self.assertEqual(recommendations["items"], [])
+        self.assertEqual(recommendations["profile"]["excluded_appids_count"], 0)
 
 
 class ConfigTests(unittest.TestCase):
@@ -3428,6 +3508,89 @@ class StopApiContractTests(unittest.TestCase):
         self.assertEqual(data["summary"]["recommended_collections_count"], 0)
         self.assertEqual(data["recommended_collections"], [])
 
+    def test_generate_json_builds_personalized_recommendations_from_report_data(self) -> None:
+        payload = generate_json(
+            deals=[
+                {
+                    "appid": "10",
+                    "name": "Deep Action",
+                    "score": 72,
+                    "discount": 60,
+                    "price_final": "$99",
+                    "genres": ["Action", "Roguelike"],
+                },
+                {
+                    "appid": "20",
+                    "name": "Cozy Puzzle",
+                    "score": 88,
+                    "discount": 45,
+                    "price_final": "$79",
+                    "genres": ["Puzzle"],
+                },
+                {"appid": "30", "name": "Owned Hit", "score": 99, "genres": ["Action"]},
+            ],
+            backlog_on_sale=[],
+            have_on_sale=[
+                {
+                    "appid": "90",
+                    "name": "Dead Cells",
+                    "genres": ["Action", "Roguelike"],
+                    "hours": 25,
+                    "price_raw": 25000,
+                }
+            ],
+            vanity="gaben",
+            owned={"30": "Owned Hit"},
+            wishlist_appids=["10", "20", "30"],
+            min_discount=50,
+            genres=[],
+            top_picks=[
+                {"appid": "10", "name": "Deep Action", "score": 72, "genres": ["Action", "Roguelike"]},
+                {"appid": "20", "name": "Cozy Puzzle", "score": 88, "genres": ["Puzzle"]},
+            ],
+            activity_games=[
+                {
+                    "appid": "91",
+                    "name": "Hades",
+                    "playtime_2weeks": 180,
+                    "genres": ["Action", "Roguelike"],
+                }
+            ],
+            preference_relations={"10": ["similar a Hades"]},
+        )
+
+        data = json.loads(payload)
+        personalized = data["personalized_recommendations"]
+
+        self.assertEqual(data["summary"]["personalized_recommendations_count"], 2)
+        self.assertEqual([item["appid"] for item in personalized["items"]], ["10", "20"])
+        self.assertIn("encaja con tu actividad reciente", " ".join(personalized["items"][0]["reasons"]))
+        self.assertIn("coincide con tu biblioteca", " ".join(personalized["items"][0]["reasons"]))
+        self.assertIn("similar a Hades", personalized["items"][0]["reasons"])
+        self.assertEqual(personalized["profile"]["library_summary"]["total_hltb_hours"], 25.0)
+        self.assertEqual(personalized["profile"]["excluded_appids_count"], 1)
+
+    def test_generate_json_respects_explicit_empty_personalized_recommendations(self) -> None:
+        payload = generate_json(
+            deals=[{"appid": "10", "name": "Portal 2", "score": 95.4}],
+            backlog_on_sale=[],
+            have_on_sale=[],
+            vanity="gaben",
+            owned={},
+            wishlist_appids=["10"],
+            min_discount=50,
+            genres=["puzzle"],
+            personalized_recommendations={"source_signals": [], "items": [], "profile": {}},
+        )
+
+        data = json.loads(payload)
+
+        self.assertEqual(data["summary"]["personalized_recommendations_count"], 0)
+        self.assertEqual(
+            data["personalized_recommendations"],
+            {"source_signals": [], "items": [], "profile": {}},
+        )
+
     def test_generate_json_defaults_recommended_collections_to_empty_list(self) -> None:
         payload = generate_json(
             deals=[],
@@ -5513,6 +5676,10 @@ class RankTopPicksTests(unittest.TestCase):
         self.assertNotIn('data-recommended-collection="only_duplicates"', html)
         self.assertEqual(html.count('href="https://store.steampowered.com/app/10/"'), 1)
         self.assertIn("Charlie", html)
+        self.assertIn('class="collection-item-thumb"', html)
+        self.assertIn("steam/apps/10/capsule_231x87.jpg", html)
+        self.assertIn("steam/apps/30/capsule_231x87.jpg", html)
+        self.assertNotIn("steam/apps/20/capsule_231x87.jpg", html)
         self.assertIn("se muestra solo en la primera tarjeta", html)
 
     def test_generate_html_omits_recommended_collections_when_empty(self) -> None:
@@ -5574,6 +5741,7 @@ class RankTopPicksTests(unittest.TestCase):
         self.assertNotIn("<script>alert(4)</script>", html)
         self.assertNotIn("<img src=x", html)
         self.assertNotIn("/app/10\" onclick=", html)
+        self.assertNotIn("collection-item-thumb", html)
         self.assertNotIn("alert(3)", html)
 
     def test_generate_html_uses_safe_fallbacks_for_empty_visible_stats(self) -> None:

@@ -246,6 +246,14 @@ def is_expected_generated_artifact_name(name: str) -> bool:
     return name in PAYDAY2_GENERATED_FILES
 
 
+def public_generated_file_name(path_value: str) -> str:
+    raw = str(path_value or "").strip().strip('"')
+    name = re.split(r"[\\/]", raw)[-1]
+    if is_expected_generated_artifact_name(name):
+        return name
+    return redact_sensitive_text(raw)
+
+
 def is_primary_steam_deals_artifact_name(name: str) -> bool:
     if STEAM_DEALS_SHARE_ARTIFACT_RE.match(name):
         return False
@@ -1278,7 +1286,7 @@ class Handler(BaseHTTPRequestHandler):
                     "type": "done",
                     "exit_code": done_proc.returncode,
                     "files": [
-                        redact_sensitive_text(path, extra_values=public_redaction_values)
+                        public_generated_file_name(path)
                         for path in generated_files
                     ],
                 }

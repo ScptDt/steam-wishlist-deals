@@ -55,6 +55,7 @@ def generate_json(
     compare_data: dict | None = None,
     gift_ideas: list[dict] | None = None,
     recommended_collections: list[dict] | None = None,
+    personalized_recommendations: dict | None = None,
     profile_display_name: str | None = None,
     active_promo_context: dict | None = None,
 ) -> str:
@@ -76,6 +77,7 @@ def generate_json(
     watchlist_alerts = watchlist_alerts or []
     gift_ideas = gift_ideas or []
     recommended_collections = recommended_collections or []
+    personalized_recommendations = personalized_recommendations or {"items": []}
 
     payload = {
         "meta": {
@@ -99,12 +101,16 @@ def generate_json(
             "new_deals_count": _count_new_deals(deals, previous_appids),
             "top_picks_count": len(top_picks),
             "recommended_collections_count": len(recommended_collections),
+            "personalized_recommendations_count": len(
+                personalized_recommendations.get("items", [])
+            ),
             "watchlist_alerts_count": len(watchlist_alerts),
             "gift_ideas_count": len(gift_ideas),
         },
         "comparison": _json_safe(comparison),
         "top_picks": _json_safe(top_picks),
         "recommended_collections": _json_safe(recommended_collections),
+        "personalized_recommendations": _json_safe(personalized_recommendations),
         "watchlist_alerts": _json_safe(watchlist_alerts),
         "budget_result": _json_safe(budget_result),
         "compare_data": _json_safe(compare_data),

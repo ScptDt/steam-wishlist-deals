@@ -24,6 +24,7 @@ from steam_deals_web import (
     is_safe_generated_file_name,
     list_allowed_generated_files,
     open_output_folder,
+    public_generated_file_name,
     resolve_output_dir,
 )
 
@@ -304,6 +305,26 @@ class GeneratedFilesServingTests(unittest.TestCase):
         self.assertFalse(is_expected_generated_artifact_name("PAYDAY2_Plan_de_Compra.json"))
         self.assertFalse(is_expected_generated_artifact_name("Steam Deals 2026-04-24.exe"))
         self.assertFalse(is_expected_generated_artifact_name("../Steam Deals 2026-04-24.html"))
+
+    def test_public_generated_file_name_uses_safe_basename_for_links(self) -> None:
+        self.assertEqual(
+            public_generated_file_name(
+                "/home/user/output/Steam Deals Now Available - Far Far West 2026-04-24.html"
+            ),
+            "Steam Deals Now Available - Far Far West 2026-04-24.html",
+        )
+        self.assertEqual(
+            public_generated_file_name(
+                r"C:\Users\tester\output\Steam Deals 2026-04-24.json"
+            ),
+            "Steam Deals 2026-04-24.json",
+        )
+
+    def test_public_generated_file_name_keeps_invalid_paths_redacted(self) -> None:
+        public_name = public_generated_file_name("/home/user/secrets.json")
+
+        self.assertNotIn("/home/user", public_name)
+        self.assertNotEqual(public_name, "secrets.json")
 
     def test_allowed_generated_file_path_rejects_directories_and_symlinks(self) -> None:
         with TemporaryDirectory() as temp_dir:

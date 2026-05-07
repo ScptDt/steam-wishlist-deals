@@ -748,6 +748,9 @@ a.pick-card:hover { border-color: var(--accent-blue); transform: translateY(-2px
 .recommended-collection-card ol { list-style: none; display: flex; flex-direction: column; gap: .55rem; }
 .recommended-collection-item { display: flex; align-items: flex-start; justify-content: space-between; gap: .65rem; padding-top: .55rem; border-top: 1px solid rgba(102,192,244,.12); }
 .recommended-collection-item:first-child { padding-top: 0; border-top: 0; }
+.collection-item-featured { align-items: center; }
+.collection-item-thumb { flex: 0 0 82px; display: block; border: 1px solid rgba(102,192,244,.18); border-radius: 6px; overflow: hidden; background: var(--bg-primary); }
+.collection-item-thumb img { display: block; width: 100%; aspect-ratio: 231/87; object-fit: cover; }
 .collection-item-main { min-width: 0; }
 .collection-item-main strong { display: block; font-size: .82rem; line-height: 1.3; }
 .collection-item-reason { color: var(--text-secondary); font-size: .74rem; line-height: 1.35; margin-top: .2rem; }
@@ -755,7 +758,7 @@ a.pick-card:hover { border-color: var(--accent-blue); transform: translateY(-2px
 .collection-score { color: var(--accent-blue); font-weight: 700; }
 .collection-discount { color: var(--accent-green); font-weight: 700; }
 .collection-price { color: var(--text-secondary); }
-@media (max-width: 767px) { .recommended-collection-item { flex-direction: column; gap: .3rem; } .collection-item-meta { align-items: flex-start; flex-direction: row; flex-wrap: wrap; } }
+@media (max-width: 767px) { .recommended-collection-item { flex-direction: column; gap: .3rem; } .collection-item-thumb { flex-basis: auto; width: 92px; } .collection-item-meta { align-items: flex-start; flex-direction: row; flex-wrap: wrap; } }
 .share-btn-mini { position: absolute; top: .4rem; right: .4rem; background: var(--bg-card); border: 1px solid var(--border); border-radius: 4px; padding: .3rem .5rem; cursor: pointer; font-size: .9rem; opacity: 0.6; transition: opacity .2s; }
 .share-btn-mini:hover { opacity: 1; background: var(--accent-blue); }
 .share-modal { display: none; position: fixed; inset: 0; background: rgba(0,0,0,0.7); z-index: 1000; align-items: center; justify-content: center; }

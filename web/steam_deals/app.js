@@ -2880,6 +2880,25 @@ function renderLatestReportActions(files = null) {
   `;
 }
 
+function renderLatestReportDetails(report, files = null) {
+  const body = [
+    renderLatestReportActions(files),
+    renderLatestRecommendedCollections(report),
+    renderLatestShareTopPicks(report),
+    renderLatestBudgetPanel(report),
+  ].filter(Boolean).join('');
+  if (!body) return '';
+  return `
+    <details class="latest-report-details">
+      <summary>
+        <span>Acciones y recomendaciones del último reporte</span>
+        <span class="latest-report-details-hint">HTML, Share, JSON, carpeta y destacados</span>
+      </summary>
+      <div class="latest-report-details-body">${body}</div>
+    </details>
+  `;
+}
+
 function bindLatestReportQuickActions() {
   const el = latestReportCardEl();
   if (!el) return;
@@ -2930,10 +2949,7 @@ function renderLatestReportCard(report, files = null) {
         </div>
       `).join('')}
     </div>
-    ${renderLatestReportActions(files)}
-    ${renderLatestRecommendedCollections(activeReport)}
-    ${renderLatestShareTopPicks(activeReport)}
-    ${renderLatestBudgetPanel(activeReport)}
+    ${renderLatestReportDetails(activeReport, files)}
   `;
   el.classList.remove('hidden');
   bindLatestReportQuickActions();

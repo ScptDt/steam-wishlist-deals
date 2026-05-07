@@ -777,8 +777,30 @@ details .details-body .field:last-child {
 }
 .latest-report-stat-label { color: var(--text2); font-size: 0.78rem; margin-bottom: 0.25rem; }
 .latest-report-stat-value { color: var(--text); font-size: 1.1rem; font-weight: 700; }
+.latest-report-details {
+  margin-top: 0.75rem;
+  margin-bottom: 0;
+  border-color: rgba(102, 192, 244, 0.18);
+  background: rgba(12, 20, 30, 0.18);
+}
+.latest-report-details summary {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 0.35rem 0.6rem;
+  align-items: center;
+  justify-content: space-between;
+  color: var(--text);
+}
+.latest-report-details-hint {
+  color: var(--text2);
+  font-size: 0.74rem;
+  font-weight: 500;
+}
+.latest-report-details-body {
+  padding: 0.75rem;
+}
 .latest-report-actions {
-  margin-top: 0.8rem;
+  margin-top: 0;
   padding: 0.75rem 0.8rem;
   border-radius: 8px;
   border: 1px solid rgba(102, 192, 244, 0.22);

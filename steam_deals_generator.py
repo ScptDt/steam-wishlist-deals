@@ -97,6 +97,7 @@ except Exception:
 try:
     from steam_deals_recommendations import (
         build_gift_ideas as _build_gift_ideas_impl,
+        build_personalized_recommendations as _build_personalized_recommendations_impl,
         build_recommended_collections as _build_recommended_collections_impl,
         compute_budget_picks as _compute_budget_picks_impl,
         compute_value_score as _compute_value_score_impl,
@@ -104,6 +105,7 @@ try:
     )
 except Exception:
     _build_gift_ideas_impl = None
+    _build_personalized_recommendations_impl = None
     _build_recommended_collections_impl = None
     _compute_budget_picks_impl = None
     _compute_value_score_impl = None
@@ -2696,6 +2698,17 @@ def build_recommended_collections(
     )
 
 
+def build_personalized_recommendations(
+    deals: list[dict],
+    top_picks: list[dict] | None = None,
+    **kwargs,
+) -> dict:
+    """Build personalized recommendation entries from existing report data."""
+    if _build_personalized_recommendations_impl is None:
+        raise RuntimeError("Recommendations module is not available")
+    return _build_personalized_recommendations_impl(deals, top_picks=top_picks, **kwargs)
+
+
 # ─────────────────────────────────────────────
 # GENERAR MARKDOWN
 # ─────────────────────────────────────────────
@@ -3068,6 +3081,12 @@ def generate_json(
     compare_data=None,
     gift_ideas=None,
     recommended_collections=None,
+    personalized_recommendations=None,
+    activity_games=None,
+    library_games=None,
+    liked_appids=None,
+    preference_relations=None,
+    hltb_hours=None,
     profile_display_name: str | None = None,
     active_promo_context: dict | None = None,
 ) -> str:
@@ -3075,6 +3094,18 @@ def generate_json(
         raise RuntimeError("JSON renderer module is not available")
     if recommended_collections is None:
         recommended_collections = build_recommended_collections(deals, top_picks=top_picks)
+    if personalized_recommendations is None:
+        personalized_recommendations = build_personalized_recommendations(
+            deals,
+            top_picks=top_picks,
+            activity_games=activity_games,
+            library_games=library_games if library_games is not None else have_on_sale,
+            owned=owned,
+            family_appids=family_appids,
+            liked_appids=liked_appids,
+            preference_relations=preference_relations,
+            hltb_hours=hltb_hours,
+        )
     return _generate_json_renderer(
         deals,
         backlog_on_sale,
@@ -3107,6 +3138,7 @@ def generate_json(
         compare_data=compare_data,
         gift_ideas=gift_ideas,
         recommended_collections=recommended_collections,
+        personalized_recommendations=personalized_recommendations,
         profile_display_name=profile_display_name,
         active_promo_context=active_promo_context,
     )
@@ -3684,6 +3716,8 @@ def main():
         compare_data=compare_data,
         gift_ideas=gift_ideas,
         recommended_collections=recommended_collections,
+        library_games=have_on_sale,
+        hltb_hours=hltb_hours,
         profile_display_name=profile_display_name,
         active_promo_context=active_promo_context,
         **family_renderer_kwargs,
