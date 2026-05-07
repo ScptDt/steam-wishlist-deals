@@ -288,7 +288,7 @@ class RecommendedCollectionsTests(unittest.TestCase):
 
         self.assertEqual(
             [collection["id"] for collection in collections],
-            ["recommended_for_you", "best_savings", "steam_deck", "acclaimed", "genre_style"],
+            ["recommended_for_you", "best_savings", "steam_deck", "acclaimed", "genre_style", "story_rich"],
         )
         self.assertEqual(
             [item["appid"] for item in by_id["recommended_for_you"]["items"]],
@@ -302,9 +302,11 @@ class RecommendedCollectionsTests(unittest.TestCase):
             [item["appid"] for item in by_id["steam_deck"]["items"]],
             ["a", "c"],
         )
+        self.assertEqual([item["appid"] for item in by_id["story_rich"]["items"]], ["a"])
         self.assertIn("reviews muy positivas", by_id["recommended_for_you"]["items"][0]["reason"])
         self.assertIn("85% de descuento", by_id["best_savings"]["items"][0]["reason"])
         self.assertIn("Action", by_id["genre_style"]["items"][0]["reason"])
+        self.assertIn("Story Rich", by_id["story_rich"]["items"][0]["reason"])
 
     def test_build_recommended_collections_prefers_cross_collection_diversity(self) -> None:
         deals = [
@@ -379,6 +381,26 @@ class RecommendedCollectionsTests(unittest.TestCase):
             build_recommended_collections(self._deals_fixture(), max_items_per_collection=0),
             [],
         )
+
+    def test_build_recommended_collections_omits_story_rich_without_distinct_signal(self) -> None:
+        no_story_rich = build_recommended_collections(
+            [
+                {"appid": "1", "name": "Action One", "score": 80, "genres": ["Action"]},
+                {"appid": "2", "name": "Puzzle Two", "score": 75, "tags": ["Puzzle"]},
+            ],
+            max_items_per_collection=2,
+        )
+        duplicate_genre_style = build_recommended_collections(
+            [
+                {"appid": "3", "name": "Story One", "score": 85, "genres": ["Story Rich"]},
+                {"appid": "4", "name": "Story Two", "score": 82, "tags": ["Story Rich"]},
+            ],
+            max_items_per_collection=2,
+        )
+
+        self.assertNotIn("story_rich", [collection["id"] for collection in no_story_rich])
+        self.assertIn("genre_style", [collection["id"] for collection in duplicate_genre_style])
+        self.assertNotIn("story_rich", [collection["id"] for collection in duplicate_genre_style])
 
 
 class PersonalizedRecommendationsTests(unittest.TestCase):

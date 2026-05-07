@@ -72,6 +72,13 @@ RECOMMENDED_COLLECTION_DEFINITIONS = (
         "description": "Agrupa ofertas alrededor del género o estilo más repetido en los datos actuales.",
         "source_signals": ["genres", "tags"],
     },
+    {
+        "id": "story_rich",
+        "title": "Story Rich",
+        "label": "Story Rich",
+        "description": "Destaca juegos narrativos solo cuando existe una señal Story Rich explícita.",
+        "source_signals": ["genres.story_rich", "tags.story_rich"],
+    },
 )
 
 
@@ -142,6 +149,14 @@ def _style_terms(item: dict) -> list[str]:
                 else:
                     terms.append(str(value).strip())
     return [term for term in terms if term]
+
+
+def _style_term_key(term: str) -> str:
+    return str(term or "").strip().lower().replace("-", " ").replace("_", " ")
+
+
+def _has_story_rich_signal(item: dict) -> bool:
+    return "story rich" in {_style_term_key(term) for term in _style_terms(item)}
 
 
 def _collection_item(item: dict, reason: str) -> dict:
@@ -285,6 +300,10 @@ def build_recommended_collections(
             [item for item in sources if style_term and style_term.lower() in {term.lower() for term in _style_terms(item)}]
         )
     ]
+    story_rich = [] if _style_term_key(style_term) == "story rich" else [
+        _collection_item(item, "Señal explícita Story Rich en tags/géneros")
+        for item in _sort_by_score_discount_name([item for item in sources if _has_story_rich_signal(item)])
+    ]
 
     collection_candidates = [
         ("recommended_for_you", recommended),
@@ -292,6 +311,7 @@ def build_recommended_collections(
         ("steam_deck", deck_ready),
         ("acclaimed", acclaimed),
         ("genre_style", genre_style),
+        ("story_rich", story_rich),
     ]
     collections: list[dict] = []
     used_appids: set[str] = set()
