@@ -2395,6 +2395,64 @@ function buildShareGamePayload(game, report = null) {
 
 let latestBudgetUiState = null;
 
+const LATEST_PROMO_CATEGORY_LABELS = Object.freeze({
+  weeklong: 'Weeklong',
+  midweek: 'Midweek',
+  weekend: 'Weekend',
+  fest: 'Fest',
+  major_sale: 'Oferta grande',
+  themed: 'Oferta temática',
+  unknown: 'Otra promo',
+});
+
+function latestPromoCategoryLabel(category) {
+  const key = String(category || '').trim();
+  return LATEST_PROMO_CATEGORY_LABELS[key] || key || 'Otra promo';
+}
+
+function latestPromoPrimaryTitle(context) {
+  const primary = context && typeof context.primary === 'object' ? context.primary : null;
+  const primaryTitle = primary ? String(primary.title || '').trim() : '';
+  return primaryTitle || String((context && context.sale_name) || '').trim();
+}
+
+function renderLatestPromoContext(report) {
+  const meta = report && typeof report === 'object' ? (report.meta || {}) : {};
+  const context = meta && typeof meta.active_promo_context === 'object'
+    ? meta.active_promo_context
+    : null;
+  if (!context) return '';
+  const primaryTitle = latestPromoPrimaryTitle(context);
+  if (!primaryTitle) return '';
+  const categoryLabels = Array.isArray(context.categories)
+    ? context.categories.filter(Boolean).map(latestPromoCategoryLabel).slice(0, 4)
+    : [];
+  const extraTitles = [];
+  (Array.isArray(context.promos) ? context.promos : []).forEach((promo) => {
+    if (!promo || typeof promo !== 'object') return;
+    const title = String(promo.title || '').trim();
+    if (!title || title === primaryTitle || extraTitles.includes(title)) return;
+    extraTitles.push(title);
+  });
+  const categoriesHtml = categoryLabels.length
+    ? `<div class="latest-promo-pills">${categoryLabels.map(label => `<span>${escapeHtml(label)}</span>`).join('')}</div>`
+    : '';
+  const extrasHtml = extraTitles.length
+    ? `<div class="latest-promo-extra">También activas: ${escapeHtml(extraTitles.slice(0, 3).join(', '))}</div>`
+    : '';
+  return `
+    <div class="latest-promo-section" data-latest-promo-context>
+      <div class="latest-promo-head">
+        <div class="latest-promo-title">Contexto de promo activa</div>
+        <div class="latest-promo-subtitle">Contexto del último JSON local: ayuda a interpretar la promo activa; no es predicción ni cambia el score.</div>
+      </div>
+      <div class="latest-promo-primary"><span>Promo principal</span><strong>${escapeHtml(primaryTitle)}</strong></div>
+      ${categoriesHtml}
+      ${extrasHtml}
+    </div>
+  `;
+}
+
 function toBudgetNumber(value) {
   const num = Number(value);
   return Number.isFinite(num) ? num : 0;
@@ -3184,6 +3242,7 @@ function renderLatestReportActions(files = null) {
 function renderLatestReportDetails(report, files = null) {
   const body = [
     renderLatestReportActions(files),
+    renderLatestPromoContext(report),
     renderLatestRecommendedCollections(report),
     renderLatestPersonalizedRecommendations(report, files),
     renderLatestSelectionReviewPanel(report),

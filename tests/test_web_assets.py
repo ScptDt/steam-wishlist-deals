@@ -223,6 +223,27 @@ class WebAssetsTests(unittest.TestCase):
         self.assertIn(".latest-personalized-item", app_css)
         self.assertIn(".latest-personalized-footer", app_css)
 
+    def test_latest_report_surfaces_active_promo_context_inside_details(self) -> None:
+        app_js = (ROOT / "web" / "steam_deals" / "app.js").read_text(
+            encoding="utf-8"
+        )
+        app_css = (ROOT / "web" / "steam_deals" / "app.css").read_text(
+            encoding="utf-8"
+        )
+
+        self.assertIn("function renderLatestPromoContext", app_js)
+        self.assertIn("meta.active_promo_context", app_js)
+        self.assertIn("LATEST_PROMO_CATEGORY_LABELS", app_js)
+        self.assertIn("data-latest-promo-context", app_js)
+        self.assertIn("Contexto de promo activa", app_js)
+        self.assertIn("no es predicción ni cambia el score", app_js)
+        self.assertIn("También activas", app_js)
+        self.assertIn("renderLatestPromoContext(report)", app_js)
+        self.assertIn("renderLatestReportDetails(activeReport, files)", app_js)
+        self.assertIn(".latest-promo-section", app_css)
+        self.assertIn(".latest-promo-pills", app_css)
+        self.assertIn(".latest-promo-extra", app_css)
+
     def test_latest_report_renders_selection_review_ui_inside_details(self) -> None:
         app_js = (ROOT / "web" / "steam_deals" / "app.js").read_text(
             encoding="utf-8"
