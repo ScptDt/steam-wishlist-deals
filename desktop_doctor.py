@@ -877,6 +877,12 @@ def summarize_checks(checks: list[DoctorCheck]) -> tuple[str, int]:
     return ("READY", 0)
 
 
+def runtime_mode_summary() -> str:
+    if is_frozen_runtime():
+        return "Modo: frozen | checks source-only omitidos; se valida runtime empaquetado y persistencia de datos."
+    return "Modo: source | checks de dependencias/build son preparación; la validación final del binario requiere artefacto desktop."
+
+
 def build_desktop_doctor_report() -> dict:
     checks = get_desktop_doctor_checks()
     overall, exit_code = summarize_checks(checks)
@@ -890,6 +896,7 @@ def build_desktop_doctor_report() -> dict:
     emit(
         f"Platform: {sys.platform} | Python: {sys.version.split()[0]} | Executable: {sys.executable}"
     )
+    emit(runtime_mode_summary())
     emit("")
     for check in checks:
         render_check(check, emit)

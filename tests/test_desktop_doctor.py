@@ -76,6 +76,14 @@ class DesktopDoctorFrozenRuntimeTests(unittest.TestCase):
         self.assertEqual(check.status, "fail")
         self.assertEqual(check.title, "Cache/logs persistentes")
 
+    def test_frozen_report_explains_runtime_mode(self) -> None:
+        report = desktop_doctor.build_desktop_doctor_report()
+
+        self.assertIn(
+            "Modo: frozen | checks source-only omitidos; se valida runtime empaquetado y persistencia de datos.",
+            report["lines"],
+        )
+
 
 class DesktopDoctorDependencyCommandTests(unittest.TestCase):
     def test_desktop_dependency_install_action_uses_constraints(self) -> None:
@@ -86,6 +94,14 @@ class DesktopDoctorDependencyCommandTests(unittest.TestCase):
         self.assertIn("-c", command)
         self.assertIn(str(desktop_doctor.DESKTOP_CONSTRAINTS_FILE), command)
         self.assertIn("constraints/desktop.txt", action)
+
+    def test_source_report_explains_runtime_mode(self) -> None:
+        report = desktop_doctor.build_desktop_doctor_report()
+
+        self.assertIn(
+            "Modo: source | checks de dependencias/build son preparación; la validación final del binario requiere artefacto desktop.",
+            report["lines"],
+        )
 
 
 if __name__ == "__main__":
