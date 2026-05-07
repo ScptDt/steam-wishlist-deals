@@ -525,6 +525,36 @@ class PersonalizedRecommendationsTests(unittest.TestCase):
         self.assertEqual(recommendations["profile"]["library_summary"]["average_price"], 185.0)
         self.assertEqual(recommendations["profile"]["excluded_appids_count"], 1)
 
+    def test_build_personalized_recommendations_enriches_activity_from_library_metadata(self) -> None:
+        recommendations = build_personalized_recommendations(
+            [
+                {
+                    "appid": "10",
+                    "name": "Deep Action",
+                    "score": 70,
+                    "discount": 60,
+                    "genres": ["Action", "Roguelike"],
+                },
+                {
+                    "appid": "20",
+                    "name": "Quiet Builder",
+                    "score": 82,
+                    "discount": 35,
+                    "genres": ["Simulation"],
+                },
+            ],
+            activity_games=[{"appid": "91", "name": "Dead Cells", "playtime_2weeks": 240}],
+            library_games=[{"appid": "91", "name": "Dead Cells", "genres": ["Action", "Roguelike"]}],
+        )
+
+        top_item = recommendations["items"][0]
+        self.assertEqual(top_item["appid"], "10")
+        self.assertIn("encaja con tu actividad reciente", " ".join(top_item["reasons"]))
+        self.assertEqual(
+            [term["term"] for term in recommendations["profile"]["activity_terms"][:2]],
+            ["Action", "Roguelike"],
+        )
+
     def test_build_personalized_recommendations_falls_back_to_base_score(self) -> None:
         recommendations = build_personalized_recommendations(
             [

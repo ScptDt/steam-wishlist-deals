@@ -405,6 +405,22 @@ def _record_list(records) -> list[dict]:
     return [dict(record) for record in records if isinstance(record, dict)]
 
 
+def _records_by_appid(records: list[dict]) -> dict[str, dict]:
+    return {
+        _collection_appid(record): dict(record)
+        for record in records
+        if _collection_appid(record)
+    }
+
+
+def _activity_records_with_library_context(activity_records: list[dict], library_records: list[dict]) -> list[dict]:
+    library_by_appid = _records_by_appid(library_records)
+    return [
+        {**library_by_appid.get(_collection_appid(record), {}), **record}
+        for record in activity_records
+    ]
+
+
 def _game_activity_weight(game: dict) -> float:
     recent_hours = _safe_number(game.get("playtime_2weeks")) / 60
     total_hours = _safe_number(game.get("playtime_forever")) / 600
@@ -517,8 +533,11 @@ def build_personalized_recommendations(
     max_items: int = 10,
 ) -> dict:
     """Build a deterministic personalized ranking from existing report data."""
-    activity_records = _record_list(activity_games)
     library_records = _record_list(library_games)
+    activity_records = _activity_records_with_library_context(
+        _record_list(activity_games),
+        library_records,
+    )
     owned_set = _normalize_appid_set(owned)
     excluded_appids = owned_set | _normalize_appid_set(family_appids)
     activity_terms = _weighted_style_terms(activity_records, activity_weighted=True)
