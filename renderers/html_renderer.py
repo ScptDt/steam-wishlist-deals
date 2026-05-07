@@ -340,7 +340,7 @@ def _html_shuffle_one_game(candidates: list[dict]) -> str:
 </section>'''
 
 
-def _html_recommended_collection_item(item: dict) -> str:
+def _html_recommended_collection_item(item: dict, *, featured: bool = False) -> str:
     appid = str(item.get("appid") or "").strip()
     name = str(item.get("name") or "Juego desconocido")
     reason = str(item.get("reason") or "Recomendado por las señales del reporte.")
@@ -365,7 +365,15 @@ def _html_recommended_collection_item(item: dict) -> str:
     )
     meta_html = "".join(part for part in (score_html, discount_html, price_html) if part)
     name_html = _html_link(name, appid) if appid.isdigit() else _html_esc(name)
-    return f'''<li class="recommended-collection-item">
+    item_class = "recommended-collection-item"
+    thumb_html = ""
+    if featured and appid.isdigit():
+        item_class += " collection-item-featured"
+        thumb_html = f'''<a class="collection-item-thumb" href="{STORE_URL.format(appid=appid)}" target="_blank" aria-label="Abrir {_html_esc(name)} en Steam">
+    <img src="{CAPSULE_URL.format(appid=appid)}" alt="" loading="lazy" onerror="this.style.display='none'">
+  </a>'''
+    return f'''<li class="{item_class}">
+  {thumb_html}
   <div class="collection-item-main">
     <strong>{name_html}</strong>
     <div class="collection-item-reason">{_html_esc(reason)}</div>
@@ -404,7 +412,10 @@ def _html_recommended_collections(collections: list[dict]) -> str:
         description = str(
             collection.get("description") or "Juegos agrupados con señales ya calculadas."
         )
-        items_html = "".join(_html_recommended_collection_item(item) for item in visible_items)
+        items_html = "".join(
+            _html_recommended_collection_item(item, featured=index == 0)
+            for index, item in enumerate(visible_items)
+        )
         collection_cards.append(f'''<article class="recommended-collection-card" data-recommended-collection="{_html_esc(collection_id)}">
   <h3>{_html_esc(title)}</h3>
   <p>{_html_esc(description)}</p>

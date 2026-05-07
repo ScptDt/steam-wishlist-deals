@@ -2771,6 +2771,12 @@ def generate_md(
     compare_data: dict | None = None,
     gift_ideas: list[dict] | None = None,
     recommended_collections: list[dict] | None = None,
+    personalized_recommendations: dict | None = None,
+    activity_games=None,
+    library_games=None,
+    liked_appids=None,
+    preference_relations=None,
+    hltb_hours=None,
     include_frontmatter: bool = False,
     active_promo_context: dict | None = None,
 ) -> str:
@@ -2778,6 +2784,18 @@ def generate_md(
         raise RuntimeError("Markdown renderer module is not available")
     if recommended_collections is None:
         recommended_collections = build_recommended_collections(deals, top_picks=top_picks)
+    if personalized_recommendations is None:
+        personalized_recommendations = build_personalized_recommendations(
+            deals,
+            top_picks=top_picks,
+            activity_games=activity_games,
+            library_games=library_games if library_games is not None else have_on_sale,
+            owned=owned,
+            family_appids=family_appids,
+            liked_appids=liked_appids,
+            preference_relations=preference_relations,
+            hltb_hours=hltb_hours,
+        )
     return _generate_md_renderer(
         deals,
         backlog_on_sale,
@@ -2810,6 +2828,7 @@ def generate_md(
         compare_data=compare_data,
         gift_ideas=gift_ideas,
         recommended_collections=recommended_collections,
+        personalized_recommendations=personalized_recommendations,
         include_frontmatter=include_frontmatter,
         active_promo_context=active_promo_context,
         group_by_tier=group_by_tier,
@@ -3596,6 +3615,14 @@ def main():
     budget_result = engagement_outputs.budget_result
     gift_ideas = engagement_outputs.gift_ideas
     recommended_collections = build_recommended_collections(deals, top_picks=top_picks)
+    personalized_recommendations = build_personalized_recommendations(
+        deals,
+        top_picks=top_picks,
+        library_games=have_on_sale,
+        owned=owned,
+        family_appids=family_renderer_kwargs.get("family_appids"),
+        hltb_hours=hltb_hours,
+    )
 
     # Generar MD
     step("Generando Markdown...")
@@ -3630,7 +3657,10 @@ def main():
         compare_data=compare_data,
         gift_ideas=gift_ideas,
         recommended_collections=recommended_collections,
+        personalized_recommendations=personalized_recommendations,
         family_appids=family_renderer_kwargs.get("family_appids"),
+        library_games=have_on_sale,
+        hltb_hours=hltb_hours,
         include_frontmatter=bool(FILTERS.get("md_frontmatter")),
         active_promo_context=active_promo_context,
     )
@@ -3716,6 +3746,7 @@ def main():
         compare_data=compare_data,
         gift_ideas=gift_ideas,
         recommended_collections=recommended_collections,
+        personalized_recommendations=personalized_recommendations,
         library_games=have_on_sale,
         hltb_hours=hltb_hours,
         profile_display_name=profile_display_name,

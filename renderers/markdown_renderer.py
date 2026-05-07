@@ -268,6 +268,76 @@ def _build_recommended_collection_lines(collections: list[dict]) -> list[str]:
     ]
 
 
+def _personalized_item_title(item: dict) -> str:
+    appid = str(item.get("appid") or "").strip()
+    name = str(item.get("name") or "Juego desconocido")
+    return _link(name, appid) if appid else _md_esc(name)
+
+
+def _personalized_item_line(item: dict, index: int) -> str:
+    reasons = [str(reason) for reason in item.get("reasons", []) if str(reason).strip()]
+    reason_text = " · ".join(_md_esc(reason) for reason in reasons) or "score base del reporte"
+    meta = []
+    if item.get("personalized_score") not in (None, ""):
+        meta.append(f"Personal {_md_esc(str(item.get('personalized_score')))}")
+    if item.get("affinity_score") not in (None, ""):
+        meta.append(f"Afinidad +{_md_esc(str(item.get('affinity_score')))}")
+    discount = int(item.get("discount") or 0)
+    if discount:
+        meta.append(f"-{discount}%")
+    price_final = str(item.get("price_final") or "")
+    if price_final:
+        meta.append(_md_esc(price_final))
+    meta_text = f" ({' · '.join(meta)})" if meta else ""
+    return f"- {index}. {_personalized_item_title(item)} — {reason_text}{meta_text}"
+
+
+def _profile_terms_text(terms: list[dict]) -> str:
+    labels = [str(term.get("term") or "").strip() for term in terms if term.get("term")]
+    return ", ".join(_md_esc(label) for label in labels[:3])
+
+
+def _personalized_profile_line(profile: dict) -> str:
+    parts = []
+    activity_terms = _profile_terms_text(profile.get("activity_terms", []))
+    if activity_terms:
+        parts.append(f"actividad: {activity_terms}")
+    library_summary = profile.get("library_summary") or {}
+    library_terms = _profile_terms_text(library_summary.get("top_terms", []))
+    if library_terms:
+        parts.append(f"biblioteca: {library_terms}")
+    total_hours = library_summary.get("total_hltb_hours")
+    if total_hours:
+        parts.append(f"HLTB: {total_hours}h")
+    average_price = library_summary.get("average_price")
+    if average_price is not None:
+        parts.append(f"precio promedio biblioteca: ${average_price}")
+    if not parts:
+        return ""
+    return f"> Perfil usado: {' · '.join(parts)}"
+
+
+def _build_personalized_recommendation_lines(payload: dict | None) -> list[str]:
+    if not isinstance(payload, dict):
+        return []
+    items = [item for item in payload.get("items", []) if isinstance(item, dict)]
+    if not items:
+        return []
+    profile_line = _personalized_profile_line(payload.get("profile") or {})
+    profile_lines = [profile_line, ""] if profile_line else []
+    return [
+        "## 🎯 Recomendaciones personalizadas",
+        "",
+        "> Ranking explicable construido con score del reporte y señales opcionales de actividad, biblioteca y preferencias. No cambia el score global.",
+        "",
+        *profile_lines,
+        *[_personalized_item_line(item, idx) for idx, item in enumerate(items, 1)],
+        "",
+        "---",
+        "",
+    ]
+
+
 def generate_md(
     deals: list[dict],
     backlog_on_sale: list[dict],
@@ -300,6 +370,7 @@ def generate_md(
     compare_data: dict | None = None,
     gift_ideas: list[dict] | None = None,
     recommended_collections: list[dict] | None = None,
+    personalized_recommendations: dict | None = None,
     include_frontmatter: bool = False,
     active_promo_context: dict | None = None,
     *,
@@ -330,6 +401,7 @@ def generate_md(
     current_prices = current_prices or {}
     top_picks = top_picks or []
     recommended_collections = recommended_collections or []
+    personalized_recommendations = personalized_recommendations or {"items": []}
     watchlist_alerts = watchlist_alerts or []
     comp = comparison or {}
     owned_and_wishlisted = sorted(
@@ -438,6 +510,7 @@ def generate_md(
         lines += ["", "---", ""]
 
     lines += _build_recommended_collection_lines(recommended_collections)
+    lines += _build_personalized_recommendation_lines(personalized_recommendations)
 
     if watchlist_alerts:
         lines += [

@@ -5488,6 +5488,69 @@ class RankTopPicksTests(unittest.TestCase):
 
         self.assertNotIn("Colecciones recomendadas", md)
 
+    def test_generate_md_renders_personalized_recommendations(self) -> None:
+        md = generate_md(
+            deals=[],
+            backlog_on_sale=[],
+            have_on_sale=[],
+            vanity="gaben",
+            owned={},
+            wishlist_appids=["10"],
+            min_discount=50,
+            genres=[],
+            recommended_collections=[],
+            personalized_recommendations={
+                "items": [
+                    {
+                        "appid": "10",
+                        "name": "Deep Action",
+                        "personalized_score": 100.0,
+                        "affinity_score": 48.0,
+                        "discount": 60,
+                        "price_final": "$99",
+                        "reasons": [
+                            "encaja con tu actividad reciente: Action",
+                            "similar a Hades",
+                        ],
+                    }
+                ],
+                "profile": {
+                    "activity_terms": [{"term": "Action", "weight": 3.0}],
+                    "library_summary": {
+                        "top_terms": [{"term": "Roguelike", "weight": 2.0}],
+                        "total_hltb_hours": 25.0,
+                        "average_price": 185.0,
+                    },
+                },
+            },
+        )
+
+        self.assertIn("## 🎯 Recomendaciones personalizadas", md)
+        self.assertIn("Ranking explicable construido", md)
+        self.assertIn("Perfil usado: actividad: Action", md)
+        self.assertIn("biblioteca: Roguelike", md)
+        self.assertIn("Deep Action", md)
+        self.assertIn("Personal 100.0", md)
+        self.assertIn("Afinidad +48.0", md)
+        self.assertIn("encaja con tu actividad reciente: Action", md)
+        self.assertIn("similar a Hades", md)
+
+    def test_generate_md_omits_personalized_recommendations_when_empty(self) -> None:
+        md = generate_md(
+            deals=[],
+            backlog_on_sale=[],
+            have_on_sale=[],
+            vanity="gaben",
+            owned={},
+            wishlist_appids=[],
+            min_discount=50,
+            genres=[],
+            recommended_collections=[],
+            personalized_recommendations={"items": []},
+        )
+
+        self.assertNotIn("Recomendaciones personalizadas", md)
+
     def test_generate_md_surfaces_active_promo_context(self) -> None:
         md = generate_md(
             deals=[],
@@ -5674,7 +5737,8 @@ class RankTopPicksTests(unittest.TestCase):
         self.assertIn('data-recommended-collection="first"', html)
         self.assertIn('data-recommended-collection="second"', html)
         self.assertNotIn('data-recommended-collection="only_duplicates"', html)
-        self.assertEqual(html.count('href="https://store.steampowered.com/app/10/"'), 1)
+        self.assertEqual(html.count("también deck"), 0)
+        self.assertEqual(html.count("score alto"), 1)
         self.assertIn("Charlie", html)
         self.assertIn('class="collection-item-thumb"', html)
         self.assertIn("steam/apps/10/capsule_231x87.jpg", html)
@@ -5741,7 +5805,7 @@ class RankTopPicksTests(unittest.TestCase):
         self.assertNotIn("<script>alert(4)</script>", html)
         self.assertNotIn("<img src=x", html)
         self.assertNotIn("/app/10\" onclick=", html)
-        self.assertNotIn("collection-item-thumb", html)
+        self.assertNotIn('<a class="collection-item-thumb"', html)
         self.assertNotIn("alert(3)", html)
 
     def test_generate_html_uses_safe_fallbacks_for_empty_visible_stats(self) -> None:
