@@ -607,6 +607,24 @@ class PersonalizedRecommendationsTests(unittest.TestCase):
             ["Action", "Roguelike"],
         )
 
+    def test_build_personalized_recommendations_weights_recent_activity_terms(self) -> None:
+        recommendations = build_personalized_recommendations(
+            [
+                {"appid": "10", "name": "Action Short", "score": 60, "genres": ["Action"]},
+                {"appid": "20", "name": "Puzzle Long", "score": 60, "genres": ["Puzzle"]},
+            ],
+            activity_games=[
+                {"appid": "91", "name": "Recent Action", "playtime_2weeks": 240, "genres": ["Action"]},
+                {"appid": "92", "name": "Old Puzzle", "playtime_forever": 600, "genres": ["Puzzle"]},
+            ],
+        )
+
+        self.assertEqual([item["appid"] for item in recommendations["items"]], ["10", "20"])
+        self.assertEqual(
+            [term["term"] for term in recommendations["profile"]["activity_terms"][:2]],
+            ["Action", "Puzzle"],
+        )
+
     def test_build_personalized_recommendations_falls_back_to_base_score(self) -> None:
         recommendations = build_personalized_recommendations(
             [
