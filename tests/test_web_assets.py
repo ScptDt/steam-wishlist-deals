@@ -275,6 +275,26 @@ class WebAssetsTests(unittest.TestCase):
         self.assertIn(".latest-selection-result-conservar", app_css)
         self.assertIn(".latest-selection-result-signals", app_css)
 
+    def test_selection_review_ui_keeps_no_commerce_copy_guardrail(self) -> None:
+        app_js = (ROOT / "web" / "steam_deals" / "app.js").read_text(
+            encoding="utf-8"
+        )
+
+        panel_start = app_js.index("function renderLatestSelectionReviewPanel")
+        panel_end = app_js.index("function latestSelectionRecordsFromText", panel_start)
+        panel_block = app_js[panel_start:panel_end]
+
+        self.assertIn("Simulador local", panel_block)
+        self.assertIn("No abre carrito ni compra nada", panel_block)
+        self.assertIn("Usa datos del último JSON local", panel_block)
+        self.assertNotIn("checkout", panel_block.lower())
+        self.assertNotIn("pago", panel_block.lower())
+        self.assertNotIn("Fanatical", panel_block)
+        self.assertNotIn("tienda externa", panel_block.lower())
+        self.assertNotIn("Abrir carrito", panel_block)
+        self.assertNotIn("Comprar ahora", panel_block)
+        self.assertNotIn("remoción automática", panel_block.lower())
+
     def test_output_folder_actions_explain_default_folder_and_open_button(self) -> None:
         index_html = (ROOT / "web" / "steam_deals" / "index.html").read_text(
             encoding="utf-8"

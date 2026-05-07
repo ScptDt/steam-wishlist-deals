@@ -196,6 +196,42 @@ class SelectionReviewTests(unittest.TestCase):
         self.assertEqual(item["personalized_score"], 90.0)
         self.assertIn("curated existing signal", item["reasons"])
 
+    def test_review_contract_strips_commerce_fields_from_report_context(self) -> None:
+        review = build_selection_review(
+            ["60"],
+            deals=[
+                {
+                    "appid": "60",
+                    "name": "Safe Local Pick",
+                    "score": 92,
+                    "discount": 75,
+                    "checkout_url": "https://example.invalid/checkout",
+                    "cart_id": "external-cart",
+                    "external_store": "Fanatical",
+                    "payment_provider": "ExamplePay",
+                    "remove_action": "remove-automatically",
+                }
+            ],
+        )
+
+        item = review["items"][0]
+        forbidden_keys = {
+            "checkout_url",
+            "cart_id",
+            "external_store",
+            "payment_provider",
+            "remove_action",
+            "shop",
+            "store",
+        }
+        forbidden_text = ("checkout", "fanatical", "payment", "external-cart", "remove-automatically")
+
+        self.assertTrue(forbidden_keys.isdisjoint(item.keys()))
+        self.assertTrue(
+            all(text not in str(review).lower() for text in forbidden_text),
+            msg="selection review must stay a local no-commerce contract",
+        )
+
 
 if __name__ == "__main__":
     unittest.main()
