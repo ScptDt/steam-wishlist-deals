@@ -2799,6 +2799,224 @@ function renderLatestPersonalizedRecommendations(report, files = null) {
   `;
 }
 
+
+function latestSelectionCandidateKey(item) {
+  const source = item && typeof item === 'object' ? item : {};
+  const appid = String(source.appid || source.steam_appid || '').trim();
+  return /^\d+$/.test(appid) ? appid : '';
+}
+
+function latestSelectionCandidate(item, sourceLabel) {
+  const source = item && typeof item === 'object' ? item : {};
+  const appid = latestSelectionCandidateKey(source);
+  if (!appid) return null;
+  const meta = [];
+  if (Number.isFinite(Number(source.personalized_score))) meta.push(`Personal ${source.personalized_score}`);
+  if (Number.isFinite(Number(source.score ?? source.base_score))) meta.push(`Score ${source.score ?? source.base_score}`);
+  if (Number.isFinite(Number(source.affinity_score))) meta.push(`Afinidad +${source.affinity_score}`);
+  const discount = Number(source.discount || 0) || 0;
+  if (discount > 0) meta.push(`-${discount}%`);
+  return {
+    appid,
+    name: source.name || source.steam_name || `App ${appid}`,
+    sourceLabel,
+    meta: meta.join(' · '),
+  };
+}
+
+function buildLatestSelectionCandidates(report) {
+  const candidates = [];
+  const seen = new Set();
+  const addCandidates = (items, sourceLabel, limit) => {
+    (Array.isArray(items) ? items : []).slice(0, limit).forEach((item) => {
+      const candidate = latestSelectionCandidate(item, sourceLabel);
+      if (!candidate || seen.has(candidate.appid)) return;
+      seen.add(candidate.appid);
+      candidates.push(candidate);
+    });
+  };
+  const personalized = report && report.personalized_recommendations;
+  addCandidates(personalized && personalized.items, 'Personalizado', 4);
+  addCandidates(report && report.top_picks, 'Top picks', 6);
+  return candidates.slice(0, 8);
+}
+
+function renderLatestSelectionCandidate(candidate) {
+  return `
+    <label class="latest-selection-candidate">
+      <input type="checkbox" data-selection-candidate="${escapeHtml(candidate.appid)}" data-selection-name="${escapeHtml(candidate.name)}">
+      <span>
+        <strong>${escapeHtml(candidate.name)}</strong>
+        <small>${escapeHtml([candidate.sourceLabel, candidate.meta].filter(Boolean).join(' · '))}</small>
+      </span>
+    </label>
+  `;
+}
+
+function renderLatestSelectionReviewPanel(report) {
+  const candidates = buildLatestSelectionCandidates(report);
+  const candidateList = candidates.length
+    ? `<div class="latest-selection-candidates">${candidates.map(renderLatestSelectionCandidate).join('')}</div>`
+    : '<div class="latest-selection-empty">No hay candidatos marcables en el último reporte; pega AppIDs o URLs de Steam.</div>';
+  return `
+    <div class="latest-selection-section" data-latest-selection-review>
+      <div class="latest-selection-head">
+        <div class="latest-selection-title">Evalúa mi selección</div>
+        <div class="latest-selection-subtitle">Simulador local: marca juegos o pega AppIDs/URLs para recibir conservar, dudar o quitar. No abre carrito ni compra nada.</div>
+      </div>
+      ${candidateList}
+      <textarea class="latest-selection-input" rows="3" data-selection-input placeholder="Pega AppIDs o URLs de Steam, uno por línea"></textarea>
+      <div class="latest-selection-actions">
+        <button type="button" class="btn btn-ghost latest-selection-evaluate" data-selection-evaluate>Evaluar selección</button>
+        <span class="latest-selection-status" data-selection-status>Usa datos del último JSON local.</span>
+      </div>
+      <div class="latest-selection-results" data-selection-results></div>
+    </div>
+  `;
+}
+
+function latestSelectionRecordsFromText(text) {
+  const seen = new Set();
+  const records = [];
+  String(text || '').split(/\n+/).forEach((line) => {
+    const match = String(line).match(/(?:store\.steampowered\.com\/app\/|\bapp\/)?(\d{1,12})(?!\d)/i);
+    const appid = match ? match[1] : '';
+    if (!appid || seen.has(appid)) return;
+    seen.add(appid);
+    records.push({appid});
+  });
+  return records;
+}
+
+function latestSelectionRecordsFromPanel(panel) {
+  const seen = new Set();
+  const records = [];
+  panel.querySelectorAll('[data-selection-candidate]:checked').forEach((input) => {
+    const appid = input.dataset.selectionCandidate || '';
+    if (!appid || seen.has(appid)) return;
+    seen.add(appid);
+    records.push({appid, name: input.dataset.selectionName || ''});
+  });
+  latestSelectionRecordsFromText(panel.querySelector('[data-selection-input]')?.value || '').forEach((record) => {
+    if (!record.appid || seen.has(record.appid)) return;
+    seen.add(record.appid);
+    records.push(record);
+  });
+  return records.slice(0, 50);
+}
+
+function latestSelectionSignalLabel(signal) {
+  const labels = {
+    invalid_appid: 'Entrada inválida',
+    owned: 'Ya lo tienes',
+    family: 'Biblioteca familiar',
+    personalized_score: 'Score personal',
+    affinity: 'Afinidad',
+    report_score: 'Score reporte',
+    discount: 'Descuento',
+    price: 'Precio',
+    reasons: 'Razones',
+    selection_only: 'Solo selección',
+  };
+  const key = String(signal || '').trim();
+  return labels[key] || key.replace(/_/g, ' ');
+}
+
+function renderLatestSelectionReviewItem(item) {
+  const source = item && typeof item === 'object' ? item : {};
+  const decision = ['conservar', 'dudar', 'quitar'].includes(source.decision) ? source.decision : 'dudar';
+  const labels = {conservar: 'Conservar', dudar: 'Dudar', quitar: 'Quitar'};
+  const appid = String(source.appid || '').trim();
+  const safeAppid = /^\d+$/.test(appid) ? appid : '';
+  const name = source.name || (appid ? `App ${appid}` : 'Entrada inválida');
+  const reasons = Array.isArray(source.reasons) && source.reasons.length
+    ? source.reasons.slice(0, 2).join(' · ')
+    : 'Sin razones disponibles';
+  const meta = [];
+  if (Number.isFinite(Number(source.personalized_score))) meta.push(`Personal ${source.personalized_score}`);
+  if (Number.isFinite(Number(source.base_score))) meta.push(`Score ${source.base_score}`);
+  if (Number.isFinite(Number(source.affinity_score))) meta.push(`Afinidad +${source.affinity_score}`);
+  const signals = Array.isArray(source.signals)
+    ? source.signals.map(latestSelectionSignalLabel).filter(Boolean).slice(0, 4)
+    : [];
+  const nameHtml = safeAppid
+    ? `<a href="https://store.steampowered.com/app/${escapeHtml(safeAppid)}/" target="_blank" rel="noopener noreferrer">${escapeHtml(name)}</a>`
+    : `<span>${escapeHtml(name)}</span>`;
+  return `
+    <article class="latest-selection-result latest-selection-result-${escapeHtml(decision)}" data-selection-decision="${escapeHtml(decision)}">
+      <div class="latest-selection-result-badge">${escapeHtml(labels[decision])}</div>
+      <div class="latest-selection-result-main">
+        <strong>${nameHtml}</strong>
+        ${meta.length ? `<span class="latest-selection-result-meta">${escapeHtml(meta.join(' · '))}</span>` : ''}
+        ${signals.length ? `<span class="latest-selection-result-signals">Señales: ${escapeHtml(signals.join(' · '))}</span>` : ''}
+        <span class="latest-selection-result-reasons">${escapeHtml(reasons)}</span>
+      </div>
+    </article>
+  `;
+}
+
+function renderLatestSelectionReviewResults(panel, review) {
+  const resultsEl = panel.querySelector('[data-selection-results]');
+  if (!resultsEl) return;
+  const items = Array.isArray(review && review.items) ? review.items : [];
+  if (!items.length) {
+    resultsEl.innerHTML = '<div class="latest-selection-empty">No hubo juegos válidos para evaluar.</div>';
+    return;
+  }
+  const summary = review.summary || {};
+  resultsEl.innerHTML = `
+    <div class="latest-selection-summary">
+      <span>Conservar: ${escapeHtml(summary.conservar || 0)}</span>
+      <span>Dudar: ${escapeHtml(summary.dudar || 0)}</span>
+      <span>Quitar: ${escapeHtml(summary.quitar || 0)}</span>
+    </div>
+    <div class="latest-selection-result-list">${items.map(renderLatestSelectionReviewItem).join('')}</div>
+  `;
+}
+
+async function evaluateLatestSelectionReview(panel, button) {
+  const statusEl = panel.querySelector('[data-selection-status]');
+  const records = latestSelectionRecordsFromPanel(panel);
+  if (!records.length) {
+    if (statusEl) statusEl.textContent = 'Marca al menos un juego o pega un AppID/URL.';
+    return;
+  }
+  const originalLabel = button ? button.textContent : '';
+  if (button) {
+    button.disabled = true;
+    button.textContent = 'Evaluando...';
+  }
+  if (statusEl) statusEl.textContent = `Evaluando ${records.length} juego(s) localmente...`;
+  try {
+    const resp = await localMutableFetch('/api/selection-review', {
+      headers: {'Content-Type': 'application/json'},
+      body: JSON.stringify({selection: records}),
+    });
+    const data = await resp.json();
+    if (!resp.ok) throw new Error(data.message || 'No se pudo evaluar la selección.');
+    renderLatestSelectionReviewResults(panel, data.review || {});
+    const total = data.review && data.review.summary ? data.review.summary.total_items : records.length;
+    if (statusEl) statusEl.textContent = `Evaluación local lista: ${total} item(s).`;
+  } catch (error) {
+    if (statusEl) statusEl.textContent = error.message || 'No se pudo evaluar la selección.';
+  } finally {
+    if (button) {
+      button.disabled = false;
+      button.textContent = originalLabel || 'Evaluar selección';
+    }
+  }
+}
+
+function bindLatestSelectionReviewActions() {
+  const el = latestReportCardEl();
+  if (!el) return;
+  el.querySelectorAll('[data-latest-selection-review]').forEach((panel) => {
+    const button = panel.querySelector('[data-selection-evaluate]');
+    if (!button) return;
+    button.addEventListener('click', () => evaluateLatestSelectionReview(panel, button));
+  });
+}
+
 function renderLatestBudgetPanel(report) {
   const budgetResult = report && typeof report === 'object' ? (report.budget_result || null) : null;
   if (!budgetResult) return '';
@@ -2966,6 +3184,7 @@ function renderLatestReportDetails(report, files = null) {
     renderLatestReportActions(files),
     renderLatestRecommendedCollections(report),
     renderLatestPersonalizedRecommendations(report, files),
+    renderLatestSelectionReviewPanel(report),
     renderLatestShareTopPicks(report),
     renderLatestBudgetPanel(report),
   ].filter(Boolean).join('');
@@ -2974,7 +3193,7 @@ function renderLatestReportDetails(report, files = null) {
     <details class="latest-report-details">
       <summary>
         <span>Acciones y recomendaciones del último reporte</span>
-        <span class="latest-report-details-hint">HTML, Share, JSON, carpeta y destacados</span>
+        <span class="latest-report-details-hint">HTML, Share, JSON, carpeta, selección y destacados</span>
       </summary>
       <div class="latest-report-details-body">${body}</div>
     </details>
@@ -3035,6 +3254,7 @@ function renderLatestReportCard(report, files = null) {
   `;
   el.classList.remove('hidden');
   bindLatestReportQuickActions();
+  bindLatestSelectionReviewActions();
   bindLatestShareActions();
   bindLatestBudgetActions();
 }

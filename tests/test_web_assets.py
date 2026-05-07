@@ -67,7 +67,7 @@ class WebAssetsTests(unittest.TestCase):
         self.assertIn("renderLatestReportDetails", app_js)
         self.assertIn('<details class="latest-report-details">', app_js)
         self.assertIn("Acciones y recomendaciones del último reporte", app_js)
-        self.assertIn("HTML, Share, JSON, carpeta y destacados", app_js)
+        self.assertIn("HTML, Share, JSON, carpeta, selección y destacados", app_js)
         self.assertIn("Acciones del último reporte", app_js)
         self.assertIn("Siguiente mejor paso", app_js)
         self.assertIn("Opciones técnicas del último reporte", app_js)
@@ -141,6 +141,7 @@ class WebAssetsTests(unittest.TestCase):
             "/api/run-pd2",
             "/api/watchlist",
             "/api/watchlist/delete",
+            "/api/selection-review",
         ):
             self.assertIn(f"localMutableFetch('{endpoint}'", app_js)
         self.assertNotIn("steam-tools-local-token", index_html)
@@ -221,6 +222,33 @@ class WebAssetsTests(unittest.TestCase):
         self.assertIn(".latest-personalized-list", app_css)
         self.assertIn(".latest-personalized-item", app_css)
         self.assertIn(".latest-personalized-footer", app_css)
+
+    def test_latest_report_renders_selection_review_ui_inside_details(self) -> None:
+        app_js = (ROOT / "web" / "steam_deals" / "app.js").read_text(
+            encoding="utf-8"
+        )
+        app_css = (ROOT / "web" / "steam_deals" / "app.css").read_text(
+            encoding="utf-8"
+        )
+
+        self.assertIn("function renderLatestSelectionReviewPanel", app_js)
+        self.assertIn("buildLatestSelectionCandidates(report)", app_js)
+        self.assertIn("data-latest-selection-review", app_js)
+        self.assertIn("data-selection-candidate", app_js)
+        self.assertIn("data-selection-input", app_js)
+        self.assertIn("data-selection-evaluate", app_js)
+        self.assertIn("localMutableFetch('/api/selection-review'", app_js)
+        self.assertIn("renderLatestSelectionReviewPanel(report)", app_js)
+        self.assertIn("bindLatestSelectionReviewActions()", app_js)
+        self.assertIn("Evalúa mi selección", app_js)
+        self.assertIn("No abre carrito ni compra nada", app_js)
+        self.assertIn("conservar", app_js)
+        self.assertIn("dudar", app_js)
+        self.assertIn("quitar", app_js)
+        self.assertIn(".latest-selection-section", app_css)
+        self.assertIn(".latest-selection-candidates", app_css)
+        self.assertIn(".latest-selection-result-list", app_css)
+        self.assertIn(".latest-selection-result-conservar", app_css)
 
     def test_output_folder_actions_explain_default_folder_and_open_button(self) -> None:
         index_html = (ROOT / "web" / "steam_deals" / "index.html").read_text(

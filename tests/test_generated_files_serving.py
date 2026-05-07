@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import io
+import json
 import os
 import sys
 import unittest
@@ -26,6 +27,7 @@ from steam_deals_web import (
     open_output_folder,
     public_generated_file_name,
     resolve_output_dir,
+    selection_review_records_from_body,
 )
 
 
@@ -584,6 +586,61 @@ class GeneratedFilesServingTests(unittest.TestCase):
                 "PAYDAY2_Plan_de_Compra.md",
             },
         )
+
+    def test_selection_review_records_from_body_sanitizes_urls_and_limits(self) -> None:
+        records = selection_review_records_from_body(
+            {
+                "selection": "https://store.steampowered.com/app/10/Game\nnot-an-app\napp/20\n30",
+            },
+            limit=2,
+        )
+
+        self.assertEqual(records, [{"appid": "10"}, {"appid": "20"}])
+
+    def test_selection_review_endpoint_uses_latest_report_without_running_generator(self) -> None:
+        handler = _FakeJsonHandler({"selection": ["10", "20"]})
+        original_output_dir = Handler.output_dir
+        with TemporaryDirectory() as temp_dir:
+            output_dir = Path(temp_dir)
+            stem = "Steam Deals 2026-05-07"
+            (output_dir / f"{stem}.html").write_text("html", encoding="utf-8")
+            (output_dir / f"{stem}.md").write_text("md", encoding="utf-8")
+            (output_dir / f"{stem}.json").write_text(
+                json.dumps(
+                    {
+                        "deals": [
+                            {"appid": "10", "name": "Deep Action", "score": 70, "discount": 60},
+                            {"appid": "20", "name": "Weak Deal", "score": 40, "discount": 10},
+                        ],
+                        "top_picks": [],
+                        "personalized_recommendations": {
+                            "items": [
+                                {
+                                    "appid": "10",
+                                    "name": "Deep Action",
+                                    "base_score": 70,
+                                    "affinity_score": 40,
+                                    "personalized_score": 100,
+                                    "reasons": ["similar a Hades"],
+                                }
+                            ]
+                        },
+                    }
+                ),
+                encoding="utf-8",
+            )
+            Handler.output_dir = temp_dir
+            try:
+                Handler._serve_selection_review(handler)
+            finally:
+                Handler.output_dir = original_output_dir
+
+        self.assertEqual(handler.status, 200)
+        self.assertEqual(handler.json["status"], "ok")
+        items = handler.json["review"]["items"]
+        self.assertEqual([item["appid"] for item in items], ["10", "20"])
+        self.assertEqual([item["decision"] for item in items], ["conservar", "quitar"])
+        self.assertIn("similar a Hades", items[0]["reasons"])
 
     def test_run_sse_start_error_sanitizes_public_detail(self) -> None:
         original_start_text_subprocess = web.start_text_subprocess

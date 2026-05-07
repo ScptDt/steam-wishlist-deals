@@ -157,6 +157,7 @@ from steam_deals_generator import (
     build_final_summary as generator_build_final_summary,
     build_personalized_recommendations,
     build_recommended_collections,
+    build_selection_review,
     build_smart_alert_counts as generator_build_smart_alert_counts,
     build_gift_ideas,
     compute_budget_picks,
@@ -457,6 +458,126 @@ class PersonalizedRecommendationsTests(unittest.TestCase):
 
         self.assertEqual(recommendations["items"], [])
         self.assertEqual(recommendations["profile"]["excluded_appids_count"], 0)
+
+
+class SelectionReviewTests(unittest.TestCase):
+    def test_build_selection_review_classifies_existing_report_signals(self) -> None:
+        review = build_selection_review(
+            ["10", "20", "30"],
+            deals=[
+                {"appid": "10", "name": "Deep Action", "score": 70, "discount": 60},
+                {"appid": "20", "name": "Maybe Puzzle", "score": 68, "discount": 45},
+                {"appid": "30", "name": "Weak Deal", "score": 40, "discount": 10},
+            ],
+            personalized_recommendations={
+                "items": [
+                    {
+                        "appid": "10",
+                        "name": "Deep Action",
+                        "base_score": 70,
+                        "affinity_score": 48,
+                        "personalized_score": 100,
+                        "reasons": ["similar a Hades", "encaja con tu actividad reciente: Action"],
+                    },
+                    {
+                        "appid": "20",
+                        "name": "Maybe Puzzle",
+                        "base_score": 68,
+                        "affinity_score": 0,
+                        "personalized_score": 68,
+                        "reasons": ["score base del reporte"],
+                    },
+                ]
+            },
+        )
+
+        by_appid = {item["appid"]: item for item in review["items"]}
+        self.assertEqual([item["appid"] for item in review["items"]], ["10", "20", "30"])
+        self.assertEqual(by_appid["10"]["decision"], "conservar")
+        self.assertEqual(by_appid["20"]["decision"], "dudar")
+        self.assertEqual(by_appid["30"]["decision"], "quitar")
+        self.assertIn("similar a Hades", by_appid["10"]["reasons"])
+        self.assertEqual(
+            by_appid["10"]["signals"],
+            ["personalized_score", "affinity", "report_score", "discount", "reasons"],
+        )
+        self.assertEqual(by_appid["30"]["signals"], ["report_score", "discount"])
+        self.assertEqual(review["summary"]["conservar"], 1)
+        self.assertEqual(review["summary"]["dudar"], 1)
+        self.assertEqual(review["summary"]["quitar"], 1)
+
+    def test_build_selection_review_marks_owned_and_family_items_to_remove(self) -> None:
+        review = build_selection_review(
+            [{"appid": "40", "name": "Owned Game"}, "50"],
+            deals=[
+                {"appid": "40", "name": "Owned Game", "score": 95},
+                {"appid": "50", "name": "Family Game", "score": 90},
+            ],
+            owned={"40": "Owned Game"},
+            family_appids=["50"],
+        )
+
+        by_appid = {item["appid"]: item for item in review["items"]}
+        self.assertEqual(by_appid["40"]["decision"], "quitar")
+        self.assertEqual(by_appid["50"]["decision"], "quitar")
+        self.assertIn("ya está en tu biblioteca", by_appid["40"]["reasons"])
+        self.assertIn("ya disponible en biblioteca familiar", by_appid["50"]["reasons"])
+        self.assertIn("owned", by_appid["40"]["signals"])
+        self.assertIn("family", by_appid["50"]["signals"])
+
+    def test_build_selection_review_handles_empty_invalid_and_duplicates(self) -> None:
+        self.assertEqual(build_selection_review([])["items"], [])
+
+        review = build_selection_review(
+            [{}, {"name": "Missing Appid"}, "10", "10"],
+            deals=[{"appid": "10", "name": "Alpha", "score": 90}],
+        )
+
+        self.assertEqual([item["appid"] for item in review["items"]], ["", "", "10"])
+        self.assertEqual([item["decision"] for item in review["items"]], ["quitar", "quitar", "conservar"])
+        self.assertEqual(review["items"][1]["name"], "Missing Appid")
+        self.assertEqual(review["items"][0]["signals"], ["invalid_appid"])
+        self.assertEqual(review["summary"]["duplicate_count"], 1)
+
+    def test_build_selection_review_limits_reasons_and_marks_selection_only(self) -> None:
+        review = build_selection_review(
+            ["999"],
+            personalized_recommendations={
+                "items": [
+                    {
+                        "appid": "999",
+                        "name": "Reason Heavy",
+                        "base_score": 88,
+                        "affinity_score": 30,
+                        "personalized_score": 100,
+                        "reasons": ["similar a Hades", "encaja con tu actividad reciente", "coincide con tu biblioteca"],
+                    }
+                ]
+            },
+            max_reasons=1,
+        )
+
+        self.assertEqual(review["items"][0]["decision"], "conservar")
+        self.assertEqual(review["items"][0]["reasons"], ["similar a Hades"])
+        self.assertIn("personalized_score", review["items"][0]["signals"])
+
+        unknown_review = build_selection_review(["no-context"])
+
+        self.assertEqual(unknown_review["items"][0]["signals"], ["selection_only"])
+
+    def test_build_selection_review_can_reuse_personalized_signals_locally(self) -> None:
+        review = build_selection_review(
+            ["10"],
+            deals=[{"appid": "10", "name": "Action Deal", "score": 60, "genres": ["Action"]}],
+            activity_games=[{"appid": "90", "name": "Hades", "genres": ["Action"], "playtime_2weeks": 120}],
+            library_games=[{"appid": "91", "name": "Dead Cells", "genres": ["Action"]}],
+            liked_appids={"10"},
+        )
+
+        item = review["items"][0]
+        self.assertEqual(item["decision"], "conservar")
+        self.assertGreater(item["affinity_score"], 24)
+        self.assertIn("encaja con tu actividad reciente", " ".join(item["reasons"]))
 
 
 class ConfigTests(unittest.TestCase):

@@ -99,6 +99,7 @@ try:
         build_gift_ideas as _build_gift_ideas_impl,
         build_personalized_recommendations as _build_personalized_recommendations_impl,
         build_recommended_collections as _build_recommended_collections_impl,
+        build_selection_review as _build_selection_review_impl,
         compute_budget_picks as _compute_budget_picks_impl,
         compute_value_score as _compute_value_score_impl,
         rank_top_picks as _rank_top_picks_impl,
@@ -107,6 +108,7 @@ except Exception:
     _build_gift_ideas_impl = None
     _build_personalized_recommendations_impl = None
     _build_recommended_collections_impl = None
+    _build_selection_review_impl = None
     _compute_budget_picks_impl = None
     _compute_value_score_impl = None
     _rank_top_picks_impl = None
@@ -2707,6 +2709,18 @@ def build_personalized_recommendations(
     if _build_personalized_recommendations_impl is None:
         raise RuntimeError("Recommendations module is not available")
     return _build_personalized_recommendations_impl(deals, top_picks=top_picks, **kwargs)
+
+
+def build_selection_review(
+    selection,
+    deals: list[dict] | None = None,
+    top_picks: list[dict] | None = None,
+    **kwargs,
+) -> dict:
+    """Evaluate a tentative local selection with existing report signals."""
+    if _build_selection_review_impl is None:
+        raise RuntimeError("Recommendations module is not available")
+    return _build_selection_review_impl(selection, deals=deals, top_picks=top_picks, **kwargs)
 
 
 # ─────────────────────────────────────────────

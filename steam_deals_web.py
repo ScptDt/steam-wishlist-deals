@@ -37,6 +37,7 @@ from steam_deals_paths import (
 )
 from desktop_doctor import apply_desktop_doctor_fixes, build_desktop_doctor_report
 from app.steam_deals_history_dashboard import compare_history_runs, list_history_runs
+from app.steam_deals_recommendations import build_selection_review
 from shared.tool_modules import PAYDAY2_TOOL_ID, get_tool_entrypoint
 
 from shared_web_infra import (
@@ -99,6 +100,7 @@ PROTECTED_POST_PATHS = frozenset(
         "/api/config",
         "/api/watchlist",
         "/api/watchlist/delete",
+        "/api/selection-review",
         "/api/log/export",
     }
 )
@@ -252,6 +254,82 @@ def public_generated_file_name(path_value: str) -> str:
     if is_expected_generated_artifact_name(name):
         return name
     return redact_sensitive_text(raw)
+
+
+def _appid_from_text(value: object) -> str:
+    text = str(value or "").strip()
+    if not text:
+        return ""
+    app_match = re.search(r"(?:store\.steampowered\.com/app/|\bapp/)(\d{1,12})", text)
+    if app_match:
+        return app_match.group(1)
+    plain_match = re.search(r"(?<!\d)(\d{1,12})(?!\d)", text)
+    return plain_match.group(1) if plain_match else ""
+
+
+def _selection_review_records_from_text(text: str, *, limit: int) -> list[dict]:
+    records: list[dict] = []
+    seen_appids: set[str] = set()
+    for line in str(text or "").splitlines():
+        appid = _appid_from_text(line)
+        if not appid or appid in seen_appids:
+            continue
+        seen_appids.add(appid)
+        records.append({"appid": appid})
+        if len(records) >= limit:
+            break
+    return records
+
+
+def _selection_review_records(selection, *, limit: int = 50) -> list[dict]:
+    if isinstance(selection, str):
+        return _selection_review_records_from_text(selection, limit=limit)
+    if isinstance(selection, dict):
+        raw_records = selection.get("items") if isinstance(selection.get("items"), list) else [selection]
+    elif isinstance(selection, list):
+        raw_records = selection
+    elif selection is None:
+        raw_records = []
+    else:
+        raw_records = [selection]
+
+    records: list[dict] = []
+    for raw in raw_records:
+        if len(records) >= limit:
+            break
+        if isinstance(raw, dict):
+            appid = _appid_from_text(raw.get("appid") or raw.get("steam_appid"))
+            name = str(raw.get("name") or raw.get("steam_name") or "").strip()[:160]
+        else:
+            appid = _appid_from_text(raw)
+            name = ""
+        if not appid and not name:
+            records.append({})
+            continue
+        record = {"appid": appid}
+        if name:
+            record["name"] = name
+        records.append(record)
+    return records
+
+
+def selection_review_records_from_body(body: dict, *, limit: int = 50) -> list[dict]:
+    for key in ("selection", "items", "appids", "text"):
+        if key in body:
+            return _selection_review_records(body.get(key), limit=limit)
+    return []
+
+
+def load_latest_report_payload(output_dir: str | Path) -> tuple[Path | None, dict | None]:
+    out_dir = Path(output_dir)
+    latest_report = find_latest_artifact(out_dir, "Steam Deals*.json")
+    if latest_report is None or not is_allowed_generated_file_path(latest_report, out_dir):
+        return None, None
+    try:
+        payload = json.loads(latest_report.read_text(encoding="utf-8"))
+    except (OSError, json.JSONDecodeError):
+        return latest_report, None
+    return latest_report, payload if isinstance(payload, dict) else None
 
 
 def is_primary_steam_deals_artifact_name(name: str) -> bool:
@@ -748,6 +826,8 @@ class Handler(BaseHTTPRequestHandler):
             self._serve_watchlist_add()
         elif path == "/api/watchlist/delete":
             self._serve_watchlist_delete()
+        elif path == "/api/selection-review":
+            self._serve_selection_review()
         elif path == "/api/log/export":
             self._serve_log_export()
         else:
@@ -1037,6 +1117,40 @@ class Handler(BaseHTTPRequestHandler):
             )
             return
         self._serve_file(latest_report.name)
+
+    def _serve_selection_review(self):
+        body = self._read_json_body()
+        if body is None:
+            return
+        if not isinstance(body, dict):
+            self._send_json(
+                {"error": "invalid_payload", "message": "El payload debe ser un objeto JSON."},
+                status=400,
+            )
+            return
+
+        _latest_report, report = load_latest_report_payload(Handler.output_dir)
+        if report is None:
+            self._send_json(
+                {
+                    "error": "latest_report_not_found",
+                    "message": "No se encontró un reporte JSON válido para evaluar la selección.",
+                },
+                status=404,
+            )
+            return
+
+        selection = selection_review_records_from_body(body)
+        owned_records = report.get("owned") or report.get("owned_appids") or report.get("have_on_sale") or []
+        review = build_selection_review(
+            selection,
+            deals=report.get("deals") if isinstance(report.get("deals"), list) else [],
+            top_picks=report.get("top_picks") if isinstance(report.get("top_picks"), list) else [],
+            personalized_recommendations=report.get("personalized_recommendations"),
+            owned=owned_records,
+            family_appids=report.get("family_appids") or report.get("family") or [],
+        )
+        self._send_json({"status": "ok", "review": review})
 
     def _serve_history_runs(self):
         max_runs = 50

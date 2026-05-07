@@ -477,6 +477,214 @@ def build_personalized_recommendations(
     }
 
 
+def _selection_records(selection) -> list[dict]:
+    if not selection:
+        return []
+    if isinstance(selection, dict):
+        raw_records = selection.get("items") if isinstance(selection.get("items"), list) else [selection]
+    elif isinstance(selection, (str, int)):
+        raw_records = [selection]
+    else:
+        raw_records = selection
+    records: list[dict] = []
+    for record in raw_records:
+        if isinstance(record, dict):
+            records.append(dict(record))
+        elif record is not None and str(record).strip():
+            records.append({"appid": str(record).strip()})
+        else:
+            records.append({})
+    return records
+
+
+def _personalized_items(personalized_recommendations) -> list[dict]:
+    if isinstance(personalized_recommendations, dict):
+        return _record_list(personalized_recommendations.get("items"))
+    return _record_list(personalized_recommendations)
+
+
+def _selection_context_by_appid(deals, top_picks, personalized_recommendations) -> dict[str, dict]:
+    by_appid = {
+        _collection_appid(candidate): dict(candidate)
+        for candidate in _merge_collection_sources(deals or [], top_picks)
+        if _collection_appid(candidate)
+    }
+    for item in _personalized_items(personalized_recommendations):
+        appid = _collection_appid(item)
+        if appid:
+            by_appid[appid] = {**by_appid.get(appid, {}), **dict(item)}
+    return by_appid
+
+
+def _selection_base_score(candidate: dict) -> float:
+    if candidate.get("base_score") is not None:
+        return _safe_number(candidate.get("base_score"), 50.0)
+    return _candidate_base_score(candidate)
+
+
+def _selection_has_score(candidate: dict) -> bool:
+    return candidate.get("base_score") is not None or candidate.get("score") is not None
+
+
+def _selection_decision(appid: str, candidate: dict, owned_appids: set[str], family_appids: set[str]) -> str:
+    if not appid or appid in owned_appids or appid in family_appids:
+        return "quitar"
+    base_score = _selection_base_score(candidate)
+    affinity_score = _safe_number(candidate.get("affinity_score"))
+    personalized_score = candidate.get("personalized_score")
+    if personalized_score is not None and _safe_number(personalized_score) >= 85:
+        return "conservar"
+    if affinity_score >= 24 or base_score >= 85:
+        return "conservar"
+    if base_score < 45 and affinity_score <= 0:
+        return "quitar"
+    return "dudar"
+
+
+def _dedupe_texts(values: list[str]) -> list[str]:
+    seen: set[str] = set()
+    result: list[str] = []
+    for value in values:
+        text = str(value).strip()
+        key = text.lower()
+        if text and key not in seen:
+            seen.add(key)
+            result.append(text)
+    return result
+
+
+def _selection_reasons(
+    appid: str,
+    candidate: dict,
+    decision: str,
+    owned_appids: set[str],
+    family_appids: set[str],
+    max_reasons: int,
+) -> list[str]:
+    reasons: list[str] = []
+    if not appid:
+        reasons.append("entrada sin appid válido")
+    if appid in owned_appids:
+        reasons.append("ya está en tu biblioteca")
+    if appid in family_appids:
+        reasons.append("ya disponible en biblioteca familiar")
+    reasons.extend(str(reason) for reason in candidate.get("reasons") or [] if reason != "score base del reporte")
+    base_score = _selection_base_score(candidate)
+    affinity_score = _safe_number(candidate.get("affinity_score"))
+    if candidate.get("personalized_score") is not None and _safe_number(candidate.get("personalized_score")) >= 80:
+        reasons.append(f"score personal alto: {_safe_number(candidate.get('personalized_score')):.1f}")
+    elif affinity_score > 0:
+        reasons.append(f"afinidad positiva: {affinity_score:.1f}")
+    if base_score >= 80:
+        reasons.append(f"score del reporte fuerte: {base_score:.1f}")
+    if _safe_number(candidate.get("discount")) >= 70:
+        reasons.append(f"descuento fuerte: {int(_safe_number(candidate.get('discount')))}%")
+    if not reasons:
+        fallback = {
+            "conservar": "señales positivas del reporte",
+            "dudar": "no hay señales suficientes para priorizarlo",
+            "quitar": "score bajo y sin afinidad visible",
+        }
+        reasons.append(fallback[decision])
+    return _dedupe_texts(reasons)[:max_reasons]
+
+
+def _selection_signals(appid: str, candidate: dict, owned_appids: set[str], family_appids: set[str]) -> list[str]:
+    signals: list[str] = []
+    if not appid:
+        signals.append("invalid_appid")
+    if appid in owned_appids:
+        signals.append("owned")
+    if appid in family_appids:
+        signals.append("family")
+    if candidate.get("personalized_score") is not None:
+        signals.append("personalized_score")
+    if candidate.get("affinity_score") is not None:
+        signals.append("affinity")
+    if _selection_has_score(candidate):
+        signals.append("report_score")
+    if candidate.get("discount") is not None:
+        signals.append("discount")
+    if candidate.get("price_final") or candidate.get("price"):
+        signals.append("price")
+    if candidate.get("reasons"):
+        signals.append("reasons")
+    return _dedupe_texts(signals) or ["selection_only"]
+
+
+def _selection_review_item(
+    appid: str,
+    candidate: dict,
+    owned_appids: set[str],
+    family_appids: set[str],
+    max_reasons: int,
+) -> dict:
+    decision = _selection_decision(appid, candidate, owned_appids, family_appids)
+    return {
+        "appid": appid,
+        "name": candidate.get("name") or candidate.get("steam_name") or (f"App {appid}" if appid else "Entrada inválida"),
+        "decision": decision,
+        "base_score": round(_selection_base_score(candidate), 1) if _selection_has_score(candidate) else None,
+        "affinity_score": round(_safe_number(candidate.get("affinity_score")), 1) if candidate.get("affinity_score") is not None else None,
+        "personalized_score": round(_safe_number(candidate.get("personalized_score")), 1) if candidate.get("personalized_score") is not None else None,
+        "discount": int(_safe_number(candidate.get("discount"))) if candidate.get("discount") is not None else None,
+        "price_final": candidate.get("price_final") or candidate.get("price") or "",
+        "signals": _selection_signals(appid, candidate, owned_appids, family_appids),
+        "reasons": _selection_reasons(appid, candidate, decision, owned_appids, family_appids, max_reasons),
+    }
+
+
+def build_selection_review(
+    selection,
+    deals: list[dict] | None = None,
+    top_picks: list[dict] | None = None,
+    *,
+    personalized_recommendations=None,
+    activity_games=None,
+    library_games=None,
+    owned=None,
+    family_appids=None,
+    liked_appids=None,
+    preference_relations=None,
+    hltb_hours=None,
+    max_reasons: int = 2,
+) -> dict:
+    """Evaluate a tentative local selection without checkout or score recalibration."""
+    if personalized_recommendations is None and any((activity_games, library_games, liked_appids, preference_relations)):
+        personalized_recommendations = build_personalized_recommendations(
+            deals or [],
+            top_picks=top_picks,
+            activity_games=activity_games,
+            library_games=library_games,
+            owned=owned,
+            family_appids=family_appids,
+            liked_appids=liked_appids,
+            preference_relations=preference_relations,
+            hltb_hours=hltb_hours,
+        )
+    context_by_appid = _selection_context_by_appid(deals, top_picks, personalized_recommendations)
+    owned_set = _normalize_appid_set(owned)
+    family_set = _normalize_appid_set(family_appids)
+    seen_appids: set[str] = set()
+    duplicate_count = 0
+    items: list[dict] = []
+    for record in _selection_records(selection):
+        appid = _collection_appid(record)
+        if appid and appid in seen_appids:
+            duplicate_count += 1
+            continue
+        if appid:
+            seen_appids.add(appid)
+        candidate = {**context_by_appid.get(appid, {}), **record}
+        items.append(_selection_review_item(appid, candidate, owned_set, family_set, max(1, int(_safe_number(max_reasons, 2)))))
+    counts = {decision: sum(1 for item in items if item["decision"] == decision) for decision in ("conservar", "dudar", "quitar")}
+    return {
+        "source_signals": ["selection", "score", "personalized_recommendations", "owned_family"],
+        "items": items,
+        "summary": {"total_items": len(items), "duplicate_count": duplicate_count, **counts},
+    }
+
+
 def _priority_score(priority: int) -> int:
     if priority == 0:
         return 30
