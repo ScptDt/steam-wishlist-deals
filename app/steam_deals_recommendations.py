@@ -79,6 +79,13 @@ RECOMMENDED_COLLECTION_DEFINITIONS = (
         "description": "Destaca juegos narrativos solo cuando existe una señal Story Rich explícita.",
         "source_signals": ["genres.story_rich", "tags.story_rich"],
     },
+    {
+        "id": "singleplayer",
+        "title": "Singleplayer",
+        "label": "Singleplayer",
+        "description": "Destaca juegos para un jugador solo cuando esa señal está explícita y no es trivial.",
+        "source_signals": ["categories.single_player", "genres.singleplayer", "tags.singleplayer"],
+    },
 )
 
 
@@ -155,8 +162,40 @@ def _style_term_key(term: str) -> str:
     return str(term or "").strip().lower().replace("-", " ").replace("_", " ")
 
 
+def _canonical_style_term_key(term: str) -> str:
+    key = _style_term_key(term)
+    if key in {"single player", "singleplayer"}:
+        return "singleplayer"
+    return key
+
+
 def _has_story_rich_signal(item: dict) -> bool:
     return "story rich" in {_style_term_key(term) for term in _style_terms(item)}
+
+
+def _is_singleplayer_term(value) -> bool:
+    return _canonical_style_term_key(str(value or "")) == "singleplayer"
+
+
+def _has_singleplayer_category_signal(value) -> bool:
+    if isinstance(value, dict):
+        category_id = value.get("id") or value.get("category_id") or value.get("categoryid")
+        label = value.get("description") or value.get("name") or value.get("label")
+        return str(category_id).strip() == "2" or _is_singleplayer_term(label)
+    return str(value).strip() == "2" or _is_singleplayer_term(value)
+
+
+def _has_singleplayer_signal(item: dict) -> bool:
+    categories = item.get("categories") or item.get("steam_categories") or []
+    if isinstance(categories, dict):
+        category_values = [*categories.keys(), *categories.values()]
+    elif isinstance(categories, list):
+        category_values = categories
+    else:
+        category_values = [categories]
+    return any(_has_singleplayer_category_signal(value) for value in category_values) or any(
+        _is_singleplayer_term(term) for term in _style_terms(item)
+    )
 
 
 def _collection_item(item: dict, reason: str) -> dict:
@@ -225,7 +264,7 @@ def _top_style_term(items: list[dict]) -> str:
     counts: dict[str, tuple[int, str]] = {}
     for item in items:
         for term in _style_terms(item):
-            key = term.lower()
+            key = _canonical_style_term_key(term)
             count, label = counts.get(key, (0, term))
             counts[key] = (count + 1, label)
     if not counts:
@@ -297,12 +336,24 @@ def build_recommended_collections(
     genre_style = [
         _collection_item(item, f"Coincide con {style_term}, una señal repetida en estas ofertas")
         for item in _sort_by_score_discount_name(
-            [item for item in sources if style_term and style_term.lower() in {term.lower() for term in _style_terms(item)}]
+            [
+                item for item in sources
+                if style_term
+                and _canonical_style_term_key(style_term)
+                in {_canonical_style_term_key(term) for term in _style_terms(item)}
+            ]
         )
     ]
     story_rich = [] if _style_term_key(style_term) == "story rich" else [
         _collection_item(item, "Señal explícita Story Rich en tags/géneros")
         for item in _sort_by_score_discount_name([item for item in sources if _has_story_rich_signal(item)])
+    ]
+    singleplayer = [] if (
+        _is_singleplayer_term(style_term)
+        or all(_has_singleplayer_signal(item) for item in sources)
+    ) else [
+        _collection_item(item, "Señal explícita Singleplayer en categorías/tags")
+        for item in _sort_by_score_discount_name([item for item in sources if _has_singleplayer_signal(item)])
     ]
 
     collection_candidates = [
@@ -312,6 +363,7 @@ def build_recommended_collections(
         ("acclaimed", acclaimed),
         ("genre_style", genre_style),
         ("story_rich", story_rich),
+        ("singleplayer", singleplayer),
     ]
     collections: list[dict] = []
     used_appids: set[str] = set()

@@ -288,7 +288,15 @@ class RecommendedCollectionsTests(unittest.TestCase):
 
         self.assertEqual(
             [collection["id"] for collection in collections],
-            ["recommended_for_you", "best_savings", "steam_deck", "acclaimed", "genre_style", "story_rich"],
+            [
+                "recommended_for_you",
+                "best_savings",
+                "steam_deck",
+                "acclaimed",
+                "genre_style",
+                "story_rich",
+                "singleplayer",
+            ],
         )
         self.assertEqual(
             [item["appid"] for item in by_id["recommended_for_you"]["items"]],
@@ -303,10 +311,12 @@ class RecommendedCollectionsTests(unittest.TestCase):
             ["a", "c"],
         )
         self.assertEqual([item["appid"] for item in by_id["story_rich"]["items"]], ["a"])
+        self.assertEqual([item["appid"] for item in by_id["singleplayer"]["items"]], ["c"])
         self.assertIn("reviews muy positivas", by_id["recommended_for_you"]["items"][0]["reason"])
         self.assertIn("85% de descuento", by_id["best_savings"]["items"][0]["reason"])
         self.assertIn("Action", by_id["genre_style"]["items"][0]["reason"])
         self.assertIn("Story Rich", by_id["story_rich"]["items"][0]["reason"])
+        self.assertIn("Singleplayer", by_id["singleplayer"]["items"][0]["reason"])
 
     def test_build_recommended_collections_prefers_cross_collection_diversity(self) -> None:
         deals = [
@@ -401,6 +411,60 @@ class RecommendedCollectionsTests(unittest.TestCase):
         self.assertNotIn("story_rich", [collection["id"] for collection in no_story_rich])
         self.assertIn("genre_style", [collection["id"] for collection in duplicate_genre_style])
         self.assertNotIn("story_rich", [collection["id"] for collection in duplicate_genre_style])
+
+    def test_build_recommended_collections_adds_singleplayer_from_explicit_signals(self) -> None:
+        collections = build_recommended_collections(
+            [
+                {
+                    "appid": "11",
+                    "name": "Solo Category",
+                    "score": 91,
+                    "categories": [2],
+                    "genres": ["Adventure"],
+                },
+                {
+                    "appid": "12",
+                    "name": "Solo Tag",
+                    "score": 88,
+                    "tags": [{"description": "Single-player"}],
+                },
+                {"appid": "13", "name": "Coop", "score": 86, "genres": ["Action"]},
+            ],
+            max_items_per_collection=2,
+        )
+        by_id = {collection["id"]: collection for collection in collections}
+
+        self.assertEqual([item["appid"] for item in by_id["singleplayer"]["items"]], ["11", "12"])
+        self.assertIn("Singleplayer", by_id["singleplayer"]["items"][0]["reason"])
+
+    def test_build_recommended_collections_omits_singleplayer_without_distinct_signal(self) -> None:
+        no_singleplayer = build_recommended_collections(
+            [
+                {"appid": "1", "name": "Action One", "score": 80, "genres": ["Action"]},
+                {"appid": "2", "name": "Puzzle Two", "score": 75, "tags": ["Puzzle"]},
+            ],
+            max_items_per_collection=2,
+        )
+        duplicate_genre_style = build_recommended_collections(
+            [
+                {"appid": "3", "name": "Solo One", "score": 85, "genres": ["Singleplayer"]},
+                {"appid": "4", "name": "Solo Two", "score": 82, "tags": ["Single-player"]},
+                {"appid": "5", "name": "Action", "score": 80, "genres": ["Action"]},
+            ],
+            max_items_per_collection=2,
+        )
+        all_singleplayer = build_recommended_collections(
+            [
+                {"appid": "6", "name": "Solo Six", "score": 88, "categories": [2]},
+                {"appid": "7", "name": "Solo Seven", "score": 87, "tags": ["Singleplayer"]},
+            ],
+            max_items_per_collection=2,
+        )
+
+        self.assertNotIn("singleplayer", [collection["id"] for collection in no_singleplayer])
+        self.assertIn("genre_style", [collection["id"] for collection in duplicate_genre_style])
+        self.assertNotIn("singleplayer", [collection["id"] for collection in duplicate_genre_style])
+        self.assertNotIn("singleplayer", [collection["id"] for collection in all_singleplayer])
 
 
 class PersonalizedRecommendationsTests(unittest.TestCase):
