@@ -27,6 +27,7 @@ from steam_deals_web import (
     open_output_folder,
     public_generated_file_name,
     resolve_output_dir,
+    selection_review_context_from_report,
     selection_review_records_from_body,
 )
 
@@ -643,6 +644,84 @@ class GeneratedFilesServingTests(unittest.TestCase):
         self.assertIn("personalized_score", items[0]["signals"])
         self.assertIn("report_score", items[1]["signals"])
         self.assertIn("similar a Hades", items[0]["reasons"])
+
+    def test_selection_review_endpoint_uses_local_report_signals_when_personalized_is_empty(self) -> None:
+        handler = _FakeJsonHandler({"selection": ["10", "30", "40"]})
+        original_output_dir = Handler.output_dir
+        with TemporaryDirectory() as temp_dir:
+            output_dir = Path(temp_dir)
+            stem = "Steam Deals 2026-05-08"
+            (output_dir / f"{stem}.html").write_text("html", encoding="utf-8")
+            (output_dir / f"{stem}.md").write_text("md", encoding="utf-8")
+            (output_dir / f"{stem}.json").write_text(
+                json.dumps(
+                    {
+                        "deals": [
+                            {
+                                "appid": "10",
+                                "name": "Deep Action",
+                                "score": 60,
+                                "discount": 40,
+                                "genres": ["Action", "Roguelike"],
+                            },
+                            {"appid": "30", "name": "Owned Hit", "score": 95, "genres": ["Action"]},
+                            {"appid": "40", "name": "Family Hit", "score": 95, "genres": ["Action"]},
+                        ],
+                        "activity_games": [
+                            {
+                                "appid": "90",
+                                "name": "Hades",
+                                "playtime_2weeks": 180,
+                                "genres": ["Action", "Roguelike"],
+                            }
+                        ],
+                        "library_games": [{"appid": "91", "name": "Dead Cells", "genres": ["Action"]}],
+                        "have_on_sale": [{"appid": "30", "name": "Owned Hit"}],
+                        "family_appids": ["40"],
+                        "user_preferences": {
+                            "liked_appids": ["10"],
+                            "relationships": {"10": ["similar a Hades"]},
+                        },
+                        "personalized_recommendations": {"items": []},
+                    }
+                ),
+                encoding="utf-8",
+            )
+            Handler.output_dir = temp_dir
+            try:
+                Handler._serve_selection_review(handler)
+            finally:
+                Handler.output_dir = original_output_dir
+
+        self.assertEqual(handler.status, 200)
+        items = handler.json["review"]["items"]
+        by_appid = {item["appid"]: item for item in items}
+        self.assertEqual(by_appid["10"]["decision"], "conservar")
+        self.assertIn("personalized_score", by_appid["10"]["signals"])
+        self.assertIn("affinity", by_appid["10"]["signals"])
+        self.assertEqual(by_appid["30"]["decision"], "quitar")
+        self.assertIn("owned", by_appid["30"]["signals"])
+        self.assertEqual(by_appid["40"]["decision"], "quitar")
+        self.assertIn("family", by_appid["40"]["signals"])
+
+    def test_selection_review_context_from_report_extracts_nested_preferences(self) -> None:
+        context = selection_review_context_from_report(
+            {
+                "have_on_sale": [{"appid": "30", "name": "Owned Hit"}],
+                "activity_games": [{"appid": "90", "genres": ["Action"]}],
+                "user_preferences": {
+                    "liked_appids": ["10"],
+                    "relations": {"10": ["similar a Hades"]},
+                },
+                "personalized_recommendations": {"items": []},
+            }
+        )
+
+        self.assertEqual(context["owned"], [{"appid": "30", "name": "Owned Hit"}])
+        self.assertEqual(context["library_games"], [{"appid": "30", "name": "Owned Hit"}])
+        self.assertEqual(context["liked_appids"], ["10"])
+        self.assertEqual(context["preference_relations"], {"10": ["similar a Hades"]})
+        self.assertIsNone(context["personalized_recommendations"])
 
     def test_run_sse_start_error_sanitizes_public_detail(self) -> None:
         original_start_text_subprocess = web.start_text_subprocess

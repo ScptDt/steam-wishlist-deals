@@ -320,6 +320,86 @@ def selection_review_records_from_body(body: dict, *, limit: int = 50) -> list[d
     return []
 
 
+def _first_non_empty_report_value(report: dict, keys: tuple[str, ...], allowed_types: tuple[type, ...], default=None):
+    for key in keys:
+        value = report.get(key)
+        if isinstance(value, allowed_types) and value:
+            return value
+    return default
+
+
+def _nested_report_value(report: dict, parent_keys: tuple[str, ...], keys: tuple[str, ...], allowed_types: tuple[type, ...], default=None):
+    for parent_key in parent_keys:
+        parent = report.get(parent_key)
+        if isinstance(parent, dict):
+            value = _first_non_empty_report_value(parent, keys, allowed_types)
+            if value:
+                return value
+    return default
+
+
+def _personalized_recommendations_from_report(report: dict):
+    recommendations = report.get("personalized_recommendations")
+    if isinstance(recommendations, dict):
+        return recommendations if recommendations.get("items") else None
+    if isinstance(recommendations, list):
+        return recommendations or None
+    return None
+
+
+def selection_review_context_from_report(report: dict) -> dict:
+    have_on_sale = _first_non_empty_report_value(report, ("have_on_sale",), (list,), default=[])
+    liked_appids = _first_non_empty_report_value(report, ("liked_appids", "liked"), (list, dict))
+    if liked_appids is None:
+        liked_appids = _nested_report_value(
+            report,
+            ("preferences", "user_preferences"),
+            ("liked_appids", "liked"),
+            (list, dict),
+            default=[],
+        )
+    preference_relations = _first_non_empty_report_value(
+        report,
+        ("preference_relations", "relationships"),
+        (dict,),
+    )
+    if preference_relations is None:
+        preference_relations = _nested_report_value(
+            report,
+            ("preferences", "user_preferences"),
+            ("preference_relations", "relationships", "relations"),
+            (dict,),
+            default={},
+        )
+    return {
+        "deals": _first_non_empty_report_value(report, ("deals",), (list,), default=[]),
+        "top_picks": _first_non_empty_report_value(report, ("top_picks",), (list,), default=[]),
+        "personalized_recommendations": _personalized_recommendations_from_report(report),
+        "activity_games": _first_non_empty_report_value(
+            report,
+            ("activity_games", "recent_activity", "recently_played"),
+            (list, dict),
+            default=[],
+        ),
+        "library_games": _first_non_empty_report_value(
+            report,
+            ("library_games", "library", "owned_games"),
+            (list, dict),
+            default=have_on_sale,
+        ),
+        "owned": _first_non_empty_report_value(
+            report,
+            ("owned", "owned_appids"),
+            (list, dict),
+            default=have_on_sale,
+        ),
+        "family_appids": _first_non_empty_report_value(report, ("family_appids", "family"), (list, dict), default=[]),
+        "liked_appids": liked_appids or [],
+        "preference_relations": preference_relations or {},
+        "hltb_hours": _first_non_empty_report_value(report, ("hltb_hours", "hltb"), (dict,), default={}),
+    }
+
+
 def load_latest_report_payload(output_dir: str | Path) -> tuple[Path | None, dict | None]:
     out_dir = Path(output_dir)
     latest_report = find_latest_artifact(out_dir, "Steam Deals*.json")
@@ -1141,14 +1221,10 @@ class Handler(BaseHTTPRequestHandler):
             return
 
         selection = selection_review_records_from_body(body)
-        owned_records = report.get("owned") or report.get("owned_appids") or report.get("have_on_sale") or []
+        review_context = selection_review_context_from_report(report)
         review = build_selection_review(
             selection,
-            deals=report.get("deals") if isinstance(report.get("deals"), list) else [],
-            top_picks=report.get("top_picks") if isinstance(report.get("top_picks"), list) else [],
-            personalized_recommendations=report.get("personalized_recommendations"),
-            owned=owned_records,
-            family_appids=report.get("family_appids") or report.get("family") or [],
+            **review_context,
         )
         self._send_json({"status": "ok", "review": review})
 
