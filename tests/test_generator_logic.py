@@ -96,6 +96,7 @@ from steam_deals_steam_api import (
     compare_wishlists as module_compare_wishlists,
     get_active_promo_context as module_get_active_promo_context,
     get_active_sale as module_get_active_sale,
+    get_owned_games_with_records as module_get_owned_games_with_records,
     get_owned_games as module_get_owned_games,
     get_wishlist as module_get_wishlist,
     load_family_games as module_load_family_games,
@@ -5016,6 +5017,37 @@ class SteamAdapterTests(unittest.TestCase):
 
         with self.assertRaises(ValueError):
             module_get_wishlist(None, "steam-id", get_json=fake_get_json)
+
+    def test_get_owned_games_with_records_preserves_playtime_metadata(self) -> None:
+        owned, records = module_get_owned_games_with_records(
+            "key",
+            "steam-id",
+            get_json=lambda _url: {
+                "response": {
+                    "games": [
+                        {
+                            "appid": 10,
+                            "name": "Hades",
+                            "playtime_forever": 600,
+                            "playtime_2weeks": 120,
+                        },
+                        {"appid": 20, "name": "Portal 2"},
+                    ]
+                }
+            },
+        )
+
+        self.assertEqual(owned, {"10": "Hades", "20": "Portal 2"})
+        self.assertEqual(
+            records[0],
+            {
+                "appid": "10",
+                "name": "Hades",
+                "playtime_forever": 600,
+                "playtime_2weeks": 120,
+            },
+        )
+        self.assertEqual(records[1], {"appid": "20", "name": "Portal 2"})
 
     def test_get_owned_games_converts_auth_error_to_actionable_value_error(self) -> None:
         def fake_get_json(_url):

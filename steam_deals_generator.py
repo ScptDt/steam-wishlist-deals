@@ -209,6 +209,7 @@ try:
         compare_wishlists as _compare_wishlists_impl,
         get_active_promo_context as _get_active_promo_context_impl,
         get_active_sale as _get_active_sale_impl,
+        get_owned_games_with_records as _get_owned_games_with_records_impl,
         get_owned_games as _get_owned_games_impl,
         get_wishlist as _get_wishlist_impl,
         load_family_games as _load_family_games_impl,
@@ -219,6 +220,7 @@ except Exception:
     _compare_wishlists_impl = None
     _get_active_promo_context_impl = None
     _get_active_sale_impl = None
+    _get_owned_games_with_records_impl = None
     _get_owned_games_impl = None
     _get_wishlist_impl = None
     _load_family_games_impl = None
@@ -627,6 +629,14 @@ def get_owned_games(api_key: str, steam_id: str) -> dict[str, str]:
     if _get_owned_games_impl is None:
         raise RuntimeError("Steam adapter module is not available")
     return _get_owned_games_impl(api_key, steam_id, get_json=_get_json)
+
+
+def get_owned_games_with_records(api_key: str, steam_id: str) -> tuple[dict[str, str], list[dict]]:
+    """Devuelve mapa compatible y registros ricos de biblioteca propia."""
+    if _get_owned_games_with_records_impl is not None:
+        return _get_owned_games_with_records_impl(api_key, steam_id, get_json=_get_json)
+    owned = get_owned_games(api_key, steam_id)
+    return owned, [{"appid": appid, "name": name} for appid, name in owned.items()]
 
 
 def compare_wishlists(api_key, steam_id_1, vanity_2):
@@ -3431,15 +3441,17 @@ def main():
 
         # [3] Biblioteca propia (requiere API key)
     owned: dict[str, str] = {}
+    owned_game_records: list[dict] = []
     if KEY:
         step("Obteniendo biblioteca de Steam...")
         try:
-            owned = get_owned_games(KEY, steam_id)
+            owned, owned_game_records = get_owned_games_with_records(KEY, steam_id)
             print(f"  {_ok(f'{len(owned):,} juegos comprados')}")
         except ValueError as exc:
             print(f"  {_warn(str(exc))}")
             print(f"  {_dim('Continuando sin datos de biblioteca propia.')}")
             owned = {}
+            owned_game_records = []
 
     # Compare wishlists (optional)
     compare_data = None
@@ -3688,6 +3700,7 @@ def main():
     personalized_recommendations = build_personalized_recommendations(
         deals,
         top_picks=top_picks,
+        activity_games=owned_game_records,
         library_games=have_on_sale,
         owned=owned,
         family_appids=family_renderer_kwargs.get("family_appids"),

@@ -136,12 +136,41 @@ def get_wishlist(
     return appids, priorities
 
 
-def get_owned_games(api_key: str, steam_id: str, *, get_json) -> dict[str, str]:
-    """Devuelve dict appid → nombre de juegos propios en Steam."""
-    url = (
+def _owned_games_url(api_key: str, steam_id: str) -> str:
+    return (
         f"https://api.steampowered.com/IPlayerService/GetOwnedGames/v1/"
         f"?key={api_key}&steamid={steam_id}&include_appinfo=1&include_played_free_games=1"
     )
+
+
+def owned_game_records_from_payload(data: dict) -> list[dict]:
+    records: list[dict] = []
+    for game in data.get("response", {}).get("games", []):
+        appid = str(game.get("appid") or "").strip()
+        if not appid:
+            continue
+        record = {
+            "appid": appid,
+            "name": str(game.get("name") or "").strip(),
+        }
+        for key in ("playtime_forever", "playtime_2weeks"):
+            if game.get(key) is not None:
+                record[key] = game.get(key)
+        records.append(record)
+    return records
+
+
+def owned_games_from_records(records: list[dict]) -> dict[str, str]:
+    return {
+        str(record["appid"]): str(record.get("name") or "")
+        for record in records
+        if str(record.get("appid") or "").strip()
+    }
+
+
+def get_owned_game_records(api_key: str, steam_id: str, *, get_json) -> list[dict]:
+    """Devuelve registros propios preservando metadata local de actividad."""
+    url = _owned_games_url(api_key, steam_id)
     try:
         data = get_json(url)
     except urllib.error.HTTPError as exc:
@@ -151,10 +180,19 @@ def get_owned_games(api_key: str, steam_id: str, *, get_json) -> dict[str, str]:
                 "El reporte puede continuar sin marcar juegos ya comprados; revisa/regenera la API key si quieres esa señal."
             ) from exc
         raise
-    return {
-        str(game["appid"]): game["name"]
-        for game in data.get("response", {}).get("games", [])
-    }
+    return owned_game_records_from_payload(data)
+
+
+def get_owned_games_with_records(api_key: str, steam_id: str, *, get_json) -> tuple[dict[str, str], list[dict]]:
+    """Devuelve mapa compatible y registros ricos desde una sola respuesta."""
+    records = get_owned_game_records(api_key, steam_id, get_json=get_json)
+    return owned_games_from_records(records), records
+
+
+def get_owned_games(api_key: str, steam_id: str, *, get_json) -> dict[str, str]:
+    """Devuelve dict appid → nombre de juegos propios en Steam."""
+    owned, _records = get_owned_games_with_records(api_key, steam_id, get_json=get_json)
+    return owned
 
 
 def compare_wishlists(
