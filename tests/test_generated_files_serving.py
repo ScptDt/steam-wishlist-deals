@@ -640,6 +640,8 @@ class GeneratedFilesServingTests(unittest.TestCase):
         items = handler.json["review"]["items"]
         self.assertEqual([item["appid"] for item in items], ["10", "20"])
         self.assertEqual([item["decision"] for item in items], ["conservar", "quitar"])
+        self.assertIn("personalized_score", items[0]["signals"])
+        self.assertIn("report_score", items[1]["signals"])
         self.assertIn("similar a Hades", items[0]["reasons"])
 
     def test_run_sse_start_error_sanitizes_public_detail(self) -> None:

@@ -1233,6 +1233,12 @@ details .details-body .field:last-child {
   font-size: 0.71rem;
   line-height: 1.35;
 }
+.latest-selection-result-signals {
+  margin-top: 0.2rem;
+  color: var(--accent);
+  font-size: 0.7rem;
+  line-height: 1.35;
+}
 .latest-selection-result-reasons {
   margin-top: 0.2rem;
   color: var(--text2);

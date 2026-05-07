@@ -238,6 +238,9 @@ class WebAssetsTests(unittest.TestCase):
         self.assertIn("data-selection-input", app_js)
         self.assertIn("data-selection-evaluate", app_js)
         self.assertIn("localMutableFetch('/api/selection-review'", app_js)
+        self.assertIn("function latestSelectionSignalLabel", app_js)
+        self.assertIn("latest-selection-result-signals", app_js)
+        self.assertIn("Señales:", app_js)
         self.assertIn("renderLatestSelectionReviewPanel(report)", app_js)
         self.assertIn("bindLatestSelectionReviewActions()", app_js)
         self.assertIn("Evalúa mi selección", app_js)
@@ -249,6 +252,7 @@ class WebAssetsTests(unittest.TestCase):
         self.assertIn(".latest-selection-candidates", app_css)
         self.assertIn(".latest-selection-result-list", app_css)
         self.assertIn(".latest-selection-result-conservar", app_css)
+        self.assertIn(".latest-selection-result-signals", app_css)
 
     def test_output_folder_actions_explain_default_folder_and_open_button(self) -> None:
         index_html = (ROOT / "web" / "steam_deals" / "index.html").read_text(
