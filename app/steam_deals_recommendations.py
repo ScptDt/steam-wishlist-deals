@@ -66,6 +66,21 @@ RECOMMENDED_COLLECTION_DEFINITIONS = (
         "source_signals": ["review", "review_pct", "metacritic_score"],
     },
     {
+        "id": "community_favorites",
+        "title": "Favoritos de comunidad",
+        "label": "Favoritos de comunidad",
+        "description": "Cruza adopción/popularidad ya cacheada con calidad mínima para destacar juegos con respaldo comunitario.",
+        "source_signals": [
+            "review.total",
+            "tags_data.players.owners",
+            "tags_data.players.ccu",
+            "tags_data.players.players_2weeks",
+            "review_pct",
+            "score",
+            "metacritic_score",
+        ],
+    },
+    {
         "id": "genre_style",
         "title": "Por género/estilo",
         "label": "Por género/estilo",
@@ -88,6 +103,14 @@ RECOMMENDED_COLLECTION_DEFINITIONS = (
     },
 )
 
+COMMUNITY_MIN_REVIEW_COUNT = 500
+COMMUNITY_MIN_OWNERS_HIGH = 200_000
+COMMUNITY_MIN_CCU = 500
+COMMUNITY_MIN_RECENT_PLAYERS = 10_000
+COMMUNITY_MIN_REVIEW_PCT = 80
+COMMUNITY_MIN_SCORE = 72
+COMMUNITY_MIN_METACRITIC = 75
+
 
 def build_gift_ideas(friend_set, deals, owned):
     """Find deals that the friend wants but you don't own."""
@@ -107,20 +130,39 @@ def _collection_appid(item: dict) -> str:
     return str(item.get("appid") or item.get("steam_appid") or "").strip()
 
 
-def _merge_collection_sources(deals: list[dict], top_picks: list[dict] | None) -> list[dict]:
+def _with_collection_review(item: dict, reviews: dict[str, dict] | None) -> dict:
+    if not isinstance(reviews, dict):
+        return item
+    appid = _collection_appid(item)
+    external_review = reviews.get(appid)
+    if not isinstance(external_review, dict):
+        return item
+    local_review = item.get("review") if isinstance(item.get("review"), dict) else {}
+    return {**item, "review": {**external_review, **local_review}}
+
+
+def _merge_collection_sources(
+    deals: list[dict],
+    top_picks: list[dict] | None,
+    *,
+    reviews: dict[str, dict] | None = None,
+) -> list[dict]:
     by_appid: dict[str, dict] = {}
     ordered_appids: list[str] = []
     for deal in deals or []:
         appid = _collection_appid(deal)
         if not appid:
             continue
-        by_appid[appid] = dict(deal)
+        by_appid[appid] = _with_collection_review(dict(deal), reviews)
         ordered_appids.append(appid)
     for pick in top_picks or []:
         appid = _collection_appid(pick)
         if not appid:
             continue
-        by_appid[appid] = {**by_appid.get(appid, {}), **dict(pick)}
+        by_appid[appid] = _with_collection_review(
+            {**by_appid.get(appid, {}), **dict(pick)},
+            reviews,
+        )
         if appid not in ordered_appids:
             ordered_appids.append(appid)
     return [by_appid[appid] for appid in ordered_appids]
@@ -134,6 +176,148 @@ def _review_pct(item: dict) -> int | None:
         if item.get(key) is not None:
             return int(_safe_number(item.get(key)))
     return None
+
+
+def _review_total(item: dict) -> int:
+    review = item.get("review")
+    if isinstance(review, dict) and review.get("total") is not None:
+        return int(_safe_number(review.get("total")))
+    for key in ("review_total", "reviews_total", "total_reviews", "review_count"):
+        if item.get(key) is not None:
+            return int(_safe_number(item.get(key)))
+    return 0
+
+
+def _format_community_count(count: int) -> str:
+    if count >= 1_000_000:
+        value = count / 1_000_000
+        return f"{value:.1f}M" if count % 1_000_000 else f"{int(value)}M"
+    if count >= 1_000:
+        return f"{count // 1_000}K"
+    return str(count)
+
+
+def _parse_owners_range(owners: str) -> tuple[int, int]:
+    if not isinstance(owners, str) or ".." not in owners:
+        return (0, 0)
+    low_raw, high_raw = owners.split("..", 1)
+    try:
+        return (
+            int(low_raw.strip().replace(",", "")),
+            int(high_raw.strip().replace(",", "")),
+        )
+    except ValueError:
+        return (0, 0)
+
+
+def _community_players(item: dict, tags_data: dict[str, dict] | None) -> dict:
+    appid = _collection_appid(item)
+    tag_entry = tags_data.get(appid, {}) if isinstance(tags_data, dict) else {}
+    players: dict = {}
+    if isinstance(tag_entry, dict):
+        if isinstance(tag_entry.get("players"), dict):
+            players.update(tag_entry["players"])
+        players.update(
+            {
+                key: tag_entry[key]
+                for key in ("owners", "ccu", "players_2weeks")
+                if key in tag_entry
+            }
+        )
+    if isinstance(item.get("players"), dict):
+        players.update(item["players"])
+    return players
+
+
+def _community_popularity_signal(
+    item: dict,
+    tags_data: dict[str, dict] | None,
+) -> tuple[float, str] | None:
+    players = _community_players(item, tags_data)
+    _owners_low, owners_high = _parse_owners_range(str(players.get("owners", "")))
+    ccu = int(_safe_number(players.get("ccu")))
+    recent_players = int(_safe_number(players.get("players_2weeks")))
+    review_total = _review_total(item)
+    candidates: list[tuple[float, str]] = []
+    if review_total >= COMMUNITY_MIN_REVIEW_COUNT:
+        candidates.append(
+            (
+                review_total / COMMUNITY_MIN_REVIEW_COUNT,
+                f"{_format_community_count(review_total)} reviews",
+            )
+        )
+    if owners_high >= COMMUNITY_MIN_OWNERS_HIGH:
+        candidates.append(
+            (
+                owners_high / COMMUNITY_MIN_OWNERS_HIGH,
+                f"{_format_community_count(owners_high)} owners estimados",
+            )
+        )
+    if ccu >= COMMUNITY_MIN_CCU:
+        candidates.append((ccu / COMMUNITY_MIN_CCU, f"{_format_community_count(ccu)} CCU"))
+    if recent_players >= COMMUNITY_MIN_RECENT_PLAYERS:
+        candidates.append(
+            (
+                recent_players / COMMUNITY_MIN_RECENT_PLAYERS,
+                f"{_format_community_count(recent_players)} jugadores recientes",
+            )
+        )
+    if not candidates:
+        return None
+    return sorted(candidates, key=lambda signal: (-signal[0], signal[1]))[0]
+
+
+def _community_quality_signal(item: dict) -> tuple[float, str] | None:
+    review_pct = _review_pct(item)
+    score = _safe_number(item.get("score")) if item.get("score") is not None else None
+    metacritic = (
+        _safe_number(item.get("metacritic_score"))
+        if item.get("metacritic_score") is not None
+        else None
+    )
+    candidates: list[tuple[float, str]] = []
+    if review_pct is not None and review_pct >= COMMUNITY_MIN_REVIEW_PCT:
+        candidates.append((review_pct, f"{review_pct}% positivas"))
+    if score is not None and score >= COMMUNITY_MIN_SCORE:
+        candidates.append((score, f"score {score:g}"))
+    if metacritic is not None and metacritic >= COMMUNITY_MIN_METACRITIC:
+        candidates.append((metacritic, f"Metacritic {int(metacritic)}"))
+    if not candidates:
+        return None
+    return sorted(candidates, key=lambda signal: (-signal[0], signal[1]))[0]
+
+
+def _community_favorites_candidates(
+    sources: list[dict],
+    tags_data: dict[str, dict] | None,
+) -> list[dict]:
+    ranked: list[tuple[float, float, dict]] = []
+    for item in sources:
+        popularity = _community_popularity_signal(item, tags_data)
+        quality = _community_quality_signal(item)
+        if not popularity or not quality:
+            continue
+        popularity_rank, popularity_reason = popularity
+        quality_rank, quality_reason = quality
+        ranked.append(
+            (
+                popularity_rank,
+                quality_rank,
+                _collection_item(item, f"{popularity_reason} + {quality_reason}"),
+            )
+        )
+    return [
+        payload
+        for _popularity_rank, _quality_rank, payload in sorted(
+            ranked,
+            key=lambda value: (
+                -value[0],
+                -value[1],
+                str(value[2].get("name") or ""),
+                str(value[2].get("appid") or ""),
+            ),
+        )
+    ]
 
 
 def _deck_category(item: dict) -> int:
@@ -276,12 +460,14 @@ def build_recommended_collections(
     deals: list[dict],
     top_picks: list[dict] | None = None,
     *,
+    reviews: dict[str, dict] | None = None,
+    tags_data: dict[str, dict] | None = None,
     max_items_per_collection: int = 4,
 ) -> list[dict]:
     """Build deterministic recommendation collections from already available report data."""
     if max_items_per_collection <= 0:
         return []
-    sources = _merge_collection_sources(deals, top_picks)
+    sources = _merge_collection_sources(deals, top_picks, reviews=reviews)
     if not sources:
         return []
 
@@ -355,12 +541,14 @@ def build_recommended_collections(
         _collection_item(item, "Señal explícita Singleplayer en categorías/tags")
         for item in _sort_by_score_discount_name([item for item in sources if _has_singleplayer_signal(item)])
     ]
+    community_favorites = _community_favorites_candidates(sources, tags_data)
 
     collection_candidates = [
         ("recommended_for_you", recommended),
         ("best_savings", best_savings),
         ("steam_deck", deck_ready),
         ("acclaimed", acclaimed),
+        ("community_favorites", community_favorites),
         ("genre_style", genre_style),
         ("story_rich", story_rich),
         ("singleplayer", singleplayer),

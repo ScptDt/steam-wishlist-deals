@@ -2688,6 +2688,8 @@ def build_recommended_collections(
     deals: list[dict],
     top_picks: list[dict] | None = None,
     *,
+    reviews: dict[str, dict] | None = None,
+    tags_data: dict[str, dict] | None = None,
     max_items_per_collection: int = 4,
 ) -> list[dict]:
     """Build deterministic recommendation collections from existing report data."""
@@ -2696,6 +2698,8 @@ def build_recommended_collections(
     return _build_recommended_collections_impl(
         deals,
         top_picks=top_picks,
+        reviews=reviews,
+        tags_data=tags_data,
         max_items_per_collection=max_items_per_collection,
     )
 
@@ -2797,7 +2801,12 @@ def generate_md(
     if _generate_md_renderer is None:
         raise RuntimeError("Markdown renderer module is not available")
     if recommended_collections is None:
-        recommended_collections = build_recommended_collections(deals, top_picks=top_picks)
+        recommended_collections = build_recommended_collections(
+            deals,
+            top_picks=top_picks,
+            reviews=reviews,
+            tags_data=tags_data,
+        )
     if personalized_recommendations is None:
         personalized_recommendations = build_personalized_recommendations(
             deals,
@@ -2909,7 +2918,12 @@ def generate_html(
     hltb_hours=None,
 ) -> str:
     if recommended_collections is None:
-        recommended_collections = build_recommended_collections(deals, top_picks=top_picks)
+        recommended_collections = build_recommended_collections(
+            deals,
+            top_picks=top_picks,
+            reviews=reviews,
+            tags_data=tags_data,
+        )
     if personalized_recommendations is None:
         personalized_recommendations = build_personalized_recommendations(
             deals,
@@ -3012,7 +3026,11 @@ def generate_share_html(
 ):
     """Generate a lightweight shareable HTML page with the deals list."""
     if recommended_collections is None:
-        recommended_collections = build_recommended_collections(deals, top_picks=top_picks)
+        recommended_collections = build_recommended_collections(
+            deals,
+            top_picks=top_picks,
+            reviews=reviews,
+        )
     if personalized_recommendations is None:
         personalized_recommendations = build_personalized_recommendations(
             deals,
@@ -3154,7 +3172,12 @@ def generate_json(
     if _generate_json_renderer is None:
         raise RuntimeError("JSON renderer module is not available")
     if recommended_collections is None:
-        recommended_collections = build_recommended_collections(deals, top_picks=top_picks)
+        recommended_collections = build_recommended_collections(
+            deals,
+            top_picks=top_picks,
+            reviews=reviews,
+            tags_data=tags_data,
+        )
     if personalized_recommendations is None:
         personalized_recommendations = build_personalized_recommendations(
             deals,
@@ -3656,7 +3679,12 @@ def main():
     watchlist_alerts = engagement_outputs.watchlist_alerts
     budget_result = engagement_outputs.budget_result
     gift_ideas = engagement_outputs.gift_ideas
-    recommended_collections = build_recommended_collections(deals, top_picks=top_picks)
+    recommended_collections = build_recommended_collections(
+        deals,
+        top_picks=top_picks,
+        reviews=reviews_data,
+        tags_data=tags_data,
+    )
     personalized_recommendations = build_personalized_recommendations(
         deals,
         top_picks=top_picks,

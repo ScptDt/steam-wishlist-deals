@@ -466,6 +466,57 @@ class RecommendedCollectionsTests(unittest.TestCase):
         self.assertNotIn("singleplayer", [collection["id"] for collection in duplicate_genre_style])
         self.assertNotIn("singleplayer", [collection["id"] for collection in all_singleplayer])
 
+    def test_build_recommended_collections_adds_community_favorites_from_cached_signals(self) -> None:
+        collections = build_recommended_collections(
+            [
+                {"appid": "101", "name": "Cult Hit", "discount": 0, "price_final": "$10"},
+                {"appid": "102", "name": "Busy Good", "discount": 0, "price_final": "$12", "score": 73},
+                {"appid": "103", "name": "Only Acclaimed", "discount": 0, "price_final": "$8"},
+            ],
+            reviews={
+                "101": {"pct": 82, "total": 1200, "desc": "Very Positive"},
+                "103": {"pct": 95, "total": 120, "desc": "Overwhelmingly Positive"},
+            },
+            tags_data={
+                "102": {
+                    "players": {
+                        "owners": "200,000 .. 500,000",
+                        "ccu": 700,
+                        "players_2weeks": 12000,
+                    }
+                }
+            },
+            max_items_per_collection=3,
+        )
+        by_id = {collection["id"]: collection for collection in collections}
+        community_items = by_id["community_favorites"]["items"]
+
+        self.assertEqual({item["appid"] for item in community_items}, {"101", "102"})
+        reasons_by_appid = {item["appid"]: item["reason"] for item in community_items}
+        self.assertIn("reviews", reasons_by_appid["101"])
+        self.assertIn("82% positivas", reasons_by_appid["101"])
+        self.assertIn("owners estimados", reasons_by_appid["102"])
+        self.assertIn("score 73", reasons_by_appid["102"])
+
+    def test_build_recommended_collections_omits_community_favorites_without_popularity_and_quality(self) -> None:
+        collections = build_recommended_collections(
+            [
+                {"appid": "201", "name": "Only Quality", "discount": 0, "price_final": "$1"},
+                {"appid": "202", "name": "Only Popular", "discount": 0, "price_final": "$2"},
+                {"appid": "203", "name": "Low Quality Popular", "discount": 0, "price_final": "$3"},
+            ],
+            reviews={
+                "201": {"pct": 91},
+                "203": {"pct": 70, "total": 1000},
+            },
+            tags_data={
+                "202": {"players": {"owners": "500,000 .. 1,000,000"}},
+            },
+            max_items_per_collection=3,
+        )
+
+        self.assertNotIn("community_favorites", [collection["id"] for collection in collections])
+
 
 class PersonalizedRecommendationsTests(unittest.TestCase):
     def test_build_personalized_recommendations_uses_activity_library_and_preferences(self) -> None:
@@ -3725,6 +3776,36 @@ class StopApiContractTests(unittest.TestCase):
         self.assertEqual(data["recommended_collections"][0]["items"][0]["appid"], "10")
         self.assertIn("reviews muy positivas", data["recommended_collections"][0]["items"][0]["reason"])
         self.assertIn("Action", data["recommended_collections"][-1]["items"][0]["reason"])
+
+    def test_generate_json_builds_community_favorites_from_cached_review_and_tag_data(self) -> None:
+        payload = generate_json(
+            deals=[
+                {"appid": "30", "name": "Cult Hit", "discount": 0, "price_final": "$4"},
+                {"appid": "40", "name": "Busy Good", "discount": 0, "price_final": "$6", "score": 73},
+            ],
+            backlog_on_sale=[],
+            have_on_sale=[],
+            vanity="gaben",
+            owned={},
+            wishlist_appids=["30", "40"],
+            min_discount=0,
+            genres=[],
+            reviews={"30": {"pct": 82, "total": 1500, "desc": "Very Positive"}},
+            tags_data={"40": {"players": {"owners": "200,000 .. 500,000"}}},
+            top_picks=[],
+        )
+
+        data = json.loads(payload)
+        community = next(
+            collection
+            for collection in data["recommended_collections"]
+            if collection["id"] == "community_favorites"
+        )
+
+        self.assertIn("review.total", community["source_signals"])
+        self.assertEqual({item["appid"] for item in community["items"]}, {"30", "40"})
+        self.assertTrue(any("82% positivas" in item["reason"] for item in community["items"]))
+        self.assertTrue(any("owners estimados" in item["reason"] for item in community["items"]))
 
     def test_generate_json_respects_explicit_empty_recommended_collections(self) -> None:
         payload = generate_json(
