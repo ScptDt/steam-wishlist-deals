@@ -42,6 +42,7 @@ a { color: var(--accent); text-decoration: none; } a:hover { text-decoration: un
 .hdr-info { display: flex; align-items: center; gap: 1rem; flex-wrap: wrap; }
 .hdr-vanity { color: var(--accent); font-size: .85rem; font-weight: 500; }
 .hdr-refresh-time { color: var(--text2); font-size: .72rem; }
+.refresh-mode-help { flex-basis: 100%; color: var(--text2); font-size: .72rem; text-align: right; }
 .btn-refresh {
   background: linear-gradient(135deg, var(--gold), #b8922e); color: #1b2838;
   border: none; border-radius: 6px; padding: .5rem 1.2rem; font-weight: 700;
@@ -126,6 +127,7 @@ a { color: var(--accent); text-decoration: none; } a:hover { text-decoration: un
 .cache-pill .cache-label { color: var(--text); font-weight: 700; display: block; }
 .cache-pill.stale { border-color: rgba(255,200,87,.42); color: var(--yellow); }
 .cache-diagnostic { margin-top: .55rem; color: var(--yellow); }
+.cache-refresh-help { margin-top: .35rem; color: var(--text2); }
 
 /* Tabs */
 .tabs { display: flex; gap: 0; margin-bottom: 1rem; }

@@ -482,17 +482,26 @@ class WebAssetsTests(unittest.TestCase):
 
         self.assertIn('id="btn-force-refresh"', index_html)
         self.assertIn('id="cache-status-card"', index_html)
+        self.assertIn("Actualizar datos respeta caché/TTL", index_html)
+        self.assertIn("no borra tus marcados manuales", index_html)
         self.assertIn("function renderCacheStatus", app_js)
         self.assertIn("function setRefreshButtonsBusy", app_js)
         self.assertIn("setRefreshButtonsBusy(true)", app_js)
         self.assertIn("doRefresh({ force: true })", app_js)
         self.assertIn("JSON.stringify(force ? { force: true } : {})", app_js)
         self.assertIn("status.diagnostic", app_js)
+        self.assertIn("Actualizar datos = refresh normal con caché/TTL", app_js)
+        self.assertIn("Forzar catálogo = --no-cache", app_js)
+        self.assertIn("no inventa DLCs que Steam no expone", app_js)
+        self.assertIn("Actualizando datos de PAYDAY 2 con caché/TTL normal", app_js)
+        self.assertIn("Forzando catálogo PAYDAY 2 con --no-cache", app_js)
         self.assertIn(
             "Steam puede no exponerlo",
             (ROOT / "payday2_web.py").read_text(encoding="utf-8"),
         )
         self.assertIn(".cache-status-card", app_css)
+        self.assertIn(".cache-refresh-help", app_css)
+        self.assertIn(".refresh-mode-help", app_css)
         self.assertIn(".btn-refresh-secondary", app_css)
 
     def test_payday2_force_refresh_adds_no_cache_without_secret_argv(self) -> None:

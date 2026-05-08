@@ -144,7 +144,8 @@ function renderCacheStatus() {
     renderCachePill('Nombres', status.names || {}) +
     renderCachePill('Precios', status.prices || {}) +
     renderCachePill('Bundles', status.bundles || {}) +
-    '</div><div class="cache-diagnostic">' + esc(status.diagnostic || 'Usa “Forzar catálogo” solo si esperas DLCs nuevos o sospechas cache viejo.') + '</div>';
+    '</div><div class="cache-diagnostic">' + esc(status.diagnostic || 'Usa “Forzar catálogo” solo si esperas DLCs nuevos o sospechas cache viejo.') + '</div>' +
+    '<div class="cache-refresh-help">Actualizar datos = refresh normal con caché/TTL. Forzar catálogo = --no-cache; no inventa DLCs que Steam no expone ni borra tus marcados manuales.</div>';
 }
 
 function renderBanners() {
@@ -433,7 +434,7 @@ function switchTab(name) {
 async function doRefresh(options = {}) {
   const force = !!options.force;
   setRefreshButtonsBusy(true);
-  showActionStatus(force ? 'Forzando actualización del catálogo PAYDAY 2 con --no-cache...' : 'Actualizando datos de PAYDAY 2... esto puede tardar 1-3 min.', 'loading');
+  showActionStatus(force ? 'Forzando catálogo PAYDAY 2 con --no-cache; úsalo para DLC nuevo o caché viejo.' : 'Actualizando datos de PAYDAY 2 con caché/TTL normal... esto puede tardar 1-3 min.', 'loading');
   window._refreshStart = Date.now();
 
   const panel = $('refresh-panel');
@@ -442,8 +443,8 @@ async function doRefresh(options = {}) {
   consoleEl.innerHTML = '';
   $('prog-bar').style.width = '0%';
   $('prog-bar').style.background = 'linear-gradient(90deg, var(--gold), #b8922e)';
-  $('prog-text').textContent = 'Iniciando... (puede tardar 1-3 min con cache vacio)';
-  appendConsole(force ? 'Preparando actualización forzada de catálogo (--no-cache)...' : 'Preparando actualización de datos...', 'step');
+  $('prog-text').textContent = force ? 'Iniciando --no-cache... (no borra marcados manuales)' : 'Iniciando refresh normal... (usa caché válida si aplica)';
+  appendConsole(force ? 'Preparando catálogo forzado (--no-cache) para DLC nuevo o caché viejo...' : 'Preparando actualización normal con caché/TTL...', 'step');
 
   try {
     const resp = await localMutableFetch('/api/refresh', {
