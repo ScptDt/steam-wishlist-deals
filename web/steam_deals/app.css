@@ -988,6 +988,7 @@ details .details-body .field:last-child {
   margin-bottom: 0.22rem;
 }
 .latest-promo-subtitle,
+.latest-promo-hint,
 .latest-promo-extra,
 .latest-promo-primary span {
   color: var(--text2);
@@ -1017,6 +1018,9 @@ details .details-body .field:last-child {
 }
 .latest-promo-extra {
   margin-top: 0.5rem;
+}
+.latest-promo-hint {
+  margin-top: 0.45rem;
 }
 .latest-share-section {
   margin-top: 0.95rem;

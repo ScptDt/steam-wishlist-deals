@@ -628,6 +628,44 @@ class PersonalizedRecommendationsTests(unittest.TestCase):
             ["Action", "Puzzle"],
         )
 
+    def test_build_personalized_recommendations_matches_equivalent_style_terms(self) -> None:
+        recommendations = build_personalized_recommendations(
+            [
+                {
+                    "appid": "10",
+                    "name": "Solo ARPG",
+                    "score": 70,
+                    "genres": ["Singleplayer", "Action RPG"],
+                },
+                {"appid": "20", "name": "Puzzle Baseline", "score": 80, "genres": ["Puzzle"]},
+            ],
+            activity_games=[
+                {
+                    "appid": "90",
+                    "name": "Recent Solo",
+                    "playtime_2weeks": 120,
+                    "tags": ["Single-player", "Action_RPG"],
+                }
+            ],
+            library_games=[
+                {
+                    "appid": "91",
+                    "name": "Library Solo",
+                    "genres": ["single_player", "Action-RPG"],
+                }
+            ],
+        )
+
+        top_item = recommendations["items"][0]
+
+        self.assertEqual(top_item["appid"], "10")
+        self.assertIn("Single-player", " ".join(top_item["reasons"]))
+        self.assertIn("Action_RPG", " ".join(top_item["reasons"]))
+        self.assertEqual(
+            [term["term"] for term in recommendations["profile"]["activity_terms"][:2]],
+            ["Action_RPG", "Single-player"],
+        )
+
     def test_build_personalized_recommendations_falls_back_to_base_score(self) -> None:
         recommendations = build_personalized_recommendations(
             [
@@ -5292,6 +5330,8 @@ class SteamAdapterTests(unittest.TestCase):
         self.assertEqual(context["categories"], ["fest", "publisher_sale", "weeklong"])
         self.assertEqual(context["category_label"], "Fest · Publisher/Franquicia · Weeklong")
         self.assertEqual(context["display_label"], "Steam Farming Fest + 2 promos adicionales")
+        self.assertIn("Fest temático", context["decision_hint"])
+        self.assertIn("también hay 2 promo(s) activa(s)", context["simultaneous_hint"])
         self.assertEqual(context["additional_promos_count"], 2)
 
     def test_build_active_promo_context_prioritizes_fest_over_launch(self) -> None:
@@ -5322,6 +5362,7 @@ class SteamAdapterTests(unittest.TestCase):
 
         self.assertEqual(context["sale_name"], "Publisher Sale")
         self.assertEqual(context["primary"]["category"], "publisher_sale")
+        self.assertIn("Publisher/franquicia", context["decision_hint"])
         self.assertEqual(
             context["categories"], ["publisher_sale", "weekend", "launch", "weeklong"]
         )

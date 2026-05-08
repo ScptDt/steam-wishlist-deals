@@ -2540,6 +2540,12 @@ function renderLatestPromoContext(report) {
   const extrasHtml = extraTitles.length
     ? `<div class="latest-promo-extra">También activas: ${escapeHtml(extraTitles.slice(0, 3).join(', '))}</div>`
     : '';
+  const simultaneousHint = String(context.simultaneous_hint || '').trim();
+  const decisionHint = String(context.decision_hint || '').trim();
+  const hintsHtml = [simultaneousHint, decisionHint]
+    .filter(Boolean)
+    .map((hint) => `<div class="latest-promo-hint">${escapeHtml(hint)}</div>`)
+    .join('');
   return `
     <div class="latest-promo-section" data-latest-promo-context>
       <div class="latest-promo-head">
@@ -2550,6 +2556,7 @@ function renderLatestPromoContext(report) {
       ${categoriesHtml}
       ${primaryHtml}
       ${extrasHtml}
+      ${hintsHtml}
     </div>
   `;
 }

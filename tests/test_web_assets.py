@@ -276,6 +276,9 @@ class WebAssetsTests(unittest.TestCase):
         self.assertIn("Contexto de promo activa", app_js)
         self.assertIn("Promo detectada con más peso", app_js)
         self.assertIn("Promo destacada", app_js)
+        self.assertIn("context.simultaneous_hint", app_js)
+        self.assertIn("context.decision_hint", app_js)
+        self.assertIn("latest-promo-hint", app_js)
         self.assertIn("Lanzamiento", app_js)
         self.assertIn("no es predicción ni cambia el score", app_js)
         self.assertIn("También activas", app_js)
@@ -284,6 +287,7 @@ class WebAssetsTests(unittest.TestCase):
         self.assertIn(".latest-promo-section", app_css)
         self.assertIn(".latest-promo-pills", app_css)
         self.assertIn(".latest-promo-extra", app_css)
+        self.assertIn(".latest-promo-hint", app_css)
 
     def test_latest_report_surfaces_partial_cache_coverage(self) -> None:
         app_js = (ROOT / "web" / "steam_deals" / "app.js").read_text(

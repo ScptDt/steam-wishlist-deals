@@ -301,6 +301,42 @@ PROMO_CATEGORY_PRIORITY = {
     "unknown": 80,
 }
 
+PROMO_DECISION_HINTS = {
+    "major_sale": (
+        "Mega sale oficial: suele ser una de las mejores ventanas para revisar "
+        "compras si el precio ya convence."
+    ),
+    "fest": (
+        "Fest temático: oportunidad fuerte para juegos del tema; compara contra "
+        "tu interés y mínimo histórico."
+    ),
+    "publisher_sale": (
+        "Publisher/franquicia: más fuerte que promos rutinarias; revisar si el "
+        "descuento supera tu referencia histórica."
+    ),
+    "themed": (
+        "Promo temática: útil si coincide con tu wishlist, pero no necesariamente "
+        "supera una mega sale."
+    ),
+    "weekend": (
+        "Weekend deal: ventana corta; comprar solo si ya estaba en radar y el "
+        "precio es bueno."
+    ),
+    "midweek": (
+        "Midweek deal: promo puntual; revisar precio, pero no tratarla como "
+        "evento grande."
+    ),
+    "launch": (
+        "Lanzamiento/Now Available: contexto de un juego concreto; no debería "
+        "pesar más que Fests o mega sales."
+    ),
+    "weeklong": (
+        "Weeklong: promo rutinaria; mejor usarla como contexto, no como urgencia "
+        "fuerte."
+    ),
+    "unknown": "Promo detectada sin categoría clara; usar solo como contexto local.",
+}
+
 
 def promo_category_label(category: str) -> str:
     key = str(category or "").strip()
@@ -343,6 +379,22 @@ def _promo_display_label(primary_title: str, extra_titles: list[str]) -> str:
     return f"{primary_title} + {len(extra_titles)} promos adicionales"
 
 
+def _promo_decision_hint(primary: dict | None) -> str:
+    if not isinstance(primary, dict):
+        return ""
+    category = str(primary.get("category", "") or "").strip() or "unknown"
+    return PROMO_DECISION_HINTS.get(category, PROMO_DECISION_HINTS["unknown"])
+
+
+def _promo_simultaneous_hint(primary_title: str, extra_titles: list[str]) -> str:
+    if not primary_title or not extra_titles:
+        return ""
+    return (
+        f"Se destaca {primary_title} por jerarquía de promo; "
+        f"también hay {len(extra_titles)} promo(s) activa(s) de menor peso."
+    )
+
+
 def build_active_promo_context(messages: list[dict]) -> dict:
     promos = [
         classify_steam_promo_message(message)
@@ -365,6 +417,8 @@ def build_active_promo_context(messages: list[dict]) -> dict:
         "categories": categories,
         "category_label": " · ".join(promo_category_label(category) for category in categories),
         "display_label": _promo_display_label(primary_title, extra_titles),
+        "decision_hint": _promo_decision_hint(primary),
+        "simultaneous_hint": _promo_simultaneous_hint(primary_title, extra_titles),
         "additional_promos_count": len(extra_titles),
     }
 

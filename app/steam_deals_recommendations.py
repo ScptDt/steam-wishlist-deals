@@ -343,14 +343,12 @@ def _style_terms(item: dict) -> list[str]:
 
 
 def _style_term_key(term: str) -> str:
-    return str(term or "").strip().lower().replace("-", " ").replace("_", " ")
+    normalized = str(term or "").strip().lower().replace("-", " ").replace("_", " ")
+    return " ".join(normalized.split())
 
 
 def _canonical_style_term_key(term: str) -> str:
-    key = _style_term_key(term)
-    if key in {"single player", "singleplayer"}:
-        return "singleplayer"
-    return key
+    return _style_term_key(term).replace(" ", "")
 
 
 def _has_story_rich_signal(item: dict) -> bool:
@@ -621,7 +619,7 @@ def _weighted_style_terms(records: list[dict], *, activity_weighted: bool = Fals
     for record in records:
         weight = _game_activity_weight(record) if activity_weighted else 1.0
         for term in _style_terms(record):
-            key = term.lower()
+            key = _canonical_style_term_key(term)
             current, label = weights.get(key, (0.0, term))
             weights[key] = (current + weight, label)
     return [
@@ -631,11 +629,11 @@ def _weighted_style_terms(records: list[dict], *, activity_weighted: bool = Fals
 
 
 def _matched_terms(candidate: dict, weighted_terms: list[dict], *, limit: int = 2) -> list[str]:
-    candidate_terms = {term.lower() for term in _style_terms(candidate)}
+    candidate_terms = {_canonical_style_term_key(term) for term in _style_terms(candidate)}
     matches = [
         str(term["term"])
         for term in weighted_terms
-        if str(term.get("term", "")).lower() in candidate_terms
+        if _canonical_style_term_key(str(term.get("term", ""))) in candidate_terms
     ]
     return matches[:limit]
 
