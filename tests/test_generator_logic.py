@@ -578,6 +578,10 @@ class PersonalizedRecommendationsTests(unittest.TestCase):
         self.assertIn("similar a Hades", recommendations["items"][0]["reasons"])
         self.assertEqual(recommendations["profile"]["library_summary"]["total_hltb_hours"], 33.0)
         self.assertEqual(recommendations["profile"]["library_summary"]["average_price"], 185.0)
+        self.assertEqual(
+            recommendations["profile"]["library_summary"]["genre_distribution"][0],
+            {"term": "Action", "games_count": 1, "share": 0.5},
+        )
         self.assertEqual(recommendations["profile"]["excluded_appids_count"], 1)
 
     def test_build_personalized_recommendations_enriches_activity_from_library_metadata(self) -> None:
@@ -695,6 +699,39 @@ class PersonalizedRecommendationsTests(unittest.TestCase):
         self.assertEqual(summary["total_hours"], 0)
         self.assertEqual(summary["top_played"], [])
 
+    def test_build_personalized_recommendations_summarizes_library_genre_distribution(self) -> None:
+        recommendations = build_personalized_recommendations(
+            [{"appid": "10", "name": "Baseline", "score": 60}],
+            library_games=[
+                {
+                    "appid": "91",
+                    "name": "Action One",
+                    "genres": ["Action", "Roguelike", "Action"],
+                },
+                {"appid": "92", "name": "Action Two", "tags": {"Action": 5, "Puzzle": 3}},
+                {
+                    "appid": "93",
+                    "name": "ARPG",
+                    "genres": ["Action-RPG"],
+                    "tags": ["Action RPG"],
+                },
+                {"appid": "94", "name": "No metadata"},
+            ],
+        )
+
+        library_summary = recommendations["profile"]["library_summary"]
+
+        self.assertEqual(library_summary["genre_coverage_count"], 3)
+        self.assertEqual(
+            library_summary["genre_distribution"][:4],
+            [
+                {"term": "Action", "games_count": 2, "share": 0.667},
+                {"term": "Action-RPG", "games_count": 1, "share": 0.333},
+                {"term": "Puzzle", "games_count": 1, "share": 0.333},
+                {"term": "Roguelike", "games_count": 1, "share": 0.333},
+            ],
+        )
+
     def test_build_personalized_recommendations_matches_equivalent_style_terms(self) -> None:
         recommendations = build_personalized_recommendations(
             [
@@ -746,6 +783,8 @@ class PersonalizedRecommendationsTests(unittest.TestCase):
         self.assertEqual(recommendations["items"][0]["reasons"], ["score base del reporte"])
         self.assertEqual(recommendations["profile"]["activity_terms"], [])
         self.assertEqual(recommendations["profile"]["library_summary"]["owned_count"], 0)
+        self.assertEqual(recommendations["profile"]["library_summary"]["genre_distribution"], [])
+        self.assertEqual(recommendations["profile"]["library_summary"]["genre_coverage_count"], 0)
 
     def test_build_personalized_recommendations_handles_empty_candidates(self) -> None:
         recommendations = build_personalized_recommendations([], [], max_items=5)
@@ -7323,6 +7362,44 @@ class RankTopPicksTests(unittest.TestCase):
 
         self.assertNotIn("Historial local", html)
         self.assertNotIn('data-trend-cell="a"', html)
+
+    def test_generate_html_hides_local_history_column_for_flat_snapshots(self) -> None:
+        html = generate_html(
+            deals=[
+                {
+                    "appid": "a",
+                    "name": "Alpha",
+                    "discount": 90,
+                    "price_final": "$10",
+                    "price_original": "$20",
+                    "price_raw": 1000,
+                    "metacritic_score": 90,
+                    "categories": [2],
+                }
+            ],
+            backlog_on_sale=[],
+            have_on_sale=[],
+            vanity="gaben",
+            owned={},
+            wishlist_appids=["a"],
+            min_discount=50,
+            genres=[],
+            historical_lows={"a": {"price": 5, "date": "2026-04-20"}},
+            price_history={
+                "games": {
+                    "a": {
+                        "snapshots": [
+                            {"price_raw": 1000},
+                            {"price_raw": 1000},
+                        ]
+                    }
+                }
+            },
+        )
+
+        self.assertNotIn("Historial local", html)
+        self.assertNotIn('data-trend-cell="a"', html)
+        self.assertNotIn("Ver historial", html)
 
     def test_generate_html_adds_min_historical_trend_jump_when_both_signals_exist(self) -> None:
         html = generate_html(

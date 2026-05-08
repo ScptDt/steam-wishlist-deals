@@ -711,6 +711,42 @@ def _weighted_style_terms(records: list[dict], *, activity_weighted: bool = Fals
     ]
 
 
+def _style_terms_by_canonical_key(record: dict) -> dict[str, str]:
+    terms_by_key: dict[str, str] = {}
+    for term in _style_terms(record):
+        key = _canonical_style_term_key(term)
+        if key and key not in terms_by_key:
+            terms_by_key[key] = term
+    return terms_by_key
+
+
+def _library_genre_distribution(library_games: list[dict], *, limit: int = 5) -> tuple[list[dict], int]:
+    counts: dict[str, tuple[int, str]] = {}
+    games_with_terms = 0
+    for game in library_games:
+        terms_by_key = _style_terms_by_canonical_key(game)
+        if not terms_by_key:
+            continue
+        games_with_terms += 1
+        for key, label in terms_by_key.items():
+            current_count, current_label = counts.get(key, (0, label))
+            counts[key] = (current_count + 1, current_label)
+    if not games_with_terms:
+        return [], 0
+    distribution = [
+        {
+            "term": label,
+            "games_count": count,
+            "share": round(count / games_with_terms, 3),
+        }
+        for count, label in sorted(
+            counts.values(),
+            key=lambda value: (-value[0], value[1].lower()),
+        )
+    ]
+    return distribution[:limit], games_with_terms
+
+
 def _matched_terms(candidate: dict, weighted_terms: list[dict], *, limit: int = 2) -> list[str]:
     candidate_terms = {_canonical_style_term_key(term) for term in _style_terms(candidate)}
     matches = [
@@ -744,6 +780,7 @@ def _library_profile_summary(library_games: list[dict], owned_appids: set[str], 
     hltb_hours = hltb_hours or {}
     appids = {_collection_appid(game) for game in library_games if _collection_appid(game)}
     prices = [_safe_number(game.get("price_raw")) / 100 for game in library_games if game.get("price_raw") is not None]
+    genre_distribution, genre_coverage_count = _library_genre_distribution(library_games)
     total_hours = sum(
         _safe_number(game.get("hltb_hours") or game.get("hours") or hltb_hours.get(_collection_appid(game)))
         for game in library_games
@@ -752,6 +789,8 @@ def _library_profile_summary(library_games: list[dict], owned_appids: set[str], 
         "owned_count": len(owned_appids | appids),
         "total_hltb_hours": round(total_hours, 1),
         "top_terms": _weighted_style_terms(library_games)[:5],
+        "genre_distribution": genre_distribution,
+        "genre_coverage_count": genre_coverage_count,
         "average_price": round(sum(prices) / len(prices), 2) if prices else None,
     }
 
