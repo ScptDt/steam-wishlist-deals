@@ -120,6 +120,9 @@ class WebAssetsTests(unittest.TestCase):
         self.assertIn(".advanced-filters-intro", app_css)
 
     def test_execution_log_copy_uses_native_bridge_then_browser_clipboard(self) -> None:
+        index_html = (ROOT / "web" / "steam_deals" / "index.html").read_text(
+            encoding="utf-8"
+        )
         app_js = (ROOT / "web" / "steam_deals" / "app.js").read_text(
             encoding="utf-8"
         )
@@ -139,6 +142,10 @@ class WebAssetsTests(unittest.TestCase):
         self.assertIn("navigator.clipboard.writeText(text)", copy_text_block)
         self.assertIn("await copyExecutionLogText(text)", copy_block)
         self.assertIn("Usa Descargar log (.txt).", copy_text_block)
+        self.assertIn('id="log-safety-hint"', index_html)
+        self.assertIn("Log seguro", index_html)
+        self.assertIn("[Redactado]", index_html)
+        self.assertIn("[Ruta]", index_html)
         self.assertNotIn("copyTextWithFallback", copy_block)
         self.assertNotIn("execCommand", copy_block)
         self.assertNotIn("window.prompt('Copia este log:'", app_js)
