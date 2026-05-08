@@ -178,12 +178,29 @@ def _html_achievements_badge(ach: dict | None) -> str:
     return f'<span class="badge ach-badge" title="Avg global completion: {ach["avg_completion"]:.1f}%">🏆 {ach["count"]}</span>'
 
 
+def _snapshot_prices(snapshots: list[dict]) -> list[float]:
+    prices: list[float] = []
+    for snapshot in snapshots:
+        if not isinstance(snapshot, dict):
+            continue
+        try:
+            prices.append(float(snapshot["price_raw"]) / 100)
+        except (KeyError, TypeError, ValueError):
+            continue
+    return prices
+
+
+def _has_price_movement_snapshots(snapshots: list[dict]) -> bool:
+    prices = _snapshot_prices(snapshots)
+    return len(prices) >= 2 and len(set(prices)) > 1
+
+
 def _build_sparkline_svg(
     snapshots: list[dict], width: int = 80, height: int = 24
 ) -> str:
-    if len(snapshots) < 2:
+    prices = _snapshot_prices(snapshots)
+    if len(prices) < 2 or len(set(prices)) <= 1:
         return ""
-    prices = [s["price_raw"] / 100 for s in snapshots]
     mn, mx = min(prices), max(prices)
     rng = mx - mn if mx != mn else 1
     n = len(prices)
@@ -211,7 +228,9 @@ def _build_sparkline_svg(
 
 def _has_sparkline_history(price_history_games: dict[str, dict], deals: list[dict]) -> bool:
     return any(
-        len((price_history_games.get(deal["appid"]) or {}).get("snapshots", [])) >= 2
+        _has_price_movement_snapshots(
+            (price_history_games.get(deal["appid"]) or {}).get("snapshots", [])
+        )
         for deal in deals
     )
 
@@ -1918,6 +1937,7 @@ def generate_html(
             mp_cats = d.get("categories", [])
             game_hist = price_history_games.get(appid, {}) if has_sparklines else {}
             snaps = game_hist.get("snapshots", []) if has_sparklines else []
+            has_trend_movement = _has_price_movement_snapshots(snaps)
             cells = [
                 f"<td>{new_html}</td>",
                 f"<td>-{d['discount']}%</td>",
@@ -1932,7 +1952,7 @@ def generate_html(
                 ach = achievements_data.get(appid)
                 cells.append(f"<td>{_html_achievements_badge(ach)}</td>")
             if has_sparklines:
-                spark = _build_sparkline_svg(snaps) if len(snaps) >= 2 else "—"
+                spark = _build_sparkline_svg(snaps) if has_trend_movement else "—"
                 cells.append(
                     f"<td data-trend-cell=\"{_html_esc(appid)}\">{spark}</td>"
                 )
@@ -1941,7 +1961,7 @@ def generate_html(
                 if low:
                     low_txt = f"${low['price']:.0f} ({low['date']})"
                     trend_jump = (
-                        _html_min_hist_jump_button(appid) if len(snaps) >= 2 else ""
+                        _html_min_hist_jump_button(appid) if has_trend_movement else ""
                     )
                     cells.append(
                         f"<td><div class=\"min-hist-cell\"><span>{_html_esc(low_txt)}</span>{trend_jump}</div></td>"

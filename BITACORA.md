@@ -34,19 +34,19 @@ Mantener en `PENDIENTES.md`:
 
 ## Formato de entrada
 
-Usar `docs/runbooks/evidence-template.md` para nuevas entradas.
+Usar `docs/runbooks/evidence-template.md` para nuevas entradas. Las notas operativas nuevas deben indicar `Autor/ejecutor: AudPen`; si AudPen audita o cierra trabajo iniciado por otro agente, separar `Autor/ejecutor original: <agente/no especificado>` de `Auditoría/cierre: AudPen`.
 
 Formato compacto:
 
 ```markdown
-- YYYY-MM-DD: Quick win <area/slice> <estado>. <Objetivo>. Evidencia: `<comando>` (<resultado>), artefactos/logs: <ruta o resumen>. Incidencias: <breve>. Impacto/decisión: <qué cambia>. Siguiente seguimiento: <ninguno o próximo slice>.
+- YYYY-MM-DD: Quick win <area/slice> <estado>. Autor/ejecutor: AudPen. <Objetivo>. Evidencia: `<comando>` (<resultado>), artefactos/logs: <ruta o resumen>. Incidencias: <breve>. Impacto/decisión: <qué cambia>. Siguiente seguimiento: <ninguno o próximo slice>.
 ```
 
 Para Tracks, Quick Wins o tareas no triviales, registrar también el ciclo de vida:
 
 ```markdown
-- YYYY-MM-DD: Inicio <Track/QW/tarea> <nombre>. Objetivo: <resultado verificable>. Alcance: <archivos/áreas>. Fuera de alcance: <límites>. Validación prevista: <mínima proporcional>.
-- YYYY-MM-DD: Cierre <Track/QW/tarea> <nombre>. Resultado: <qué quedó>. Evidencia: <validación/resumen>. Incidencias: <breve>. Siguiente seguimiento: <ninguno o próximo slice>.
+- YYYY-MM-DD: Inicio <Track/QW/tarea> <nombre>. Autor/ejecutor: AudPen. Objetivo: <resultado verificable>. Alcance: <archivos/áreas>. Fuera de alcance: <límites>. Validación prevista: <mínima proporcional>.
+- YYYY-MM-DD: Cierre <Track/QW/tarea> <nombre>. Autor/ejecutor: AudPen. Resultado: <qué quedó>. Evidencia: <validación/resumen>. Incidencias: <breve>. Siguiente seguimiento: <ninguno o próximo slice>.
 ```
 
 La nota de inicio puede omitirse en `BITACORA.md` para cambios triviales que no alteran backlog/estado operativo, pero debe quedar clara en conversación antes de ejecutar.
@@ -80,6 +80,8 @@ La nota de inicio puede omitirse en `BITACORA.md` para cambios triviales que no 
 
 ## Bitacora
 
+- 2026-05-08: Inicio QW trend / Historial local accionable. Autor/ejecutor original: no especificado; Auditoría: AudPen. Objetivo: confirmar o ajustar que `trend` aparezca solo como historial local útil cuando aporte una señal accionable, sin lenguaje predictivo. Alcance: gating/copy de renderers y tests dirigidos si hace falta. Fuera de alcance: recomendaciones personalizadas, Dashboard histórico, forecasting, red real, `BG00G`, reportes generados, builds y smokes manuales. Validación prevista: revisión estática + tests dirigidos de renderer/lógica y `git diff --check` si hay cambios.
+- 2026-05-08: Cierre QW trend / Historial local accionable. Autor/ejecutor original: no especificado; Auditoría/cierre: AudPen. Resultado: el HTML generado ahora muestra `Historial local`, sparkline y salto `Ver historial` solo cuando los snapshots locales tienen movimiento real de precio; snapshots planos/repetidos quedan ocultos para evitar ruido y se conserva copy no predictivo. Evidencia: `.venv/bin/python -m py_compile renderers/html_renderer.py tests/test_generator_logic.py`, `.venv/bin/python -m unittest tests.test_generator_logic.RunOutputTests` (6 OK) y `git diff --check` OK. Incidencias: ninguna. Siguiente seguimiento: mantener `trend` como señal secundaria; solo reabrir si revisión visual detecta ruido o falta una señal local igual de clara.
 - 2026-05-08: Inicio QW promo activa / contexto comprar ahora vs esperar. Objetivo: completar el contexto de promos simultáneas con hints conservadores para interpretar si la promo destacada amerita revisar ahora o tratarse como promo rutinaria. Alcance: campos derivados en `active_promo_context`, copy Web UI y tests dirigidos. Fuera de alcance: picks/cache por promo, cache policy, red real, `BG00G`, reportes generados, builds, normalización oficial de APIs Steam y recalibración de scoring. Validación prevista: tests determinísticos de promo/Web assets + `git diff --check`.
 - 2026-05-08: Cierre QW promo activa / contexto comprar ahora vs esperar. Resultado: `active_promo_context` agrega `decision_hint` por categoría (`major_sale`, `fest`, `publisher_sale`, promos rutinarias, launch/weeklong) y `simultaneous_hint` cuando hay promos simultáneas; la Web UI muestra esos hints bajo `Contexto de promo activa` sin presentarlos como predicción ni cambio de score. Evidencia: `.venv/bin/python -m py_compile app/steam_deals_steam_api.py tests/test_generator_logic.py tests/test_web_assets.py`, `.venv/bin/python -m unittest tests.test_generator_logic.SteamAdapterTests tests.test_web_assets.WebAssetsTests` (46 OK) y `git diff --check` OK. Incidencias: ninguna. Siguiente seguimiento: investigar fuente oficial de nombres/tipos Steam como slice separado antes de hardcodear listas largas o tocar promo-cache.
 - 2026-05-08: Inicio Track Recomendaciones personalizadas / resumen de actividad local. Objetivo: exponer un resumen compacto de actividad reciente y juegos más jugados usando señales locales ya disponibles (`playtime_2weeks`, `playtime_forever`, `hours_played`/`hours`) dentro del perfil de recomendaciones personalizadas. Alcance: helper puro, chips de perfil existentes y tests determinísticos. Fuera de alcance: red real, `BG00G`, nuevas APIs/stores, colecciones ricas, checkout/carrito, recalibración global, reportes generados y builds. Validación prevista: tests dirigidos de recomendaciones/renderers/Web assets + `git diff --check`.

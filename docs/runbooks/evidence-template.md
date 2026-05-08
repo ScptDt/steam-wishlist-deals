@@ -7,19 +7,20 @@ Plantilla compacta para registrar inicio/cierre de slices sin cargar `PENDIENTES
 - `BITACORA.md`: evidencia cronológica resumida, comandos, resultados, incidencias y decisión.
 - `PENDIENTES.md`: estado vivo; solo resumen corto si cambia prioridad, bloqueo o próximo paso.
 - Inicio/cierre: para Tracks, Quick Wins o tareas no triviales, dejar nota breve de inicio antes de ejecutar y nota de cierre con evidencia al terminar.
+- Autoría: las notas operativas nuevas deben incluir `Autor/ejecutor: AudPen`; si AudPen audita o cierra trabajo iniciado por otro agente, usar `Autor/ejecutor original: <agente/no especificado>` y `Auditoría/cierre: AudPen`.
 - No pegar logs completos, reportes HTML/JSON/CSV, tracebacks largos ni secretos; referenciar ruta/métrica/error relevante.
 
 ## Plantilla BITACORA
 
 ```markdown
-- YYYY-MM-DD: Quick win <area/slice> <estado>. <Objetivo en 1 frase>. Evidencia: `<comando>` (<resultado>), `<comando>` (<resultado>), artefactos/logs: <ruta o resumen>. Incidencias: <ninguna o breve>. Impacto/decisión: <qué destraba o cambia>. Siguiente seguimiento: <ninguno o próximo slice>.
+- YYYY-MM-DD: Quick win <area/slice> <estado>. Autor/ejecutor: AudPen. <Objetivo en 1 frase>. Evidencia: `<comando>` (<resultado>), `<comando>` (<resultado>), artefactos/logs: <ruta o resumen>. Incidencias: <ninguna o breve>. Impacto/decisión: <qué destraba o cambia>. Siguiente seguimiento: <ninguno o próximo slice>.
 ```
 
 Plantilla de inicio/cierre:
 
 ```markdown
-- YYYY-MM-DD: Inicio <Track/QW/tarea> <nombre>. Objetivo: <resultado verificable>. Alcance: <archivos/áreas>. Fuera de alcance: <límites>. Validación prevista: <mínima proporcional>.
-- YYYY-MM-DD: Cierre <Track/QW/tarea> <nombre>. Resultado: <qué quedó>. Evidencia: <validación/resumen>. Incidencias: <breve>. Siguiente seguimiento: <ninguno o próximo slice>.
+- YYYY-MM-DD: Inicio <Track/QW/tarea> <nombre>. Autor/ejecutor: AudPen. Objetivo: <resultado verificable>. Alcance: <archivos/áreas>. Fuera de alcance: <límites>. Validación prevista: <mínima proporcional>.
+- YYYY-MM-DD: Cierre <Track/QW/tarea> <nombre>. Autor/ejecutor: AudPen. Resultado: <qué quedó>. Evidencia: <validación/resumen>. Incidencias: <breve>. Siguiente seguimiento: <ninguno o próximo slice>.
 ```
 
 Usar inicio en `BITACORA.md` cuando el trabajo cambie backlog/estado operativo o sea suficientemente visible; para cambios triviales basta la nota de conversación y el cierre compacto.
