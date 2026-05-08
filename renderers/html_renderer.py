@@ -81,6 +81,7 @@ _PROMO_CATEGORY_LABELS = {
     "launch": "Lanzamiento",
     "fest": "Fest",
     "major_sale": "Oferta grande",
+    "publisher_sale": "Publisher/Franquicia",
     "themed": "Oferta temática",
     "unknown": "Otra promo",
 }

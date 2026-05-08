@@ -2433,9 +2433,24 @@ const LATEST_PROMO_CATEGORY_LABELS = Object.freeze({
   launch: 'Lanzamiento',
   fest: 'Fest',
   major_sale: 'Oferta grande',
+  publisher_sale: 'Publisher/Franquicia',
   themed: 'Oferta temática',
   unknown: 'Otra promo',
 });
+
+const LATEST_PROMO_CATEGORY_PRIORITY = Object.freeze({
+  major_sale: 10,
+  fest: 20,
+  publisher_sale: 30,
+  themed: 35,
+  weekend: 40,
+  midweek: 45,
+  launch: 50,
+  weeklong: 60,
+  unknown: 80,
+});
+
+const LATEST_PROMO_PRIMARY_TYPES = Object.freeze([1, 11]);
 
 function latestPromoCategoryLabel(category) {
   const key = String(category || '').trim();
@@ -2443,14 +2458,48 @@ function latestPromoCategoryLabel(category) {
 }
 
 function latestPromoPrimaryTitle(context) {
-  const primary = context && typeof context.primary === 'object' ? context.primary : null;
+  const primary = latestPromoPrimaryPromo(context);
   const primaryTitle = primary ? String(primary.title || '').trim() : '';
   return primaryTitle || String((context && context.sale_name) || '').trim();
 }
 
+function latestPromoPriority(promo, index) {
+  const category = String((promo && promo.category) || '').trim() || 'unknown';
+  const categoryPriority = Object.prototype.hasOwnProperty.call(LATEST_PROMO_CATEGORY_PRIORITY, category)
+    ? LATEST_PROMO_CATEGORY_PRIORITY[category]
+    : LATEST_PROMO_CATEGORY_PRIORITY.unknown;
+  const promoType = Number(promo && promo.type);
+  const isPrimaryType = Boolean(
+    (promo && promo.is_primary_type) || LATEST_PROMO_PRIMARY_TYPES.includes(promoType)
+  );
+  const primaryTypePriority = isPrimaryType ? 0 : 1;
+  return [categoryPriority, primaryTypePriority, index];
+}
+
+function latestPromoRankedPromos(context) {
+  const promos = Array.isArray(context && context.promos) ? context.promos : [];
+  return promos
+    .map((promo, index) => ({ promo, index }))
+    .filter(({ promo }) => promo && typeof promo === 'object' && String(promo.title || '').trim())
+    .sort((left, right) => {
+      const leftPriority = latestPromoPriority(left.promo, left.index);
+      const rightPriority = latestPromoPriority(right.promo, right.index);
+      return leftPriority[0] - rightPriority[0]
+        || leftPriority[1] - rightPriority[1]
+        || leftPriority[2] - rightPriority[2];
+    })
+    .map(({ promo }) => promo);
+}
+
+function latestPromoPrimaryPromo(context) {
+  const rankedPromos = latestPromoRankedPromos(context);
+  if (rankedPromos.length) return rankedPromos[0];
+  return context && typeof context.primary === 'object' ? context.primary : null;
+}
+
 function latestPromoExtraTitles(context, primaryTitle) {
   const titles = [];
-  (Array.isArray(context && context.promos) ? context.promos : []).forEach((promo) => {
+  latestPromoRankedPromos(context).forEach((promo) => {
     if (!promo || typeof promo !== 'object') return;
     const title = String(promo.title || '').trim();
     if (!title || title === primaryTitle || titles.includes(title)) return;
@@ -2461,8 +2510,11 @@ function latestPromoExtraTitles(context, primaryTitle) {
 
 function latestPromoDisplayLabel(context, primaryTitle, extraTitles) {
   const explicitLabel = String((context && context.display_label) || '').trim();
-  if (explicitLabel) return explicitLabel;
   if (!primaryTitle) return '';
+  if (Array.isArray(context && context.promos) && context.promos.length) {
+    return extraTitles.length ? `${primaryTitle} + ${extraTitles.length} promos adicionales` : primaryTitle;
+  }
+  if (explicitLabel) return explicitLabel;
   return extraTitles.length ? `${primaryTitle} + ${extraTitles.length} promos adicionales` : primaryTitle;
 }
 

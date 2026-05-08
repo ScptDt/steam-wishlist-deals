@@ -5201,6 +5201,9 @@ class SteamAdapterTests(unittest.TestCase):
             ({"type": 1, "title": "Steam Summer Sale"}, "major_sale"),
             ({"type": 1, "title": "Steam Farming Fest"}, "fest"),
             ({"type": 1, "title": "Now Available - Everything is Crab"}, "launch"),
+            ({"type": 1, "title": "Publisher Sale"}, "publisher_sale"),
+            ({"type": 1, "title": "Franchise Sale"}, "publisher_sale"),
+            ({"type": 1, "title": "Launch Sale"}, "launch"),
             ({"type": 1, "title": "Puzzle Sale"}, "themed"),
         ]
 
@@ -5225,10 +5228,10 @@ class SteamAdapterTests(unittest.TestCase):
         self.assertEqual(context["primary"]["category"], "fest")
         self.assertEqual(
             [promo["category"] for promo in context["promos"]],
-            ["weeklong", "fest", "themed"],
+            ["weeklong", "fest", "publisher_sale"],
         )
-        self.assertEqual(context["categories"], ["fest", "themed", "weeklong"])
-        self.assertEqual(context["category_label"], "Fest · Oferta temática · Weeklong")
+        self.assertEqual(context["categories"], ["fest", "publisher_sale", "weeklong"])
+        self.assertEqual(context["category_label"], "Fest · Publisher/Franquicia · Weeklong")
         self.assertEqual(context["display_label"], "Steam Farming Fest + 2 promos adicionales")
         self.assertEqual(context["additional_promos_count"], 2)
 
@@ -5246,6 +5249,22 @@ class SteamAdapterTests(unittest.TestCase):
         self.assertEqual(context["categories"], ["fest", "launch", "weeklong"])
         self.assertEqual(
             context["display_label"], "Steam Deckbuilders Fest 2026 + 2 promos adicionales"
+        )
+
+    def test_build_active_promo_context_prioritizes_publisher_over_routine_promos(self) -> None:
+        context = module_build_active_promo_context(
+            [
+                {"type": 1, "title": "Now Available - Tiny Game"},
+                {"type": 11, "title": "Weekend Deal"},
+                {"type": 11, "title": "Weeklong Deals"},
+                {"type": 99, "title": "Publisher Sale"},
+            ]
+        )
+
+        self.assertEqual(context["sale_name"], "Publisher Sale")
+        self.assertEqual(context["primary"]["category"], "publisher_sale")
+        self.assertEqual(
+            context["categories"], ["publisher_sale", "weekend", "launch", "weeklong"]
         )
 
     def test_get_active_promo_context_handles_api_errors_as_empty_context(self) -> None:

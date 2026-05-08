@@ -12,6 +12,7 @@ STEAM_ID64_RE = re.compile(r"<steamID64>(\d+)</steamID64>")
 STEAM_ID_RE = re.compile(r"<steamID><!\[CDATA\[(.*?)\]\]></steamID>")
 PROMO_PRIMARY_TYPES = (1, 11)
 MAJOR_SALE_KEYWORDS = ("summer sale", "winter sale", "autumn sale", "spring sale")
+PUBLISHER_FRANCHISE_KEYWORDS = ("publisher", "franchise")
 
 
 def _normalized_vanity(vanity: str) -> str:
@@ -256,6 +257,8 @@ def classify_steam_promo_message(message: dict) -> dict:
         category = "major_sale"
     elif "fest" in lower_title or "festival" in lower_title:
         category = "fest"
+    elif any(keyword in lower_title for keyword in PUBLISHER_FRANCHISE_KEYWORDS):
+        category = "publisher_sale"
     elif "now available" in lower_title or "launch" in lower_title:
         category = "launch"
     elif any(
@@ -280,6 +283,7 @@ PROMO_CATEGORY_LABELS = {
     "launch": "Lanzamiento",
     "fest": "Fest",
     "major_sale": "Oferta grande",
+    "publisher_sale": "Publisher/Franquicia",
     "themed": "Oferta temática",
     "unknown": "Otra promo",
 }
@@ -288,11 +292,12 @@ PROMO_CATEGORY_LABELS = {
 PROMO_CATEGORY_PRIORITY = {
     "major_sale": 10,
     "fest": 20,
-    "themed": 30,
+    "publisher_sale": 30,
+    "themed": 35,
     "weekend": 40,
-    "midweek": 50,
-    "launch": 60,
-    "weeklong": 70,
+    "midweek": 45,
+    "launch": 50,
+    "weeklong": 60,
     "unknown": 80,
 }
 
