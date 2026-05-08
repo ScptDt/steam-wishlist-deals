@@ -2399,6 +2399,7 @@ const LATEST_PROMO_CATEGORY_LABELS = Object.freeze({
   weeklong: 'Weeklong',
   midweek: 'Midweek',
   weekend: 'Weekend',
+  launch: 'Lanzamiento',
   fest: 'Fest',
   major_sale: 'Oferta grande',
   themed: 'Oferta temática',
@@ -2451,7 +2452,7 @@ function renderLatestPromoContext(report) {
     ? `<div class="latest-promo-pills">${categoryLabels.map(label => `<span>${escapeHtml(label)}</span>`).join('')}</div>`
     : '';
   const primaryHtml = displayLabel !== primaryTitle
-    ? `<div class="latest-promo-extra">Promo principal: ${escapeHtml(primaryTitle)}</div>`
+    ? `<div class="latest-promo-extra">Promo destacada: ${escapeHtml(primaryTitle)}</div>`
     : '';
   const extrasHtml = extraTitles.length
     ? `<div class="latest-promo-extra">También activas: ${escapeHtml(extraTitles.slice(0, 3).join(', '))}</div>`
@@ -2460,9 +2461,9 @@ function renderLatestPromoContext(report) {
     <div class="latest-promo-section" data-latest-promo-context>
       <div class="latest-promo-head">
         <div class="latest-promo-title">Contexto de promo activa</div>
-        <div class="latest-promo-subtitle">Contexto del último JSON local: ayuda a interpretar la promo activa; no es predicción ni cambia el score.</div>
+        <div class="latest-promo-subtitle">Contexto del último JSON local: ordena la promo destacada por jerarquía; no es predicción ni cambia el score.</div>
       </div>
-      <div class="latest-promo-primary"><span>Resumen de promos</span><strong>${escapeHtml(displayLabel)}</strong></div>
+      <div class="latest-promo-primary"><span>Promo detectada con más peso</span><strong>${escapeHtml(displayLabel)}</strong></div>
       ${categoriesHtml}
       ${primaryHtml}
       ${extrasHtml}

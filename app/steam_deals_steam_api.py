@@ -256,6 +256,8 @@ def classify_steam_promo_message(message: dict) -> dict:
         category = "major_sale"
     elif "fest" in lower_title or "festival" in lower_title:
         category = "fest"
+    elif "now available" in lower_title or "launch" in lower_title:
+        category = "launch"
     elif any(
         keyword in lower_title
         for keyword in ("sale", "deals", "deal", "specials", "discount")
@@ -275,10 +277,23 @@ PROMO_CATEGORY_LABELS = {
     "weeklong": "Weeklong",
     "midweek": "Midweek",
     "weekend": "Weekend",
+    "launch": "Lanzamiento",
     "fest": "Fest",
     "major_sale": "Oferta grande",
     "themed": "Oferta temática",
     "unknown": "Otra promo",
+}
+
+
+PROMO_CATEGORY_PRIORITY = {
+    "major_sale": 10,
+    "fest": 20,
+    "themed": 30,
+    "weekend": 40,
+    "midweek": 50,
+    "launch": 60,
+    "weeklong": 70,
+    "unknown": 80,
 }
 
 
@@ -287,15 +302,23 @@ def promo_category_label(category: str) -> str:
     return PROMO_CATEGORY_LABELS.get(key, key or "Otra promo")
 
 
+def _promo_priority(promo: dict) -> int:
+    category = str(promo.get("category", "") or "").strip()
+    return PROMO_CATEGORY_PRIORITY.get(category, PROMO_CATEGORY_PRIORITY["unknown"])
+
+
 def _select_primary_promo(promos: list[dict]) -> dict | None:
-    for preferred_type in PROMO_PRIMARY_TYPES:
-        for promo in promos:
-            if promo.get("type") == preferred_type and promo.get("title"):
-                return promo
-    for promo in promos:
-        if promo.get("title"):
-            return promo
-    return None
+    ranked = [promo for promo in promos if promo.get("title")]
+    if not ranked:
+        return None
+    return min(
+        enumerate(ranked),
+        key=lambda item: (
+            _promo_priority(item[1]),
+            0 if item[1].get("is_primary_type") else 1,
+            item[0],
+        ),
+    )[1]
 
 
 def _extra_promo_titles(promos: list[dict], primary_title: str) -> list[str]:
@@ -322,7 +345,12 @@ def build_active_promo_context(messages: list[dict]) -> dict:
         if _promo_title(message)
     ]
     primary = _select_primary_promo(promos)
-    categories = sorted({promo["category"] for promo in promos if promo.get("category")})
+    categories = sorted(
+        {promo["category"] for promo in promos if promo.get("category")},
+        key=lambda category: PROMO_CATEGORY_PRIORITY.get(
+            category, PROMO_CATEGORY_PRIORITY["unknown"]
+        ),
+    )
     primary_title = primary.get("title", "") if primary else ""
     extra_titles = _extra_promo_titles(promos, primary_title)
     return {

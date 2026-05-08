@@ -40,6 +40,7 @@ _PROMO_CATEGORY_LABELS = {
     "weeklong": "Weeklong",
     "midweek": "Midweek",
     "weekend": "Weekend",
+    "launch": "Lanzamiento",
     "fest": "Fest",
     "major_sale": "Oferta grande",
     "themed": "Oferta temática",

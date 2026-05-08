@@ -5149,6 +5149,7 @@ class SteamAdapterTests(unittest.TestCase):
             ({"type": 11, "title": "Weekend Deal"}, "weekend"),
             ({"type": 1, "title": "Steam Summer Sale"}, "major_sale"),
             ({"type": 1, "title": "Steam Farming Fest"}, "fest"),
+            ({"type": 1, "title": "Now Available - Everything is Crab"}, "launch"),
             ({"type": 1, "title": "Puzzle Sale"}, "themed"),
         ]
 
@@ -5179,6 +5180,22 @@ class SteamAdapterTests(unittest.TestCase):
         self.assertEqual(context["category_label"], "Fest · Oferta temática · Weeklong")
         self.assertEqual(context["display_label"], "Steam Farming Fest + 2 promos adicionales")
         self.assertEqual(context["additional_promos_count"], 2)
+
+    def test_build_active_promo_context_prioritizes_fest_over_launch(self) -> None:
+        context = module_build_active_promo_context(
+            [
+                {"type": 1, "title": "Now Available - Everything is Crab"},
+                {"type": 1, "title": "Steam Deckbuilders Fest 2026"},
+                {"type": 11, "title": "Weeklong Deals"},
+            ]
+        )
+
+        self.assertEqual(context["sale_name"], "Steam Deckbuilders Fest 2026")
+        self.assertEqual(context["primary"]["category"], "fest")
+        self.assertEqual(context["categories"], ["fest", "launch", "weeklong"])
+        self.assertEqual(
+            context["display_label"], "Steam Deckbuilders Fest 2026 + 2 promos adicionales"
+        )
 
     def test_get_active_promo_context_handles_api_errors_as_empty_context(self) -> None:
         context = module_get_active_promo_context(
