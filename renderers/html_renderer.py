@@ -698,6 +698,26 @@ def _html_budget_variant_panels(variants: list[dict], *, selected_variant: str |
     )
 
 
+def _html_budget_variants_with_fallback_rows(budget_data: dict) -> list[dict]:
+    variants = budget_data.get("variants") or []
+    if not variants:
+        return [budget_data]
+
+    root_selection = budget_data.get("selected") or []
+    if not root_selection:
+        return variants
+
+    selected_variant = budget_data.get("selected_variant")
+    single_variant_without_selection = selected_variant is None and len(variants) == 1
+    return [
+        {**variant, "selected": root_selection}
+        if not variant.get("selected")
+        and (variant.get("id") == selected_variant or single_variant_without_selection)
+        else variant
+        for variant in variants
+    ]
+
+
 def _html_recommendation_guide() -> str:
     return """<div class="recommendation-guide">
   <div class="recommendation-guide-title">Cómo leer la recomendación rápida</div>
@@ -1740,6 +1760,7 @@ def generate_html(
         budget_data = budget_result
         selected_variant = budget_data.get("selected_variant")
         variants = budget_data.get("variants") or []
+        panel_variants = _html_budget_variants_with_fallback_rows(budget_data)
         pct_used = (
             budget_data["total_spent"] / budget_data["budget"] * 100
             if budget_data["budget"] > 0
@@ -1749,12 +1770,12 @@ def generate_html(
             variants, selected_variant=selected_variant
         )
         variant_panels_html = _html_budget_variant_panels(
-            variants or [budget_data], selected_variant=selected_variant
+            panel_variants, selected_variant=selected_variant
         )
         current_variant = next(
             (
                 variant
-                for variant in (variants or [])
+                for variant in panel_variants
                 if variant.get("id") == selected_variant
             ),
             None,

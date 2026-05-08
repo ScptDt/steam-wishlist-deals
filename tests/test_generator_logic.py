@@ -6961,6 +6961,53 @@ class RankTopPicksTests(unittest.TestCase):
         self.assertIn("imageEl.src = option.image_url;", html)
         self.assertIn("share-btn-close", html)
 
+    def test_generate_html_uses_root_budget_selection_when_variant_rows_missing(self) -> None:
+        html = generate_html(
+            deals=[],
+            backlog_on_sale=[],
+            have_on_sale=[],
+            vanity="gaben",
+            owned={},
+            wishlist_appids=["a"],
+            min_discount=50,
+            genres=[],
+            budget_result={
+                "budget": 500,
+                "selected_variant": "balanced",
+                "selected": [
+                    {
+                        "appid": "a",
+                        "name": "Alpha",
+                        "discount": 90,
+                        "price_final": "$10",
+                        "score": 95.4,
+                        "recommendation": "Comprar ahora",
+                    }
+                ],
+                "total_spent": 10,
+                "total_savings": 90,
+                "remaining": 490,
+                "games_count": 1,
+                "variants": [
+                    {
+                        "id": "balanced",
+                        "label": "Lista media",
+                        "description": "Balance recomendado",
+                        "budget": 500,
+                        "total_spent": 10,
+                        "total_savings": 90,
+                        "remaining": 490,
+                        "games_count": 1,
+                    }
+                ],
+            },
+        )
+
+        self.assertIn("Tu Presupuesto Ideal", html)
+        self.assertIn("Lista media", html)
+        self.assertIn("Alpha", html)
+        self.assertIn('data-budget-row="balanced::a"', html)
+
     def test_generate_html_hides_local_history_column_without_useful_snapshots(self) -> None:
         html = generate_html(
             deals=[
