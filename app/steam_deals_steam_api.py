@@ -247,20 +247,20 @@ def classify_steam_promo_message(message: dict) -> dict:
     title = _promo_title(message)
     lower_title = title.lower()
     category = "unknown"
-    if "weeklong" in lower_title:
-        category = "weeklong"
-    elif "midweek" in lower_title or "mid-week" in lower_title:
-        category = "midweek"
-    elif "weekend" in lower_title:
-        category = "weekend"
-    elif any(keyword in lower_title for keyword in MAJOR_SALE_KEYWORDS):
+    if any(keyword in lower_title for keyword in MAJOR_SALE_KEYWORDS):
         category = "major_sale"
     elif "fest" in lower_title or "festival" in lower_title:
         category = "fest"
     elif any(keyword in lower_title for keyword in PUBLISHER_FRANCHISE_KEYWORDS):
         category = "publisher_sale"
+    elif "weekend" in lower_title:
+        category = "weekend"
+    elif "midweek" in lower_title or "mid-week" in lower_title:
+        category = "midweek"
     elif "now available" in lower_title or "launch" in lower_title:
         category = "launch"
+    elif "weeklong" in lower_title:
+        category = "weeklong"
     elif any(
         keyword in lower_title
         for keyword in ("sale", "deals", "deal", "specials", "discount")

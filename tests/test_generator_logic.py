@@ -5419,6 +5419,33 @@ class SteamAdapterTests(unittest.TestCase):
                     expected_category,
                 )
 
+    def test_classify_steam_promo_message_prefers_event_signals_over_routine_words(self) -> None:
+        cases = [
+            ({"type": 1, "title": "Steam Summer Sale Weekend Deals"}, "major_sale"),
+            ({"type": 1, "title": "Steam Festival Weekend Deal"}, "fest"),
+            ({"type": 11, "title": "Publisher Weekend Sale"}, "publisher_sale"),
+            ({"type": 11, "title": "Franchise Weeklong Deal"}, "publisher_sale"),
+        ]
+
+        for message, expected_category in cases:
+            with self.subTest(title=message["title"]):
+                self.assertEqual(
+                    module_classify_steam_promo_message(message)["category"],
+                    expected_category,
+                )
+
+    def test_build_active_promo_context_keeps_stable_tie_order_for_same_priority(self) -> None:
+        context = module_build_active_promo_context(
+            [
+                {"type": 1, "title": "Steam Farming Fest"},
+                {"type": 1, "title": "Steam Deckbuilders Fest"},
+            ]
+        )
+
+        self.assertEqual(context["sale_name"], "Steam Farming Fest")
+        self.assertEqual(context["categories"], ["fest"])
+        self.assertEqual(context["display_label"], "Steam Farming Fest + 1 promos adicionales")
+
     def test_build_active_promo_context_preserves_primary_and_all_promos(self) -> None:
         context = module_build_active_promo_context(
             [
