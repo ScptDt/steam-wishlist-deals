@@ -89,12 +89,19 @@ def _build_promo_context_lines(active_promo_context: dict | None) -> list[str]:
                 extra_titles.append(title)
 
     lines = [f"> Promo activa: **{_md_esc(primary_title)}**"]
+    lines.append("> Contexto local: no es predicción ni cambia el score.")
     if categories:
         lines.append(f"> Contexto promo: {' · '.join(_md_esc(label) for label in categories)}")
     if extra_titles:
         lines.append(
             f"> También activas: {', '.join(_md_esc(title) for title in extra_titles[:4])}"
         )
+    simultaneous_hint = str(active_promo_context.get("simultaneous_hint") or "").strip()
+    if simultaneous_hint:
+        lines.append(f"> Promos simultáneas: {_md_esc(simultaneous_hint)}")
+    decision_hint = str(active_promo_context.get("decision_hint") or "").strip()
+    if decision_hint:
+        lines.append(f"> Lectura sugerida: {_md_esc(decision_hint)}")
     return lines
 
 

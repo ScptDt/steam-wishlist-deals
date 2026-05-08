@@ -6245,12 +6245,17 @@ class RankTopPicksTests(unittest.TestCase):
                     {"title": "Weeklong Deals", "type": 11, "category": "weeklong"},
                 ],
                 "categories": ["fest", "weeklong"],
+                "simultaneous_hint": "Se destaca Steam Farming Fest por jerarquía de promo; también hay 1 promo activa de menor peso.",
+                "decision_hint": "Fest temático: oportunidad fuerte para juegos del tema; compara contra tu interés.",
             },
         )
 
         self.assertIn("Promo activa: **Steam Farming Fest**", md)
+        self.assertIn("Contexto local: no es predicción ni cambia el score", md)
         self.assertIn("Contexto promo: Fest · Weeklong", md)
         self.assertIn("También activas: Weeklong Deals", md)
+        self.assertIn("Promos simultáneas: Se destaca Steam Farming Fest", md)
+        self.assertIn("Lectura sugerida: Fest temático", md)
 
     def test_generate_md_can_include_obsidian_notion_frontmatter(self) -> None:
         md = generate_md(
@@ -6665,14 +6670,19 @@ class RankTopPicksTests(unittest.TestCase):
                     {"title": "Weeklong Deals", "type": 11, "category": "weeklong"},
                 ],
                 "categories": ["fest", "weeklong"],
+                "simultaneous_hint": "Se destaca Steam Farming Fest por jerarquía de promo; también hay 1 promo activa de menor peso.",
+                "decision_hint": "Fest temático: oportunidad fuerte para juegos del tema; compara contra tu interés.",
             },
         )
 
         self.assertIn("promo-context-card", html)
         self.assertIn("<strong>Promo activa:</strong> Steam Farming Fest", html)
+        self.assertIn("Contexto local: no es predicción ni cambia el score", html)
         self.assertIn("Fest", html)
         self.assertIn("Weeklong", html)
         self.assertIn("También activas: Weeklong Deals", html)
+        self.assertIn("Promos simultáneas: Se destaca Steam Farming Fest", html)
+        self.assertIn("Lectura sugerida: Fest temático", html)
 
     def test_generate_share_html_labels_top_pick_score_and_metacritic(self) -> None:
         html = generate_share_html(

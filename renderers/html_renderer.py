@@ -133,10 +133,25 @@ def _build_promo_context_html(active_promo_context: dict | None) -> str:
         if extra_titles
         else ""
     )
+    simultaneous_hint = str(active_promo_context.get("simultaneous_hint") or "").strip()
+    simultaneous_html = (
+        f'<div class="promo-context-hint">Promos simultáneas: {_html_esc(simultaneous_hint)}</div>'
+        if simultaneous_hint
+        else ""
+    )
+    decision_hint = str(active_promo_context.get("decision_hint") or "").strip()
+    decision_html = (
+        f'<div class="promo-context-hint">Lectura sugerida: {_html_esc(decision_hint)}</div>'
+        if decision_hint
+        else ""
+    )
     return f"""<div class="promo-context-card">
     <div><strong>Promo activa:</strong> {_html_esc(primary_title)}</div>
+    <div class="promo-context-note">Contexto local: no es predicción ni cambia el score.</div>
     <div class="promo-context-pills">{categories_html}</div>
     {extra_html}
+    {simultaneous_html}
+    {decision_html}
   </div>"""
 
 
