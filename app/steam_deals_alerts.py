@@ -1,13 +1,24 @@
 from __future__ import annotations
 
 
+def _safe_float(value) -> float | None:
+    if isinstance(value, bool):
+        return None
+    try:
+        return float(value)
+    except (TypeError, ValueError):
+        return None
+
+
 def _qualifying_appids(top_picks: list[dict], alert_score_min: float) -> set[str] | None:
     if alert_score_min <= 0:
         return None
     return {
         str(pick["appid"])
         for pick in top_picks
-        if pick.get("appid") and float(pick.get("score", 0.0)) >= alert_score_min
+        if pick.get("appid")
+        and (score := _safe_float(pick.get("score"))) is not None
+        and score >= alert_score_min
     }
 
 
@@ -31,11 +42,11 @@ def _count_global_historical_lows(
         deal = deal_by_appid.get(appid)
         if not deal or not isinstance(low, dict):
             continue
-        price_raw = deal.get("price_raw", 0)
-        low_price = low.get("price")
-        if not price_raw or not isinstance(low_price, (int, float)):
+        price_raw = _safe_float(deal.get("price_raw"))
+        low_price = _safe_float(low.get("price"))
+        if not price_raw or low_price is None:
             continue
-        low_with_margin = float(low_price) * (1.0 + (alert_global_margin_pct / 100.0))
+        low_with_margin = low_price * (1.0 + (alert_global_margin_pct / 100.0))
         if (price_raw / 100.0) <= low_with_margin:
             count += 1
     return count
@@ -53,10 +64,12 @@ def _count_price_rises(
         appid = str(appid)
         if not _is_in_scope(appid, qualifying_appids):
             continue
+        if not isinstance(change, dict):
+            continue
         if change.get("direction") != "up":
             continue
-        change_pct = change.get("change_pct")
-        if isinstance(change_pct, (int, float)) and change_pct >= alert_rise_pct:
+        change_pct = _safe_float(change.get("change_pct"))
+        if change_pct is not None and change_pct >= alert_rise_pct:
             count += 1
     return count
 
@@ -66,23 +79,35 @@ def _count_best_local(local_trends: dict[str, dict], qualifying_appids: set[str]
         1
         for appid, trend in local_trends.items()
         if _is_in_scope(str(appid), qualifying_appids)
+        and isinstance(trend, dict)
         and trend.get("is_best_local")
         and not trend.get("is_first_time")
     )
+
+
+def _bundle_titles(bundles) -> list[str]:
+    if not isinstance(bundles, list):
+        return []
+    return [
+        str(bundle.get("title"))
+        for bundle in bundles
+        if isinstance(bundle, dict) and bundle.get("title")
+    ]
 
 
 def _count_active_bundles(
     active_bundles: dict[str, list[dict]], qualifying_appids: set[str] | None
 ) -> tuple[int, int]:
     bundle_names = {
-        bundle.get("title")
+        title
         for appid, bundles in active_bundles.items()
         if _is_in_scope(str(appid), qualifying_appids)
-        for bundle in bundles
-        if isinstance(bundle, dict) and bundle.get("title")
+        for title in _bundle_titles(bundles)
     }
     bundle_games_count = sum(
-        1 for appid in active_bundles.keys() if _is_in_scope(str(appid), qualifying_appids)
+        1
+        for appid, bundles in active_bundles.items()
+        if _is_in_scope(str(appid), qualifying_appids) and _bundle_titles(bundles)
     )
     return len(bundle_names), bundle_games_count
 

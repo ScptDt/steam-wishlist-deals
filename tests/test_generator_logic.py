@@ -4564,6 +4564,86 @@ class SmartAlertsTests(unittest.TestCase):
             },
         )
 
+    def test_smart_alerts_count_threshold_boundaries(self) -> None:
+        result = module_build_smart_alert_counts(
+            deals=[
+                {"appid": "10", "price_raw": 1050},
+                {"appid": "20", "price_raw": 900},
+            ],
+            historical_lows={"10": {"price": 10.0}, "20": {"price": 9.0}},
+            active_bundles={"10": [{"title": "Bundle Alpha"}], "20": [{"title": "Bundle Beta"}]},
+            comparison={
+                "price_changes": {
+                    "10": {"direction": "up", "change_pct": 10.0},
+                    "20": {"direction": "up", "change_pct": 9.99},
+                }
+            },
+            local_trends={
+                "10": {"is_best_local": True, "is_first_time": False},
+                "20": {"is_best_local": True, "is_first_time": False},
+            },
+            top_picks=[{"appid": "10", "score": 80.0}, {"appid": "20", "score": 79.99}],
+            alert_global_margin_pct=5.0,
+            alert_rise_pct=10.0,
+            alert_score_min=80.0,
+        )
+
+        self.assertEqual(
+            result,
+            {
+                "best_local_count": 1,
+                "price_up_count": 1,
+                "global_historical_low_count": 1,
+                "active_bundles_count": 1,
+                "active_bundle_games_count": 1,
+            },
+        )
+
+    def test_smart_alerts_ignore_malformed_sources(self) -> None:
+        result = module_build_smart_alert_counts(
+            deals=[
+                {"appid": "10", "price_raw": "1000"},
+                {"appid": "20", "price_raw": "nope"},
+                {"appid": "30"},
+            ],
+            historical_lows={
+                "10": {"price": "10.0"},
+                "20": {"price": 9.0},
+                "30": "bad",
+            },
+            active_bundles={
+                "10": [{"title": "Bundle Alpha"}, "bad", {"title": ""}],
+                "20": None,
+            },
+            comparison={
+                "price_changes": {
+                    "10": {"direction": "up", "change_pct": "12.5"},
+                    "20": None,
+                    "30": {"direction": "up", "change_pct": "bad"},
+                }
+            },
+            local_trends={
+                "10": {"is_best_local": True, "is_first_time": False},
+                "20": None,
+                "30": {"is_best_local": True, "is_first_time": True},
+            },
+            top_picks=[{"appid": "10", "score": "80"}, {"appid": "20", "score": "bad"}],
+            alert_global_margin_pct=0.0,
+            alert_rise_pct=10.0,
+            alert_score_min=80.0,
+        )
+
+        self.assertEqual(
+            result,
+            {
+                "best_local_count": 1,
+                "price_up_count": 1,
+                "global_historical_low_count": 1,
+                "active_bundles_count": 1,
+                "active_bundle_games_count": 1,
+            },
+        )
+
     def test_generator_smart_alerts_wrapper_accepts_empty_sources(self) -> None:
         result = generator_build_smart_alert_counts(
             deals=[],
