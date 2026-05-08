@@ -708,7 +708,10 @@ def build_command(config: dict, filters: dict) -> list[str]:
             cmd += ["--genre"] + genres
     if config.get("family_json"):
         cmd += ["--family-json", config["family_json"]]
-    if filters.get("no_cache"):
+    warm_cache = bool(filters.get("warm_cache"))
+    if warm_cache:
+        cmd.append("--warm-cache")
+    if filters.get("no_cache") and not warm_cache:
         cmd.append("--no-cache")
     if filters.get("max_price"):
         cmd += ["--max-price", str(filters["max_price"])]

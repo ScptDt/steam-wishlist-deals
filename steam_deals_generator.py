@@ -3176,6 +3176,7 @@ def generate_json(
     liked_appids=None,
     preference_relations=None,
     hltb_hours=None,
+    cache_coverage: dict | None = None,
     profile_display_name: str | None = None,
     active_promo_context: dict | None = None,
 ) -> str:
@@ -3233,9 +3234,64 @@ def generate_json(
         gift_ideas=gift_ideas,
         recommended_collections=recommended_collections,
         personalized_recommendations=personalized_recommendations,
+        cache_coverage=cache_coverage,
         profile_display_name=profile_display_name,
         active_promo_context=active_promo_context,
     )
+
+
+def _safe_non_negative_int(value) -> int:
+    try:
+        parsed = int(value or 0)
+    except (TypeError, ValueError):
+        return 0
+    return max(0, parsed)
+
+
+def _format_count_label(value: int) -> str:
+    return f"{value:,}"
+
+
+def build_price_cache_coverage(price_stage: dict | None) -> dict | None:
+    if not isinstance(price_stage, dict):
+        return None
+
+    processed_count = _safe_non_negative_int(price_stage.get("processed_count"))
+    deferred_count = _safe_non_negative_int(price_stage.get("deferred_by_time_budget"))
+    refresh_candidate_count = _safe_non_negative_int(
+        price_stage.get("refresh_candidate_count")
+    )
+    candidate_total = refresh_candidate_count or processed_count + deferred_count
+    time_budget_exhausted = bool(price_stage.get("time_budget_exhausted"))
+    if not (candidate_total or processed_count or deferred_count or time_budget_exhausted):
+        return None
+
+    is_partial = deferred_count > 0
+    coverage = {
+        "status": "partial" if is_partial else "complete",
+        "is_partial": is_partial,
+        "processed_count": processed_count,
+        "refresh_candidate_count": candidate_total,
+        "deferred_count": deferred_count,
+        "time_budget_exhausted": time_budget_exhausted,
+        "next_resume_hint": str(price_stage.get("next_resume_hint") or ""),
+        "deals_count": len(price_stage.get("deals") or []),
+    }
+    coverage["coverage_label"] = (
+        f"{_format_count_label(processed_count)}/{_format_count_label(candidate_total)}"
+        if candidate_total
+        else _format_count_label(processed_count)
+    )
+    if is_partial:
+        coverage["summary"] = f"Caché parcial: {coverage['coverage_label']} juegos revisados."
+        coverage["detail"] = (
+            f"Quedan {_format_count_label(deferred_count)} pendientes por confirmar. "
+            "Las ofertas mostradas pueden no incluir juegos aún no verificados."
+        )
+    else:
+        coverage["summary"] = f"Caché revisada: {coverage['coverage_label']} juegos revisados."
+        coverage["detail"] = "Sin pendientes por presupuesto en esta corrida."
+    return coverage
 
 
 # ─────────────────────────────────────────────
@@ -3521,6 +3577,7 @@ def main():
         rate_limit=RATE_LIMIT,
     )
     deals = price_stage["deals"]
+    cache_coverage = build_price_cache_coverage(price_stage)
 
     # Comparar con runs anteriores
     comparison = compute_deal_comparison(deals, previous_run, run_history)
@@ -3834,6 +3891,7 @@ def main():
         personalized_recommendations=personalized_recommendations,
         library_games=have_on_sale,
         hltb_hours=hltb_hours,
+        cache_coverage=cache_coverage,
         profile_display_name=profile_display_name,
         active_promo_context=active_promo_context,
         **family_renderer_kwargs,

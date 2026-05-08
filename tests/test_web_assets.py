@@ -283,6 +283,30 @@ class WebAssetsTests(unittest.TestCase):
         self.assertIn(".latest-promo-pills", app_css)
         self.assertIn(".latest-promo-extra", app_css)
 
+    def test_latest_report_surfaces_partial_cache_coverage(self) -> None:
+        app_js = (ROOT / "web" / "steam_deals" / "app.js").read_text(
+            encoding="utf-8"
+        )
+        app_css = (ROOT / "web" / "steam_deals" / "app.css").read_text(
+            encoding="utf-8"
+        )
+
+        self.assertIn("function renderLatestCacheCoverage", app_js)
+        self.assertIn("report.cache_coverage", app_js)
+        self.assertIn("data-latest-cache-coverage", app_js)
+        self.assertIn("Caché parcial", app_js)
+        self.assertIn("pendientes por confirmar", app_js)
+        self.assertIn("Las ofertas mostradas pueden no incluir juegos aún no verificados", app_js)
+        self.assertIn("data-latest-action=\"continue-warm-cache\"", app_js)
+        self.assertIn("function buildWarmCacheContinueFilters", app_js)
+        self.assertIn("filters.warm_cache = true", app_js)
+        self.assertIn("filters.no_cache = false", app_js)
+        self.assertIn("Continuando warm-cache con la caché actual (sin --no-cache).", app_js)
+        self.assertIn("renderLatestCacheCoverage(activeReport)", app_js)
+        self.assertIn(".latest-cache-coverage", app_css)
+        self.assertIn(".latest-cache-coverage-copy", app_css)
+        self.assertIn(".latest-cache-coverage-action", app_css)
+
     def test_latest_report_renders_selection_review_ui_inside_details(self) -> None:
         app_js = (ROOT / "web" / "steam_deals" / "app.js").read_text(
             encoding="utf-8"

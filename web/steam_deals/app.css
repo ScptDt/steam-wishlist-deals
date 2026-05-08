@@ -844,6 +844,48 @@ details .details-body .field:last-child {
 }
 .latest-report-stat-label { color: var(--text2); font-size: 0.78rem; margin-bottom: 0.25rem; }
 .latest-report-stat-value { color: var(--text); font-size: 1.1rem; font-weight: 700; }
+.latest-cache-coverage {
+  margin-top: 0.75rem;
+  padding: 0.75rem 0.85rem;
+  border-radius: 8px;
+  border: 1px solid rgba(240, 178, 50, 0.28);
+  background: rgba(240, 178, 50, 0.08);
+}
+.latest-cache-coverage-title {
+  color: var(--yellow);
+  font-size: 0.78rem;
+  font-weight: 700;
+  letter-spacing: 0.02em;
+  text-transform: uppercase;
+}
+.latest-cache-coverage-main {
+  margin-top: 0.22rem;
+  color: var(--text);
+  font-size: 0.92rem;
+  font-weight: 700;
+}
+.latest-cache-coverage-copy {
+  margin-top: 0.28rem;
+  color: var(--text2);
+  font-size: 0.78rem;
+  line-height: 1.45;
+}
+.latest-cache-coverage-actions {
+  margin-top: 0.55rem;
+  display: flex;
+  flex-wrap: wrap;
+  gap: 0.45rem;
+}
+.latest-cache-coverage-action {
+  background: rgba(240, 178, 50, 0.14);
+  border-color: rgba(240, 178, 50, 0.35);
+  color: var(--yellow);
+}
+.latest-cache-coverage-action:hover {
+  background: var(--yellow);
+  border-color: var(--yellow);
+  color: var(--bg);
+}
 .latest-report-details {
   margin-top: 0.75rem;
   margin-bottom: 0;

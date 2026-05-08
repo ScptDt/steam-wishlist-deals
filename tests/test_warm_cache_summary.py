@@ -144,6 +144,79 @@ class WarmCacheSummaryTests(unittest.TestCase):
             "- Refresh budget: processed=80 · deferred=20 · exhausted=true · next_resume_hint=12345",
             output,
         )
+        self.assertIn(
+            "- Cobertura parcial: se revalidaron 80/100 candidatos; quedan 20 pendientes/no revalidados en esta corrida.",
+            output,
+        )
+        self.assertIn(
+            "- Pendientes: no se sabe aún si los 20 pendientes tienen oferta.",
+            output,
+        )
+        self.assertIn(
+            "- Continuación sugerida: ejecuta warm-cache de nuevo para seguir desde el candidato 12345.",
+            output,
+        )
+        self.assertIn(
+            "processed=revalidado en esta corrida",
+            output,
+        )
+        self.assertIn("fresh cache=dato válido", output)
+        self.assertIn("failed/cooldown=no confirmado", output)
+
+    def test_format_warm_cache_summary_clarifies_deferred_are_not_revalidated(self) -> None:
+        summary = WarmCacheLogSummary(
+            refresh_candidates=2935,
+            processed_count=360,
+            deferred_by_time_budget=2575,
+            time_budget_exhausted=True,
+            next_resume_hint="542050",
+            deals_count=22,
+        )
+
+        output = format_warm_cache_summary(summary)
+
+        self.assertIn(
+            "Cobertura parcial: se revalidaron 360/2,935 candidatos",
+            output,
+        )
+        self.assertIn(
+            "2,575 pendientes/no revalidados en esta corrida",
+            output,
+        )
+        self.assertIn(
+            "Deals encontrados: 22 con la cobertura disponible",
+            output,
+        )
+        self.assertIn(
+            "no se sabe aún si los 2,575 pendientes tienen oferta",
+            output,
+        )
+        self.assertIn(
+            "ejecuta warm-cache de nuevo para seguir desde el candidato 542050",
+            output,
+        )
+        self.assertIn(
+            "se detuvo a propósito por presupuesto",
+            output,
+        )
+        self.assertNotIn("cobertura completa", output.lower())
+
+    def test_format_warm_cache_summary_marks_no_pending_refresh_budget(self) -> None:
+        summary = WarmCacheLogSummary(
+            refresh_candidates=42,
+            processed_count=42,
+            deferred_by_time_budget=0,
+            time_budget_exhausted=False,
+        )
+
+        output = format_warm_cache_summary(summary)
+
+        self.assertIn(
+            "- Cobertura refresh: 42/42 candidatos revalidados; sin pendientes por presupuesto.",
+            output,
+        )
+        self.assertNotIn("Cobertura parcial", output)
+        self.assertNotIn("no se sabe aún si", output)
 
     def test_parse_warm_cache_log_text_extracts_stale_revalidate_metrics(self) -> None:
         text = (

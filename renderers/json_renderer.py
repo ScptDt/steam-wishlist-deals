@@ -56,6 +56,7 @@ def generate_json(
     gift_ideas: list[dict] | None = None,
     recommended_collections: list[dict] | None = None,
     personalized_recommendations: dict | None = None,
+    cache_coverage: dict | None = None,
     profile_display_name: str | None = None,
     active_promo_context: dict | None = None,
 ) -> str:
@@ -130,6 +131,8 @@ def generate_json(
         "anticheat_data": _json_safe(anticheat_data),
         "achievements_data": _json_safe(achievements_data),
     }
+    if cache_coverage:
+        payload["cache_coverage"] = _json_safe(cache_coverage)
     if active_promo_context:
         payload["meta"]["active_promo_context"] = _json_safe(active_promo_context)
     return json.dumps(payload, ensure_ascii=False, indent=2)

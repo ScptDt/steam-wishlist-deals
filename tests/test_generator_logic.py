@@ -156,6 +156,7 @@ from steam_deals_generator import (
     analyze_trends,
     build_warm_cache_emit,
     build_final_summary as generator_build_final_summary,
+    build_price_cache_coverage,
     build_personalized_recommendations,
     build_recommended_collections,
     build_selection_review,
@@ -3734,6 +3735,56 @@ class StopApiContractTests(unittest.TestCase):
         self.assertEqual(data["inputs"]["wishlist_count"], 2)
         self.assertEqual(data["comparison"]["new_deals"], ["10"])
         self.assertEqual(data["top_picks"][0]["score"], 95.4)
+
+    def test_build_price_cache_coverage_marks_partial_deferred_candidates(self) -> None:
+        coverage = build_price_cache_coverage(
+            {
+                "deals": [{"appid": "10"}, {"appid": "20"}],
+                "refresh_candidate_count": 2935,
+                "processed_count": 360,
+                "deferred_by_time_budget": 2575,
+                "time_budget_exhausted": True,
+                "next_resume_hint": "542050",
+            }
+        )
+
+        self.assertIsNotNone(coverage)
+        self.assertEqual(coverage["status"], "partial")
+        self.assertEqual(coverage["coverage_label"], "360/2,935")
+        self.assertEqual(coverage["deferred_count"], 2575)
+        self.assertEqual(coverage["deals_count"], 2)
+        self.assertIn("Caché parcial", coverage["summary"])
+        self.assertIn("pueden no incluir juegos aún no verificados", coverage["detail"])
+
+    def test_generate_json_serializes_cache_coverage_for_latest_report_ui(self) -> None:
+        coverage = build_price_cache_coverage(
+            {
+                "deals": [{"appid": "10"}],
+                "refresh_candidate_count": 100,
+                "processed_count": 20,
+                "deferred_by_time_budget": 80,
+                "time_budget_exhausted": True,
+                "next_resume_hint": "30",
+            }
+        )
+
+        payload = generate_json(
+            deals=[{"appid": "10", "name": "Portal 2", "discount": 80}],
+            backlog_on_sale=[],
+            have_on_sale=[],
+            vanity="gaben",
+            owned={},
+            wishlist_appids=["10"],
+            min_discount=50,
+            genres=[],
+            cache_coverage=coverage,
+        )
+
+        data = json.loads(payload)
+
+        self.assertEqual(data["cache_coverage"]["status"], "partial")
+        self.assertEqual(data["cache_coverage"]["coverage_label"], "20/100")
+        self.assertIn("pendientes por confirmar", data["cache_coverage"]["detail"])
 
     def test_generate_json_builds_recommended_collections_from_report_data(self) -> None:
         payload = generate_json(

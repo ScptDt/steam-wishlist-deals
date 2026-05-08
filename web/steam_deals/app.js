@@ -1581,17 +1581,124 @@ function maybeShowActionableHint(text, cls) {
   if (hint) appendLine(hint, 'warn');
 }
 
-async function runPreflightUI() {
+async function runPreflightUI(filtersOverride = null) {
+  const filters = filtersOverride || getFilters();
   const pre = await localMutableFetch('/api/preflight', {
     method: 'POST',
     headers: {'Content-Type': 'application/json'},
-    body: JSON.stringify({config: getConfig(), filters: getFilters()}),
+    body: JSON.stringify({config: getConfig(), filters}),
   });
   const preData = await pre.json();
   appendLine('Preflight ejecutado.', preData.ok ? 'ok' : 'warn');
   (preData.warnings || []).forEach(w => appendLine('WARN: ' + w, 'warn'));
   (preData.issues || []).forEach(i => appendLine('ISSUE: ' + i, 'err'));
   return preData;
+}
+
+function buildWarmCacheContinueFilters() {
+  const filters = Object.assign({}, getFilters());
+  filters.warm_cache = true;
+  filters.no_cache = false;
+  return filters;
+}
+
+async function streamSteamDealsRunResponse(resp) {
+  const reader = resp.body.getReader();
+  const decoder = new TextDecoder();
+  let buffer = '';
+
+  while (true) {
+    const {value, done} = await reader.read();
+    if (done) break;
+    buffer += decoder.decode(value, {stream: true});
+
+    let idx;
+    while ((idx = buffer.indexOf('\n\n')) !== -1) {
+      const block = buffer.slice(0, idx);
+      buffer = buffer.slice(idx + 2);
+      for (const line of block.split('\n')) {
+        if (line.startsWith('data: ')) {
+          try {
+            const ev = JSON.parse(line.slice(6));
+            handleEvent(ev);
+          } catch(e) {}
+        }
+      }
+    }
+  }
+}
+
+async function runSteamDealsUI(options = {}) {
+  const filters = options.filters || getFilters();
+  const startLabel = options.startLabel || 'Iniciando...';
+  const conflictMessage = options.conflictMessage || 'Ya hay una ejecucion en curso.';
+  const triggerButton = options.triggerButton || null;
+
+  if (options.validateForm !== false && !validateDealsFormBeforeRun()) {
+    return false;
+  }
+
+  shownErrorHints = new Set();
+  resetExecutionLog();
+  if (options.introLine) appendLine(options.introLine, 'step');
+  progressBar.style.width = '0%';
+  progressText.textContent = startLabel;
+  fileLinks.innerHTML = '';
+  fileLinks.classList.add('hidden');
+  btnRun.disabled = true;
+  if (triggerButton && triggerButton !== btnRun) triggerButton.disabled = true;
+  resetStopUiState();
+  btnStop.disabled = false;
+
+  try {
+    try {
+      const preData = await runPreflightUI(filters);
+      if (!preData.ok) {
+        appendLine('Validacion previa fallida. Corrige lo siguiente:', 'err');
+        progressText.textContent = 'Config invalida';
+        progressBar.style.width = '0%';
+        return false;
+      }
+    } catch(e) {
+      appendLine('No se pudo ejecutar preflight: ' + e.message, 'warn');
+    }
+
+    abortCtrl = new AbortController();
+    const resp = await localMutableFetch('/api/run', {
+      method: 'POST',
+      headers: {'Content-Type': 'application/json'},
+      body: JSON.stringify({config: getConfig(), filters}),
+      signal: abortCtrl.signal,
+    });
+
+    if (!resp.ok && resp.status !== 409) {
+      let msg = 'HTTP ' + resp.status;
+      try {
+        const body = await resp.json();
+        if (body && body.error) msg = body.error;
+      } catch(e) {}
+      appendLine('Error del servidor: ' + msg, 'err');
+      return false;
+    }
+
+    if (resp.status === 409) {
+      appendLine(conflictMessage, 'warn');
+      return false;
+    }
+
+    await streamSteamDealsRunResponse(resp);
+    return true;
+  } catch(e) {
+    if (e.name !== 'AbortError') {
+      appendLine('Error de conexion: ' + e.message, 'err');
+    }
+    return false;
+  } finally {
+    btnRun.disabled = false;
+    if (triggerButton && triggerButton !== btnRun) triggerButton.disabled = false;
+    resetStopUiState();
+    abortCtrl = null;
+  }
 }
 
 function doctorLineClass(text, overall) {
@@ -1904,93 +2011,7 @@ if (btnCopyLog) btnCopyLog.addEventListener('click', copyExecutionLog);
 if (btnDownloadLog) btnDownloadLog.addEventListener('click', downloadExecutionLog);
 
 btnRun.addEventListener('click', async () => {
-  if (!validateDealsFormBeforeRun()) {
-    return;
-  }
-
-  shownErrorHints = new Set();
-  resetExecutionLog();
-  progressBar.style.width = '0%';
-  progressText.textContent = 'Iniciando...';
-  fileLinks.innerHTML = '';
-  fileLinks.classList.add('hidden');
-  btnRun.disabled = true;
-  resetStopUiState();
-  btnStop.disabled = false;
-
-  try {
-    const preData = await runPreflightUI();
-    if (!preData.ok) {
-      appendLine('Validacion previa fallida. Corrige lo siguiente:', 'err');
-      btnRun.disabled = false;
-      btnStop.disabled = true;
-      progressText.textContent = 'Config invalida';
-      progressBar.style.width = '0%';
-      return;
-    }
-  } catch(e) {
-    appendLine('No se pudo ejecutar preflight: ' + e.message, 'warn');
-  }
-
-  abortCtrl = new AbortController();
-
-  try {
-    const resp = await localMutableFetch('/api/run', {
-      method: 'POST',
-      headers: {'Content-Type': 'application/json'},
-      body: JSON.stringify({config: getConfig(), filters: getFilters()}),
-      signal: abortCtrl.signal,
-    });
-
-    if (!resp.ok && resp.status !== 409) {
-      let msg = 'HTTP ' + resp.status;
-      try {
-        const body = await resp.json();
-        if (body && body.error) msg = body.error;
-      } catch(e) {}
-      appendLine('Error del servidor: ' + msg, 'err');
-      return;
-    }
-
-    if (resp.status === 409) {
-      appendLine('Ya hay una ejecucion en curso.', 'warn');
-      btnRun.disabled = false;
-      resetStopUiState();
-      return;
-    }
-
-    const reader = resp.body.getReader();
-    const decoder = new TextDecoder();
-    let buffer = '';
-
-    while (true) {
-      const {value, done} = await reader.read();
-      if (done) break;
-      buffer += decoder.decode(value, {stream: true});
-
-      let idx;
-      while ((idx = buffer.indexOf('\n\n')) !== -1) {
-        const block = buffer.slice(0, idx);
-        buffer = buffer.slice(idx + 2);
-        for (const line of block.split('\n')) {
-          if (line.startsWith('data: ')) {
-            try {
-              const ev = JSON.parse(line.slice(6));
-              handleEvent(ev);
-            } catch(e) {}
-          }
-        }
-      }
-    }
-  } catch(e) {
-    if (e.name !== 'AbortError') {
-      appendLine('Error de conexion: ' + e.message, 'err');
-    }
-  }
-
-  btnRun.disabled = false;
-  resetStopUiState();
-  abortCtrl = null;
+  await runSteamDealsUI({filters: getFilters()});
 });
 
 btnStop.addEventListener('click', async () => {
@@ -2319,6 +2340,16 @@ function formatLatestReportTimestamp(value) {
   const date = new Date(value);
   if (Number.isNaN(date.getTime())) return String(value);
   return date.toLocaleString(undefined, { dateStyle: 'medium', timeStyle: 'short' });
+}
+
+function latestCoverageCount(value) {
+  const parsed = Number(value);
+  if (!Number.isFinite(parsed) || parsed <= 0) return 0;
+  return Math.floor(parsed);
+}
+
+function formatLatestCoverageCount(value) {
+  return latestCoverageCount(value).toLocaleString();
 }
 
 function parseShareMoney(value) {
@@ -3279,6 +3310,44 @@ function renderLatestReportDetails(report, files = null) {
   `;
 }
 
+function renderLatestCacheCoverage(report) {
+  const coverage = report && typeof report === 'object' ? (report.cache_coverage || null) : null;
+  if (!coverage || typeof coverage !== 'object') return '';
+  const deferred = latestCoverageCount(coverage.deferred_count);
+  const isPartial = coverage.is_partial === true || coverage.status === 'partial' || deferred > 0;
+  if (!isPartial || deferred <= 0) return '';
+  const processed = latestCoverageCount(coverage.processed_count);
+  const total = latestCoverageCount(coverage.refresh_candidate_count) || processed + deferred;
+  const coverageLabel = String(coverage.coverage_label || '').trim() || `${formatLatestCoverageCount(processed)}/${formatLatestCoverageCount(total)}`;
+  const nextHint = String(coverage.next_resume_hint || '').trim();
+  const resumeCopy = nextHint
+    ? ` Usa Continuar warm-cache para revisar otra tanda con la misma caché (pista ${escapeHtml(nextHint)}).`
+    : ' Usa Continuar warm-cache para revisar otra tanda con la misma caché.';
+  return `
+    <div class="latest-cache-coverage latest-cache-coverage-partial" data-latest-cache-coverage>
+      <div class="latest-cache-coverage-title">Caché parcial</div>
+      <div class="latest-cache-coverage-main">${escapeHtml(coverageLabel)} juegos revisados</div>
+      <div class="latest-cache-coverage-copy">Quedan ${escapeHtml(formatLatestCoverageCount(deferred))} pendientes por confirmar. Las ofertas mostradas pueden no incluir juegos aún no verificados.${resumeCopy}</div>
+      <div class="latest-cache-coverage-actions">
+        <button type="button" class="file-link file-link-button latest-cache-coverage-action" data-latest-action="continue-warm-cache">Continuar warm-cache</button>
+      </div>
+    </div>
+  `;
+}
+
+async function continueWarmCacheFromLatestReport(btn) {
+  const originalLabel = btn ? btn.textContent : 'Continuar warm-cache';
+  if (btn) btn.textContent = 'Continuando...';
+  await runSteamDealsUI({
+    filters: buildWarmCacheContinueFilters(),
+    startLabel: 'Continuando warm-cache...',
+    introLine: 'Continuando warm-cache con la caché actual (sin --no-cache).',
+    conflictMessage: 'Ya hay una ejecucion en curso. Espera a que termine antes de continuar warm-cache.',
+    triggerButton: btn,
+  });
+  if (btn && btn.isConnected) btn.textContent = originalLabel;
+}
+
 function bindLatestReportQuickActions() {
   const el = latestReportCardEl();
   if (!el) return;
@@ -3287,6 +3356,9 @@ function bindLatestReportQuickActions() {
   });
   el.querySelectorAll('[data-latest-action="open-folder"]').forEach((btn) => {
     btn.addEventListener('click', () => openOutputFolderUI(btn));
+  });
+  el.querySelectorAll('[data-latest-action="continue-warm-cache"]').forEach((btn) => {
+    btn.addEventListener('click', () => continueWarmCacheFromLatestReport(btn));
   });
 }
 
@@ -3329,6 +3401,7 @@ function renderLatestReportCard(report, files = null) {
         </div>
       `).join('')}
     </div>
+    ${renderLatestCacheCoverage(activeReport)}
     ${renderLatestReportDetails(activeReport, files)}
   `;
   el.classList.remove('hidden');

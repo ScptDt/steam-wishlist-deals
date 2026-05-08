@@ -353,6 +353,87 @@ def _format_fallback_cooldown_action(summary: WarmCacheLogSummary) -> str:
     )
 
 
+def _refresh_budget_candidate_total(summary: WarmCacheLogSummary) -> int | None:
+    if summary.refresh_candidates > 0:
+        return summary.refresh_candidates
+    total = summary.processed_count + summary.deferred_by_time_budget
+    return total or None
+
+
+def _format_coverage_state_legend(summary: WarmCacheLogSummary) -> str | None:
+    has_coverage_state = any(
+        (
+            summary.processed_count,
+            summary.deferred_by_time_budget,
+            summary.stale_used_count,
+            summary.stale_refresh_deferred_count,
+            summary.deferred_failure_count,
+        )
+    )
+    if not has_coverage_state:
+        return None
+    return (
+        "- Estados de cobertura: processed=revalidado en esta corrida · "
+        "deferred=pendiente/no revalidado · fresh cache=dato válido por TTL "
+        "o fin de oferta · stale cache=dato viejo usado o pendiente · "
+        "failed/cooldown=no confirmado por error/rate-limit"
+    )
+
+
+def _format_refresh_budget_coverage_lines(
+    summary: WarmCacheLogSummary,
+) -> list[str]:
+    has_refresh_budget = any(
+        (
+            summary.processed_count,
+            summary.deferred_by_time_budget,
+            summary.time_budget_exhausted,
+        )
+    )
+    if not has_refresh_budget:
+        return []
+
+    total = _refresh_budget_candidate_total(summary)
+    if total:
+        coverage = f"{_format_value(summary.processed_count)}/{_format_value(total)}"
+    else:
+        coverage = _format_value(summary.processed_count)
+
+    if summary.deferred_by_time_budget <= 0:
+        return [
+            "- Cobertura refresh: "
+            f"{coverage} candidatos revalidados; sin pendientes por presupuesto."
+        ]
+
+    deferred = _format_value(summary.deferred_by_time_budget)
+    lines = [
+        "- Cobertura parcial: "
+        f"se revalidaron {coverage} candidatos; quedan {deferred} "
+        "pendientes/no revalidados en esta corrida."
+    ]
+    if summary.deals_count is not None:
+        lines.append(
+            "- Deals encontrados: "
+            f"{_format_value(summary.deals_count)} con la cobertura disponible "
+            "(cobertura parcial)."
+        )
+    lines.append(
+        f"- Pendientes: no se sabe aún si los {deferred} pendientes tienen oferta."
+    )
+    if summary.next_resume_hint:
+        lines.append(
+            "- Continuación sugerida: ejecuta warm-cache de nuevo para seguir "
+            f"desde el candidato {summary.next_resume_hint}."
+        )
+    if summary.time_budget_exhausted:
+        lines.append(
+            "- Completitud: se detuvo a propósito por presupuesto para evitar "
+            "una corrida larga o más rate-limit; mejora velocidad, no garantiza "
+            "cobertura total."
+        )
+    return lines
+
+
 def analyze_warm_cache_recommendations(
     summaries: list[WarmCacheLogSummary],
 ) -> list[WarmCacheRecommendation]:
@@ -499,6 +580,9 @@ def format_warm_cache_summary(summary: WarmCacheLogSummary) -> str:
             f"exhausted={exhausted} · "
             f"next_resume_hint={hint}"
         )
+        lines.extend(_format_refresh_budget_coverage_lines(summary))
+    if state_legend := _format_coverage_state_legend(summary):
+        lines.append(state_legend)
     if summary.ttl_jitter_bucket_counts:
         bucket_parts = [
             f"{bucket}={_format_value(count)}"

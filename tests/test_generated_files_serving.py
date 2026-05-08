@@ -149,6 +149,15 @@ class GeneratedFilesServingTests(unittest.TestCase):
         self.assertEqual(Path(deals_cmd[deals_cmd.index("--output") + 1]), DEFAULT_OUTPUT_DIR)
         self.assertEqual(Path(pd2_cmd[pd2_cmd.index("--output") + 1]), DEFAULT_OUTPUT_DIR)
 
+    def test_build_command_warm_cache_reuses_cache_without_no_cache(self) -> None:
+        cmd = build_command(
+            {"vanity": "gaben"},
+            {"warm_cache": True, "no_cache": True},
+        )
+
+        self.assertIn("--warm-cache", cmd)
+        self.assertNotIn("--no-cache", cmd)
+
     def test_open_output_folder_creates_directory_and_uses_platform_opener(self) -> None:
         with TemporaryDirectory() as temp_dir:
             target = Path(temp_dir) / "reports"
@@ -762,6 +771,20 @@ class GeneratedFilesServingTests(unittest.TestCase):
         self.assertEqual(handler.json["message"], "No se pudo iniciar proceso.")
         self.assertNotIn(secret_path, payload)
         self.assertNotIn("discord.com/api/webhooks", payload)
+
+    def test_run_sse_returns_conflict_when_process_is_already_running(self) -> None:
+        original_running_proc = web._running_proc
+        web._running_proc = _FakeStreamProcess([])
+        handler = _FakeRunHandler(
+            {"config": {"vanity": "gaben"}, "filters": {"warm_cache": True}}
+        )
+        try:
+            Handler._serve_run_sse(handler)
+        finally:
+            web._running_proc = original_running_proc
+
+        self.assertEqual(handler.status, 409)
+        self.assertEqual(handler.json, {"error": "Already running"})
 
     def test_run_sse_runtime_lines_sanitize_public_text(self) -> None:
         original_start_text_subprocess = web.start_text_subprocess
