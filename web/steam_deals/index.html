@@ -294,42 +294,46 @@
       </div>
     </details>
 
-    <details>
-      <summary>Filtros avanzados</summary>
+    <details class="advanced-filters-panel">
+      <summary class="advanced-filters-summary">
+        <span>Filtros avanzados</span>
+        <span class="advanced-filters-summary-hint">Opcional: precio, reseñas, Deck, CSV/cache</span>
+      </summary>
       <div class="details-body">
+        <div class="advanced-filters-intro">Déjalos vacíos para usar el flujo normal. Abre la ayuda solo si quieres ajustar fino este run.</div>
         <div class="row">
           <div class="field">
             <label>Precio máximo (MXN)</label>
             <input type="number" id="max_price" min="0" placeholder="Sin límite">
-            <div class="hint">Deja fuera juegos que superen ese tope. Úsalo si no quieres ver opciones más caras.</div>
+            <div class="hint hint-compact">Vacío = sin límite.</div>
           </div>
           <div class="field">
             <label>Reseñas positivas mín. (%)</label>
             <input type="number" id="min_reviews" min="0" max="100" placeholder="Cualquiera">
-            <div class="hint">Muestra solo juegos con al menos ese porcentaje de reseñas positivas.</div>
+            <div class="hint hint-compact">Vacío = cualquier porcentaje.</div>
           </div>
         </div>
         <div class="row">
           <div class="field">
             <label>Cantidad mínima de reseñas</label>
             <input type="number" id="min_review_count" min="0" placeholder="Cualquiera">
-            <div class="hint">Úsalo para evitar juegos con muy pocas reseñas y resultados menos confiables.</div>
+            <div class="hint hint-compact">Vacío = sin mínimo.</div>
           </div>
           <div class="field">
             <label>Duración máxima (horas)</label>
             <input type="number" id="max_hours" min="0" placeholder="Sin límite">
-            <div class="hint">Úsalo si prefieres juegos más cortos o no quieres meter algo demasiado largo en este run.</div>
+            <div class="hint hint-compact">Vacío = sin límite.</div>
           </div>
         </div>
         <div class="field">
           <label>Comparar con <span class="optional">(opcional)</span></label>
           <input type="text" id="compare" placeholder="Pega aquí el perfil de tu amigo">
-          <div class="hint">Úsalo para ver juegos en común y posibles ideas de regalo. La wishlist de tu amigo debe ser pública.</div>
+          <div class="hint hint-compact">Wishlist pública del amigo.</div>
         </div>
         <div class="field">
           <label>Workers de enrichment <span class="optional">(opcional)</span></label>
           <input type="number" id="max_workers" min="1" max="64" step="1" placeholder="12">
-          <div class="hint">Si no estás seguro, déjalo en 12. Prueba 16 solo si tu conexión va bien; si ves errores raros o lentitud, vuelve a 12 u 8.</div>
+          <div class="hint hint-compact">Si no estás seguro, déjalo en 12.</div>
         </div>
         <div class="checks checks-spaced">
           <label><input type="checkbox" id="deck_only"> Solo juegos que corren en Steam Deck</label>
@@ -338,9 +342,15 @@
           <label><input type="checkbox" id="csv"> Generar CSV</label>
           <label><input type="checkbox" id="no_cache"> Ignorar cache</label>
         </div>
-        <div class="hint">Deck compatible = corre en Steam Deck aunque quizá necesite ajustes. Deck Verified = suele correr mejor y pedir menos ajustes.</div>
-        <div class="hint">`Solo ofertas nuevas` muestra juegos que entraron en oferta frente al run anterior. Si no hay historial previo, puede aportar poco o nada.</div>
-        <div class="hint">`Generar CSV` sirve si quieres llevar los resultados a Excel o Google Sheets sin depender solo del HTML.</div>
+        <details class="advanced-filters-help">
+          <summary>Ayuda rápida de filtros avanzados</summary>
+          <div class="advanced-filters-help-grid">
+            <div><strong>Precio/reseñas/duración</strong><span>Acotan resultados; si quedan vacíos no filtran nada.</span></div>
+            <div><strong>Comparar con amigo</strong><span>Sirve para juegos en común e ideas de regalo; la wishlist debe ser pública.</span></div>
+            <div><strong>Steam Deck</strong><span>Compatible puede requerir ajustes; Verified suele pedir menos ajustes.</span></div>
+            <div><strong>CSV/cache/ofertas nuevas</strong><span>CSV exporta para hojas de cálculo; cache y nuevas ofertas son opciones técnicas para casos puntuales.</span></div>
+          </div>
+        </details>
       </div>
     </details>
 

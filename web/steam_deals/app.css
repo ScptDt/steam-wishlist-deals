@@ -151,6 +151,73 @@ a:hover { text-decoration: underline; }
   margin-top: 0.35rem;
 }
 
+.advanced-filters-summary {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  justify-content: space-between;
+  gap: 0.45rem;
+}
+
+.advanced-filters-summary-hint {
+  color: var(--text2);
+  font-size: 0.74rem;
+  font-weight: 500;
+}
+
+.advanced-filters-intro {
+  margin-bottom: 0.7rem;
+  color: var(--text2);
+  font-size: 0.78rem;
+  line-height: 1.45;
+}
+
+.advanced-filters-panel .field {
+  margin-bottom: 0.75rem;
+}
+
+.advanced-filters-help {
+  margin-top: 0.65rem;
+  margin-bottom: 0;
+  background: rgba(12, 20, 30, 0.12);
+}
+
+.advanced-filters-help summary {
+  font-size: 0.8rem;
+  padding: 0.52rem 0.65rem;
+}
+
+.advanced-filters-help-grid {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(180px, 1fr));
+  gap: 0.55rem;
+  padding: 0.65rem;
+}
+
+.advanced-filters-help-grid div {
+  padding: 0.55rem 0.6rem;
+  border-radius: 8px;
+  border: 1px solid rgba(255,255,255,0.06);
+  background: rgba(255,255,255,0.02);
+}
+
+.advanced-filters-help-grid strong,
+.advanced-filters-help-grid span {
+  display: block;
+}
+
+.advanced-filters-help-grid strong {
+  margin-bottom: 0.2rem;
+  color: var(--text);
+  font-size: 0.76rem;
+}
+
+.advanced-filters-help-grid span {
+  color: var(--text2);
+  font-size: 0.73rem;
+  line-height: 1.4;
+}
+
 .history-quick-field {
   display: flex;
   align-items: stretch;

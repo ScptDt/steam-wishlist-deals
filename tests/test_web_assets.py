@@ -93,6 +93,32 @@ class WebAssetsTests(unittest.TestCase):
         self.assertIn(".metrics-guide-summary-hint", app_css)
         self.assertNotIn("Ver último HTML", index_html)
 
+    def test_advanced_filters_are_compact_and_help_is_on_demand(self) -> None:
+        index_html = (ROOT / "web" / "steam_deals" / "index.html").read_text(
+            encoding="utf-8"
+        )
+        app_css = (ROOT / "web" / "steam_deals" / "app.css").read_text(
+            encoding="utf-8"
+        )
+
+        panel_start = index_html.index('<details class="advanced-filters-panel">')
+        panel_end = index_html.index("</details>", index_html.index('class="advanced-filters-help"'))
+        panel_markup = index_html[panel_start:panel_end]
+
+        self.assertIn("Filtros avanzados", panel_markup)
+        self.assertIn("Opcional: precio, reseñas, Deck, CSV/cache", panel_markup)
+        self.assertIn("Déjalos vacíos para usar el flujo normal", panel_markup)
+        self.assertIn('class="advanced-filters-help"', panel_markup)
+        self.assertIn("Ayuda rápida de filtros avanzados", panel_markup)
+        self.assertIn("Vacío = sin límite.", panel_markup)
+        self.assertIn("Vacío = cualquier porcentaje.", panel_markup)
+        self.assertIn("Wishlist pública del amigo.", panel_markup)
+        self.assertNotIn("Deja fuera juegos que superen ese tope", panel_markup)
+        self.assertNotIn("Muestra solo juegos con al menos ese porcentaje", panel_markup)
+        self.assertIn(".advanced-filters-summary", app_css)
+        self.assertIn(".advanced-filters-help-grid", app_css)
+        self.assertIn(".advanced-filters-intro", app_css)
+
     def test_execution_log_copy_uses_native_bridge_then_browser_clipboard(self) -> None:
         app_js = (ROOT / "web" / "steam_deals" / "app.js").read_text(
             encoding="utf-8"
