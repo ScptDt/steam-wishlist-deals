@@ -2921,6 +2921,9 @@ function renderLatestPersonalizedProfile(profile) {
   const librarySummary = source.library_summary && typeof source.library_summary === 'object'
     ? source.library_summary
     : {};
+  const activitySummary = source.activity_summary && typeof source.activity_summary === 'object'
+    ? source.activity_summary
+    : {};
   const activityTerms = Array.isArray(source.activity_terms)
     ? source.activity_terms.map(term => term && term.term).filter(Boolean).slice(0, 2)
     : [];
@@ -2929,11 +2932,35 @@ function renderLatestPersonalizedProfile(profile) {
     : [];
   const chips = [];
   if (activityTerms.length) chips.push(`Actividad: ${activityTerms.join(', ')}`);
+  chips.push(...latestActivitySummaryChips(activitySummary));
   if (libraryTerms.length) chips.push(`Biblioteca: ${libraryTerms.join(', ')}`);
   if (Number(librarySummary.total_hltb_hours) > 0) chips.push(`HLTB: ${librarySummary.total_hltb_hours}h`);
   if (Number.isFinite(Number(librarySummary.average_price))) chips.push(`Precio prom.: $${librarySummary.average_price}`);
   if (!chips.length) return '';
   return `<div class="latest-personalized-profile">${chips.map(chip => `<span>${escapeHtml(chip)}</span>`).join('')}</div>`;
+}
+
+function positiveActivityNumber(value) {
+  const number = Number(value);
+  return Number.isFinite(number) && number > 0 ? number : null;
+}
+
+function latestActivitySummaryChips(summary) {
+  const source = summary && typeof summary === 'object' ? summary : {};
+  const chips = [];
+  const recentHours = positiveActivityNumber(source.recent_hours);
+  const totalHours = positiveActivityNumber(source.total_hours);
+  if (recentHours || totalHours) {
+    const hoursParts = [];
+    if (recentHours) hoursParts.push(`${recentHours.toFixed(1)}h recientes`);
+    if (totalHours) hoursParts.push(`${totalHours.toFixed(1)}h total`);
+    chips.push(`Actividad local: ${hoursParts.join(' · ')}`);
+  }
+  const topPlayed = Array.isArray(source.top_played) ? source.top_played : [];
+  const topItem = topPlayed.find(item => item && typeof item === 'object' && String(item.name || '').trim());
+  const topHours = topItem ? positiveActivityNumber(topItem.total_hours) : null;
+  if (topItem && topHours) chips.push(`Más jugado: ${String(topItem.name).trim()} (${topHours.toFixed(1)}h)`);
+  return chips;
 }
 
 function renderLatestPersonalizedRecommendations(report, files = null) {

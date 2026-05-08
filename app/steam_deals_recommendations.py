@@ -608,10 +608,78 @@ def _activity_records_with_library_context(activity_records: list[dict], library
 
 
 def _game_activity_weight(game: dict) -> float:
-    recent_hours = _safe_number(game.get("playtime_2weeks")) / 60
-    total_hours = _safe_number(game.get("playtime_forever")) / 600
-    explicit_hours = _safe_number(game.get("hours_played"))
-    return max(1.0, recent_hours + total_hours + explicit_hours)
+    playtime = _activity_playtime_hours(game)
+    return max(
+        1.0,
+        playtime["recent_hours"]
+        + (playtime["forever_hours"] / 10)
+        + playtime["explicit_hours"],
+    )
+
+
+def _positive_hours(value) -> float:
+    return max(0.0, _safe_number(value))
+
+
+def _playtime_minutes_to_hours(value) -> float:
+    return _positive_hours(value) / 60
+
+
+def _activity_playtime_hours(source: dict) -> dict[str, float]:
+    source = source or {}
+    recent_hours = _playtime_minutes_to_hours(source.get("playtime_2weeks"))
+    forever_hours = _playtime_minutes_to_hours(source.get("playtime_forever"))
+    explicit_hours = max(
+        _positive_hours(source.get("hours_played")),
+        _positive_hours(source.get("hours")),
+    )
+    return {
+        "recent_hours": recent_hours,
+        "forever_hours": forever_hours,
+        "explicit_hours": explicit_hours,
+        "total_hours": max(forever_hours, explicit_hours, recent_hours),
+    }
+
+
+def _activity_playtime_item(record: dict, activity_record: dict | None = None) -> dict:
+    source = activity_record or record
+    playtime = _activity_playtime_hours(source)
+    return {
+        "appid": _collection_appid(record),
+        "name": str(record.get("name") or record.get("steam_name") or "Juego desconocido"),
+        "recent_hours": round(playtime["recent_hours"], 1),
+        "total_hours": round(playtime["total_hours"], 1),
+    }
+
+
+def _activity_top_items(items: list[dict], score_key: str, *, limit: int = 3) -> list[dict]:
+    ranked = sorted(
+        items,
+        key=lambda item: (-item.get(score_key, 0), item.get("name", "").lower(), item.get("appid", "")),
+    )
+    return [dict(item) for item in ranked[:limit]]
+
+
+def _activity_profile_summary(activity_games: list[dict], library_games: list[dict] | None = None) -> dict:
+    library_by_appid = _records_by_appid(library_games or [])
+    items = [
+        _activity_playtime_item(
+            {**library_by_appid.get(_collection_appid(record), {}), **record},
+            activity_record=record,
+        )
+        for record in activity_games
+    ]
+    played_items = [item for item in items if item["recent_hours"] > 0 or item["total_hours"] > 0]
+    recent_items = [item for item in played_items if item["recent_hours"] > 0]
+    return {
+        "records_count": len(activity_games),
+        "tracked_count": len(played_items),
+        "recent_count": len(recent_items),
+        "recent_hours": round(sum(item["recent_hours"] for item in recent_items), 1),
+        "total_hours": round(sum(item["total_hours"] for item in played_items), 1),
+        "top_recent": _activity_top_items(recent_items, "recent_hours"),
+        "top_played": _activity_top_items(played_items, "total_hours"),
+    }
 
 
 def _weighted_style_terms(records: list[dict], *, activity_weighted: bool = False) -> list[dict]:
@@ -720,8 +788,9 @@ def build_personalized_recommendations(
 ) -> dict:
     """Build a deterministic personalized ranking from existing report data."""
     library_records = _record_list(library_games)
+    raw_activity_records = _record_list(activity_games)
     activity_records = _activity_records_with_library_context(
-        _record_list(activity_games),
+        raw_activity_records,
         library_records,
     )
     owned_set = _normalize_appid_set(owned)
@@ -748,6 +817,7 @@ def build_personalized_recommendations(
         "items": items[:max(0, max_items)],
         "profile": {
             "activity_terms": activity_terms[:5],
+            "activity_summary": _activity_profile_summary(raw_activity_records, library_records),
             "library_summary": _library_profile_summary(library_records, owned_set, hltb_hours),
             "excluded_appids_count": len(excluded_appids),
         },

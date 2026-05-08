@@ -628,6 +628,72 @@ class PersonalizedRecommendationsTests(unittest.TestCase):
             ["Action", "Puzzle"],
         )
 
+    def test_build_personalized_recommendations_weights_local_hours_alias(self) -> None:
+        recommendations = build_personalized_recommendations(
+            [
+                {"appid": "10", "name": "Builder", "score": 60, "genres": ["Simulation"]},
+                {"appid": "20", "name": "Action", "score": 60, "genres": ["Action"]},
+            ],
+            activity_games=[
+                {"appid": "91", "name": "Long Builder", "hours": 12, "genres": ["Simulation"]},
+                {"appid": "92", "name": "Short Action", "playtime_forever": 60, "genres": ["Action"]},
+            ],
+        )
+
+        summary = recommendations["profile"]["activity_summary"]
+
+        self.assertEqual(
+            [term["term"] for term in recommendations["profile"]["activity_terms"][:2]],
+            ["Simulation", "Action"],
+        )
+        self.assertEqual(summary["top_played"][0]["name"], "Long Builder")
+        self.assertEqual(summary["top_played"][0]["total_hours"], 12.0)
+
+    def test_build_personalized_recommendations_summarizes_local_activity_playtime(self) -> None:
+        recommendations = build_personalized_recommendations(
+            [{"appid": "10", "name": "Baseline", "score": 60}],
+            activity_games=[
+                {
+                    "appid": "90",
+                    "name": "Hades",
+                    "playtime_2weeks": 180,
+                    "playtime_forever": 900,
+                },
+                {"appid": "91", "name": "Elden Ring", "playtime_forever": 3600},
+                {"appid": "92", "name": "Local Co-op", "hours_played": "7.5", "hours": 12},
+                {"appid": "93", "name": "Invalid", "playtime_2weeks": -60, "playtime_forever": "nope"},
+            ],
+        )
+
+        summary = recommendations["profile"]["activity_summary"]
+
+        self.assertEqual(summary["records_count"], 4)
+        self.assertEqual(summary["tracked_count"], 3)
+        self.assertEqual(summary["recent_count"], 1)
+        self.assertEqual(summary["recent_hours"], 3.0)
+        self.assertEqual(summary["total_hours"], 87.0)
+        self.assertEqual(summary["top_recent"][0]["name"], "Hades")
+        self.assertEqual(summary["top_recent"][0]["recent_hours"], 3.0)
+        self.assertEqual(
+            [item["name"] for item in summary["top_played"]],
+            ["Elden Ring", "Hades", "Local Co-op"],
+        )
+
+    def test_build_personalized_recommendations_activity_summary_ignores_library_hltb_hours(self) -> None:
+        recommendations = build_personalized_recommendations(
+            [{"appid": "10", "name": "Deep Action", "score": 70, "genres": ["Action"]}],
+            activity_games=[{"appid": "91"}],
+            library_games=[{"appid": "91", "name": "Dead Cells", "genres": ["Action"], "hours": 25}],
+        )
+
+        summary = recommendations["profile"]["activity_summary"]
+
+        self.assertEqual([item["appid"] for item in recommendations["items"]], ["10"])
+        self.assertEqual(summary["records_count"], 1)
+        self.assertEqual(summary["tracked_count"], 0)
+        self.assertEqual(summary["total_hours"], 0)
+        self.assertEqual(summary["top_played"], [])
+
     def test_build_personalized_recommendations_matches_equivalent_style_terms(self) -> None:
         recommendations = build_personalized_recommendations(
             [
@@ -4053,6 +4119,8 @@ class StopApiContractTests(unittest.TestCase):
         self.assertIn("coincide con tu biblioteca", " ".join(personalized["items"][0]["reasons"]))
         self.assertIn("similar a Hades", personalized["items"][0]["reasons"])
         self.assertEqual(personalized["profile"]["library_summary"]["total_hltb_hours"], 25.0)
+        self.assertEqual(personalized["profile"]["activity_summary"]["recent_hours"], 3.0)
+        self.assertEqual(personalized["profile"]["activity_summary"]["tracked_count"], 1)
         self.assertEqual(personalized["profile"]["excluded_appids_count"], 1)
 
     def test_generate_json_respects_explicit_empty_personalized_recommendations(self) -> None:
@@ -6076,6 +6144,11 @@ class RankTopPicksTests(unittest.TestCase):
                 ],
                 "profile": {
                     "activity_terms": [{"term": "Action", "weight": 3.0}],
+                    "activity_summary": {
+                        "recent_hours": 3.0,
+                        "total_hours": 87.0,
+                        "top_played": [{"name": "Elden Ring", "total_hours": 60.0}],
+                    },
                     "library_summary": {
                         "top_terms": [{"term": "Roguelike", "weight": 2.0}],
                         "total_hltb_hours": 25.0,
@@ -6088,6 +6161,8 @@ class RankTopPicksTests(unittest.TestCase):
         self.assertIn("## 🎯 Recomendaciones personalizadas", md)
         self.assertIn("Ranking explicable construido", md)
         self.assertIn("Perfil usado: actividad: Action", md)
+        self.assertIn("actividad local: 3.0h recientes · 87.0h total", md)
+        self.assertIn("más jugado: Elden Ring (60.0h)", md)
         self.assertIn("biblioteca: Roguelike", md)
         self.assertIn("Deep Action", md)
         self.assertIn("Personal 100.0", md)
@@ -6357,6 +6432,11 @@ class RankTopPicksTests(unittest.TestCase):
                 ],
                 "profile": {
                     "activity_terms": [{"term": "Action", "weight": 3.0}],
+                    "activity_summary": {
+                        "recent_hours": 3.0,
+                        "total_hours": 87.0,
+                        "top_played": [{"name": "Elden Ring", "total_hours": 60.0}],
+                    },
                     "library_summary": {
                         "top_terms": [{"term": "Roguelike", "weight": 2.0}],
                         "total_hltb_hours": 25.0,
@@ -6370,6 +6450,8 @@ class RankTopPicksTests(unittest.TestCase):
         self.assertIn("Recomendaciones personalizadas", html)
         self.assertIn("No cambia el score global", html)
         self.assertIn("Actividad: Action", html)
+        self.assertIn("Actividad local: 3.0h recientes · 87.0h total", html)
+        self.assertIn("Más jugado: Elden Ring (60.0h)", html)
         self.assertIn("Biblioteca: Roguelike", html)
         self.assertIn("Deep Action", html)
         self.assertIn("Personal 100.0", html)
@@ -6419,6 +6501,10 @@ class RankTopPicksTests(unittest.TestCase):
                 ],
                 "profile": {
                     "activity_terms": [{"term": "<img src=x onerror=alert(6)>"}],
+                    "activity_summary": {
+                        "total_hours": 4,
+                        "top_played": [{"name": "<script>alert(8)</script>", "total_hours": 4}],
+                    },
                     "library_summary": {"top_terms": [{"term": "<script>alert(7)</script>"}]},
                 },
             },
@@ -6427,8 +6513,10 @@ class RankTopPicksTests(unittest.TestCase):
         self.assertIn("data-personalized-recommendations-section", html)
         self.assertIn("&lt;b&gt;Alpha&lt;/b&gt;", html)
         self.assertIn("&lt;script&gt;alert(5)&lt;/script&gt;", html)
+        self.assertIn("&lt;script&gt;alert(8)&lt;/script&gt;", html)
         self.assertNotIn("<b>Alpha</b>", html)
         self.assertNotIn("<script>alert(5)</script>", html)
+        self.assertNotIn("<script>alert(8)</script>", html)
         self.assertNotIn("/app/10\" onclick=", html)
         self.assertNotIn('<a class="personalized-item-thumb"', html)
         self.assertNotIn("alert(1)", html)
@@ -6629,6 +6717,11 @@ class RankTopPicksTests(unittest.TestCase):
                 "source_signals": ["top_picks", "activity", "library"],
                 "profile": {
                     "activity_terms": [{"term": "roguelike"}],
+                    "activity_summary": {
+                        "recent_hours": 3.0,
+                        "total_hours": 87.0,
+                        "top_played": [{"name": "Elden Ring", "total_hours": 60.0}],
+                    },
                     "library_summary": {
                         "top_terms": [{"term": "Action"}],
                         "total_hltb_hours": 25.0,
@@ -6656,6 +6749,8 @@ class RankTopPicksTests(unittest.TestCase):
         self.assertIn("data-personalized-recommendations-section", html)
         self.assertIn("Recomendaciones personalizadas", html)
         self.assertIn("Actividad: roguelike", html)
+        self.assertIn("Actividad local: 3.0h recientes · 87.0h total", html)
+        self.assertIn("Más jugado: Elden Ring (60.0h)", html)
         self.assertIn("Biblioteca: Action", html)
         self.assertIn("HLTB: 25.0h", html)
         self.assertIn('data-personalized-recommendation="10"', html)
@@ -6689,6 +6784,10 @@ class RankTopPicksTests(unittest.TestCase):
             personalized_recommendations={
                 "profile": {
                     "activity_terms": [{"term": "<script>alert(0)</script>"}],
+                    "activity_summary": {
+                        "total_hours": 4,
+                        "top_played": [{"name": "<script>alert(8)</script>", "total_hours": 4}],
+                    },
                     "library_summary": {
                         "top_terms": [{"term": "<img src=x onerror=alert(1)>"}],
                         "average_price": '9" onclick="alert(2)',
@@ -6713,8 +6812,10 @@ class RankTopPicksTests(unittest.TestCase):
         self.assertIn("&lt;img src=x onerror=alert(1)&gt;", html)
         self.assertIn("&lt;b&gt;Alpha&lt;/b&gt;", html)
         self.assertIn("&lt;script&gt;alert(7)&lt;/script&gt;", html)
+        self.assertIn("&lt;script&gt;alert(8)&lt;/script&gt;", html)
         self.assertNotIn("<script>alert(0)</script>", html)
         self.assertNotIn("<script>alert(7)</script>", html)
+        self.assertNotIn("<script>alert(8)</script>", html)
         self.assertNotIn("<img src=x", html)
         self.assertNotIn('data-personalized-recommendation="10" onclick=', html)
         self.assertNotIn('/app/10" onclick=', html)

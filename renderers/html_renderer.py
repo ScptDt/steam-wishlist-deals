@@ -472,6 +472,7 @@ def _html_personalized_profile(profile: dict) -> str:
     ][:3]
     if activity_terms:
         chips.append(f"Actividad: {', '.join(activity_terms)}")
+    chips.extend(_html_activity_summary_chips(profile.get("activity_summary") or {}))
     library_summary = profile.get("library_summary") or {}
     library_terms = [
         str(term.get("term") or "").strip()
@@ -489,6 +490,40 @@ def _html_personalized_profile(profile: dict) -> str:
     if not chips:
         return ""
     return f'''<div class="personalized-profile">{"".join(f'<span>{_html_esc(chip)}</span>' for chip in chips)}</div>'''
+
+
+def _html_profile_positive_number(value) -> float | None:
+    if isinstance(value, bool):
+        return None
+    try:
+        number = float(value)
+    except (TypeError, ValueError):
+        return None
+    return number if number > 0 else None
+
+
+def _html_activity_summary_chips(summary: dict) -> list[str]:
+    if not isinstance(summary, dict):
+        return []
+    chips: list[str] = []
+    recent_hours = _html_profile_positive_number(summary.get("recent_hours"))
+    total_hours = _html_profile_positive_number(summary.get("total_hours"))
+    if recent_hours or total_hours:
+        hours_parts = []
+        if recent_hours:
+            hours_parts.append(f"{recent_hours:.1f}h recientes")
+        if total_hours:
+            hours_parts.append(f"{total_hours:.1f}h total")
+        chips.append(f"Actividad local: {' · '.join(hours_parts)}")
+    for item in summary.get("top_played", []):
+        if not isinstance(item, dict):
+            continue
+        name = str(item.get("name") or "").strip()
+        total = _html_profile_positive_number(item.get("total_hours"))
+        if name and total:
+            chips.append(f"Más jugado: {name} ({total:.1f}h)")
+            break
+    return chips
 
 
 def _html_personalized_item(item: dict, index: int) -> str:

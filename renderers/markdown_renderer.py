@@ -299,11 +299,46 @@ def _profile_terms_text(terms: list[dict]) -> str:
     return ", ".join(_md_esc(label) for label in labels[:3])
 
 
+def _profile_positive_number(value) -> float | None:
+    if isinstance(value, bool):
+        return None
+    try:
+        number = float(value)
+    except (TypeError, ValueError):
+        return None
+    return number if number > 0 else None
+
+
+def _activity_summary_chips(summary: dict) -> list[str]:
+    if not isinstance(summary, dict):
+        return []
+    chips: list[str] = []
+    recent_hours = _profile_positive_number(summary.get("recent_hours"))
+    total_hours = _profile_positive_number(summary.get("total_hours"))
+    if recent_hours or total_hours:
+        hours_parts = []
+        if recent_hours:
+            hours_parts.append(f"{recent_hours:.1f}h recientes")
+        if total_hours:
+            hours_parts.append(f"{total_hours:.1f}h total")
+        chips.append(f"actividad local: {' · '.join(hours_parts)}")
+    for item in summary.get("top_played", []):
+        if not isinstance(item, dict):
+            continue
+        name = str(item.get("name") or "").strip()
+        total = _profile_positive_number(item.get("total_hours"))
+        if name and total:
+            chips.append(f"más jugado: {_md_esc(name)} ({total:.1f}h)")
+            break
+    return chips
+
+
 def _personalized_profile_line(profile: dict) -> str:
     parts = []
     activity_terms = _profile_terms_text(profile.get("activity_terms", []))
     if activity_terms:
         parts.append(f"actividad: {activity_terms}")
+    parts.extend(_activity_summary_chips(profile.get("activity_summary") or {}))
     library_summary = profile.get("library_summary") or {}
     library_terms = _profile_terms_text(library_summary.get("top_terms", []))
     if library_terms:
