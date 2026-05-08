@@ -299,6 +299,9 @@ class WebAssetsTests(unittest.TestCase):
         self.assertIn("Caché parcial", app_js)
         self.assertIn("pendientes por confirmar", app_js)
         self.assertIn("Las ofertas mostradas pueden no incluir juegos aún no verificados", app_js)
+        self.assertIn("function renderLatestCacheStateSummary", app_js)
+        self.assertIn("coverage.state_summary", app_js)
+        self.assertIn("Estados derivados", app_js)
         self.assertIn("data-latest-action=\"continue-warm-cache\"", app_js)
         self.assertIn("function buildWarmCacheContinueFilters", app_js)
         self.assertIn("filters.warm_cache = true", app_js)
@@ -307,6 +310,7 @@ class WebAssetsTests(unittest.TestCase):
         self.assertIn("renderLatestCacheCoverage(activeReport)", app_js)
         self.assertIn(".latest-cache-coverage", app_css)
         self.assertIn(".latest-cache-coverage-copy", app_css)
+        self.assertIn(".latest-cache-state-summary", app_css)
         self.assertIn(".latest-cache-coverage-action", app_css)
 
     def test_latest_report_renders_selection_review_ui_inside_details(self) -> None:

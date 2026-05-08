@@ -3362,6 +3362,29 @@ function renderLatestReportDetails(report, files = null) {
   `;
 }
 
+function latestCacheStateItems(coverage) {
+  const rawItems = Array.isArray(coverage && coverage.state_summary)
+    ? coverage.state_summary
+    : [];
+  return rawItems
+    .map((item) => ({
+      label: String((item && item.label) || '').trim(),
+      count: latestCoverageCount(item && item.count),
+    }))
+    .filter((item) => item.label && item.count > 0);
+}
+
+function renderLatestCacheStateSummary(coverage) {
+  const items = latestCacheStateItems(coverage);
+  if (!items.length) return '';
+  return `
+    <div class="latest-cache-state-summary" aria-label="Estados derivados de caché">
+      <span>Estados derivados:</span>
+      ${items.map((item) => `<strong>${escapeHtml(item.label)}: ${escapeHtml(formatLatestCoverageCount(item.count))}</strong>`).join('')}
+    </div>
+  `;
+}
+
 function renderLatestCacheCoverage(report) {
   const coverage = report && typeof report === 'object' ? (report.cache_coverage || null) : null;
   if (!coverage || typeof coverage !== 'object') return '';
@@ -3380,6 +3403,7 @@ function renderLatestCacheCoverage(report) {
       <div class="latest-cache-coverage-title">Caché parcial</div>
       <div class="latest-cache-coverage-main">${escapeHtml(coverageLabel)} juegos revisados</div>
       <div class="latest-cache-coverage-copy">Quedan ${escapeHtml(formatLatestCoverageCount(deferred))} pendientes por confirmar. Las ofertas mostradas pueden no incluir juegos aún no verificados.${resumeCopy}</div>
+      ${renderLatestCacheStateSummary(coverage)}
       <div class="latest-cache-coverage-actions">
         <button type="button" class="file-link file-link-button latest-cache-coverage-action" data-latest-action="continue-warm-cache">Continuar warm-cache</button>
       </div>

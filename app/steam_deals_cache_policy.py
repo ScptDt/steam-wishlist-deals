@@ -8,10 +8,37 @@ from typing import Iterable
 
 
 FAILED_AT_KEY = "_failed_at"
+FETCHED_AT_KEY = "_fetched_at"
+FAILURE_REASON_KEY = "_failure_reason"
+DEFERRED_REASON_KEY = "_deferred_reason"
+TIME_BUDGET_DEFERRED_REASON = "time_budget_deferred"
+FALLBACK_BUDGET_FAILURE_REASON = "fallback_budget_deferred"
 DEFAULT_FAILURE_RETRY_HOURS = 2.0
 DEFAULT_STALE_GRACE_HOURS = 72.0
 DEFAULT_TTL_JITTER_HOURS = 6
 DEFAULT_MAX_STALE_REFRESH_PER_RUN = 200
+CACHE_STATE_FRESH = "fresh"
+CACHE_STATE_STALE_USABLE = "stale_usable"
+CACHE_STATE_PENDING_DEFERRED = "pending_deferred"
+CACHE_STATE_COOLDOWN = "cooldown"
+CACHE_STATE_FAILED_NO_DATA = "failed_no_data"
+CACHE_STATE_MISSING = "missing"
+CACHE_STATE_ORDER = (
+    CACHE_STATE_FRESH,
+    CACHE_STATE_STALE_USABLE,
+    CACHE_STATE_PENDING_DEFERRED,
+    CACHE_STATE_COOLDOWN,
+    CACHE_STATE_FAILED_NO_DATA,
+    CACHE_STATE_MISSING,
+)
+CACHE_STATE_LABELS = {
+    CACHE_STATE_FRESH: "fresh cache",
+    CACHE_STATE_STALE_USABLE: "stale usable",
+    CACHE_STATE_PENDING_DEFERRED: "pending/deferred",
+    CACHE_STATE_COOLDOWN: "failed/cooldown",
+    CACHE_STATE_FAILED_NO_DATA: "failed/no data",
+    CACHE_STATE_MISSING: "missing",
+}
 
 
 def stable_ttl_jitter_hours(appid: str, max_jitter_hours: int | float) -> int:
@@ -31,7 +58,7 @@ def _is_stale_entry(
 ) -> bool:
     if not isinstance(entry, dict):
         return True
-    fetched_at = entry.get("_fetched_at")
+    fetched_at = entry.get(FETCHED_AT_KEY)
     if not isinstance(fetched_at, (int, float)):
         failed_at = entry.get(FAILED_AT_KEY)
         if isinstance(failed_at, (int, float)):
@@ -110,10 +137,97 @@ def _missing_ids(target_ids: list[str], cached: dict) -> tuple[str, ...]:
 def _entry_age_hours(entry: dict | None, *, now_ts: float) -> float | None:
     if not isinstance(entry, dict):
         return None
-    fetched_at = entry.get("_fetched_at")
+    fetched_at = entry.get(FETCHED_AT_KEY)
     if not isinstance(fetched_at, (int, float)):
         return None
     return (float(now_ts) - float(fetched_at)) / 3600.0
+
+
+def _is_pending_deferred_entry(entry: dict | None) -> bool:
+    if not isinstance(entry, dict):
+        return False
+    if entry.get(DEFERRED_REASON_KEY) == TIME_BUDGET_DEFERRED_REASON:
+        return True
+    return entry.get(FAILURE_REASON_KEY) == FALLBACK_BUDGET_FAILURE_REASON
+
+
+def classify_cache_entry_state(
+    appid: str,
+    cached: dict,
+    *,
+    now_ts: float,
+    ttl_hours: float,
+    failure_retry_hours: float = DEFAULT_FAILURE_RETRY_HOURS,
+    stale_grace_hours: float = DEFAULT_STALE_GRACE_HOURS,
+    ttl_jitter_hours: int | float = DEFAULT_TTL_JITTER_HOURS,
+) -> str:
+    if appid not in cached:
+        return CACHE_STATE_MISSING
+    entry = cached.get(appid)
+    if not isinstance(entry, dict):
+        return CACHE_STATE_MISSING
+    if _is_pending_deferred_entry(entry):
+        return CACHE_STATE_PENDING_DEFERRED
+    if _is_recent_failed_entry(
+        entry,
+        now_ts=now_ts,
+        failure_retry_hours=failure_retry_hours,
+    ):
+        return CACHE_STATE_COOLDOWN
+    if _is_retryable_failure_entry(
+        entry,
+        now_ts=now_ts,
+        failure_retry_hours=failure_retry_hours,
+    ):
+        return CACHE_STATE_FAILED_NO_DATA
+
+    age_hours = _entry_age_hours(entry, now_ts=now_ts)
+    if age_hours is None:
+        return CACHE_STATE_MISSING
+
+    effective_ttl = float(ttl_hours) + stable_ttl_jitter_hours(appid, ttl_jitter_hours)
+    if age_hours < effective_ttl:
+        return CACHE_STATE_FRESH
+    if stale_grace_hours > 0 and age_hours < effective_ttl + float(stale_grace_hours):
+        return CACHE_STATE_STALE_USABLE
+    return CACHE_STATE_PENDING_DEFERRED
+
+
+def build_cache_state_summary(
+    target_ids: list[str] | tuple[str, ...],
+    cached: dict,
+    *,
+    now_ts: float,
+    ttl_hours: float,
+    failure_retry_hours: float = DEFAULT_FAILURE_RETRY_HOURS,
+    stale_grace_hours: float = DEFAULT_STALE_GRACE_HOURS,
+    ttl_jitter_hours: int | float = DEFAULT_TTL_JITTER_HOURS,
+) -> dict:
+    counts = {state: 0 for state in CACHE_STATE_ORDER}
+    for appid in target_ids:
+        state = classify_cache_entry_state(
+            str(appid),
+            cached,
+            now_ts=now_ts,
+            ttl_hours=ttl_hours,
+            failure_retry_hours=failure_retry_hours,
+            stale_grace_hours=stale_grace_hours,
+            ttl_jitter_hours=ttl_jitter_hours,
+        )
+        counts[state] += 1
+    return {
+        "total": len(tuple(target_ids)),
+        "counts": counts,
+        "states": [
+            {
+                "state": state,
+                "label": CACHE_STATE_LABELS[state],
+                "count": counts[state],
+            }
+            for state in CACHE_STATE_ORDER
+            if counts[state] > 0
+        ],
+    }
 
 
 def _is_recent_failed_entry(

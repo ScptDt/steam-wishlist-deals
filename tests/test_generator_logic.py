@@ -32,7 +32,9 @@ from share_payload import (
 )
 from steam_deals_alerts import build_smart_alert_counts as module_build_smart_alert_counts
 from steam_deals_cache_policy import (
+    build_cache_state_summary as module_build_cache_state_summary,
     clear_cache_files as module_clear_cache_files,
+    classify_cache_entry_state as module_classify_cache_entry_state,
     select_global_cache as module_select_global_cache,
     select_scoped_cache as module_select_scoped_cache,
     stable_ttl_jitter_hours as module_stable_ttl_jitter_hours,
@@ -2180,6 +2182,53 @@ class PriceCacheTests(unittest.TestCase):
         self.assertEqual(result, {"_steam_deals_fetch_error": "http_429"})
         self.assertEqual(sleep_calls, [1.5])
 
+    def test_cache_state_summary_derives_readable_states_from_existing_fields(self) -> None:
+        now_ts = 1_700_000_000.0
+        cached = {
+            "fresh": {"_fetched_at": now_ts - 3600},
+            "stale": {"_fetched_at": now_ts - (30 * 3600)},
+            "pending": {
+                "_fetched_at": now_ts - (50 * 3600),
+                "_deferred_reason": "time_budget_deferred",
+            },
+            "cooldown": {"_failed_at": now_ts - 1800, "_failure_reason": "no_price_data"},
+            "failed": {"_failed_at": now_ts - (3 * 3600), "_failure_reason": "no_price_data"},
+            "expired": {"_fetched_at": now_ts - (200 * 3600)},
+            "fallback": {"_failed_at": now_ts - 1800, "_failure_reason": "fallback_budget_deferred"},
+        }
+
+        summary = module_build_cache_state_summary(
+            ["fresh", "stale", "pending", "cooldown", "failed", "expired", "fallback", "missing"],
+            cached,
+            now_ts=now_ts,
+            ttl_hours=24,
+            failure_retry_hours=2,
+            stale_grace_hours=72,
+            ttl_jitter_hours=0,
+        )
+
+        self.assertEqual(summary["counts"]["fresh"], 1)
+        self.assertEqual(summary["counts"]["stale_usable"], 1)
+        self.assertEqual(summary["counts"]["pending_deferred"], 3)
+        self.assertEqual(summary["counts"]["cooldown"], 1)
+        self.assertEqual(summary["counts"]["failed_no_data"], 1)
+        self.assertEqual(summary["counts"]["missing"], 1)
+        self.assertIn(
+            {"state": "pending_deferred", "label": "pending/deferred", "count": 3},
+            summary["states"],
+        )
+        self.assertEqual(
+            module_classify_cache_entry_state(
+                "missing",
+                cached,
+                now_ts=now_ts,
+                ttl_hours=24,
+                failure_retry_hours=2,
+                ttl_jitter_hours=0,
+            ),
+            "missing",
+        )
+
     def test_select_scoped_cache_reports_missing_ids_for_valid_cache(self) -> None:
         decision = module_select_scoped_cache(
             ["10", "20"],
@@ -3745,6 +3794,11 @@ class StopApiContractTests(unittest.TestCase):
                 "deferred_by_time_budget": 2575,
                 "time_budget_exhausted": True,
                 "next_resume_hint": "542050",
+                "cache_state_counts": {"fresh": 300, "pending_deferred": 2575},
+                "cache_state_summary": [
+                    {"state": "fresh", "label": "fresh cache", "count": 300},
+                    {"state": "pending_deferred", "label": "pending/deferred", "count": 2575},
+                ],
             }
         )
 
@@ -3753,6 +3807,11 @@ class StopApiContractTests(unittest.TestCase):
         self.assertEqual(coverage["coverage_label"], "360/2,935")
         self.assertEqual(coverage["deferred_count"], 2575)
         self.assertEqual(coverage["deals_count"], 2)
+        self.assertEqual(coverage["state_counts"]["pending_deferred"], 2575)
+        self.assertIn(
+            {"state": "fresh", "label": "fresh cache", "count": 300},
+            coverage["state_summary"],
+        )
         self.assertIn("Caché parcial", coverage["summary"])
         self.assertIn("pueden no incluir juegos aún no verificados", coverage["detail"])
 

@@ -1470,6 +1470,29 @@ def select_scoped_cache(
     )
 
 
+def build_cache_state_summary(
+    target_ids: list[str] | tuple[str, ...],
+    cached: dict,
+    *,
+    now_ts: float,
+    ttl_hours: float,
+    failure_retry_hours: float = 2.0,
+    stale_grace_hours: float = 0.0,
+    ttl_jitter_hours: int | float = 0,
+) -> dict:
+    if _cache_policy_module is None:
+        raise RuntimeError("Cache policy module is not available")
+    return _cache_policy_module.build_cache_state_summary(
+        target_ids,
+        cached,
+        now_ts=now_ts,
+        ttl_hours=ttl_hours,
+        failure_retry_hours=failure_retry_hours,
+        stale_grace_hours=stale_grace_hours,
+        ttl_jitter_hours=ttl_jitter_hours,
+    )
+
+
 def select_global_cache(
     cached: dict,
     cache_age: float,
@@ -2015,6 +2038,15 @@ def run_price_cache_stage(
             f"next_resume_hint={resume_hint}"
         )
         emit_fn(f"  {_dim(time_budget_msg)}")
+    cache_state_summary = build_cache_state_summary(
+        wishlist_appids,
+        fetched_cache,
+        now_ts=float(current_time_fn()),
+        ttl_hours=ENTRY_REFRESH_TTL_HOURS,
+        failure_retry_hours=PRICE_FAILURE_RETRY_HOURS,
+        stale_grace_hours=PRICE_STALE_GRACE_HOURS,
+        ttl_jitter_hours=PRICE_TTL_JITTER_HOURS,
+    )
     emit_fn(f"  {build_price_cache_completion_message(deals, min_discount, n_fetched)}")
     return {
         "deals": deals,
@@ -2022,6 +2054,8 @@ def run_price_cache_stage(
         "cache_age": cache_age,
         "cache_status": price_cache_policy.status,
         "cache_path": CACHE_FILE,
+        "cache_state_counts": cache_state_summary["counts"],
+        "cache_state_summary": cache_state_summary["states"],
         "refresh_candidate_count": price_fetch_stats["refresh_candidate_count"],
         "missing_count": price_fetch_stats["missing_count"],
         "stale_count": price_fetch_stats["stale_count"],
@@ -3277,6 +3311,23 @@ def build_price_cache_coverage(price_stage: dict | None) -> dict | None:
         "next_resume_hint": str(price_stage.get("next_resume_hint") or ""),
         "deals_count": len(price_stage.get("deals") or []),
     }
+    state_counts = price_stage.get("cache_state_counts")
+    if isinstance(state_counts, dict):
+        coverage["state_counts"] = {
+            str(state): _safe_non_negative_int(count)
+            for state, count in state_counts.items()
+        }
+    state_summary = price_stage.get("cache_state_summary")
+    if isinstance(state_summary, list):
+        coverage["state_summary"] = [
+            {
+                "state": str(item.get("state") or ""),
+                "label": str(item.get("label") or ""),
+                "count": _safe_non_negative_int(item.get("count")),
+            }
+            for item in state_summary
+            if isinstance(item, dict) and _safe_non_negative_int(item.get("count")) > 0
+        ]
     coverage["coverage_label"] = (
         f"{_format_count_label(processed_count)}/{_format_count_label(candidate_total)}"
         if candidate_total
