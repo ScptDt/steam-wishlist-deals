@@ -599,10 +599,21 @@ def _records_by_appid(records: list[dict]) -> dict[str, dict]:
     }
 
 
+ACTIVITY_PLAYTIME_KEYS = ("hours", "hours_played", "playtime_2weeks", "playtime_forever")
+
+
+def _without_playtime_fields(record: dict) -> dict:
+    return {
+        key: value
+        for key, value in record.items()
+        if key not in ACTIVITY_PLAYTIME_KEYS
+    }
+
+
 def _activity_records_with_library_context(activity_records: list[dict], library_records: list[dict]) -> list[dict]:
     library_by_appid = _records_by_appid(library_records)
     return [
-        {**library_by_appid.get(_collection_appid(record), {}), **record}
+        {**_without_playtime_fields(library_by_appid.get(_collection_appid(record), {})), **record}
         for record in activity_records
     ]
 
@@ -639,6 +650,10 @@ def _activity_playtime_hours(source: dict) -> dict[str, float]:
         "explicit_hours": explicit_hours,
         "total_hours": max(forever_hours, explicit_hours, recent_hours),
     }
+
+
+def _has_local_activity_playtime(record: dict) -> bool:
+    return _activity_playtime_hours(record)["total_hours"] > 0
 
 
 def _activity_playtime_item(record: dict, activity_record: dict | None = None) -> dict:
@@ -795,7 +810,10 @@ def build_personalized_recommendations(
     )
     owned_set = _normalize_appid_set(owned)
     excluded_appids = owned_set | _normalize_appid_set(family_appids)
-    activity_terms = _weighted_style_terms(activity_records, activity_weighted=True)
+    activity_terms = _weighted_style_terms(
+        [record for record in activity_records if _has_local_activity_playtime(record)],
+        activity_weighted=True,
+    )
     library_terms = _weighted_style_terms(library_records)
     candidates = [
         candidate for candidate in _merge_collection_sources(deals, top_picks)

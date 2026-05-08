@@ -689,6 +689,7 @@ class PersonalizedRecommendationsTests(unittest.TestCase):
         summary = recommendations["profile"]["activity_summary"]
 
         self.assertEqual([item["appid"] for item in recommendations["items"]], ["10"])
+        self.assertNotIn("encaja con tu actividad reciente", " ".join(recommendations["items"][0]["reasons"]))
         self.assertEqual(summary["records_count"], 1)
         self.assertEqual(summary["tracked_count"], 0)
         self.assertEqual(summary["total_hours"], 0)
