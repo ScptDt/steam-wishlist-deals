@@ -37,6 +37,20 @@ def _html_link(name: str, appid: str) -> str:
     return f'<a href="{STORE_URL.format(appid=appid)}" target="_blank">{_html_esc(name)}</a>'
 
 
+def _compact_social_reasons(item: dict, *, limit: int = 2) -> str:
+    reasons = item.get("social_reasons") if isinstance(item, dict) else None
+    if not isinstance(reasons, list):
+        return ""
+    compact: list[str] = []
+    for reason in reasons:
+        text = str(reason or "").strip()
+        if text and text not in compact:
+            compact.append(text)
+        if len(compact) >= limit:
+            break
+    return " · ".join(compact)
+
+
 def _html_deck_badge(category: int) -> str:
     labels = {
         3: ("Verificado", "verified"),
@@ -1885,10 +1899,19 @@ def generate_html(
         gift_ideas_list = gift_ideas or []
         if gift_ideas_list:
             gi_rows = ""
+            visible_gift_ideas = gift_ideas_list[:20]
+            has_social_reasons = any(
+                _compact_social_reasons(game) for game in visible_gift_ideas
+            )
             for game in gift_ideas_list[:20]:
                 capsule = CAPSULE_URL.format(appid=game["appid"])
-                gi_rows += f'<tr><td>-{game["discount"]}%</td><td>{_html_esc(game["price_final"])}</td><td><div class="game-cell"><img class="game-thumb" src="{capsule}" alt="" loading="lazy" onerror="this.style.display=\'none\'"><span>{_html_link(game["name"], game["appid"])}</span></div></td></tr>'
-            comp_html += f'<h3 style="font-size:.95rem;margin:.8rem 0 .4rem">&#127873; Gift Ideas para {_html_esc(friend)}</h3><div class="table-wrap"><table class="deals-table"><thead><tr><th>%</th><th>Precio</th><th>Juego</th></tr></thead><tbody>{gi_rows}</tbody></table></div>'
+                reason_cell = ""
+                if has_social_reasons:
+                    reason = _compact_social_reasons(game) or "—"
+                    reason_cell = f'<td><span class="gift-reason">{_html_esc(reason)}</span></td>'
+                gi_rows += f'<tr><td>-{game["discount"]}%</td><td>{_html_esc(game["price_final"])}</td><td><div class="game-cell"><img class="game-thumb" src="{capsule}" alt="" loading="lazy" onerror="this.style.display=\'none\'"><span>{_html_link(game["name"], game["appid"])}</span></div></td>{reason_cell}</tr>'
+            reason_header = "<th>Por qu&eacute;</th>" if has_social_reasons else ""
+            comp_html += f'<h3 style="font-size:.95rem;margin:.8rem 0 .4rem">&#127873; Gift Ideas para {_html_esc(friend)}</h3><div class="table-wrap"><table class="deals-table"><thead><tr><th>%</th><th>Precio</th><th>Juego</th>{reason_header}</tr></thead><tbody>{gi_rows}</tbody></table></div>'
         comp_html += "</section>"
         parts.append(comp_html)
 

@@ -31,6 +31,20 @@ def _link(name: str, appid: str) -> str:
     return f"[{_md_esc(name)}]({STORE_URL.format(appid=appid)})"
 
 
+def _compact_social_reasons(item: dict, *, limit: int = 2) -> str:
+    reasons = item.get("social_reasons") if isinstance(item, dict) else None
+    if not isinstance(reasons, list):
+        return ""
+    compact: list[str] = []
+    for reason in reasons:
+        text = str(reason or "").strip()
+        if text and text not in compact:
+            compact.append(text)
+        if len(compact) >= limit:
+            break
+    return " · ".join(compact)
+
+
 def _yaml_quote(text: str) -> str:
     safe = str(text).replace('"', '\\"')
     return f'"{safe}"'
@@ -620,18 +634,36 @@ def generate_md(
                 )
             lines.append("")
         if gift_ideas:
+            visible_gift_ideas = gift_ideas[:20]
+            has_social_reasons = any(
+                _compact_social_reasons(g) for g in visible_gift_ideas
+            )
+            header = (
+                "| % | Precio | Juego | Por qué |"
+                if has_social_reasons
+                else "| % | Precio | Juego |"
+            )
+            separator = (
+                "|---|--------|-------|--------|"
+                if has_social_reasons
+                else "|---|--------|-------|"
+            )
             lines += [
                 f"### 🎁 Gift Ideas para {friend} ({len(gift_ideas)} juegos)",
                 "",
                 f"> Juegos que {friend} quiere, están en oferta, y tú no los tienes.",
                 "",
-                "| % | Precio | Juego |",
-                "|---|--------|-------|",
+                header,
+                separator,
             ]
-            for g in gift_ideas[:20]:
-                lines.append(
+            for g in visible_gift_ideas:
+                row = (
                     f"| -{g['discount']}% | {g['price_final']} | {_link(g['name'], g['appid'])} |"
                 )
+                if has_social_reasons:
+                    reason = _compact_social_reasons(g) or "—"
+                    row += f" {_md_esc(reason)} |"
+                lines.append(row)
         lines += ["", "---", ""]
 
     if active_bundles_data:

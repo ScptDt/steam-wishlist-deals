@@ -6463,6 +6463,40 @@ class RankTopPicksTests(unittest.TestCase):
 
         self.assertNotIn("Recomendaciones personalizadas", md)
 
+    def test_generate_md_renders_gift_idea_social_reasons(self) -> None:
+        md = generate_md(
+            deals=[],
+            backlog_on_sale=[],
+            have_on_sale=[],
+            vanity="gaben",
+            owned={},
+            wishlist_appids=["30"],
+            min_discount=50,
+            genres=[],
+            compare_data={"friend_vanity": "friend", "overlap": {"20"}},
+            gift_ideas=[
+                {
+                    "appid": "30",
+                    "name": "Co-op Gift",
+                    "discount": 60,
+                    "price_final": "$99",
+                    "social_reasons": [
+                        "lo tiene en wishlist",
+                        "se parece a su actividad reciente: Co-op",
+                    ],
+                }
+            ],
+            recommended_collections=[],
+            personalized_recommendations={"items": []},
+        )
+
+        self.assertIn("### 🎁 Gift Ideas para friend", md)
+        self.assertIn("| % | Precio | Juego | Por qué |", md)
+        self.assertIn(
+            "lo tiene en wishlist · se parece a su actividad reciente: Co-op",
+            md,
+        )
+
     def test_generate_md_surfaces_active_promo_context(self) -> None:
         md = generate_md(
             deals=[],
@@ -6758,6 +6792,42 @@ class RankTopPicksTests(unittest.TestCase):
 
         self.assertNotIn("data-personalized-recommendations-section", html)
         self.assertNotIn("Recomendaciones personalizadas", html)
+
+    def test_generate_html_renders_gift_idea_social_reasons(self) -> None:
+        html = generate_html(
+            deals=[],
+            backlog_on_sale=[],
+            have_on_sale=[],
+            vanity="gaben",
+            owned={},
+            wishlist_appids=["30"],
+            min_discount=50,
+            genres=[],
+            compare_data={"friend_vanity": "friend", "overlap": {"20"}},
+            gift_ideas=[
+                {
+                    "appid": "30",
+                    "name": "Co-op Gift",
+                    "discount": 60,
+                    "price_final": "$99",
+                    "social_reasons": [
+                        "lo tiene en wishlist",
+                        "<script>alert(1)</script>",
+                    ],
+                }
+            ],
+            recommended_collections=[],
+            personalized_recommendations={"items": []},
+        )
+
+        self.assertIn("Gift Ideas para friend", html)
+        self.assertIn("Por qu&eacute;", html)
+        self.assertIn('class="gift-reason"', html)
+        self.assertIn(
+            "lo tiene en wishlist · &lt;script&gt;alert(1)&lt;/script&gt;",
+            html,
+        )
+        self.assertNotIn("lo tiene en wishlist · <script>alert(1)</script>", html)
 
     def test_generate_html_escapes_personalized_recommendation_data(self) -> None:
         html = generate_html(
