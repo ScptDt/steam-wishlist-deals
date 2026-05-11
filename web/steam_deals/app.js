@@ -1625,6 +1625,15 @@ function buildWarmCacheContinueFilters() {
   return filters;
 }
 
+function setWarmCacheContinueStatus(btn, message, state = 'progress') {
+  if (!btn) return;
+  const coverageCard = btn.closest('[data-latest-cache-coverage]');
+  const statusEl = coverageCard ? coverageCard.querySelector('[data-latest-cache-continue-status]') : null;
+  if (!statusEl) return;
+  statusEl.textContent = message;
+  statusEl.className = `latest-cache-continue-status latest-cache-continue-status-${state}`;
+}
+
 async function streamSteamDealsRunResponse(resp) {
   const reader = resp.body.getReader();
   const decoder = new TextDecoder();
@@ -3523,21 +3532,42 @@ function renderLatestCacheCoverage(report) {
       <div class="latest-cache-coverage-actions">
         <button type="button" class="file-link file-link-button latest-cache-coverage-action" data-latest-action="continue-warm-cache">Continuar warm-cache</button>
       </div>
+      <div class="latest-cache-continue-status hidden" data-latest-cache-continue-status role="status" aria-live="polite"></div>
     </div>
   `;
 }
 
 async function continueWarmCacheFromLatestReport(btn) {
   const originalLabel = btn ? btn.textContent : 'Continuar warm-cache';
-  if (btn) btn.textContent = 'Continuando...';
-  await runSteamDealsUI({
+  if (btn) {
+    btn.textContent = 'Continuando warm-cache...';
+    btn.setAttribute('aria-busy', 'true');
+    btn.classList.add('is-running');
+  }
+  setWarmCacheContinueStatus(
+    btn,
+    'Continuando con la misma caché: revalidando otra tanda con --warm-cache, sin --no-cache.',
+    'progress'
+  );
+  const completed = await runSteamDealsUI({
     filters: buildWarmCacheContinueFilters(),
     startLabel: 'Continuando warm-cache...',
     introLine: 'Continuando warm-cache con la caché actual (sin --no-cache).',
     conflictMessage: 'Ya hay una ejecucion en curso. Espera a que termine antes de continuar warm-cache.',
     triggerButton: btn,
   });
-  if (btn && btn.isConnected) btn.textContent = originalLabel;
+  if (btn && btn.isConnected) {
+    btn.textContent = originalLabel;
+    btn.removeAttribute('aria-busy');
+    btn.classList.remove('is-running');
+    setWarmCacheContinueStatus(
+      btn,
+      completed
+        ? 'Continuación warm-cache finalizada. Si todavía queda Caché parcial, puedes continuar otra tanda con la misma caché.'
+        : 'No se pudo continuar warm-cache. Revisa el log; si ya hay una ejecución activa, espera a que termine.',
+      completed ? 'ok' : 'warn'
+    );
+  }
 }
 
 function bindLatestReportQuickActions() {

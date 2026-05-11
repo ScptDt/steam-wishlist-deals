@@ -902,6 +902,30 @@ details .details-body .field:last-child {
   border-color: var(--yellow);
   color: var(--bg);
 }
+.latest-cache-coverage-action.is-running {
+  opacity: 0.86;
+}
+.latest-cache-continue-status {
+  margin-top: 0.55rem;
+  padding: 0.55rem 0.65rem;
+  border-radius: 8px;
+  border: 1px solid rgba(240, 178, 50, 0.28);
+  background: rgba(12, 20, 30, 0.18);
+  color: var(--text);
+  font-size: 0.76rem;
+  line-height: 1.45;
+}
+.latest-cache-continue-status-progress {
+  color: var(--yellow);
+}
+.latest-cache-continue-status-ok {
+  border-color: rgba(108, 198, 68, 0.35);
+  color: var(--green);
+}
+.latest-cache-continue-status-warn {
+  border-color: rgba(240, 178, 50, 0.45);
+  color: var(--yellow);
+}
 .latest-report-details {
   margin-top: 0.75rem;
   margin-bottom: 0;

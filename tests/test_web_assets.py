@@ -345,15 +345,27 @@ class WebAssetsTests(unittest.TestCase):
         self.assertIn("coverage.state_summary", app_js)
         self.assertIn("Estados derivados", app_js)
         self.assertIn("data-latest-action=\"continue-warm-cache\"", app_js)
+        self.assertIn("data-latest-cache-continue-status", app_js)
+        self.assertIn("role=\"status\" aria-live=\"polite\"", app_js)
         self.assertIn("function buildWarmCacheContinueFilters", app_js)
+        self.assertIn("function setWarmCacheContinueStatus", app_js)
         self.assertIn("filters.warm_cache = true", app_js)
         self.assertIn("filters.no_cache = false", app_js)
+        self.assertIn("Continuando warm-cache...", app_js)
+        self.assertIn(
+            "Continuando con la misma caché: revalidando otra tanda con --warm-cache, sin --no-cache.",
+            app_js,
+        )
+        self.assertIn("Continuación warm-cache finalizada", app_js)
+        self.assertIn("No se pudo continuar warm-cache", app_js)
         self.assertIn("Continuando warm-cache con la caché actual (sin --no-cache).", app_js)
         self.assertIn("renderLatestCacheCoverage(activeReport)", app_js)
         self.assertIn(".latest-cache-coverage", app_css)
         self.assertIn(".latest-cache-coverage-copy", app_css)
         self.assertIn(".latest-cache-state-summary", app_css)
         self.assertIn(".latest-cache-coverage-action", app_css)
+        self.assertIn(".latest-cache-continue-status", app_css)
+        self.assertIn(".latest-cache-continue-status-progress", app_css)
 
     def test_latest_report_renders_selection_review_ui_inside_details(self) -> None:
         app_js = (ROOT / "web" / "steam_deals" / "app.js").read_text(
