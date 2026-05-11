@@ -4644,6 +4644,60 @@ class SmartAlertsTests(unittest.TestCase):
         self.assertEqual(strict_result["price_up_count"], 0)
         self.assertEqual(candidate_result["price_up_count"], 1)
 
+    def test_smart_alerts_counts_price_rise_from_history_comparison_fixture(self) -> None:
+        current_deals = [
+            {
+                "appid": "1562430",
+                "name": "DREDGE",
+                "price_raw": 29999,
+                "price_final": "Mex$ 299.99",
+                "discount": 0,
+            }
+        ]
+        previous_run = {
+            "date": "2026-05-08",
+            "deals": {
+                "1562430": {
+                    "name": "DREDGE",
+                    "price_final": "Mex$ 131.99",
+                    "price_raw": 13199,
+                    "discount": 60,
+                }
+            },
+        }
+        comparison = compute_deal_comparison(
+            current_deals,
+            previous_run,
+            run_history=[previous_run],
+        )
+
+        price_change = comparison["price_changes"]["1562430"]
+        self.assertEqual(price_change["direction"], "up")
+        self.assertEqual(price_change["change_pct"], 127.28)
+
+        common_alert_inputs = {
+            "deals": current_deals,
+            "historical_lows": {},
+            "active_bundles": {},
+            "comparison": comparison,
+            "local_trends": {},
+            "top_picks": [{"appid": "1562430", "score": 53.9}],
+            "alert_global_margin_pct": 3.0,
+            "alert_rise_pct": 10.0,
+        }
+
+        strict_result = module_build_smart_alert_counts(
+            **common_alert_inputs,
+            alert_score_min=75.0,
+        )
+        candidate_result = module_build_smart_alert_counts(
+            **common_alert_inputs,
+            alert_score_min=50.0,
+        )
+
+        self.assertEqual(strict_result["price_up_count"], 0)
+        self.assertEqual(candidate_result["price_up_count"], 1)
+
     def test_smart_alerts_count_threshold_boundaries(self) -> None:
         result = module_build_smart_alert_counts(
             deals=[
