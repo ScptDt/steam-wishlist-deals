@@ -4564,6 +4564,34 @@ class SmartAlertsTests(unittest.TestCase):
             },
         )
 
+    def test_smart_alerts_medium_score_rise_depends_on_score_minimum(self) -> None:
+        fixture = {
+            "deals": [{"appid": "dredge", "price_raw": 25000}],
+            "historical_lows": {},
+            "active_bundles": {},
+            "comparison": {
+                "price_changes": {
+                    "dredge": {"direction": "up", "change_pct": 127.28},
+                }
+            },
+            "local_trends": {},
+            "top_picks": [{"appid": "dredge", "score": 53.9}],
+            "alert_global_margin_pct": 3.0,
+            "alert_rise_pct": 10.0,
+        }
+
+        strict_result = module_build_smart_alert_counts(
+            **fixture,
+            alert_score_min=75.0,
+        )
+        candidate_result = module_build_smart_alert_counts(
+            **fixture,
+            alert_score_min=50.0,
+        )
+
+        self.assertEqual(strict_result["price_up_count"], 0)
+        self.assertEqual(candidate_result["price_up_count"], 1)
+
     def test_smart_alerts_count_threshold_boundaries(self) -> None:
         result = module_build_smart_alert_counts(
             deals=[
