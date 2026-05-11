@@ -100,6 +100,17 @@ _PROMO_CATEGORY_LABELS = {
     "unknown": "Otra promo",
 }
 
+_WISHLIST_HYGIENE_SIGNAL_LABELS = {
+    "owned": "Ya está en biblioteca",
+    "family": "Biblioteca familiar",
+    "library_match": "Match biblioteca local",
+    "hltb_match": "HLTB local",
+    "other_store": "Otra tienda",
+    "catalog_removed": "Retirado del catálogo",
+    "catalog_missing": "No está en catálogo local",
+    "invalid_appid": "AppID inválido",
+}
+
 _TOP_PICK_RECOMMENDATION_FILTERS = (
     "Comprar ahora",
     "Muy buena oferta",
@@ -110,6 +121,19 @@ _TOP_PICK_RECOMMENDATION_FILTERS = (
 
 def _promo_category_label(category: str) -> str:
     return _PROMO_CATEGORY_LABELS.get(str(category or ""), str(category or "Otra promo"))
+
+
+def _wishlist_hygiene_signal_label(signal: str) -> str:
+    key = str(signal or "").strip()
+    return _WISHLIST_HYGIENE_SIGNAL_LABELS.get(key, key.replace("_", " "))
+
+
+def _wishlist_hygiene_items(payload: dict | None, *, limit: int = 12) -> tuple[list[dict], int, int]:
+    if not isinstance(payload, dict):
+        return [], 0, 0
+    items = [item for item in payload.get("items", []) if isinstance(item, dict)]
+    total = len(items)
+    return items[:limit], total, max(0, total - limit)
 
 
 def _build_promo_context_html(active_promo_context: dict | None) -> str:
@@ -632,6 +656,76 @@ def _html_personalized_recommendations(payload: dict | None) -> str:
 </section>'''
 
 
+def _html_wishlist_hygiene_name(item: dict) -> str:
+    appid = str(item.get("appid") or item.get("steam_appid") or "").strip()
+    name = str(
+        item.get("name")
+        or item.get("steam_name")
+        or (f"App {appid}" if appid else "Entrada sin appid")
+    ).strip()
+    return _html_link(name, appid) if appid.isdigit() else _html_esc(name)
+
+
+def _html_wishlist_hygiene_signals(item: dict) -> str:
+    signals = item.get("signals") if isinstance(item, dict) else []
+    labels = [
+        _wishlist_hygiene_signal_label(signal)
+        for signal in signals
+        if str(signal or "").strip()
+    ][:4]
+    if not labels:
+        labels = ["revisar"]
+    return "".join(
+        f'<span class="wishlist-hygiene-signal">{_html_esc(label)}</span>'
+        for label in labels
+    )
+
+
+def _html_wishlist_hygiene_reasons(item: dict) -> str:
+    reasons = item.get("reasons") if isinstance(item, dict) else []
+    compact = [str(reason or "").strip() for reason in reasons if str(reason or "").strip()]
+    return _html_esc(" · ".join(compact[:2]) or "revisar manualmente antes de limpiar")
+
+
+def _html_wishlist_hygiene_item(item: dict) -> str:
+    appid = str(item.get("appid") or item.get("steam_appid") or "").strip()
+    data_attr = f' data-wishlist-hygiene-item="{_html_esc(appid)}"' if appid.isdigit() else ""
+    action_label = "Solo revisión" if item.get("action") == "review" else "Revisar"
+    return f'''<li class="wishlist-hygiene-item"{data_attr}>
+  <div class="wishlist-hygiene-main">
+    <strong>{_html_wishlist_hygiene_name(item)}</strong>
+    <div class="wishlist-hygiene-signals">{_html_wishlist_hygiene_signals(item)}</div>
+    <div class="wishlist-hygiene-reasons">{_html_wishlist_hygiene_reasons(item)}</div>
+  </div>
+  <span class="wishlist-hygiene-badge">{_html_esc(action_label)}</span>
+</li>'''
+
+
+def _html_wishlist_hygiene(payload: dict | None) -> str:
+    items, total_items, hidden_count = _wishlist_hygiene_items(payload)
+    if not items:
+        return ""
+    summary = payload.get("summary") if isinstance(payload, dict) else {}
+    wishlist_total = summary.get("total_wishlist_items") if isinstance(summary, dict) else None
+    total_hint = f" de {int(wishlist_total):,} en wishlist" if isinstance(wishlist_total, int) else ""
+    more_html = (
+        f'<div class="wishlist-hygiene-more">{hidden_count:,} más en el payload completo</div>'
+        if hidden_count
+        else ""
+    )
+    return f'''<section class="wishlist-hygiene" data-wishlist-hygiene-section>
+  <div class="wishlist-hygiene-head">
+    <div>
+      <h2>Revisar wishlist</h2>
+      <p class="section-desc"><strong>{total_items:,} sugerencias{_html_esc(total_hint)}</strong>. Sugerencias locales advisory-only: no borra ni auto-excluye juegos, y no cambia el score.</p>
+    </div>
+    <span class="wishlist-hygiene-head-badge">Solo revisión</span>
+  </div>
+  <ol class="wishlist-hygiene-list">{"".join(_html_wishlist_hygiene_item(item) for item in items)}</ol>
+  {more_html}
+</section>'''
+
+
 def _html_budget_pick_context(pick: dict) -> str:
     recommendation = _html_esc(pick.get("recommendation", ""))
     reasons = _html_esc(" · ".join(pick.get("score_reasons", [])))
@@ -1006,6 +1100,19 @@ a.pick-card:hover { border-color: var(--accent-blue); transform: translateY(-2px
 .personalized-item-meta span:first-child { color: var(--accent-green); font-weight: 700; }
 .personalized-item-main ul { margin-left: 1rem; color: var(--text-secondary); font-size: .75rem; line-height: 1.35; }
 @media (max-width: 767px) { .personalized-item-card { grid-template-columns: 1fr; } }
+.wishlist-hygiene { margin: 0 0 1.5rem; padding: 1rem; border: 1px solid rgba(240,178,50,.28); border-radius: 10px; background: linear-gradient(135deg, rgba(240,178,50,.08), rgba(12,20,30,.25)); }
+.wishlist-hygiene-head { display: flex; justify-content: space-between; gap: 1rem; align-items: flex-start; }
+.wishlist-hygiene h2 { font-size: 1.2rem; margin-bottom: .3rem; }
+.wishlist-hygiene-head-badge, .wishlist-hygiene-badge { white-space: nowrap; border: 1px solid rgba(240,178,50,.4); border-radius: 999px; color: var(--accent-yellow); background: rgba(12,20,30,.32); padding: .16rem .55rem; font-size: .74rem; font-weight: 700; }
+.wishlist-hygiene-list { list-style: none; display: grid; grid-template-columns: repeat(auto-fit, minmax(260px, 1fr)); gap: .7rem; }
+.wishlist-hygiene-item { display: flex; justify-content: space-between; gap: .75rem; background: var(--bg-card); border: 1px solid rgba(240,178,50,.22); border-radius: 8px; padding: .75rem; }
+.wishlist-hygiene-main { min-width: 0; }
+.wishlist-hygiene-main strong { display: block; font-size: .86rem; line-height: 1.3; margin-bottom: .35rem; }
+.wishlist-hygiene-signals { display: flex; flex-wrap: wrap; gap: .25rem; margin-bottom: .35rem; }
+.wishlist-hygiene-signal { border-radius: 999px; color: #000; background: var(--accent-yellow); padding: .1rem .45rem; font-size: .7rem; font-weight: 700; }
+.wishlist-hygiene-reasons, .wishlist-hygiene-more { color: var(--text-secondary); font-size: .75rem; line-height: 1.4; }
+.wishlist-hygiene-more { margin-top: .6rem; }
+@media (max-width: 767px) { .wishlist-hygiene-head, .wishlist-hygiene-item { flex-direction: column; } .wishlist-hygiene-head-badge, .wishlist-hygiene-badge { align-self: flex-start; } }
 .share-btn-mini { position: absolute; top: .4rem; right: .4rem; background: var(--bg-card); border: 1px solid var(--border); border-radius: 4px; padding: .3rem .5rem; cursor: pointer; font-size: .9rem; opacity: 0.6; transition: opacity .2s; }
 .share-btn-mini:hover { opacity: 1; background: var(--accent-blue); }
 .share-modal { display: none; position: fixed; inset: 0; background: rgba(0,0,0,0.7); z-index: 1000; align-items: center; justify-content: center; }
@@ -1645,6 +1752,7 @@ def generate_html(
     gift_ideas: list[dict] | None = None,
     recommended_collections: list[dict] | None = None,
     personalized_recommendations: dict | None = None,
+    wishlist_hygiene: dict | None = None,
     local_trends: dict[str, dict] | None = None,
     price_history: dict | None = None,
     profile_display_name: str | None = None,
@@ -1674,6 +1782,7 @@ def generate_html(
     top_picks = top_picks or []
     recommended_collections = recommended_collections or []
     personalized_recommendations = personalized_recommendations or {"items": []}
+    wishlist_hygiene = wishlist_hygiene or {"items": []}
     achievements_data = achievements_data or {}
     watchlist_alerts = watchlist_alerts or []
     price_history_games = (price_history or {}).get("games", {})
@@ -1816,6 +1925,7 @@ def generate_html(
 
     parts.append(_html_recommended_collections(recommended_collections))
     parts.append(_html_personalized_recommendations(personalized_recommendations))
+    parts.append(_html_wishlist_hygiene(wishlist_hygiene))
 
     if watchlist_alerts:
         wl_rows = []

@@ -2849,6 +2849,7 @@ def generate_md(
     gift_ideas: list[dict] | None = None,
     recommended_collections: list[dict] | None = None,
     personalized_recommendations: dict | None = None,
+    wishlist_hygiene=None,
     activity_games=None,
     library_games=None,
     liked_appids=None,
@@ -2877,6 +2878,14 @@ def generate_md(
             liked_appids=liked_appids,
             preference_relations=preference_relations,
             hltb_hours=hltb_hours,
+        )
+    if wishlist_hygiene is None:
+        wishlist_hygiene = build_wishlist_hygiene_signals(
+            wishlist_appids,
+            owned=owned,
+            family_appids=family_appids,
+            library_games=library_games if library_games is not None else have_on_sale,
+            hltb_records=hltb_hours,
         )
     return _generate_md_renderer(
         deals,
@@ -2911,6 +2920,7 @@ def generate_md(
         gift_ideas=gift_ideas,
         recommended_collections=recommended_collections,
         personalized_recommendations=personalized_recommendations,
+        wishlist_hygiene=wishlist_hygiene,
         include_frontmatter=include_frontmatter,
         active_promo_context=active_promo_context,
         group_by_tier=group_by_tier,
@@ -2970,6 +2980,7 @@ def generate_html(
     active_promo_context: dict | None = None,
     recommended_collections: list[dict] | None = None,
     personalized_recommendations: dict | None = None,
+    wishlist_hygiene=None,
     activity_games=None,
     library_games=None,
     liked_appids=None,
@@ -2994,6 +3005,14 @@ def generate_html(
             liked_appids=liked_appids,
             preference_relations=preference_relations,
             hltb_hours=hltb_hours,
+        )
+    if wishlist_hygiene is None:
+        wishlist_hygiene = build_wishlist_hygiene_signals(
+            wishlist_appids,
+            owned=owned,
+            family_appids=family_appids,
+            library_games=library_games if library_games is not None else have_on_sale,
+            hltb_records=hltb_hours,
         )
     if _generate_html_renderer is not None:
         return _generate_html_renderer(
@@ -3024,6 +3043,7 @@ def generate_html(
             gift_ideas=gift_ideas,
             recommended_collections=recommended_collections,
             personalized_recommendations=personalized_recommendations,
+            wishlist_hygiene=wishlist_hygiene,
             local_trends=local_trends,
             price_history=price_history,
             profile_display_name=profile_display_name,
@@ -3061,6 +3081,7 @@ def generate_html(
         gift_ideas=gift_ideas,
         recommended_collections=recommended_collections,
         personalized_recommendations=personalized_recommendations,
+        wishlist_hygiene=wishlist_hygiene,
         local_trends=local_trends,
         price_history=price_history,
         profile_display_name=profile_display_name,
@@ -3845,6 +3866,13 @@ def main():
         family_appids=family_renderer_kwargs.get("family_appids"),
         hltb_hours=hltb_hours,
     )
+    wishlist_hygiene = build_wishlist_hygiene_signals(
+        wishlist_appids,
+        owned=owned,
+        family_appids=family_renderer_kwargs.get("family_appids"),
+        library_games=have_on_sale,
+        hltb_records=hltb_hours,
+    )
 
     # Generar MD
     step("Generando Markdown...")
@@ -3880,6 +3908,7 @@ def main():
         gift_ideas=gift_ideas,
         recommended_collections=recommended_collections,
         personalized_recommendations=personalized_recommendations,
+        wishlist_hygiene=wishlist_hygiene,
         family_appids=family_renderer_kwargs.get("family_appids"),
         library_games=have_on_sale,
         hltb_hours=hltb_hours,
@@ -3916,6 +3945,7 @@ def main():
         gift_ideas=gift_ideas,
         recommended_collections=recommended_collections,
         personalized_recommendations=personalized_recommendations,
+        wishlist_hygiene=wishlist_hygiene,
         local_trends=local_trends,
         price_history=price_history,
         profile_display_name=profile_display_name,
@@ -3973,6 +4003,7 @@ def main():
         gift_ideas=gift_ideas,
         recommended_collections=recommended_collections,
         personalized_recommendations=personalized_recommendations,
+        wishlist_hygiene=wishlist_hygiene,
         library_games=have_on_sale,
         hltb_hours=hltb_hours,
         cache_coverage=cache_coverage,

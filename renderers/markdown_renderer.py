@@ -62,9 +62,85 @@ _PROMO_CATEGORY_LABELS = {
     "unknown": "Otra promo",
 }
 
+_WISHLIST_HYGIENE_SIGNAL_LABELS = {
+    "owned": "Ya está en biblioteca",
+    "family": "Biblioteca familiar",
+    "library_match": "Match biblioteca local",
+    "hltb_match": "HLTB local",
+    "other_store": "Otra tienda",
+    "catalog_removed": "Retirado del catálogo",
+    "catalog_missing": "No está en catálogo local",
+    "invalid_appid": "AppID inválido",
+}
+
 
 def _promo_category_label(category: str) -> str:
     return _PROMO_CATEGORY_LABELS.get(str(category or ""), str(category or "Otra promo"))
+
+
+def _wishlist_hygiene_signal_label(signal: str) -> str:
+    key = str(signal or "").strip()
+    return _WISHLIST_HYGIENE_SIGNAL_LABELS.get(key, key.replace("_", " "))
+
+
+def _wishlist_hygiene_items(payload: dict | None, *, limit: int = 12) -> tuple[list[dict], int, int]:
+    if not isinstance(payload, dict):
+        return [], 0, 0
+    items = [item for item in payload.get("items", []) if isinstance(item, dict)]
+    total = len(items)
+    return items[:limit], total, max(0, total - limit)
+
+
+def _wishlist_hygiene_game_label(item: dict) -> str:
+    appid = str(item.get("appid") or item.get("steam_appid") or "").strip()
+    name = str(
+        item.get("name")
+        or item.get("steam_name")
+        or (f"App {appid}" if appid else "Entrada sin appid")
+    ).strip()
+    return _link(name, appid) if appid.isdigit() else _md_esc(name)
+
+
+def _wishlist_hygiene_signal_text(item: dict) -> str:
+    signals = item.get("signals") if isinstance(item, dict) else []
+    labels = [
+        _wishlist_hygiene_signal_label(signal)
+        for signal in signals
+        if str(signal or "").strip()
+    ]
+    return _md_esc(" · ".join(labels[:4]) or "revisar")
+
+
+def _wishlist_hygiene_reason_text(item: dict) -> str:
+    reasons = item.get("reasons") if isinstance(item, dict) else []
+    compact = [str(reason or "").strip() for reason in reasons if str(reason or "").strip()]
+    return _md_esc(" · ".join(compact[:2]) or "revisar manualmente antes de limpiar")
+
+
+def _build_wishlist_hygiene_lines(payload: dict | None) -> list[str]:
+    items, total_items, hidden_count = _wishlist_hygiene_items(payload)
+    if not items:
+        return []
+    summary = payload.get("summary") if isinstance(payload, dict) else {}
+    wishlist_total = summary.get("total_wishlist_items") if isinstance(summary, dict) else None
+    total_hint = f" de {int(wishlist_total):,} en wishlist" if isinstance(wishlist_total, int) else ""
+    lines = [
+        "## 🧹 Revisar wishlist",
+        "",
+        f"> **{total_items:,} sugerencias{total_hint}**. Sugerencias locales **advisory-only**: no borra, no auto-excluye juegos y no cambia el score.",
+        "",
+        "| Juego | Señales | Motivos | Acción |",
+        "|-------|---------|---------|--------|",
+    ]
+    for item in items:
+        action = "Solo revisión" if item.get("action") == "review" else "Revisar"
+        lines.append(
+            f"| {_wishlist_hygiene_game_label(item)} | {_wishlist_hygiene_signal_text(item)} | {_wishlist_hygiene_reason_text(item)} | {_md_esc(action)} |"
+        )
+    if hidden_count:
+        lines += ["", f"> {hidden_count:,} más en el payload completo."]
+    lines += ["", "---", ""]
+    return lines
 
 
 def _is_useful_local_trend(trend: dict | None) -> bool:
@@ -429,6 +505,7 @@ def generate_md(
     gift_ideas: list[dict] | None = None,
     recommended_collections: list[dict] | None = None,
     personalized_recommendations: dict | None = None,
+    wishlist_hygiene: dict | None = None,
     include_frontmatter: bool = False,
     active_promo_context: dict | None = None,
     *,
@@ -460,6 +537,7 @@ def generate_md(
     top_picks = top_picks or []
     recommended_collections = recommended_collections or []
     personalized_recommendations = personalized_recommendations or {"items": []}
+    wishlist_hygiene = wishlist_hygiene or {"items": []}
     watchlist_alerts = watchlist_alerts or []
     comp = comparison or {}
     owned_and_wishlisted = sorted(
@@ -569,6 +647,7 @@ def generate_md(
 
     lines += _build_recommended_collection_lines(recommended_collections)
     lines += _build_personalized_recommendation_lines(personalized_recommendations)
+    lines += _build_wishlist_hygiene_lines(wishlist_hygiene)
 
     if watchlist_alerts:
         lines += [

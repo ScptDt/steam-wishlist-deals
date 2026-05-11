@@ -4263,6 +4263,87 @@ class StopApiContractTests(unittest.TestCase):
             {"source_signals": [], "items": [], "summary": {"advisory_only": True}},
         )
 
+    def test_generate_md_builds_wishlist_hygiene_advisory_section(self) -> None:
+        md = generate_md(
+            deals=[],
+            backlog_on_sale=[],
+            have_on_sale=[],
+            vanity="gaben",
+            owned={"20": "Owned Local"},
+            wishlist_appids=["20"],
+            min_discount=50,
+            genres=[],
+        )
+
+        self.assertIn("## 🧹 Revisar wishlist", md)
+        self.assertIn("Sugerencias locales **advisory-only**", md)
+        self.assertIn("no borra, no auto-excluye juegos y no cambia el score", md)
+        self.assertIn("[App 20](https://store.steampowered.com/app/20/)", md)
+        self.assertIn("Ya está en biblioteca", md)
+        self.assertIn("Solo revisión", md)
+
+    def test_generate_html_renders_wishlist_hygiene_escaped_section(self) -> None:
+        html = generate_html(
+            deals=[],
+            backlog_on_sale=[],
+            have_on_sale=[],
+            vanity="gaben",
+            owned={},
+            wishlist_appids=["10"],
+            min_discount=50,
+            genres=[],
+            wishlist_hygiene={
+                "items": [
+                    {
+                        "appid": "10",
+                        "name": "Owned <Game> & Co",
+                        "signals": ["owned", "library_match"],
+                        "reasons": ["ya <owned> & local", "revisar | manual"],
+                        "action": "review",
+                        "advisory_only": True,
+                    }
+                ],
+                "summary": {"total_wishlist_items": 1, "review_items_count": 1, "advisory_only": True},
+            },
+        )
+
+        self.assertIn('data-wishlist-hygiene-section', html)
+        self.assertIn("Sugerencias locales advisory-only", html)
+        self.assertIn("no borra ni auto-excluye juegos", html)
+        self.assertIn("Owned &lt;Game&gt; &amp; Co", html)
+        self.assertIn("ya &lt;owned&gt; &amp; local", html)
+        self.assertIn("Solo revisión", html)
+        self.assertNotIn("Owned <Game> & Co", html)
+
+    def test_generate_reports_hide_empty_wishlist_hygiene(self) -> None:
+        empty_hygiene = {"source_signals": [], "items": [], "summary": {"advisory_only": True}}
+
+        md = generate_md(
+            deals=[],
+            backlog_on_sale=[],
+            have_on_sale=[],
+            vanity="gaben",
+            owned={},
+            wishlist_appids=["10"],
+            min_discount=50,
+            genres=[],
+            wishlist_hygiene=empty_hygiene,
+        )
+        html = generate_html(
+            deals=[],
+            backlog_on_sale=[],
+            have_on_sale=[],
+            vanity="gaben",
+            owned={},
+            wishlist_appids=["10"],
+            min_discount=50,
+            genres=[],
+            wishlist_hygiene=empty_hygiene,
+        )
+
+        self.assertNotIn("## 🧹 Revisar wishlist", md)
+        self.assertNotIn('data-wishlist-hygiene-section', html)
+
     def test_generate_json_respects_explicit_empty_personalized_recommendations(self) -> None:
         payload = generate_json(
             deals=[{"appid": "10", "name": "Portal 2", "score": 95.4}],
