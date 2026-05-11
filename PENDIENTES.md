@@ -23,7 +23,7 @@ Para cada Track, Quick Win o tarea no trivial —incluyendo trabajo iniciado por
 
 - Objetivo: llevar Steam Tools a una experiencia ultra user friendly y preparada para ejecutable desktop.
 - Fase actual: P2 en validacion cross-platform (cierre manual pendiente por host nativo).
-- Item activo: Alertas inteligentes v2 queda abierto solo por calibración real/larga: criterios offline/guardrails determinísticos ya documentados y sin recalibrar thresholds ni cerrar el track sin corrida real/larga. `Recomendaciones sociales y regalos` queda cerrado base/MVP y P2 desktop sigue condicionado a host macOS nativo.
+- Item activo: cierre docs-only de investigación de promos oficiales queda registrado: Steam no expone una señal pública/oficial estable por app para nombrar/tipar promos de marketing; usar campos de descuento/precio como señal confiable y mantener el clasificador actual como contexto heurístico. `Recomendaciones sociales y regalos` queda cerrado base/MVP y P2 desktop sigue condicionado a host macOS nativo.
 - Benchmarks operativos: usar `https://steamcommunity.com/id/joseluis12351` como wishlist pequeña para smokes/Share/outputs rápidos, y `BG00G` como wishlist grande para performance cold-vs-hot, stress de outputs, Shuffle con variedad y desktop/binario largo. No usar `BG00G` en quick wins si implica cold-cache largo salvo que la medición performance sea el objetivo explícito.
 
 ## Registro compacto de riesgos/decisiones activas
@@ -457,7 +457,7 @@ La bitácora cronológica detallada, evidencia operativa y entradas antiguas viv
 
 ### Alertas inteligentes
 
-- [ ] [Track] Cerrar Alertas inteligentes v2. [Estado: base implementada y conteo extraído a helper puro; criterios offline cerrados para mínimo histórico global, bundles activos con título válido, nueva mejor oferta local, subidas vs run anterior, `--alert-score-min`, límites exactos de umbral y entradas malformadas/strings numéricos seguros. Falta: calibrar umbrales con corrida real/larga antes de cerrar el track o cambiar defaults. Evidencia: alertas útiles en run real pendiente; guardrails determinísticos OK sin red real ni reportes generados.]
+- [ ] [Track] Cerrar Alertas inteligentes v2. [Estado: base implementada y conteo extraído a helper puro con fixtures para mínimo histórico global, bundles activos, nueva mejor oferta local, subidas vs run anterior, `--alert-score-min`, límites de umbral y datos malformados/strings numéricos. Falta: calibrar umbrales con corrida real/larga y cerrar criterios operativos. Evidencia: alertas útiles en run real y criterios claros; guardrails determinísticos OK sin red real ni reportes generados.]
 - [x] [Quick Win] Reforzar guardrails determinísticos de conteo de alertas inteligentes. [Cerrado 2026-05-08: `build_smart_alert_counts` ignora datos malformados sin romper, acepta strings numéricos seguros y cuenta límites exactos de `alert_score_min`, `alert_rise_pct` y margen global de mínimo histórico; bundles activos solo cuentan juegos con títulos válidos. Autor/ejecutor: OpenCoder. Evidencia: `.venv/bin/python -m py_compile app/steam_deals_alerts.py tests/test_generator_logic.py`, `.venv/bin/python -m unittest tests.test_generator_logic.SmartAlertsTests` (5 OK) y `git diff --check` OK; sin red real, `BG00G`, reportes generados, builds, UI/renderers ni calibración real de umbrales.]
 
 ### Expansion de Datos
