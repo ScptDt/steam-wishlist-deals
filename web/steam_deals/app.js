@@ -3026,7 +3026,6 @@ function renderLatestPersonalizedRecommendations(report, files = null) {
   `;
 }
 
-
 function latestGiftIdeaReasons(item) {
   const source = item && typeof item === 'object' ? item : {};
   const reasons = Array.isArray(source.social_reasons)
@@ -3080,6 +3079,73 @@ function renderLatestGiftIdeas(report) {
         ${selectedItems.map((item, index) => renderLatestGiftIdeaItem(item, index + 1)).join('')}
       </ol>
       ${hiddenCount ? `<div class="latest-gift-more">${escapeHtml(hiddenCount)} más en el reporte completo</div>` : ''}
+    </div>
+  `;
+}
+
+
+function latestWishlistHygieneSignalLabel(signal) {
+  const labels = {
+    owned: 'Ya está en biblioteca',
+    family: 'Biblioteca familiar',
+    library_match: 'Match biblioteca local',
+    hltb_match: 'HLTB local',
+    other_store: 'Otra tienda',
+    catalog_removed: 'Retirado del catálogo',
+    catalog_missing: 'No está en catálogo local',
+    invalid_appid: 'AppID inválido',
+  };
+  const key = String(signal || '').trim();
+  return labels[key] || key.replace(/_/g, ' ');
+}
+
+function renderLatestWishlistHygieneItem(item) {
+  const source = item && typeof item === 'object' ? item : {};
+  const appid = String(source.appid || source.steam_appid || '').trim();
+  const safeAppid = /^\d+$/.test(appid) ? appid : '';
+  const name = source.name || source.steam_name || (appid ? `App ${appid}` : 'Entrada sin appid');
+  const reasons = Array.isArray(source.reasons)
+    ? source.reasons.map(reason => String(reason || '').trim()).filter(Boolean).slice(0, 2)
+    : [];
+  const signals = Array.isArray(source.signals)
+    ? source.signals.map(latestWishlistHygieneSignalLabel).filter(Boolean).slice(0, 3)
+    : [];
+  const nameHtml = safeAppid
+    ? `<a href="https://store.steampowered.com/app/${escapeHtml(safeAppid)}/" target="_blank" rel="noopener noreferrer">${escapeHtml(name)}</a>`
+    : `<span>${escapeHtml(name)}</span>`;
+  return `
+    <li class="latest-wishlist-item"${safeAppid ? ` data-latest-wishlist-hygiene-item="${escapeHtml(safeAppid)}"` : ''}>
+      <div class="latest-wishlist-item-main">
+        <strong>${nameHtml}</strong>
+        ${signals.length ? `<span class="latest-wishlist-item-signals">${signals.map(signal => `<em>${escapeHtml(signal)}</em>`).join('')}</span>` : ''}
+        <span class="latest-wishlist-item-reasons">${escapeHtml((reasons.length ? reasons : ['revisar manualmente antes de limpiar']).join(' · '))}</span>
+      </div>
+      <span class="latest-wishlist-item-badge">Solo revisión</span>
+    </li>
+  `;
+}
+
+function renderLatestWishlistHygiene(report) {
+  const payload = report && typeof report === 'object' ? (report.wishlist_hygiene || null) : null;
+  const items = Array.isArray(payload && payload.items)
+    ? payload.items.filter(item => item && typeof item === 'object')
+    : [];
+  if (!items.length) return '';
+  const selectedItems = items.slice(0, 3);
+  const hiddenCount = Math.max(0, items.length - selectedItems.length);
+  return `
+    <div class="latest-wishlist-section" data-latest-wishlist-hygiene>
+      <div class="latest-wishlist-head">
+        <div>
+          <div class="latest-wishlist-title">Revisar wishlist</div>
+          <div class="latest-wishlist-subtitle">Sugerencias locales advisory-only: No borra ni auto-excluye juegos, y no cambia el score.</div>
+        </div>
+        <span class="latest-wishlist-badge">Solo revisión</span>
+      </div>
+      <ol class="latest-wishlist-list">
+        ${selectedItems.map(renderLatestWishlistHygieneItem).join('')}
+      </ol>
+      ${hiddenCount ? `<div class="latest-wishlist-more">${escapeHtml(hiddenCount)} más en el JSON completo</div>` : ''}
     </div>
   `;
 }
@@ -3471,6 +3537,7 @@ function renderLatestReportDetails(report, files = null) {
     renderLatestRecommendedCollections(report),
     renderLatestPersonalizedRecommendations(report, files),
     renderLatestGiftIdeas(report),
+    renderLatestWishlistHygiene(report),
     renderLatestSelectionReviewPanel(report),
     renderLatestShareTopPicks(report),
     renderLatestBudgetPanel(report),
@@ -3480,7 +3547,7 @@ function renderLatestReportDetails(report, files = null) {
     <details class="latest-report-details">
       <summary>
         <span>Acciones y recomendaciones del último reporte</span>
-        <span class="latest-report-details-hint">HTML, Share, JSON, carpeta, regalos, selección y destacados</span>
+        <span class="latest-report-details-hint">HTML, Share, JSON, carpeta, wishlist, regalos y selección</span>
       </summary>
       <div class="latest-report-details-body">${body}</div>
     </details>

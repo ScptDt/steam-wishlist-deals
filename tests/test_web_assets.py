@@ -74,7 +74,7 @@ class WebAssetsTests(unittest.TestCase):
         self.assertIn("renderLatestReportDetails", app_js)
         self.assertIn('<details class="latest-report-details">', app_js)
         self.assertIn("Acciones y recomendaciones del último reporte", app_js)
-        self.assertIn("HTML, Share, JSON, carpeta, regalos, selección y destacados", app_js)
+        self.assertIn("HTML, Share, JSON, carpeta, wishlist, regalos y selección", app_js)
         self.assertIn("Acciones del último reporte", app_js)
         self.assertIn("Siguiente mejor paso", app_js)
         self.assertIn("Opciones técnicas del último reporte", app_js)
@@ -292,6 +292,33 @@ class WebAssetsTests(unittest.TestCase):
         self.assertIn(".latest-gift-list", app_css)
         self.assertIn(".latest-gift-item", app_css)
         self.assertIn(".latest-gift-item-reasons", app_css)
+
+    def test_latest_report_renders_wishlist_hygiene_inside_details(self) -> None:
+        app_js = (ROOT / "web" / "steam_deals" / "app.js").read_text(
+            encoding="utf-8"
+        )
+        app_css = (ROOT / "web" / "steam_deals" / "app.css").read_text(
+            encoding="utf-8"
+        )
+
+        self.assertIn("function renderLatestWishlistHygiene", app_js)
+        self.assertIn("report.wishlist_hygiene", app_js)
+        self.assertIn("data-latest-wishlist-hygiene", app_js)
+        self.assertIn("data-latest-wishlist-hygiene-item", app_js)
+        self.assertIn("function latestWishlistHygieneSignalLabel", app_js)
+        self.assertIn("items.slice(0, 3)", app_js)
+        self.assertIn("Revisar wishlist", app_js)
+        self.assertIn("Solo revisión", app_js)
+        self.assertIn("No borra ni auto-excluye", app_js)
+        self.assertIn("más en el JSON completo", app_js)
+        self.assertIn("const safeAppid = /^\\d+$/.test(appid) ? appid : '';", app_js)
+        self.assertIn("https://store.steampowered.com/app/${escapeHtml(safeAppid)}/", app_js)
+        self.assertIn("renderLatestWishlistHygiene(report)", app_js)
+        self.assertIn("renderLatestReportDetails(activeReport, files)", app_js)
+        self.assertIn(".latest-wishlist-section", app_css)
+        self.assertIn(".latest-wishlist-list", app_css)
+        self.assertIn(".latest-wishlist-item", app_css)
+        self.assertIn(".latest-wishlist-item-signals", app_css)
 
     def test_latest_report_surfaces_active_promo_context_inside_details(self) -> None:
         app_js = (ROOT / "web" / "steam_deals" / "app.js").read_text(
