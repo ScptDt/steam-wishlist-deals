@@ -56,6 +56,7 @@ def generate_json(
     gift_ideas: list[dict] | None = None,
     recommended_collections: list[dict] | None = None,
     personalized_recommendations: dict | None = None,
+    wishlist_hygiene: dict | None = None,
     cache_coverage: dict | None = None,
     profile_display_name: str | None = None,
     active_promo_context: dict | None = None,
@@ -79,6 +80,7 @@ def generate_json(
     gift_ideas = gift_ideas or []
     recommended_collections = recommended_collections or []
     personalized_recommendations = personalized_recommendations or {"items": []}
+    wishlist_hygiene = wishlist_hygiene or {"items": [], "summary": {}}
 
     payload = {
         "meta": {
@@ -107,11 +109,13 @@ def generate_json(
             ),
             "watchlist_alerts_count": len(watchlist_alerts),
             "gift_ideas_count": len(gift_ideas),
+            "wishlist_hygiene_count": len(wishlist_hygiene.get("items", [])),
         },
         "comparison": _json_safe(comparison),
         "top_picks": _json_safe(top_picks),
         "recommended_collections": _json_safe(recommended_collections),
         "personalized_recommendations": _json_safe(personalized_recommendations),
+        "wishlist_hygiene": _json_safe(wishlist_hygiene),
         "watchlist_alerts": _json_safe(watchlist_alerts),
         "budget_result": _json_safe(budget_result),
         "compare_data": _json_safe(compare_data),

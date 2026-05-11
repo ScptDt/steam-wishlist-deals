@@ -3226,6 +3226,7 @@ def generate_json(
     gift_ideas=None,
     recommended_collections=None,
     personalized_recommendations=None,
+    wishlist_hygiene=None,
     activity_games=None,
     library_games=None,
     liked_appids=None,
@@ -3255,6 +3256,14 @@ def generate_json(
             liked_appids=liked_appids,
             preference_relations=preference_relations,
             hltb_hours=hltb_hours,
+        )
+    if wishlist_hygiene is None:
+        wishlist_hygiene = build_wishlist_hygiene_signals(
+            wishlist_appids,
+            owned=owned,
+            family_appids=family_appids,
+            library_games=library_games if library_games is not None else have_on_sale,
+            hltb_records=hltb_hours,
         )
     return _generate_json_renderer(
         deals,
@@ -3289,6 +3298,7 @@ def generate_json(
         gift_ideas=gift_ideas,
         recommended_collections=recommended_collections,
         personalized_recommendations=personalized_recommendations,
+        wishlist_hygiene=wishlist_hygiene,
         cache_coverage=cache_coverage,
         profile_display_name=profile_display_name,
         active_promo_context=active_promo_context,

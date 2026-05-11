@@ -4215,6 +4215,54 @@ class StopApiContractTests(unittest.TestCase):
         self.assertEqual(personalized["profile"]["activity_summary"]["tracked_count"], 1)
         self.assertEqual(personalized["profile"]["excluded_appids_count"], 1)
 
+    def test_generate_json_serializes_wishlist_hygiene_from_local_signals(self) -> None:
+        payload = generate_json(
+            deals=[{"appid": "10", "name": "Wishlist Deal", "score": 70}],
+            backlog_on_sale=[],
+            have_on_sale=[{"appid": "20", "name": "Owned Local"}],
+            vanity="gaben",
+            owned={"20": "Owned Local"},
+            wishlist_appids=["10", "20", "30"],
+            min_discount=0,
+            genres=[],
+            family_appids={"30"},
+            hltb_hours={"10": 12.5},
+        )
+
+        data = json.loads(payload)
+        hygiene = data["wishlist_hygiene"]
+        by_appid = {item["appid"]: item for item in hygiene["items"]}
+
+        self.assertEqual(data["summary"]["wishlist_hygiene_count"], 3)
+        self.assertEqual(hygiene["summary"]["review_items_count"], 3)
+        self.assertTrue(hygiene["summary"]["advisory_only"])
+        self.assertEqual(by_appid["10"]["signals"], ["hltb_match"])
+        self.assertIn("owned", by_appid["20"]["signals"])
+        self.assertIn("library_match", by_appid["20"]["signals"])
+        self.assertEqual(by_appid["30"]["signals"], ["family"])
+        self.assertTrue(all(item["action"] == "review" for item in hygiene["items"]))
+
+    def test_generate_json_respects_explicit_empty_wishlist_hygiene(self) -> None:
+        payload = generate_json(
+            deals=[{"appid": "10", "name": "Portal 2", "score": 95.4}],
+            backlog_on_sale=[],
+            have_on_sale=[],
+            vanity="gaben",
+            owned={"10": "Portal 2"},
+            wishlist_appids=["10"],
+            min_discount=50,
+            genres=["puzzle"],
+            wishlist_hygiene={"source_signals": [], "items": [], "summary": {"advisory_only": True}},
+        )
+
+        data = json.loads(payload)
+
+        self.assertEqual(data["summary"]["wishlist_hygiene_count"], 0)
+        self.assertEqual(
+            data["wishlist_hygiene"],
+            {"source_signals": [], "items": [], "summary": {"advisory_only": True}},
+        )
+
     def test_generate_json_respects_explicit_empty_personalized_recommendations(self) -> None:
         payload = generate_json(
             deals=[{"appid": "10", "name": "Portal 2", "score": 95.4}],
