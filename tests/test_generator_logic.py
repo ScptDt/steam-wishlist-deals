@@ -6269,6 +6269,107 @@ class RankTopPicksTests(unittest.TestCase):
             ranked[0]["score_reasons"],
         )
 
+    def test_top_pick_uses_existing_discount_signal_for_major_sale_reason(self) -> None:
+        deal = {
+            "appid": "a",
+            "name": "Alpha",
+            "discount": 90,
+            "price_final": "$10",
+            "price_raw": 1000,
+            "release_year": date.today().year,
+            "metacritic_score": 90,
+            "categories": [2],
+        }
+        baseline = rank_top_picks(
+            deals=[deal],
+            priorities={"a": 5},
+            reviews={"a": {"pct": 92, "desc": "Very Positive", "total": 100}},
+            hltb_hours={"a": 10.0},
+            deck_compat={"a": 3},
+            n=1,
+        )
+
+        ranked = rank_top_picks(
+            deals=[deal],
+            priorities={"a": 5},
+            reviews={"a": {"pct": 92, "desc": "Very Positive", "total": 100}},
+            hltb_hours={"a": 10.0},
+            deck_compat={"a": 3},
+            n=1,
+            active_promo_context={
+                "sale_name": "Steam Summer Sale",
+                "primary": {"title": "Steam Summer Sale", "category": "major_sale"},
+                "categories": ["major_sale"],
+            },
+        )
+
+        self.assertEqual(ranked[0]["score"], baseline[0]["score"])
+        self.assertIn(
+            "oferta grande + 90% de descuento: candidato para revisar ahora",
+            ranked[0]["score_reasons"],
+        )
+
+    def test_routine_promo_reason_requires_existing_pick_signal(self) -> None:
+        deal = {
+            "appid": "b",
+            "name": "Bravo",
+            "discount": 40,
+            "price_final": "$25",
+            "price_raw": 2500,
+            "release_year": date.today().year - 8,
+            "metacritic_score": 65,
+            "categories": [2],
+        }
+
+        ranked = rank_top_picks(
+            deals=[deal],
+            priorities={"b": 400},
+            reviews={"b": {"pct": 70, "desc": "Mixed", "total": 100}},
+            hltb_hours={"b": 5.0},
+            deck_compat={"b": 0},
+            n=1,
+            active_promo_context={
+                "sale_name": "Weeklong Deals",
+                "primary": {"title": "Weeklong Deals", "category": "weeklong"},
+                "categories": ["weeklong"],
+            },
+        )
+
+        self.assertFalse(
+            any("promo corta" in reason for reason in ranked[0]["score_reasons"])
+        )
+
+    def test_routine_promo_reason_uses_wishlist_priority_signal(self) -> None:
+        ranked = rank_top_picks(
+            deals=[
+                {
+                    "appid": "a",
+                    "name": "Alpha",
+                    "discount": 40,
+                    "price_final": "$10",
+                    "price_raw": 1000,
+                    "release_year": date.today().year - 8,
+                    "metacritic_score": 70,
+                    "categories": [2],
+                }
+            ],
+            priorities={"a": 10},
+            reviews={"a": {"pct": 70, "desc": "Mixed", "total": 100}},
+            hltb_hours={"a": 10.0},
+            deck_compat={"a": 0},
+            n=1,
+            active_promo_context={
+                "sale_name": "Weekend Deal",
+                "primary": {"title": "Weekend Deal", "category": "weekend"},
+                "categories": ["weekend"],
+            },
+        )
+
+        self.assertIn(
+            "promo corta + juego en tu radar: revisar precio sin tratarla como urgencia",
+            ranked[0]["score_reasons"],
+        )
+
     def test_top_pick_keeps_existing_reasons_without_promo_context(self) -> None:
         ranked = rank_top_picks(
             deals=[

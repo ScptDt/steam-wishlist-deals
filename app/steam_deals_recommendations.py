@@ -1366,25 +1366,54 @@ def build_score_explanation(
     }
 
 
-def build_promo_pick_reason(active_promo_context: dict | None) -> str:
-    """Return a conservative pick reason based on active Steam promo context."""
+def _promo_context_category(active_promo_context: dict | None) -> str:
     if not isinstance(active_promo_context, dict):
         return ""
     primary = active_promo_context.get("primary")
-    category = ""
     if isinstance(primary, dict):
-        category = str(primary.get("category", "") or "")
-    if not category:
-        categories = active_promo_context.get("categories", [])
-        if isinstance(categories, list) and categories:
-            category = str(categories[0] or "")
+        category = str(primary.get("category", "") or "").strip()
+        if category:
+            return category
+    categories = active_promo_context.get("categories", [])
+    if isinstance(categories, list) and categories:
+        return str(categories[0] or "").strip()
+    return ""
+
+
+def _top_pick_promo_signal(top_pick: dict | None) -> dict[str, int]:
+    pick = top_pick if isinstance(top_pick, dict) else {}
+    return {
+        "discount": int(_safe_number(pick.get("discount"))),
+        "priority": int(_safe_number(pick.get("priority"))),
+    }
+
+
+def _is_wishlist_priority_signal(priority: int) -> bool:
+    return 0 < priority <= 50
+
+
+def build_promo_pick_reason(active_promo_context: dict | None, top_pick: dict | None = None) -> str:
+    """Return a conservative pick reason based on active Steam promo context."""
+    category = _promo_context_category(active_promo_context)
+    signals = _top_pick_promo_signal(top_pick)
+    discount = signals["discount"]
+    priority = signals["priority"]
+
+    if category == "major_sale" and discount >= 70:
+        return f"oferta grande + {discount}% de descuento: candidato para revisar ahora"
+    if category == "publisher_sale" and discount >= 70:
+        return f"publisher/franquicia + {discount}% de descuento: compara contra mínimo histórico"
+    if category in {"weeklong", "midweek", "weekend"}:
+        if _is_wishlist_priority_signal(priority):
+            return "promo corta + juego en tu radar: revisar precio sin tratarla como urgencia"
+        if discount >= 75:
+            return f"promo corta + {discount}% de descuento: revisar sin tratarla como evento grande"
+        return ""
 
     reason_by_category = {
         "major_sale": "contexto de oferta grande: prioriza descuentos fuertes",
         "fest": "contexto de festival: revisa si encaja con la temática activa",
-        "weeklong": "promo corta: útil si ya estaba en radar",
-        "midweek": "promo corta: útil si ya estaba en radar",
-        "weekend": "promo corta: útil si ya estaba en radar",
+        "publisher_sale": "contexto publisher/franquicia: compara contra tu mínimo histórico",
         "themed": "promo temática: valida si encaja con tus gustos",
     }
     return reason_by_category.get(category, "")
@@ -1486,13 +1515,16 @@ def rank_top_picks(
     active_promo_context: dict | None = None,
 ) -> list[dict]:
     """Rank deals by composite value score, return top N."""
-    promo_reason = build_promo_pick_reason(active_promo_context)
+    scored = [
+        _score_top_pick(deal, priorities, reviews, hltb_hours, deck_compat)
+        for deal in deals
+    ]
     scored = [
         _apply_promo_pick_reason(
-            _score_top_pick(deal, priorities, reviews, hltb_hours, deck_compat),
-            promo_reason,
+            top_pick,
+            build_promo_pick_reason(active_promo_context, top_pick),
         )
-        for deal in deals
+        for top_pick in scored
     ]
     scored.sort(key=lambda deal: -deal["score"])
     return scored[:n]
