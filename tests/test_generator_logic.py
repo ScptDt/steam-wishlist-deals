@@ -5215,7 +5215,7 @@ class WatchlistTests(unittest.TestCase):
                     "games_count": 1,
                     "total_spent": 8.0,
                 },
-                build_gift_ideas=lambda _friend_set, _deals, _owned: [
+                build_gift_ideas=lambda _friend_set, _deals, _owned, **_kwargs: [
                     {"appid": "20", "name": "Hades"}
                 ],
                 build_notification_summary=lambda _deals, _comparison, _top_picks, _watchlist_alerts: {
@@ -5264,6 +5264,74 @@ class WatchlistTests(unittest.TestCase):
         self.assertEqual(
             sent_notifications,
             [({"budget": 10.0, "telegram_token": "token"}, {"total_deals": 1})],
+        )
+
+    def test_engagement_post_run_passes_compare_context_to_gift_ideas(self) -> None:
+        gift_calls: list[dict] = []
+
+        def fake_build_gift_ideas(friend_set, deals, owned, **kwargs):
+            gift_calls.append(
+                {
+                    "friend_set": friend_set,
+                    "deals": deals,
+                    "owned": owned,
+                    "kwargs": kwargs,
+                }
+            )
+            return [{"appid": "30", "name": "Friend Only"}]
+
+        contract = module_build_engagement_contract(
+            messages=module_build_engagement_message_formatters(
+                ok=lambda text: f"OK:{text}",
+                dim=lambda text: f"DIM:{text}",
+            ),
+            callbacks=module_build_engagement_callbacks(
+                step=lambda _text: None,
+                emit=lambda _text: None,
+            ),
+            runtime=module_build_engagement_runtime(
+                load_watchlist=lambda: [],
+                check_watchlist_alerts=lambda _deals, _watchlist: [],
+                compute_budget_picks=lambda *_args, **_kwargs: {},
+                build_gift_ideas=fake_build_gift_ideas,
+                build_notification_summary=lambda *_args, **_kwargs: None,
+                send_notifications=lambda *_args, **_kwargs: None,
+            ),
+        )
+        deals = [
+            {"appid": "10", "name": "Shared", "discount": 90},
+            {"appid": "30", "name": "Friend Only", "discount": 50},
+        ]
+        compare_data = {
+            "friend_set": {"10", "30"},
+            "overlap": {"10"},
+            "friend_activity_games": [
+                {"appid": "90", "name": "Hades", "genres": ["Action"], "playtime_2weeks": 120}
+            ],
+        }
+
+        outputs = module_run_engagement_post_run(
+            deals,
+            filters={},
+            top_picks=[],
+            compare_data=compare_data,
+            owned={"20": "Owned"},
+            comparison=None,
+            contract=contract,
+            sym_target="T",
+            sym_budget="B",
+            sym_gift="G",
+        )
+
+        self.assertEqual(outputs.gift_ideas, [{"appid": "30", "name": "Friend Only"}])
+        self.assertEqual(len(gift_calls), 1)
+        self.assertEqual(gift_calls[0]["friend_set"], {"10", "30"})
+        self.assertEqual(gift_calls[0]["deals"], deals)
+        self.assertEqual(gift_calls[0]["owned"], {"20": "Owned"})
+        self.assertEqual(gift_calls[0]["kwargs"]["overlap_appids"], {"10"})
+        self.assertEqual(
+            gift_calls[0]["kwargs"]["friend_activity_games"],
+            compare_data["friend_activity_games"],
         )
 
     def test_save_and_load_watchlist_roundtrip(self) -> None:

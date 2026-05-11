@@ -87,6 +87,20 @@ def empty_engagement_outputs() -> EngagementOutputs:
     )
 
 
+def gift_idea_context_from_compare(compare_data: dict | None) -> dict:
+    if not isinstance(compare_data, dict):
+        return {}
+    context: dict = {}
+    if compare_data.get("overlap") is not None:
+        context["overlap_appids"] = compare_data.get("overlap")
+    friend_activity = compare_data.get("friend_activity_games")
+    if friend_activity is None:
+        friend_activity = compare_data.get("friend_activity")
+    if friend_activity is not None:
+        context["friend_activity_games"] = friend_activity
+    return context
+
+
 def run_engagement_post_run(
     deals: list[dict],
     *,
@@ -127,7 +141,12 @@ def run_engagement_post_run(
 
     gift_ideas: list[dict] = []
     if compare_data:
-        gift_ideas = contract.runtime.build_gift_ideas(compare_data["friend_set"], deals, owned)
+        gift_ideas = contract.runtime.build_gift_ideas(
+            compare_data["friend_set"],
+            deals,
+            owned,
+            **gift_idea_context_from_compare(compare_data),
+        )
         if gift_ideas:
             contract.callbacks.emit(
                 f"  {contract.messages.ok(f'{sym_gift} {len(gift_ideas)} gift ideas en oferta')}"
