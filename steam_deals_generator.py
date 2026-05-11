@@ -115,6 +115,14 @@ except Exception:
 
 
 try:
+    from steam_deals_wishlist_hygiene import (
+        build_wishlist_hygiene_signals as _build_wishlist_hygiene_signals_impl,
+    )
+except Exception:
+    _build_wishlist_hygiene_signals_impl = None
+
+
+try:
     from steam_deals_hltb import (
         cross_hltb_with_deals as _cross_hltb_with_deals_impl,
         extract_numbers as _extract_numbers_impl,
@@ -658,6 +666,13 @@ def build_gift_ideas(friend_set, deals, owned, **kwargs):
     if _build_gift_ideas_impl is None:
         raise RuntimeError("Recommendations module is not available")
     return _build_gift_ideas_impl(friend_set, deals, owned, **kwargs)
+
+
+def build_wishlist_hygiene_signals(wishlist, **kwargs):
+    """Build advisory-only wishlist hygiene hints from local signals."""
+    if _build_wishlist_hygiene_signals_impl is None:
+        raise RuntimeError("Wishlist hygiene module is not available")
+    return _build_wishlist_hygiene_signals_impl(wishlist, **kwargs)
 
 
 def load_family_games(json_path: Path) -> set[str]:

@@ -164,6 +164,7 @@ from steam_deals_generator import (
     build_selection_review,
     build_smart_alert_counts as generator_build_smart_alert_counts,
     build_gift_ideas,
+    build_wishlist_hygiene_signals,
     compute_budget_picks,
     compute_deal_comparison,
     compute_value_score,
@@ -911,6 +912,57 @@ class SelectionReviewTests(unittest.TestCase):
         self.assertEqual(item["decision"], "conservar")
         self.assertGreater(item["affinity_score"], 24)
         self.assertIn("encaja con tu actividad reciente", " ".join(item["reasons"]))
+
+
+class WishlistHygieneTests(unittest.TestCase):
+    def test_build_wishlist_hygiene_signals_marks_local_advisory_matches(self) -> None:
+        hygiene = build_wishlist_hygiene_signals(
+            [
+                {"appid": "10", "name": "Owned Game"},
+                {"appid": "20", "name": "Family Game"},
+                {"appid": "30", "name": "Hades"},
+                {"appid": "40", "name": "Removed Game"},
+                {"appid": "50", "name": "HLTB Backlog"},
+            ],
+            owned={"10": "Owned Game"},
+            family_appids=["20"],
+            library_games=[{"appid": "10", "name": "Owned Game"}],
+            hltb_records={
+                "completed": [{"title": "Hades", "storefront": "Epic"}],
+                "backlog": [{"appid": "50", "title": "HLTB Backlog", "storefront": "Steam"}],
+            },
+            known_catalog_appids={"10", "20", "30", "50"},
+            removed_appids={"40"},
+        )
+
+        by_appid = {item["appid"]: item for item in hygiene["items"]}
+
+        self.assertEqual([item["appid"] for item in hygiene["items"]], ["10", "20", "30", "40", "50"])
+        self.assertIn("owned", by_appid["10"]["signals"])
+        self.assertIn("library_match", by_appid["10"]["signals"])
+        self.assertIn("family", by_appid["20"]["signals"])
+        self.assertEqual(by_appid["30"]["signals"], ["hltb_match", "other_store"])
+        self.assertIn("catalog_removed", by_appid["40"]["signals"])
+        self.assertEqual(by_appid["50"]["signals"], ["hltb_match"])
+        self.assertTrue(all(item["advisory_only"] for item in hygiene["items"]))
+        self.assertTrue(all(item["action"] == "review" for item in hygiene["items"]))
+        self.assertEqual(hygiene["summary"]["total_wishlist_items"], 5)
+        self.assertEqual(hygiene["summary"]["review_items_count"], 5)
+        self.assertEqual(hygiene["summary"]["signal_counts"]["hltb_match"], 2)
+        self.assertTrue(hygiene["summary"]["advisory_only"])
+
+    def test_build_wishlist_hygiene_signals_handles_malformed_and_clean_entries(self) -> None:
+        self.assertEqual(build_wishlist_hygiene_signals([])["items"], [])
+
+        hygiene = build_wishlist_hygiene_signals(
+            [{}, {"name": "Missing Appid"}, None, "99"],
+            known_catalog_appids={"99"},
+        )
+
+        self.assertEqual([item["signals"] for item in hygiene["items"]], [["invalid_appid"], ["invalid_appid"], ["invalid_appid"]])
+        self.assertEqual(hygiene["summary"]["total_wishlist_items"], 4)
+        self.assertEqual(hygiene["summary"]["review_items_count"], 3)
+        self.assertEqual(hygiene["summary"]["signal_counts"], {"invalid_appid": 3})
 
 
 class ConfigTests(unittest.TestCase):
