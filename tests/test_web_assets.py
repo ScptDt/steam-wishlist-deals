@@ -307,6 +307,7 @@ class WebAssetsTests(unittest.TestCase):
         self.assertIn("Caché parcial", app_js)
         self.assertIn("pendientes por confirmar", app_js)
         self.assertIn("Las ofertas mostradas pueden no incluir juegos aún no verificados", app_js)
+        self.assertIn("misma caché, en una corrida normal con --warm-cache y sin --no-cache", app_js)
         self.assertIn("function renderLatestCacheStateSummary", app_js)
         self.assertIn("coverage.state_summary", app_js)
         self.assertIn("Estados derivados", app_js)

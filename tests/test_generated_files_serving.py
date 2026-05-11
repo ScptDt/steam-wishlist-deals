@@ -156,7 +156,20 @@ class GeneratedFilesServingTests(unittest.TestCase):
         )
 
         self.assertIn("--warm-cache", cmd)
+        self.assertEqual(cmd.count("--warm-cache"), 1)
         self.assertNotIn("--no-cache", cmd)
+
+    def test_build_command_explicit_no_cache_still_requires_non_warm_cache_run(self) -> None:
+        normal_cmd = build_command({"vanity": "gaben"}, {"no_cache": True})
+        warm_cmd = build_command(
+            {"vanity": "gaben"},
+            {"warm_cache": True, "no_cache": True},
+        )
+
+        self.assertIn("--no-cache", normal_cmd)
+        self.assertNotIn("--warm-cache", normal_cmd)
+        self.assertIn("--warm-cache", warm_cmd)
+        self.assertNotIn("--no-cache", warm_cmd)
 
     def test_open_output_folder_creates_directory_and_uses_platform_opener(self) -> None:
         with TemporaryDirectory() as temp_dir:

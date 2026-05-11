@@ -3430,8 +3430,8 @@ function renderLatestCacheCoverage(report) {
   const coverageLabel = String(coverage.coverage_label || '').trim() || `${formatLatestCoverageCount(processed)}/${formatLatestCoverageCount(total)}`;
   const nextHint = String(coverage.next_resume_hint || '').trim();
   const resumeCopy = nextHint
-    ? ` Usa Continuar warm-cache para revisar otra tanda con la misma caché (pista ${escapeHtml(nextHint)}).`
-    : ' Usa Continuar warm-cache para revisar otra tanda con la misma caché.';
+    ? ` Usa Continuar warm-cache para revisar otra tanda con la misma caché (pista ${escapeHtml(nextHint)}), en una corrida normal con --warm-cache y sin --no-cache.`
+    : ' Usa Continuar warm-cache para revisar otra tanda con la misma caché, en una corrida normal con --warm-cache y sin --no-cache.';
   return `
     <div class="latest-cache-coverage latest-cache-coverage-partial" data-latest-cache-coverage>
       <div class="latest-cache-coverage-title">Caché parcial</div>
