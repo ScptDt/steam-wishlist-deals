@@ -26,6 +26,7 @@
 | `stop-on-failure.md` | Cuando falla una validación, smoke o build | Detener, reportar, proponer, pedir aprobación y escalar |
 | `performance-warm-cache.md` | Preparar o medir corridas grandes/wishlists grandes | Warm-cache, logs, fallback individual, duración y artifacts |
 | `features-validation.md` | Validar features específicas sin cargar el README | Frontmatter Obsidian/Notion, `Tu Presupuesto Ideal`, share E2E |
+| `wishlist-hygiene-windows-validation.md` | Validar en Windows que `wishlist_hygiene` se vea en Web UI y reportes generados | JSON `wishlist_hygiene.items`, sección `Revisar wishlist`, caso oculto cuando no hay items |
 
 ## Selector rápido por wave/tipo
 
