@@ -116,6 +116,16 @@ tr:hover { background: #1a3a5c; }
 .personalized-meta span:first-child { color:#f0b232; }
 .personalized-reasons { color:#8f98a0; font-size:.74rem; margin:.35rem 0 0; padding-left:1rem; }
 .personalized-share { display:flex; justify-content:flex-end; margin-top:.45rem; }
+.gift-ideas { margin: 1rem 0 .5rem; }
+.gift-ideas > p { color:#8f98a0; font-size:.78rem; margin:0 0 .55rem; }
+.gift-ideas-grid { display:grid; grid-template-columns:repeat(auto-fill,minmax(220px,1fr)); gap:.5rem; }
+.gift-idea-card { background:#16202d; border:1px solid rgba(240,178,50,.35); border-radius:8px; padding:.65rem; }
+.gift-idea-card h3 { color:#66c0f4; font-size:.95rem; margin-bottom:.25rem; }
+.gift-rank { color:#f0b232; font-size:.78rem; font-weight:700; margin-bottom:.25rem; }
+.gift-meta { display:flex; flex-wrap:wrap; gap:.35rem; color:#c7d5e0; font-size:.72rem; margin:.25rem 0; }
+.gift-meta span:first-child { color:#6cc644; }
+.gift-reasons { color:#8f98a0; font-size:.74rem; margin:.35rem 0 0; padding-left:1rem; }
+.gift-share { display:flex; justify-content:flex-end; margin-top:.45rem; }
 .share-modal {
   display: none;
   position: fixed;
@@ -647,6 +657,97 @@ def _render_personalized_recommendations(payload: dict | None) -> str:
 </section>'''
 
 
+def _gift_social_reasons(item: dict, *, limit: int = 2) -> list[str]:
+    reasons = item.get("social_reasons") if isinstance(item, dict) else None
+    if not isinstance(reasons, list):
+        return []
+    compact: list[str] = []
+    for reason in reasons:
+        text = str(reason or "").strip()
+        if text and text not in compact:
+            compact.append(text)
+        if len(compact) >= limit:
+            break
+    return compact
+
+
+def _render_gift_meta(item: dict) -> str:
+    meta: list[str] = []
+    discount = _safe_int(item.get("discount"))
+    if discount:
+        meta.append(f"-{discount}%")
+    price_final = str(item.get("price_final") or item.get("price") or "")
+    if price_final:
+        meta.append(price_final)
+    if not meta:
+        return ""
+    return f'''<div class="gift-meta">{"".join(f'<span>{html_escape(part)}</span>' for part in meta)}</div>'''
+
+
+def _render_gift_idea_item(item: dict, index: int) -> str:
+    appid = str(item.get("appid") or item.get("steam_appid") or "").strip()
+    safe_appid = appid if appid.isdigit() else ""
+    name = str(item.get("name") or item.get("steam_name") or "Juego desconocido")
+    name_html = (
+        f'<a href="{STORE_URL.format(appid=safe_appid)}" target="_blank">'
+        f"{html_escape(name)}</a>"
+        if safe_appid
+        else html_escape(name)
+    )
+    reasons = _gift_social_reasons(item)
+    reasons_html = "".join(
+        f"<li>{html_escape(reason)}</li>"
+        for reason in (reasons or ["lo tiene en wishlist y está en oferta"])
+    )
+    share_html = ""
+    if safe_appid:
+        price_final = str(item.get("price_final") or item.get("price") or "")
+        share_payload = _build_share_payload(
+            name=name,
+            appid=safe_appid,
+            price=price_final,
+            original_price=str(item.get("price_original") or price_final),
+            discount=_safe_int(item.get("discount")),
+            min_hist=str(item.get("min_hist") or item.get("historical_low") or ""),
+        )
+        share_html = f'<div class="gift-share">{_render_share_button(share_payload)}</div>'
+    data_attr = f' data-gift-idea="{html_escape(safe_appid)}"' if safe_appid else ""
+    return f'''<article class="gift-idea-card"{data_attr}>
+  <div class="gift-rank">#{index}</div>
+  <h3>{name_html}</h3>
+  {_render_gift_meta(item)}
+  <ul class="gift-reasons">{reasons_html}</ul>
+  {share_html}
+</article>'''
+
+
+def _render_gift_ideas(gift_ideas: list[dict] | None, compare_data: dict | None) -> str:
+    items = [item for item in gift_ideas or [] if isinstance(item, dict)]
+    if not items:
+        return ""
+    friend = ""
+    if isinstance(compare_data, dict):
+        friend = str(
+            compare_data.get("friend_name") or compare_data.get("friend_vanity") or ""
+        ).strip()
+    friend_copy = f" para {friend}" if friend else ""
+    cards = "".join(
+        _render_gift_idea_item(item, index) for index, item in enumerate(items[:6], 1)
+    )
+    hidden_count = max(0, len(items) - 6)
+    hidden_html = (
+        f'<p>{hidden_count} idea(s) más en el reporte completo.</p>'
+        if hidden_count
+        else ""
+    )
+    return f'''<section class="gift-ideas" data-gift-ideas-section>
+  <h2 style="margin:1rem 0 .35rem">Gift Ideas{html_escape(friend_copy)}</h2>
+  <p>Regalos desde la wishlist comparada, con razones sociales compactas. No abre carrito ni compra nada.</p>
+  <div class="gift-ideas-grid">{cards}</div>
+  {hidden_html}
+</section>'''
+
+
 def generate_share_html(
     deals,
     vanity,
@@ -659,6 +760,8 @@ def generate_share_html(
     profile_display_name: str | None = None,
     recommended_collections: list[dict] | None = None,
     personalized_recommendations: dict | None = None,
+    gift_ideas: list[dict] | None = None,
+    compare_data: dict | None = None,
 ):
     """Generate a lightweight shareable HTML page with the deals list."""
     reviews = reviews or {}
@@ -667,6 +770,7 @@ def generate_share_html(
     top_picks = top_picks or []
     recommended_collections = recommended_collections or []
     personalized_recommendations = personalized_recommendations or {"items": []}
+    gift_ideas = gift_ideas or []
     today = date.today().strftime("%Y-%m-%d")
     title = f"Steam Deals — {profile_display_name or vanity}"
     deals_by_appid = {deal["appid"]: deal for deal in deals}
@@ -696,6 +800,7 @@ def generate_share_html(
     personalized_html = _render_personalized_recommendations(
         personalized_recommendations
     )
+    gift_html = _render_gift_ideas(gift_ideas, compare_data)
 
     sale_line = f" — {html_escape(sale_name)}" if sale_name else ""
     return f"""<!DOCTYPE html>
@@ -707,6 +812,7 @@ def generate_share_html(
 <div class="meta">{today} | {len(deals)} deals (&ge;{min_discount}%) | Precios en MXN</div>
 {picks_html}
 {personalized_html}
+{gift_html}
 {collections_html}
 <h2 style="margin:1rem 0 .5rem">Todos los Deals</h2>
 <table><thead><tr><th>%</th><th>Precio</th><th>Reseñas</th><th>Compatibilidad</th><th>Juego</th></tr></thead><tbody>{rows}</tbody></table>

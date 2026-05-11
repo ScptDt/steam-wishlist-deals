@@ -7132,6 +7132,86 @@ class RankTopPicksTests(unittest.TestCase):
         self.assertNotIn("data-personalized-recommendations-section", html)
         self.assertNotIn("Recomendaciones personalizadas", html)
 
+    def test_generate_share_html_renders_gift_ideas_with_social_reasons(self) -> None:
+        html = generate_share_html(
+            deals=[],
+            vanity="gaben",
+            min_discount=50,
+            recommended_collections=[],
+            personalized_recommendations={"items": []},
+            compare_data={"friend_vanity": "friend"},
+            gift_ideas=[
+                {
+                    "appid": "30",
+                    "name": "Co-op Gift",
+                    "discount": 60,
+                    "price_final": "$99",
+                    "price_original": "$199",
+                    "social_reasons": [
+                        "lo tiene en wishlist",
+                        "se parece a su actividad reciente: Co-op",
+                    ],
+                }
+            ],
+        )
+
+        self.assertIn("data-gift-ideas-section", html)
+        self.assertIn("Gift Ideas para friend", html)
+        self.assertIn('data-gift-idea="30"', html)
+        self.assertIn('href="https://store.steampowered.com/app/30/"', html)
+        self.assertIn("Co-op Gift", html)
+        self.assertIn("lo tiene en wishlist", html)
+        self.assertIn("se parece a su actividad reciente: Co-op", html)
+        self.assertIn("No abre carrito ni compra nada", html)
+        self.assertIn('class="gift-share"', html)
+        self.assertIn("data-share-game=", html)
+
+    def test_generate_share_html_omits_gift_ideas_when_empty(self) -> None:
+        html = generate_share_html(
+            deals=[],
+            vanity="gaben",
+            min_discount=50,
+            recommended_collections=[],
+            personalized_recommendations={"items": []},
+            gift_ideas=[],
+        )
+
+        self.assertNotIn("data-gift-ideas-section", html)
+        self.assertNotIn("Gift Ideas para", html)
+
+    def test_generate_share_html_escapes_gift_idea_data(self) -> None:
+        html = generate_share_html(
+            deals=[],
+            vanity="gaben",
+            min_discount=50,
+            recommended_collections=[],
+            personalized_recommendations={"items": []},
+            compare_data={"friend_vanity": "<script>alert(0)</script>"},
+            gift_ideas=[
+                {
+                    "appid": '30" onclick="alert(1)',
+                    "name": "<b>Gift</b>",
+                    "discount": "not-a-number",
+                    "price_final": '" onmouseover="alert(2)',
+                    "social_reasons": ["<script>alert(3)</script>"],
+                }
+            ],
+        )
+
+        self.assertIn("data-gift-ideas-section", html)
+        self.assertIn("&lt;script&gt;alert(0)&lt;/script&gt;", html)
+        self.assertIn("&lt;b&gt;Gift&lt;/b&gt;", html)
+        self.assertIn("&lt;script&gt;alert(3)&lt;/script&gt;", html)
+        self.assertNotIn("<script>alert(0)</script>", html)
+        self.assertNotIn("<script>alert(3)</script>", html)
+        self.assertNotIn("<b>Gift</b>", html)
+        self.assertNotIn('data-gift-idea="30" onclick=', html)
+        self.assertNotIn('/app/30" onclick=', html)
+        self.assertNotIn("alert(1)", html)
+        self.assertIn("&quot; onmouseover=&quot;alert(2)", html)
+        self.assertNotIn('" onmouseover="alert(2)', html)
+        self.assertNotIn("data-share-game=", html)
+
     def test_generate_share_html_escapes_personalized_recommendation_data(self) -> None:
         html = generate_share_html(
             deals=[],
