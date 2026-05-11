@@ -1272,6 +1272,76 @@ details .details-body .field:last-child {
   color: var(--text2);
   font-size: 0.72rem;
 }
+.latest-gift-section {
+  margin-top: 0.95rem;
+  padding-top: 0.95rem;
+  border-top: 1px solid rgba(255,255,255,0.06);
+}
+.latest-gift-head {
+  margin-bottom: 0.55rem;
+}
+.latest-gift-title {
+  color: var(--text);
+  font-size: 0.88rem;
+  font-weight: 700;
+  margin-bottom: 0.22rem;
+}
+.latest-gift-subtitle,
+.latest-gift-more {
+  color: var(--text2);
+  font-size: 0.76rem;
+  line-height: 1.45;
+}
+.latest-gift-list {
+  list-style: none;
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(190px, 1fr));
+  gap: 0.55rem;
+}
+.latest-gift-item {
+  display: flex;
+  gap: 0.55rem;
+  padding: 0.72rem 0.8rem;
+  border-radius: 8px;
+  border: 1px solid rgba(240,178,50,0.24);
+  background: var(--bg);
+}
+.latest-gift-item-rank {
+  flex: 0 0 auto;
+  color: var(--yellow);
+  font-size: 0.74rem;
+  font-weight: 700;
+}
+.latest-gift-item-main {
+  min-width: 0;
+}
+.latest-gift-item-main strong,
+.latest-gift-item-main a {
+  color: var(--text);
+  font-size: 0.79rem;
+  text-decoration: none;
+}
+.latest-gift-item-main a:hover {
+  color: var(--accent);
+}
+.latest-gift-item-main span {
+  display: block;
+}
+.latest-gift-item-meta {
+  margin-top: 0.2rem;
+  color: var(--yellow);
+  font-size: 0.71rem;
+  line-height: 1.35;
+}
+.latest-gift-item-reasons {
+  margin-top: 0.2rem;
+  color: var(--text2);
+  font-size: 0.71rem;
+  line-height: 1.35;
+}
+.latest-gift-more {
+  margin-top: 0.55rem;
+}
 .latest-selection-section {
   margin-top: 0.95rem;
   padding-top: 0.95rem;

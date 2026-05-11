@@ -67,7 +67,7 @@ class WebAssetsTests(unittest.TestCase):
         self.assertIn("renderLatestReportDetails", app_js)
         self.assertIn('<details class="latest-report-details">', app_js)
         self.assertIn("Acciones y recomendaciones del último reporte", app_js)
-        self.assertIn("HTML, Share, JSON, carpeta, selección y destacados", app_js)
+        self.assertIn("HTML, Share, JSON, carpeta, regalos, selección y destacados", app_js)
         self.assertIn("Acciones del último reporte", app_js)
         self.assertIn("Siguiente mejor paso", app_js)
         self.assertIn("Opciones técnicas del último reporte", app_js)
@@ -259,6 +259,32 @@ class WebAssetsTests(unittest.TestCase):
         self.assertIn(".latest-personalized-list", app_css)
         self.assertIn(".latest-personalized-item", app_css)
         self.assertIn(".latest-personalized-footer", app_css)
+
+    def test_latest_report_renders_gift_ideas_inside_details(self) -> None:
+        app_js = (ROOT / "web" / "steam_deals" / "app.js").read_text(
+            encoding="utf-8"
+        )
+        app_css = (ROOT / "web" / "steam_deals" / "app.css").read_text(
+            encoding="utf-8"
+        )
+
+        self.assertIn("function renderLatestGiftIdeas", app_js)
+        self.assertIn("report.gift_ideas", app_js)
+        self.assertIn("data-latest-gift-ideas", app_js)
+        self.assertIn("data-latest-gift-idea", app_js)
+        self.assertIn("function latestGiftIdeaReasons", app_js)
+        self.assertIn("source.social_reasons", app_js)
+        self.assertIn("Regalos${escapeHtml(friendCopy)}", app_js)
+        self.assertIn("razones sociales compactas", app_js)
+        self.assertIn("No abre carrito ni compra nada", app_js)
+        self.assertIn("compareData.friend_name || compareData.friend_vanity", app_js)
+        self.assertIn("items.slice(0, 3)", app_js)
+        self.assertIn("renderLatestGiftIdeas(report)", app_js)
+        self.assertIn("renderLatestReportDetails(activeReport, files)", app_js)
+        self.assertIn(".latest-gift-section", app_css)
+        self.assertIn(".latest-gift-list", app_css)
+        self.assertIn(".latest-gift-item", app_css)
+        self.assertIn(".latest-gift-item-reasons", app_css)
 
     def test_latest_report_surfaces_active_promo_context_inside_details(self) -> None:
         app_js = (ROOT / "web" / "steam_deals" / "app.js").read_text(

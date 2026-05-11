@@ -2995,6 +2995,64 @@ function renderLatestPersonalizedRecommendations(report, files = null) {
 }
 
 
+function latestGiftIdeaReasons(item) {
+  const source = item && typeof item === 'object' ? item : {};
+  const reasons = Array.isArray(source.social_reasons)
+    ? source.social_reasons.map(reason => String(reason || '').trim()).filter(Boolean).slice(0, 2)
+    : [];
+  return reasons.length ? reasons : ['lo tiene en wishlist y está en oferta'];
+}
+
+function renderLatestGiftIdeaItem(item, index) {
+  const source = item && typeof item === 'object' ? item : {};
+  const appid = String(source.appid || source.steam_appid || '').trim();
+  const safeAppid = /^\d+$/.test(appid) ? appid : '';
+  const name = source.name || source.steam_name || 'Juego desconocido';
+  const meta = [];
+  const discount = Number(source.discount || 0) || 0;
+  if (discount > 0) meta.push(`-${discount}%`);
+  const price = source.price_final || source.price || '';
+  if (price) meta.push(price);
+  const nameHtml = safeAppid
+    ? `<a href="https://store.steampowered.com/app/${escapeHtml(safeAppid)}/" target="_blank" rel="noopener noreferrer">${escapeHtml(name)}</a>`
+    : `<span>${escapeHtml(name)}</span>`;
+  return `
+    <li class="latest-gift-item"${safeAppid ? ` data-latest-gift-idea="${escapeHtml(safeAppid)}"` : ''}>
+      <div class="latest-gift-item-rank">#${escapeHtml(index)}</div>
+      <div class="latest-gift-item-main">
+        <strong>${nameHtml}</strong>
+        ${meta.length ? `<span class="latest-gift-item-meta">${escapeHtml(meta.join(' · '))}</span>` : ''}
+        <span class="latest-gift-item-reasons">${escapeHtml(latestGiftIdeaReasons(source).join(' · '))}</span>
+      </div>
+    </li>
+  `;
+}
+
+function renderLatestGiftIdeas(report) {
+  const items = Array.isArray(report && report.gift_ideas)
+    ? report.gift_ideas.filter(item => item && typeof item === 'object')
+    : [];
+  if (!items.length) return '';
+  const compareData = report && typeof report === 'object' ? (report.compare_data || {}) : {};
+  const friend = String((compareData && (compareData.friend_name || compareData.friend_vanity)) || '').trim();
+  const selectedItems = items.slice(0, 3);
+  const hiddenCount = Math.max(0, items.length - selectedItems.length);
+  const friendCopy = friend ? ` para ${friend}` : '';
+  return `
+    <div class="latest-gift-section" data-latest-gift-ideas>
+      <div class="latest-gift-head">
+        <div class="latest-gift-title">Regalos${escapeHtml(friendCopy)}</div>
+        <div class="latest-gift-subtitle">Hasta 3 ideas desde la wishlist comparada, con razones sociales compactas. No abre carrito ni compra nada.</div>
+      </div>
+      <ol class="latest-gift-list">
+        ${selectedItems.map((item, index) => renderLatestGiftIdeaItem(item, index + 1)).join('')}
+      </ol>
+      ${hiddenCount ? `<div class="latest-gift-more">${escapeHtml(hiddenCount)} más en el reporte completo</div>` : ''}
+    </div>
+  `;
+}
+
+
 function latestSelectionCandidateKey(item) {
   const source = item && typeof item === 'object' ? item : {};
   const appid = String(source.appid || source.steam_appid || '').trim();
@@ -3380,6 +3438,7 @@ function renderLatestReportDetails(report, files = null) {
     renderLatestPromoContext(report),
     renderLatestRecommendedCollections(report),
     renderLatestPersonalizedRecommendations(report, files),
+    renderLatestGiftIdeas(report),
     renderLatestSelectionReviewPanel(report),
     renderLatestShareTopPicks(report),
     renderLatestBudgetPanel(report),
@@ -3389,7 +3448,7 @@ function renderLatestReportDetails(report, files = null) {
     <details class="latest-report-details">
       <summary>
         <span>Acciones y recomendaciones del último reporte</span>
-        <span class="latest-report-details-hint">HTML, Share, JSON, carpeta, selección y destacados</span>
+        <span class="latest-report-details-hint">HTML, Share, JSON, carpeta, regalos, selección y destacados</span>
       </summary>
       <div class="latest-report-details-body">${body}</div>
     </details>
