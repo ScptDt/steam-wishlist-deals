@@ -112,11 +112,87 @@ COMMUNITY_MIN_SCORE = 72
 COMMUNITY_MIN_METACRITIC = 75
 
 
-def build_gift_ideas(friend_set, deals, owned):
+def _gift_context_reasons(
+    deal: dict,
+    *,
+    activity_terms: list[dict],
+    is_overlap: bool,
+    max_reasons: int,
+) -> tuple[list[str], list[str]]:
+    reasons = ["lo tiene en wishlist"]
+    signals = ["friend_wishlist"]
+    if is_overlap:
+        reasons.append("también aparece en la wishlist compartida")
+        signals.append("shared_wishlist")
+    if _safe_number(deal.get("score")) >= 80:
+        reasons.append(f"score alto del reporte: {_safe_number(deal.get('score')):.0f}")
+        signals.append("report_score")
+    if _safe_number(deal.get("discount")) >= 50:
+        reasons.append(f"descuento fuerte: {int(_safe_number(deal.get('discount')))}%")
+        signals.append("discount")
+    matched_terms = _matched_terms(deal, activity_terms, limit=2) if activity_terms else []
+    if matched_terms:
+        reasons.append(f"se parece a su actividad reciente: {', '.join(matched_terms)}")
+        signals.append("friend_activity")
+    return reasons[:max_reasons], signals
+
+
+def _gift_reason_limit(value) -> int:
+    return max(1, int(_safe_number(value, 2)))
+
+
+def build_gift_ideas(
+    friend_set,
+    deals,
+    owned,
+    *,
+    overlap_appids=None,
+    friend_activity_games=None,
+    max_reasons: int = 2,
+):
     """Find deals that the friend wants but you don't own."""
-    owned_set = set(owned.keys())
-    matching = [deal for deal in deals if deal["appid"] in friend_set and deal["appid"] not in owned_set]
-    return sorted(matching, key=lambda deal: -deal["discount"])
+    friend_appids = _normalize_appid_set(friend_set)
+    owned_set = _normalize_appid_set(owned)
+    overlap_set = _normalize_appid_set(overlap_appids)
+    activity_terms = _weighted_style_terms(
+        _record_list(friend_activity_games),
+        activity_weighted=True,
+    )
+    candidates: list[tuple[bool, dict]] = []
+    for deal in deals or []:
+        if not isinstance(deal, dict):
+            continue
+        appid = _collection_appid(deal)
+        if not appid or appid not in friend_appids or appid in owned_set:
+            continue
+        is_overlap = appid in overlap_set
+        reasons, signals = _gift_context_reasons(
+            deal,
+            activity_terms=activity_terms,
+            is_overlap=is_overlap,
+            max_reasons=_gift_reason_limit(max_reasons),
+        )
+        candidates.append(
+            (
+                is_overlap,
+                {
+                    **dict(deal),
+                    "appid": appid,
+                    "social_reasons": reasons,
+                    "social_signals": signals,
+                },
+            )
+        )
+    non_overlap = [item for is_overlap, item in candidates if not is_overlap]
+    selected = non_overlap if non_overlap else [item for _is_overlap, item in candidates]
+    return sorted(
+        selected,
+        key=lambda deal: (
+            -_safe_number(deal.get("discount")),
+            -_safe_number(deal.get("score")),
+            str(deal.get("name") or "").lower(),
+        ),
+    )
 
 
 def _safe_number(value, default: float = 0.0) -> float:

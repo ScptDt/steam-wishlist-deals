@@ -1,6 +1,6 @@
 # Pendientes (Fuente Unica)
 
-Ultima actualizacion: 2026-05-08
+Ultima actualizacion: 2026-05-11
 
 ## Regla de Oro
 
@@ -23,7 +23,7 @@ Para cada Track, Quick Win o tarea no trivial —incluyendo trabajo iniciado por
 
 - Objetivo: llevar Steam Tools a una experiencia ultra user friendly y preparada para ejecutable desktop.
 - Fase actual: P2 en validacion cross-platform (cierre manual pendiente por host nativo).
-- Item activo: el track `Recomendaciones personalizadas por actividad y biblioteca` queda cerrado/pausado salvo refinamientos con fricción visual real o señales locales nuevas claras. Siguiente foco producto recomendado: `Recomendaciones sociales y regalos`, empezando por slice de readiness/helper con fixtures offline si se aprueba. El track `Colecciones inteligentes tipo “Recomendado para ti”` puede reabrirse después usando estas señales personalizadas sin duplicar secciones superficiales. P2 desktop sigue condicionado a host macOS nativo.
+- Item activo: `Recomendaciones sociales y regalos` queda como foco producto actual; primer helper offline de gift ideas sociales cerrado y el siguiente slice recomendado es integrar señales reales de compare/actividad al post-run y renderizar razones sin duplicar overlap, si se aprueba. `Recomendaciones personalizadas por actividad y biblioteca` queda cerrado/pausado salvo fricción visual real o señales locales nuevas claras. P2 desktop sigue condicionado a host macOS nativo.
 - Benchmarks operativos: usar `https://steamcommunity.com/id/joseluis12351` como wishlist pequeña para smokes/Share/outputs rápidos, y `BG00G` como wishlist grande para performance cold-vs-hot, stress de outputs, Shuffle con variedad y desktop/binario largo. No usar `BG00G` en quick wins si implica cold-cache largo salvo que la medición performance sea el objetivo explícito.
 
 ## Registro compacto de riesgos/decisiones activas
@@ -376,9 +376,10 @@ La bitácora cronológica detallada, evidencia operativa y entradas antiguas viv
 
 ### Social/Community
 
-- [ ] [Track] Recomendaciones sociales y regalos. [Estado: propuesto. Falta: usar overlap, juegos compartidos, actividad reciente/horas y señales sociales simples para explicar por qué un juego conviene para un amigo o como regalo. Evidencia: recomendaciones con explicación contextual por amigo.]
+- [ ] [Track] Recomendaciones sociales y regalos. [Estado: helper puro inicial de regalos contextuales cerrado 2026-05-11: `build_gift_ideas` conserva compatibilidad, agrega `social_reasons`/`social_signals`, evita repetir overlap cuando recibe `overlap_appids` con alternativas y usa actividad offline opcional para explicar afinidad por género/estilo. Falta: integrar señales reales de compare/actividad en post-run y renderizar razones sin duplicar overlap. Evidencia: tests offline de matching/regalos y `git diff --check` OK; sin red real, `BG00G`, reportes generados, builds, UI/renderers ni checkout/carrito.]
   - Evitar que regalos repitan exactamente los juegos ya mostrados en overlap/en común, o mezclar ambos grupos de forma más útil para que no se sienta redundante.
   - Explicar cada recomendación con contexto breve (ej. `juega mucho X`, `jugó Y recientemente`, `se parece a Z`).
+- [x] [Quick Win] Definir helper puro inicial para gift ideas sociales con razones contextuales. [Cerrado 2026-05-11: helper backward-compatible con razones/señales sociales, fallback determinístico cuando solo hay overlap, tolerancia a entradas malformadas y wrapper público compatible. Autor/ejecutor: AudPen. Evidencia: `.venv/bin/python -m py_compile app/steam_deals_recommendations.py steam_deals_generator.py tests/test_generator_logic.py`, `.venv/bin/python -m unittest tests.test_generator_logic.MatchingAndRecommendationTests` (9 OK) y `git diff --check` OK; sin red real, `BG00G`, reportes generados, builds, UI/renderers, tiendas externas ni recalibración global.]
 
 ### Recomendaciones
 

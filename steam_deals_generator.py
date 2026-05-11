@@ -653,11 +653,11 @@ def compare_wishlists(api_key, steam_id_1, vanity_2):
     )
 
 
-def build_gift_ideas(friend_set, deals, owned):
+def build_gift_ideas(friend_set, deals, owned, **kwargs):
     """Find deals that the friend wants but you don't own."""
     if _build_gift_ideas_impl is None:
         raise RuntimeError("Recommendations module is not available")
-    return _build_gift_ideas_impl(friend_set, deals, owned)
+    return _build_gift_ideas_impl(friend_set, deals, owned, **kwargs)
 
 
 def load_family_games(json_path: Path) -> set[str]:

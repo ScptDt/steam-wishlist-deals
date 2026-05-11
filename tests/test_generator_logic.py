@@ -5801,6 +5801,68 @@ class MatchingAndRecommendationTests(unittest.TestCase):
 
         self.assertEqual([deal["appid"] for deal in ideas], ["3", "1"])
 
+    def test_build_gift_ideas_adds_social_context_reasons(self) -> None:
+        ideas = build_gift_ideas(
+            friend_set={"10"},
+            deals=[
+                {
+                    "appid": "10",
+                    "discount": 60,
+                    "name": "Deep Gift",
+                    "score": 88,
+                    "genres": ["Action", "Roguelike"],
+                }
+            ],
+            owned={},
+            friend_activity_games=[
+                {"appid": "90", "name": "Hades", "genres": ["Action"], "playtime_2weeks": 120}
+            ],
+            max_reasons=4,
+        )
+
+        self.assertEqual(ideas[0]["social_signals"], ["friend_wishlist", "report_score", "discount", "friend_activity"])
+        self.assertIn("lo tiene en wishlist", ideas[0]["social_reasons"])
+        self.assertIn("score alto del reporte: 88", ideas[0]["social_reasons"])
+        self.assertIn("descuento fuerte: 60%", ideas[0]["social_reasons"])
+        self.assertIn("se parece a su actividad reciente: Action", ideas[0]["social_reasons"])
+
+    def test_build_gift_ideas_avoids_overlap_when_alternatives_exist(self) -> None:
+        ideas = build_gift_ideas(
+            friend_set={"10", "20", "30"},
+            deals=[
+                {"appid": "10", "discount": 90, "name": "Shared High"},
+                {"appid": "20", "discount": 80, "name": "Also Shared"},
+                {"appid": "30", "discount": 50, "name": "Friend Only"},
+            ],
+            owned={},
+            overlap_appids={"10", "20"},
+        )
+
+        self.assertEqual([deal["appid"] for deal in ideas], ["30"])
+        self.assertEqual(ideas[0]["social_signals"], ["friend_wishlist", "discount"])
+
+    def test_build_gift_ideas_falls_back_to_overlap_with_reason(self) -> None:
+        ideas = build_gift_ideas(
+            friend_set={"10"},
+            deals=[{"appid": "10", "discount": 40, "name": "Shared Only"}],
+            owned={},
+            overlap_appids={"10"},
+            max_reasons=3,
+        )
+
+        self.assertEqual([deal["appid"] for deal in ideas], ["10"])
+        self.assertIn("shared_wishlist", ideas[0]["social_signals"])
+        self.assertIn("también aparece en la wishlist compartida", ideas[0]["social_reasons"])
+
+    def test_build_gift_ideas_ignores_malformed_entries(self) -> None:
+        ideas = build_gift_ideas(
+            friend_set=[{"appid": "10"}],
+            deals=[None, {}, {"appid": "10", "discount": "70", "name": "Safe Gift"}],
+            owned=[],
+        )
+
+        self.assertEqual([deal["appid"] for deal in ideas], ["10"])
+
     def test_parse_hltb_uses_main_story_as_fallback_and_groups_statuses(self) -> None:
         csv_content = (
             "Title,Main + Extras,Main Story,Storefront,Backlog,Completed,Playing,Retired\n"
