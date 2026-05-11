@@ -422,8 +422,9 @@ def _format_refresh_budget_coverage_lines(
     )
     if summary.next_resume_hint:
         lines.append(
-            "- Continuación sugerida: ejecuta warm-cache de nuevo para seguir "
-            f"desde el candidato {summary.next_resume_hint}."
+            "- Continuación sugerida: conserva el mismo cache dir y repite una "
+            "corrida normal con `--warm-cache` para seguir desde el candidato "
+            f"{summary.next_resume_hint}; no uses `--no-cache` salvo benchmark aprobado."
         )
     if summary.time_budget_exhausted:
         lines.append(

@@ -153,7 +153,7 @@ class WarmCacheSummaryTests(unittest.TestCase):
             output,
         )
         self.assertIn(
-            "- Continuación sugerida: ejecuta warm-cache de nuevo para seguir desde el candidato 12345.",
+            "- Continuación sugerida: conserva el mismo cache dir y repite una corrida normal con `--warm-cache` para seguir desde el candidato 12345; no uses `--no-cache` salvo benchmark aprobado.",
             output,
         )
         self.assertIn(
@@ -192,9 +192,10 @@ class WarmCacheSummaryTests(unittest.TestCase):
             output,
         )
         self.assertIn(
-            "ejecuta warm-cache de nuevo para seguir desde el candidato 542050",
+            "conserva el mismo cache dir y repite una corrida normal con `--warm-cache` para seguir desde el candidato 542050",
             output,
         )
+        self.assertIn("no uses `--no-cache` salvo benchmark aprobado", output)
         self.assertIn(
             "se detuvo a propósito por presupuesto",
             output,
