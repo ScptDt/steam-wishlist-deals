@@ -901,6 +901,29 @@ function updateHistorySearchEmptyState(totalMatches) {
   historySearchEmpty.classList.remove('hidden');
 }
 
+function resolveQuickCompareRuns() {
+  const filteredRuns = Array.isArray(latestFilteredRuns) ? latestFilteredRuns : [];
+  if (filteredRuns.length >= 2) {
+    return {runs: filteredRuns, usedGlobalFallback: false};
+  }
+  const allRuns = Array.isArray(latestHistoryRuns) ? latestHistoryRuns : [];
+  return {
+    runs: allRuns,
+    usedGlobalFallback: allRuns.length >= 2 && filteredRuns.length < 2,
+  };
+}
+
+function prepareQuickCompareSelectors(quickCompare) {
+  if (quickCompare.usedGlobalFallback) {
+    if (historySearch) historySearch.value = '';
+    latestFilteredRuns = quickCompare.runs;
+    appendLine('La búsqueda actual no tiene 2 ejecuciones; comparando las 2 más recientes globales.', 'warn');
+  }
+  historyPage = 1;
+  refreshRunSelectorsFromState();
+  updateHistorySearchEmptyState(latestFilteredRuns.length);
+}
+
 function applyHistoryRunSearch() {
   latestFilteredRuns = filterHistoryRuns(latestHistoryRuns, historySearch ? historySearch.value : '');
   historyPage = 1;
@@ -3959,20 +3982,25 @@ if (historySearch) {
 
 if (btnHistoryQuickCompare) {
   btnHistoryQuickCompare.addEventListener('click', async () => {
-    const source = latestFilteredRuns.length >= 2 ? latestFilteredRuns : latestHistoryRuns;
+    const quickCompare = resolveQuickCompareRuns();
+    const source = quickCompare.runs;
     if (!source || source.length < 2) {
       appendLine('No hay suficientes ejecuciones para la comparación rápida.', 'warn');
       return;
     }
-    historyPage = 1;
-    refreshRunSelectorsFromState();
+    prepareQuickCompareSelectors(quickCompare);
     if (historyLeft && historyRight) {
       historyLeft.value = source[1].id || '';
       historyRight.value = source[0].id || '';
     }
     try {
       await compareHistoryRuns({quick: true});
-      appendLine('Comparación rápida: últimas 2 ejecuciones.', 'ok');
+      appendLine(
+        quickCompare.usedGlobalFallback
+          ? 'Comparación rápida: últimas 2 ejecuciones globales.'
+          : 'Comparación rápida: últimas 2 ejecuciones.',
+        'ok'
+      );
     } catch (e) {
       appendLine('No se pudo ejecutar la comparación rápida: ' + e.message, 'err');
     }

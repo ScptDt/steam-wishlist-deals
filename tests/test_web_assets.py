@@ -36,6 +36,13 @@ class WebAssetsTests(unittest.TestCase):
         self.assertIn("Buscar en el histórico", index_html)
         self.assertIn("Comparar 2 recientes", index_html)
         self.assertIn("Filtra por fecha, evento o perfil", index_html)
+        self.assertIn("function resolveQuickCompareRuns", app_js)
+        self.assertIn("function prepareQuickCompareSelectors", app_js)
+        self.assertIn(
+            "La búsqueda actual no tiene 2 ejecuciones; comparando las 2 más recientes globales.",
+            app_js,
+        )
+        self.assertIn("Comparación rápida: últimas 2 ejecuciones globales.", app_js)
         self.assertIn("Página ${historyPage} de ${totalPages}", app_js)
         self.assertIn("Filtros del histórico restablecidos.", app_js)
         self.assertIn("Salió", app_js)
