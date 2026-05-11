@@ -13,6 +13,25 @@ STEAM_ID_RE = re.compile(r"<steamID><!\[CDATA\[(.*?)\]\]></steamID>")
 PROMO_PRIMARY_TYPES = (1, 11)
 MAJOR_SALE_KEYWORDS = ("summer sale", "winter sale", "autumn sale", "spring sale")
 PUBLISHER_FRANCHISE_KEYWORDS = ("publisher", "franchise")
+OFFICIAL_STEAM_PROMO_DOCS = {
+    "discounts": "https://partner.steamgames.com/doc/marketing/discounts",
+    "seasonal_sales": "https://partner.steamgames.com/doc/marketing/discounts/seasonalsales",
+    "upcoming_events": "https://partner.steamgames.com/doc/marketing/upcoming_events",
+}
+
+
+def _promo_classification(
+    category: str,
+    official_type: str,
+    event_family: str,
+    source_key: str,
+) -> dict:
+    return {
+        "category": category,
+        "official_type": official_type,
+        "event_family": event_family,
+        "official_source_url": OFFICIAL_STEAM_PROMO_DOCS[source_key],
+    }
 
 
 def _normalized_vanity(vanity: str) -> str:
@@ -246,32 +265,66 @@ def classify_steam_promo_message(message: dict) -> dict:
     """Classify one Steam marketing message into a stable promo category."""
     title = _promo_title(message)
     lower_title = title.lower()
-    category = "unknown"
+    classification = _promo_classification(
+        "unknown", "unknown", "unknown", "discounts"
+    )
     if any(keyword in lower_title for keyword in MAJOR_SALE_KEYWORDS):
-        category = "major_sale"
+        classification = _promo_classification(
+            "major_sale", "seasonal_sale", "seasonal", "seasonal_sales"
+        )
+    elif "next fest" in lower_title:
+        classification = _promo_classification(
+            "next_fest", "next_fest", "next_fest", "upcoming_events"
+        )
     elif "fest" in lower_title or "festival" in lower_title:
-        category = "fest"
+        classification = _promo_classification(
+            "fest", "themed_sale", "themed", "upcoming_events"
+        )
     elif any(keyword in lower_title for keyword in PUBLISHER_FRANCHISE_KEYWORDS):
-        category = "publisher_sale"
+        classification = _promo_classification(
+            "publisher_sale", "publisher_franchise_sale", "publisher", "discounts"
+        )
+    elif "free to keep" in lower_title:
+        classification = _promo_classification(
+            "free_to_keep", "free_to_keep", "free_promotion", "discounts"
+        )
+    elif "free weekend" in lower_title:
+        classification = _promo_classification(
+            "free_weekend", "free_weekend", "free_promotion", "discounts"
+        )
+    elif "daily deal" in lower_title:
+        classification = _promo_classification(
+            "daily_deal", "daily_deal", "curated", "discounts"
+        )
     elif "weekend" in lower_title:
-        category = "weekend"
+        classification = _promo_classification(
+            "weekend", "weekend_deal", "curated", "discounts"
+        )
     elif "midweek" in lower_title or "mid-week" in lower_title:
-        category = "midweek"
+        classification = _promo_classification(
+            "midweek", "midweek_deal", "curated", "discounts"
+        )
     elif "now available" in lower_title or "launch" in lower_title:
-        category = "launch"
+        classification = _promo_classification(
+            "launch", "launch_discount", "self_serve", "discounts"
+        )
     elif "weeklong" in lower_title:
-        category = "weeklong"
+        classification = _promo_classification(
+            "weeklong", "weeklong_deal", "self_serve", "discounts"
+        )
     elif any(
         keyword in lower_title
         for keyword in ("sale", "deals", "deal", "specials", "discount")
     ):
-        category = "themed"
+        classification = _promo_classification(
+            "themed", "themed_sale", "themed", "discounts"
+        )
 
     message_type = message.get("type")
     return {
         "title": title,
         "type": message_type,
-        "category": category,
+        **classification,
         "is_primary_type": message_type in PROMO_PRIMARY_TYPES,
     }
 
@@ -281,7 +334,11 @@ PROMO_CATEGORY_LABELS = {
     "midweek": "Midweek",
     "weekend": "Weekend",
     "launch": "Lanzamiento",
+    "daily_deal": "Daily Deal",
     "fest": "Fest",
+    "next_fest": "Next Fest",
+    "free_weekend": "Free Weekend",
+    "free_to_keep": "Gratis para conservar",
     "major_sale": "Oferta grande",
     "publisher_sale": "Publisher/Franquicia",
     "themed": "Oferta temática",
@@ -291,10 +348,14 @@ PROMO_CATEGORY_LABELS = {
 
 PROMO_CATEGORY_PRIORITY = {
     "major_sale": 10,
+    "next_fest": 18,
     "fest": 20,
     "publisher_sale": 30,
     "themed": 35,
+    "daily_deal": 38,
     "weekend": 40,
+    "free_to_keep": 42,
+    "free_weekend": 43,
     "midweek": 45,
     "launch": 50,
     "weeklong": 60,
@@ -305,6 +366,10 @@ PROMO_DECISION_HINTS = {
     "major_sale": (
         "Mega sale oficial: suele ser una de las mejores ventanas para revisar "
         "compras si el precio ya convence."
+    ),
+    "next_fest": (
+        "Next Fest oficial: prioriza demos/novedades y úsalo como contexto; "
+        "no implica automáticamente mejor precio."
     ),
     "fest": (
         "Fest temático: oportunidad fuerte para juegos del tema; compara contra "
@@ -321,6 +386,18 @@ PROMO_DECISION_HINTS = {
     "weekend": (
         "Weekend deal: ventana corta; comprar solo si ya estaba en radar y el "
         "precio es bueno."
+    ),
+    "daily_deal": (
+        "Daily Deal: promo curada y corta; revisar rápido solo si el juego ya "
+        "estaba en radar."
+    ),
+    "free_to_keep": (
+        "Gratis para conservar: señal fuerte para reclamar si aplica; confirmar "
+        "en Steam antes de asumir disponibilidad."
+    ),
+    "free_weekend": (
+        "Free Weekend: útil para probar durante la ventana; no equivale a compra "
+        "permanente."
     ),
     "midweek": (
         "Midweek deal: promo puntual; revisar precio, pero no tratarla como "

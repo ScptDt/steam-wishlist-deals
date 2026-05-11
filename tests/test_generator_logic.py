@@ -5549,14 +5549,18 @@ class SteamAdapterTests(unittest.TestCase):
     def test_classify_steam_promo_message_detects_known_promo_categories(self) -> None:
         cases = [
             ({"type": 11, "title": "Weeklong Deals"}, "weeklong"),
+            ({"type": 11, "title": "Daily Deal"}, "daily_deal"),
             ({"type": 11, "title": "Midweek Madness"}, "midweek"),
             ({"type": 11, "title": "Weekend Deal"}, "weekend"),
             ({"type": 1, "title": "Steam Summer Sale"}, "major_sale"),
+            ({"type": 1, "title": "Steam Next Fest"}, "next_fest"),
             ({"type": 1, "title": "Steam Farming Fest"}, "fest"),
             ({"type": 1, "title": "Now Available - Everything is Crab"}, "launch"),
             ({"type": 1, "title": "Publisher Sale"}, "publisher_sale"),
             ({"type": 1, "title": "Franchise Sale"}, "publisher_sale"),
             ({"type": 1, "title": "Launch Sale"}, "launch"),
+            ({"type": 1, "title": "Free Weekend"}, "free_weekend"),
+            ({"type": 1, "title": "Free To Keep"}, "free_to_keep"),
             ({"type": 1, "title": "Puzzle Sale"}, "themed"),
         ]
 
@@ -5566,6 +5570,26 @@ class SteamAdapterTests(unittest.TestCase):
                     module_classify_steam_promo_message(message)["category"],
                     expected_category,
                 )
+
+    def test_classify_steam_promo_message_exposes_official_taxonomy(self) -> None:
+        seasonal = module_classify_steam_promo_message(
+            {"type": 1, "title": "Steam Autumn Sale"}
+        )
+        next_fest = module_classify_steam_promo_message(
+            {"type": 1, "title": "Steam Next Fest February 2026"}
+        )
+        free_weekend = module_classify_steam_promo_message(
+            {"type": 11, "title": "Free Weekend - Co-op Game"}
+        )
+
+        self.assertEqual(seasonal["official_type"], "seasonal_sale")
+        self.assertEqual(seasonal["event_family"], "seasonal")
+        self.assertIn("seasonalsales", seasonal["official_source_url"])
+        self.assertEqual(next_fest["official_type"], "next_fest")
+        self.assertEqual(next_fest["event_family"], "next_fest")
+        self.assertIn("upcoming_events", next_fest["official_source_url"])
+        self.assertEqual(free_weekend["official_type"], "free_weekend")
+        self.assertEqual(free_weekend["event_family"], "free_promotion")
 
     def test_classify_steam_promo_message_prefers_event_signals_over_routine_words(self) -> None:
         cases = [
@@ -5632,6 +5656,22 @@ class SteamAdapterTests(unittest.TestCase):
         self.assertEqual(
             context["display_label"], "Steam Deckbuilders Fest 2026 + 2 promos adicionales"
         )
+
+    def test_build_active_promo_context_prioritizes_next_fest_over_fest(self) -> None:
+        context = module_build_active_promo_context(
+            [
+                {"type": 1, "title": "Steam Farming Fest"},
+                {"type": 1, "title": "Steam Next Fest February 2026"},
+                {"type": 11, "title": "Daily Deal"},
+            ]
+        )
+
+        self.assertEqual(context["sale_name"], "Steam Next Fest February 2026")
+        self.assertEqual(context["primary"]["category"], "next_fest")
+        self.assertEqual(context["primary"]["official_type"], "next_fest")
+        self.assertEqual(context["categories"], ["next_fest", "fest", "daily_deal"])
+        self.assertIn("Next Fest", context["category_label"])
+        self.assertIn("Next Fest oficial", context["decision_hint"])
 
     def test_build_active_promo_context_prioritizes_publisher_over_routine_promos(self) -> None:
         context = module_build_active_promo_context(
