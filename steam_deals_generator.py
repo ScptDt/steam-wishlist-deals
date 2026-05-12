@@ -3356,6 +3356,53 @@ def _format_count_label(value: int) -> str:
     return f"{value:,}"
 
 
+FINAL_CACHE_STATE_LABELS = {
+    "resumable_queue_finished": "Cola resumible terminada",
+    "resumable_queue_pending": "Cola resumible pendiente",
+    "price_confirmed": "Precio confirmado/cache válido",
+    "temporary_unconfirmed": "Fallos temporales/cooldown",
+    "no_price_confirmed": "Sin precio confirmado",
+    "missing_or_unclassified": "Sin clasificar todavía",
+}
+
+
+def _build_final_cache_state_summary(
+    *,
+    is_partial: bool,
+    deferred_count: int,
+    state_counts: dict,
+    no_price_counts: dict,
+) -> list[dict]:
+    price_confirmed = _safe_non_negative_int(state_counts.get("fresh")) + _safe_non_negative_int(
+        state_counts.get("stale_usable")
+    )
+    temporary_unconfirmed = _safe_non_negative_int(state_counts.get("cooldown"))
+    classified_no_price = sum(
+        _safe_non_negative_int(count)
+        for category, count in no_price_counts.items()
+        if str(category) != "temporary_unconfirmed"
+    )
+    no_price_confirmed = max(
+        classified_no_price,
+        _safe_non_negative_int(state_counts.get("failed_no_data")),
+    )
+    missing_or_unclassified = _safe_non_negative_int(state_counts.get("missing"))
+    queue_state = "resumable_queue_pending" if is_partial else "resumable_queue_finished"
+    queue_count = deferred_count if is_partial else 0
+    candidates = [
+        (queue_state, queue_count),
+        ("price_confirmed", price_confirmed),
+        ("temporary_unconfirmed", temporary_unconfirmed),
+        ("no_price_confirmed", no_price_confirmed),
+        ("missing_or_unclassified", missing_or_unclassified),
+    ]
+    return [
+        {"state": state, "label": FINAL_CACHE_STATE_LABELS[state], "count": count}
+        for state, count in candidates
+        if state == queue_state or count > 0
+    ]
+
+
 def build_price_cache_coverage(price_stage: dict | None) -> dict | None:
     if not isinstance(price_stage, dict):
         return None
@@ -3381,12 +3428,14 @@ def build_price_cache_coverage(price_stage: dict | None) -> dict | None:
         "next_resume_hint": str(price_stage.get("next_resume_hint") or ""),
         "deals_count": len(price_stage.get("deals") or []),
     }
+    compact_state_counts = {}
     state_counts = price_stage.get("cache_state_counts")
     if isinstance(state_counts, dict):
-        coverage["state_counts"] = {
+        compact_state_counts = {
             str(state): _safe_non_negative_int(count)
             for state, count in state_counts.items()
         }
+        coverage["state_counts"] = compact_state_counts
     state_summary = price_stage.get("cache_state_summary")
     if isinstance(state_summary, list):
         coverage["state_summary"] = [
@@ -3398,6 +3447,7 @@ def build_price_cache_coverage(price_stage: dict | None) -> dict | None:
             for item in state_summary
             if isinstance(item, dict) and _safe_non_negative_int(item.get("count")) > 0
         ]
+    compact_no_price_counts = {}
     no_price_counts = price_stage.get("no_price_classification_counts")
     if isinstance(no_price_counts, dict):
         compact_counts = {
@@ -3406,6 +3456,7 @@ def build_price_cache_coverage(price_stage: dict | None) -> dict | None:
             if _safe_non_negative_int(count) > 0
         }
         if compact_counts:
+            compact_no_price_counts = compact_counts
             coverage["no_price_classification_counts"] = compact_counts
             coverage["no_price_classification_advisory_only"] = bool(
                 price_stage.get("no_price_classification_advisory_only", True)
@@ -3435,6 +3486,16 @@ def build_price_cache_coverage(price_stage: dict | None) -> dict | None:
             coverage["no_price_classification_advisory_only"] = bool(
                 price_stage.get("no_price_classification_advisory_only", True)
             )
+    coverage["resumable_queue_status"] = "pending" if is_partial else "finished"
+    coverage["resumable_queue_label"] = (
+        "Cola resumible pendiente" if is_partial else "Cola resumible terminada"
+    )
+    coverage["final_state_summary"] = _build_final_cache_state_summary(
+        is_partial=is_partial,
+        deferred_count=deferred_count,
+        state_counts=compact_state_counts,
+        no_price_counts=compact_no_price_counts,
+    )
     coverage["coverage_label"] = (
         f"{_format_count_label(processed_count)}/{_format_count_label(candidate_total)}"
         if candidate_total
@@ -3447,8 +3508,13 @@ def build_price_cache_coverage(price_stage: dict | None) -> dict | None:
             "Las ofertas mostradas pueden no incluir juegos aún no verificados."
         )
     else:
-        coverage["summary"] = f"Caché revisada: {coverage['coverage_label']} juegos revisados."
-        coverage["detail"] = "Sin pendientes por presupuesto en esta corrida."
+        coverage["summary"] = (
+            f"Cola resumible terminada: {coverage['coverage_label']} juegos revisados."
+        )
+        coverage["detail"] = (
+            "Sin pendientes por presupuesto; fallos/cooldown y juegos sin precio "
+            "confirmado se muestran aparte."
+        )
     return coverage
 
 

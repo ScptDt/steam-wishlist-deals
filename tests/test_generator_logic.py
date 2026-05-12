@@ -4296,6 +4296,56 @@ class StopApiContractTests(unittest.TestCase):
             "coming_soon",
         )
 
+    def test_build_price_cache_coverage_separates_final_states_when_queue_finished(self) -> None:
+        coverage = build_price_cache_coverage(
+            {
+                "deals": [{"appid": "10"}],
+                "refresh_candidate_count": 2934,
+                "processed_count": 2934,
+                "deferred_by_time_budget": 0,
+                "time_budget_exhausted": False,
+                "cache_state_counts": {
+                    "fresh": 2435,
+                    "cooldown": 110,
+                    "failed_no_data": 389,
+                    "missing": 0,
+                },
+                "cache_state_summary": [
+                    {"state": "fresh", "label": "fresh cache", "count": 2435},
+                    {"state": "cooldown", "label": "failed/cooldown", "count": 110},
+                    {"state": "failed_no_data", "label": "failed/no data", "count": 389},
+                ],
+                "no_price_classification_counts": {
+                    "coming_soon": 12,
+                    "unavailable_or_removed_review": 8,
+                    "temporary_unconfirmed": 110,
+                },
+            }
+        )
+
+        self.assertIsNotNone(coverage)
+        self.assertEqual(coverage["status"], "complete")
+        self.assertEqual(coverage["resumable_queue_status"], "finished")
+        self.assertEqual(coverage["resumable_queue_label"], "Cola resumible terminada")
+        self.assertIn("Cola resumible terminada", coverage["summary"])
+        self.assertIn("fallos/cooldown", coverage["detail"])
+        self.assertIn(
+            {"state": "resumable_queue_finished", "label": "Cola resumible terminada", "count": 0},
+            coverage["final_state_summary"],
+        )
+        self.assertIn(
+            {"state": "price_confirmed", "label": "Precio confirmado/cache válido", "count": 2435},
+            coverage["final_state_summary"],
+        )
+        self.assertIn(
+            {"state": "temporary_unconfirmed", "label": "Fallos temporales/cooldown", "count": 110},
+            coverage["final_state_summary"],
+        )
+        self.assertIn(
+            {"state": "no_price_confirmed", "label": "Sin precio confirmado", "count": 389},
+            coverage["final_state_summary"],
+        )
+
     def test_generate_json_serializes_cache_coverage_for_latest_report_ui(self) -> None:
         coverage = build_price_cache_coverage(
             {

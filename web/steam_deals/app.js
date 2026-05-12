@@ -3673,6 +3673,15 @@ const LATEST_NO_PRICE_CLASSIFICATION_ORDER = [
   'unknown_no_price',
 ];
 
+const LATEST_FINAL_CACHE_STATE_LABELS = {
+  resumable_queue_finished: 'Cola resumible terminada',
+  resumable_queue_pending: 'Cola resumible pendiente',
+  price_confirmed: 'Precio confirmado/cache válido',
+  temporary_unconfirmed: 'Fallos temporales/cooldown',
+  no_price_confirmed: 'Sin precio confirmado',
+  missing_or_unclassified: 'Sin clasificar todavía',
+};
+
 function latestNoPriceClassificationLabel(category, fallback = '') {
   const key = String(category || '').trim();
   const label = String(fallback || '').trim();
@@ -3712,6 +3721,40 @@ function latestNoPriceClassificationSamples(coverage) {
       failureReason: String((sample && sample.failure_reason) || '').trim(),
     };
   }).filter((sample) => sample.category || sample.name || sample.appid);
+}
+
+function latestFinalCacheStateItems(coverage) {
+  const rawItems = Array.isArray(coverage && coverage.final_state_summary)
+    ? coverage.final_state_summary
+    : [];
+  return rawItems.map((item) => ({
+    state: String((item && item.state) || '').trim(),
+    label: String(
+      (item && item.label) ||
+      LATEST_FINAL_CACHE_STATE_LABELS[String((item && item.state) || '').trim()] ||
+      ''
+    ).trim(),
+    count: latestCoverageCount(item && item.count),
+  })).filter((item) => item.state && item.label);
+}
+
+function renderLatestFinalCacheStates(coverage) {
+  const items = latestFinalCacheStateItems(coverage);
+  if (!items.length) return '';
+  const queueStatus = String((coverage && coverage.resumable_queue_status) || '').trim();
+  const finished = queueStatus === 'finished';
+  return `
+    <div class="latest-cache-final-states" data-latest-cache-final-states>
+      <div class="latest-cache-final-title">${finished ? 'Cola resumible terminada' : 'Estado de cobertura warm-cache'}</div>
+      <div class="latest-cache-final-copy">${finished ? 'deferred=0 indica que la cola resumible terminó; no significa cobertura perfecta. Fallos/cooldown y juegos sin precio confirmado se revisan por separado.' : 'La cola resumible todavía tiene pendientes; las ofertas pueden no incluir juegos no verificados.'}</div>
+      <div class="latest-cache-final-pills" aria-label="Estados finales de cobertura warm-cache">
+        ${items.map((item) => {
+          const countCopy = item.count > 0 ? `: ${formatLatestCoverageCount(item.count)}` : '';
+          return `<strong data-final-cache-state="${escapeHtml(item.state)}">${escapeHtml(item.label)}${escapeHtml(countCopy)}</strong>`;
+        }).join('')}
+      </div>
+    </div>
+  `;
 }
 
 function renderLatestNoPriceClassification(coverage) {
@@ -3768,8 +3811,9 @@ function renderLatestCacheCoverage(report) {
   const deferred = latestCoverageCount(coverage.deferred_count);
   const isPartial = coverage.is_partial === true || coverage.status === 'partial' || deferred > 0;
   const hasDeferred = isPartial && deferred > 0;
+  const finalStates = renderLatestFinalCacheStates(coverage);
   const noPriceClassification = renderLatestNoPriceClassification(coverage);
-  if (!hasDeferred && !noPriceClassification) return '';
+  if (!hasDeferred && !finalStates && !noPriceClassification) return '';
   const processed = latestCoverageCount(coverage.processed_count);
   const total = latestCoverageCount(coverage.refresh_candidate_count) || processed + deferred;
   const coverageLabel = String(coverage.coverage_label || '').trim() || `${formatLatestCoverageCount(processed)}/${formatLatestCoverageCount(total)}`;
@@ -3779,10 +3823,11 @@ function renderLatestCacheCoverage(report) {
     : ' Usa Continuar warm-cache para revisar otra tanda con la misma caché, en una corrida normal con --warm-cache y sin --no-cache.';
   return `
     <div class="latest-cache-coverage ${isPartial ? 'latest-cache-coverage-partial' : 'latest-cache-coverage-complete'}" data-latest-cache-coverage>
-      <div class="latest-cache-coverage-title">${isPartial ? 'Caché parcial' : 'Caché revisada'}</div>
+      <div class="latest-cache-coverage-title">${isPartial ? 'Caché parcial' : 'Cola resumible terminada'}</div>
       <div class="latest-cache-coverage-main">${escapeHtml(coverageLabel)} juegos revisados</div>
-      <div class="latest-cache-coverage-copy">${hasDeferred ? `Quedan ${escapeHtml(formatLatestCoverageCount(deferred))} pendientes por confirmar. Las ofertas mostradas pueden no incluir juegos aún no verificados.${resumeCopy}` : 'Sin pendientes por presupuesto en esta corrida; revisa por separado los juegos sin precio confirmado.'}</div>
+      <div class="latest-cache-coverage-copy">${hasDeferred ? `Quedan ${escapeHtml(formatLatestCoverageCount(deferred))} pendientes por confirmar. Las ofertas mostradas pueden no incluir juegos aún no verificados.${resumeCopy}` : 'Sin pendientes por presupuesto; eso no implica cobertura perfecta si quedan fallos/cooldown o juegos sin precio confirmado.'}</div>
       ${renderLatestCacheStateSummary(coverage)}
+      ${finalStates}
       ${noPriceClassification}
       ${hasDeferred ? `
         <div class="latest-cache-coverage-actions">
