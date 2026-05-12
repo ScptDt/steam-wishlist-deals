@@ -964,6 +964,142 @@ class WishlistHygieneTests(unittest.TestCase):
         self.assertEqual(hygiene["summary"]["review_items_count"], 3)
         self.assertEqual(hygiene["summary"]["signal_counts"], {"invalid_appid": 3})
 
+    def test_build_wishlist_hygiene_signals_marks_high_confidence_external_owned(self) -> None:
+        hygiene = build_wishlist_hygiene_signals(
+            [{"appid": "1145360", "name": "Hades"}],
+            external_matches=[
+                {
+                    "store_id": "gog",
+                    "store_type": "library",
+                    "source": "user_library_export",
+                    "external_id": "hades",
+                    "external_name": "Hades",
+                    "wishlist_appid": "1145360",
+                    "match_method": "steam_appid",
+                    "confidence": "high",
+                    "evidence": "owned_in_user_export",
+                    "observed_at": "2026-05-12",
+                }
+            ],
+        )
+
+        item = hygiene["items"][0]
+
+        self.assertEqual(item["signals"], ["external_owned"])
+        self.assertEqual(item["reasons"], ["aparece en una biblioteca externa importada: GOG"])
+        self.assertTrue(item["advisory_only"])
+        self.assertEqual(item["action"], "review")
+        self.assertEqual(
+            item["external_matches"],
+            [
+                {
+                    "store_id": "gog",
+                    "store_name": "GOG",
+                    "store_type": "library",
+                    "source": "user_library_export",
+                    "external_name": "Hades",
+                    "match_method": "steam_appid",
+                    "confidence": "high",
+                    "evidence": "owned_in_user_export",
+                    "external_id": "hades",
+                    "observed_at": "2026-05-12",
+                }
+            ],
+        )
+        self.assertEqual(hygiene["summary"]["signal_counts"], {"external_owned": 1})
+        self.assertIn("external", hygiene["source_signals"])
+
+    def test_build_wishlist_hygiene_signals_splits_external_bundle_and_review_needed(self) -> None:
+        hygiene = build_wishlist_hygiene_signals(
+            [
+                {"appid": "200", "name": "Bundle Game"},
+                {"appid": "300", "name": "Ambiguous Game"},
+            ],
+            external_matches=[
+                {
+                    "store": "Fanatical",
+                    "store_type": "bundle_export",
+                    "source": "user_order_export",
+                    "external_name": "Bundle Game",
+                    "appid": "200",
+                    "confidence": "high",
+                },
+                {
+                    "store_id": "epic",
+                    "store_type": "manual",
+                    "source": "manual_import",
+                    "external_name": "Ambiguous Game",
+                    "wishlist_appid": "300",
+                    "match_method": "normalized_title",
+                    "confidence": "medium",
+                    "evidence": "manual_match",
+                },
+            ],
+        )
+
+        by_appid = {item["appid"]: item for item in hygiene["items"]}
+
+        self.assertEqual(by_appid["200"]["signals"], ["external_bundle_owned"])
+        self.assertEqual(by_appid["300"]["signals"], ["external_review_needed"])
+        self.assertIn("bundle/orden externa importada", by_appid["200"]["reasons"][0])
+        self.assertIn("revisar match externo", by_appid["300"]["reasons"][0])
+        self.assertEqual(hygiene["summary"]["signal_counts"]["external_bundle_owned"], 1)
+        self.assertEqual(hygiene["summary"]["signal_counts"]["external_review_needed"], 1)
+
+    def test_build_wishlist_hygiene_signals_rejects_low_confidence_and_price_only_external_matches(self) -> None:
+        hygiene = build_wishlist_hygiene_signals(
+            [
+                {"appid": "400", "name": "Low Confidence"},
+                {"appid": "500", "name": "Price Only"},
+            ],
+            external_matches=[
+                {
+                    "store_id": "gog",
+                    "store_type": "library",
+                    "external_name": "Low Confidence",
+                    "wishlist_appid": "400",
+                    "confidence": "low",
+                    "evidence": "owned_in_user_export",
+                },
+                {
+                    "store_id": "itad",
+                    "store_type": "price_index",
+                    "external_name": "Price Only",
+                    "wishlist_appid": "500",
+                    "confidence": "high",
+                    "evidence": "price_only",
+                },
+            ],
+        )
+
+        self.assertEqual(hygiene["items"], [])
+        self.assertEqual(hygiene["summary"]["signal_counts"], {})
+
+    def test_build_wishlist_hygiene_signals_dedupes_external_matches_and_keeps_special_characters(self) -> None:
+        external_match = {
+            "store": "GOG",
+            "type": "library",
+            "source": "user_library_export",
+            "slug": "cafe-racer-deluxe",
+            "external_name": "Café™ Racer: Deluxe",
+            "confidence": "high",
+            "evidence": "owned_in_user_export",
+            "reason": "Coincidencia local: Café™ Racer <Deluxe> & export",
+        }
+
+        hygiene = build_wishlist_hygiene_signals(
+            [{"appid": "600", "name": "Café Racer Deluxe"}],
+            external_matches=[None, {}, external_match, dict(external_match)],
+        )
+
+        item = hygiene["items"][0]
+
+        self.assertEqual(item["signals"], ["external_owned"])
+        self.assertEqual(item["reasons"], ["Coincidencia local: Café™ Racer <Deluxe> & export"])
+        self.assertEqual(len(item["external_matches"]), 1)
+        self.assertEqual(item["external_matches"][0]["external_name"], "Café™ Racer: Deluxe")
+        self.assertEqual(item["external_matches"][0]["external_id"], "cafe-racer-deluxe")
+
 
 class ConfigTests(unittest.TestCase):
     def test_load_and_save_user_config_roundtrip(self) -> None:
