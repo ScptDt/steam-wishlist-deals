@@ -378,6 +378,9 @@ def get_data_json() -> dict:
                     "name": d.get("steam_name", "?"),
                     "discount": d.get("discount", 0),
                     "priceFmt": d.get("price_fmt", "?"),
+                    "importanceTier": d.get("importance_tier", ""),
+                    "recommendationLabel": d.get("purchase_label", "Comprar ahora"),
+                    "recommendationReasons": d.get("purchase_reasons", []),
                 }
             )
 

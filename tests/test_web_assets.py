@@ -740,6 +740,61 @@ class Payday2BudgetImportanceTests(unittest.TestCase):
         self.assertEqual(rec["budget_fit"][0]["importance_tier"], "S")
         self.assertIn("Heist", rec["budget_fit"][0]["value_reasons"][0])
 
+    def test_buy_now_uses_importance_not_only_big_discount(self) -> None:
+        missing = [
+            {
+                "appid": "100",
+                "steam_name": "PAYDAY 2: Very Cheap Tailor Pack",
+                "price_raw": 3900,
+                "price_fmt": "Mex$ 39.00",
+                "orig_raw": 39000,
+                "discount": 90,
+            },
+            {
+                "appid": "200",
+                "steam_name": "PAYDAY 2: Important Bank Heist",
+                "price_raw": 6400,
+                "price_fmt": "Mex$ 64.00",
+                "orig_raw": 12800,
+                "discount": 50,
+            },
+        ]
+
+        rec = payday2_dlc_tracker.compute_recommendations(
+            missing, budget=None, alert_price=None, min_deal=50
+        )
+
+        self.assertEqual(
+            [d["steam_name"] for d in rec["buy_now"]],
+            ["PAYDAY 2: Important Bank Heist"],
+        )
+        self.assertEqual(rec["buy_now"][0]["purchase_label"], "Comprar ahora")
+        self.assertIn("Contenido jugable prioritario", rec["buy_now"][0]["purchase_reasons"])
+        self.assertEqual(
+            [d["steam_name"] for d in rec["review_deals"]],
+            ["PAYDAY 2: Very Cheap Tailor Pack"],
+        )
+        self.assertEqual(rec["review_deals"][0]["purchase_action"], "review")
+
+    def test_general_dlc_can_be_buy_now_when_price_is_compelling(self) -> None:
+        missing = [
+            {
+                "appid": "300",
+                "steam_name": "PAYDAY 2: Legacy Pack",
+                "price_raw": 4900,
+                "price_fmt": "Mex$ 49.00",
+                "orig_raw": 9800,
+                "discount": 50,
+            }
+        ]
+
+        rec = payday2_dlc_tracker.compute_recommendations(
+            missing, budget=None, alert_price=None, min_deal=50
+        )
+
+        self.assertEqual([d["appid"] for d in rec["buy_now"]], ["300"])
+        self.assertIn("Buen valor para completar", rec["buy_now"][0]["purchase_reasons"])
+
     def test_payday2_web_payload_exposes_budget_value_metadata(self) -> None:
         original_store = copy.deepcopy(payday2_web._store)
         all_dlcs = {
@@ -748,9 +803,9 @@ class Payday2BudgetImportanceTests(unittest.TestCase):
                 "steam_name": "PAYDAY 2: Important Bank Heist",
                 "price_raw": 6400,
                 "price_fmt": "Mex$ 64.00",
-                "orig_raw": 6400,
+                "orig_raw": 12800,
                 "orig_fmt": "",
-                "discount": 0,
+                "discount": 50,
             }
         }
         recommendations = payday2_dlc_tracker.compute_recommendations(
@@ -796,6 +851,9 @@ class Payday2BudgetImportanceTests(unittest.TestCase):
         self.assertEqual(payload["dlcs"][0]["importanceTier"], "S")
         self.assertGreater(payload["dlcs"][0]["valueScore"], 0)
         self.assertIn("Heist", payload["dlcs"][0]["valueReasons"][0])
+        self.assertEqual(payload["buyNow"][0]["importanceTier"], "S")
+        self.assertEqual(payload["buyNow"][0]["recommendationLabel"], "Comprar ahora")
+        self.assertIn("Contenido jugable prioritario", payload["buyNow"][0]["recommendationReasons"])
         self.assertEqual(payload["cacheStatus"]["catalog"]["count"], 1)
 
     def test_payday2_cache_status_payload_reports_counts_and_staleness(self) -> None:

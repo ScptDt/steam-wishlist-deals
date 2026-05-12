@@ -1073,6 +1073,59 @@ def enrich_payday2_dlc_value(dlc: dict) -> dict:
     return {**dlc, **compute_payday2_dlc_value(dlc)}
 
 
+def build_payday2_purchase_advice(dlc: dict, min_deal: int = 50) -> dict:
+    """Return conservative buy-now advice for an already priced PAYDAY 2 DLC."""
+    enriched = enrich_payday2_dlc_value(dlc)
+    discount = max(0, int(enriched.get("discount") or 0))
+    price_mxn = max(0, int(enriched.get("price_raw") or 0)) / 100
+    tier = str(enriched.get("importance_tier") or "B")
+    base_reasons = [str(r) for r in enriched.get("value_reasons", []) if r]
+
+    if discount <= 0:
+        return {
+            "purchase_action": "wait",
+            "purchase_label": "Esperar oferta",
+            "purchase_reasons": ["Sin oferta activa"],
+            "buy_now": False,
+        }
+    if discount < min_deal:
+        return {
+            "purchase_action": "wait",
+            "purchase_label": "Esperar mejor descuento",
+            "purchase_reasons": [f"Descuento menor al mínimo ({min_deal}%)"],
+            "buy_now": False,
+        }
+
+    reasons = [f"Cumple mínimo {min_deal}%"]
+    reasons.extend(base_reasons[:2])
+    if tier in {"S", "A"}:
+        reasons.insert(0, "Contenido jugable prioritario")
+        return {
+            "purchase_action": "buy_now",
+            "purchase_label": "Comprar ahora",
+            "purchase_reasons": reasons[:3],
+            "buy_now": True,
+        }
+    if tier == "B" and (discount >= max(min_deal, 75) or 0 < price_mxn <= 50):
+        reasons.insert(0, "Buen valor para completar")
+        return {
+            "purchase_action": "buy_now",
+            "purchase_label": "Comprar ahora",
+            "purchase_reasons": reasons[:3],
+            "buy_now": True,
+        }
+    return {
+        "purchase_action": "review",
+        "purchase_label": "Revisar si quieres completar",
+        "purchase_reasons": ["Oferta secundaria"] + base_reasons[:2],
+        "buy_now": False,
+    }
+
+
+def enrich_payday2_purchase_advice(dlc: dict, min_deal: int = 50) -> dict:
+    return {**dlc, **build_payday2_purchase_advice(dlc, min_deal)}
+
+
 def payday2_budget_sort_key(dlc: dict) -> tuple:
     enriched = enrich_payday2_dlc_value(dlc)
     return (
@@ -1090,13 +1143,17 @@ def compute_recommendations(
     alert_price: float | None,
     min_deal: int = 50,
 ) -> dict:
-    enriched_missing = [enrich_payday2_dlc_value(d) for d in missing]
+    enriched_missing = [
+        enrich_payday2_purchase_advice(enrich_payday2_dlc_value(d), min_deal)
+        for d in missing
+    ]
     on_sale = sorted(
         [d for d in enriched_missing if d.get("discount", 0) > 0],
         key=payday2_budget_sort_key,
     )
 
-    buy_now = [d for d in on_sale if d.get("discount", 0) >= min_deal]
+    buy_now = [d for d in on_sale if d.get("buy_now")]
+    review_deals = [d for d in on_sale if d.get("purchase_action") == "review"]
 
     alerts = []
     if alert_price:
@@ -1119,6 +1176,7 @@ def compute_recommendations(
 
     return {
         "buy_now": buy_now,
+        "review_deals": review_deals,
         "alerts": alerts,
         "budget_fit": budget_fit,
         "optimal_next": optimal,
