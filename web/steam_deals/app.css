@@ -844,6 +844,58 @@ details .details-body .field:last-child {
 }
 .latest-report-stat-label { color: var(--text2); font-size: 0.78rem; margin-bottom: 0.25rem; }
 .latest-report-stat-value { color: var(--text); font-size: 1.1rem; font-weight: 700; }
+.warm-cache-background-banner {
+  margin-top: 0.75rem;
+  padding: 0.75rem 0.85rem;
+  border-radius: 8px;
+  border: 1px solid rgba(102, 192, 244, 0.24);
+  background: rgba(42, 71, 94, 0.22);
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  justify-content: space-between;
+  gap: 0.65rem;
+}
+.warm-cache-background-copy {
+  display: flex;
+  flex-direction: column;
+  gap: 0.18rem;
+  min-width: 0;
+}
+.warm-cache-background-copy strong {
+  color: var(--text);
+  font-size: 0.86rem;
+}
+.warm-cache-background-copy span,
+.warm-cache-background-copy small {
+  color: var(--text2);
+  font-size: 0.76rem;
+  line-height: 1.45;
+}
+.warm-cache-background-banner-progress {
+  border-color: rgba(240, 178, 50, 0.32);
+  background: rgba(240, 178, 50, 0.08);
+}
+.warm-cache-background-banner-progress .warm-cache-background-copy strong {
+  color: var(--yellow);
+}
+.warm-cache-background-banner-ok {
+  border-color: rgba(108, 198, 68, 0.32);
+  background: rgba(108, 198, 68, 0.08);
+}
+.warm-cache-background-banner-ok .warm-cache-background-copy strong {
+  color: var(--green);
+}
+.warm-cache-background-banner-warn {
+  border-color: rgba(240, 178, 50, 0.45);
+  background: rgba(240, 178, 50, 0.08);
+}
+.warm-cache-background-banner-warn .warm-cache-background-copy strong {
+  color: var(--yellow);
+}
+.warm-cache-background-refresh {
+  flex: 0 0 auto;
+}
 .latest-cache-coverage {
   margin-top: 0.75rem;
   padding: 0.75rem 0.85rem;

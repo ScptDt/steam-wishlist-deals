@@ -1625,6 +1625,86 @@ function buildWarmCacheContinueFilters() {
   return filters;
 }
 
+function warmCacheBackgroundBannerEl() {
+  let el = $('warm-cache-background-banner');
+  if (el) return el;
+  const card = $('output-card');
+  if (!card) return null;
+  el = document.createElement('div');
+  el.id = 'warm-cache-background-banner';
+  el.className = 'warm-cache-background-banner hidden';
+  el.setAttribute('data-warm-cache-background-banner', '');
+  el.setAttribute('role', 'status');
+  el.setAttribute('aria-live', 'polite');
+  const anchor = $('latest-report-card') || fileLinks;
+  card.insertBefore(el, anchor || null);
+  return el;
+}
+
+function bindWarmCacheBackgroundBannerActions(el) {
+  if (!el) return;
+  const btn = el.querySelector('[data-warm-cache-refresh-summary]');
+  if (btn) btn.addEventListener('click', () => refreshLatestReportSummaryFromBanner(btn));
+}
+
+function setWarmCacheBackgroundBanner(state, title, message, detail = '', options = {}) {
+  const el = warmCacheBackgroundBannerEl();
+  if (!el) return;
+  const refreshAction = options.showRefresh
+    ? '<button type="button" class="file-link file-link-button warm-cache-background-refresh" data-warm-cache-refresh-summary>Refrescar resumen</button>'
+    : '';
+  el.className = `warm-cache-background-banner warm-cache-background-banner-${state}`;
+  el.innerHTML = `
+    <div class="warm-cache-background-copy">
+      <strong>${escapeHtml(title)}</strong>
+      <span>${escapeHtml(message)}</span>
+      ${detail ? `<small>${escapeHtml(detail)}</small>` : ''}
+    </div>
+    ${refreshAction}
+  `;
+  bindWarmCacheBackgroundBannerActions(el);
+}
+
+function updateWarmCacheBackgroundBannerFromEvent(ev) {
+  if (!ev || ev.type !== 'progress') return;
+  const current = Number(ev.current || 0);
+  const total = Number(ev.total || 0);
+  const label = String(ev.label || 'Warm-cache').trim();
+  const progress = total > 0 ? `[${current}/${total}] ${label}` : label;
+  setWarmCacheBackgroundBanner(
+    'progress',
+    'Warm-cache en segundo plano',
+    progress,
+    'Puedes seguir revisando el último reporte mientras se revalida con --warm-cache, sin --no-cache.'
+  );
+}
+
+async function refreshLatestReportSummaryFromBanner(btn) {
+  if (btn) btn.disabled = true;
+  try {
+    const files = await fetchGeneratedFilesList();
+    await syncLatestReportEmptyState(files);
+    await syncLatestReportCard(files);
+    setWarmCacheBackgroundBanner(
+      'ok',
+      'Resumen refrescado',
+      'El último reporte visible se volvió a leer desde el JSON local.',
+      'Si todavía aparece Caché parcial, puedes continuar otra tanda con la misma caché.',
+      {showRefresh: true}
+    );
+  } catch (e) {
+    setWarmCacheBackgroundBanner(
+      'warn',
+      'No se pudo refrescar el resumen',
+      'Revisa el JSON técnico o vuelve a intentar desde el último reporte.',
+      e && e.message ? e.message : '',
+      {showRefresh: true}
+    );
+  } finally {
+    if (btn) btn.disabled = false;
+  }
+}
+
 function setWarmCacheContinueStatus(btn, message, state = 'progress') {
   if (!btn) return;
   const coverageCard = btn.closest('[data-latest-cache-coverage]');
@@ -1634,9 +1714,10 @@ function setWarmCacheContinueStatus(btn, message, state = 'progress') {
   statusEl.className = `latest-cache-continue-status latest-cache-continue-status-${state}`;
 }
 
-async function streamSteamDealsRunResponse(resp) {
+async function streamSteamDealsRunResponse(resp, options = {}) {
   const reader = resp.body.getReader();
   const decoder = new TextDecoder();
+  const onEvent = typeof options.onEvent === 'function' ? options.onEvent : null;
   let buffer = '';
 
   while (true) {
@@ -1652,7 +1733,8 @@ async function streamSteamDealsRunResponse(resp) {
         if (line.startsWith('data: ')) {
           try {
             const ev = JSON.parse(line.slice(6));
-            handleEvent(ev);
+            handleEvent(ev, options);
+            if (onEvent) onEvent(ev);
           } catch(e) {}
         }
       }
@@ -1675,8 +1757,10 @@ async function runSteamDealsUI(options = {}) {
   if (options.introLine) appendLine(options.introLine, 'step');
   progressBar.style.width = '0%';
   progressText.textContent = startLabel;
-  fileLinks.innerHTML = '';
-  fileLinks.classList.add('hidden');
+  if (options.preserveOutputFiles !== true) {
+    fileLinks.innerHTML = '';
+    fileLinks.classList.add('hidden');
+  }
   btnRun.disabled = true;
   if (triggerButton && triggerButton !== btnRun) triggerButton.disabled = true;
   resetStopUiState();
@@ -1718,7 +1802,10 @@ async function runSteamDealsUI(options = {}) {
       return false;
     }
 
-    await streamSteamDealsRunResponse(resp);
+    await streamSteamDealsRunResponse(resp, {
+      onEvent: options.onEvent,
+      preserveLatestReportOnDone: options.preserveLatestReportOnDone === true,
+    });
     return true;
   } catch(e) {
     if (e.name !== 'AbortError') {
@@ -2135,7 +2222,7 @@ if (btnRunPd2) btnRunPd2.addEventListener('click', async () => {
   abortCtrl = null;
 });
 
-function handleEvent(ev) {
+function handleEvent(ev, options = {}) {
   if (ev.type === 'line') {
     appendLine(ev.text, ev.cls || 'normal');
   }
@@ -2154,11 +2241,15 @@ function handleEvent(ev) {
       progressText.textContent = 'Error (codigo ' + ev.exit_code + ')';
       progressBar.style.background = 'linear-gradient(90deg, var(--red), #a02020)';
     }
-    if (ev.files && ev.files.length) {
+    const hasFiles = ev.files && ev.files.length;
+    const preserveLatestReport = options.preserveLatestReportOnDone === true && !hasFiles;
+    if (hasFiles) {
       showFiles(ev.files);
     }
-    syncLatestReportEmptyState(ev.files);
-    syncLatestReportCard(ev.files);
+    if (!preserveLatestReport) {
+      syncLatestReportEmptyState(ev.files);
+      syncLatestReportCard(ev.files);
+    }
   }
 }
 
@@ -3616,12 +3707,21 @@ async function continueWarmCacheFromLatestReport(btn) {
     'Continuando con la misma caché: revalidando otra tanda con --warm-cache, sin --no-cache.',
     'progress'
   );
+  setWarmCacheBackgroundBanner(
+    'progress',
+    'Warm-cache en segundo plano',
+    'Revalidando otra tanda con la misma caché.',
+    'Puedes seguir revisando el último reporte; se usa --warm-cache, sin --no-cache.'
+  );
   const completed = await runSteamDealsUI({
     filters: buildWarmCacheContinueFilters(),
     startLabel: 'Continuando warm-cache...',
     introLine: 'Continuando warm-cache con la caché actual (sin --no-cache).',
     conflictMessage: 'Ya hay una ejecucion en curso. Espera a que termine antes de continuar warm-cache.',
     triggerButton: btn,
+    preserveOutputFiles: true,
+    preserveLatestReportOnDone: true,
+    onEvent: updateWarmCacheBackgroundBannerFromEvent,
   });
   if (btn && btn.isConnected) {
     btn.textContent = originalLabel;
@@ -3635,6 +3735,17 @@ async function continueWarmCacheFromLatestReport(btn) {
       completed ? 'ok' : 'warn'
     );
   }
+  setWarmCacheBackgroundBanner(
+    completed ? 'ok' : 'warn',
+    completed ? 'Caché actualizada; refresca el resumen' : 'No se pudo actualizar caché',
+    completed
+      ? 'La continuación terminó. Refresca manualmente el resumen para confirmar si la cobertura quedó completa o sigue parcial.'
+      : 'Revisa el log; si ya hay una ejecución activa, espera a que termine antes de reintentar.',
+    completed
+      ? 'No se asume cobertura completa si todavía quedan pendientes/deferred.'
+      : 'Se respetó el lock actual y no se usó --no-cache.',
+    {showRefresh: completed}
+  );
 }
 
 function bindLatestReportQuickActions() {

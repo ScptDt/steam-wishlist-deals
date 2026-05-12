@@ -394,6 +394,37 @@ class WebAssetsTests(unittest.TestCase):
         self.assertIn(".latest-cache-continue-status", app_css)
         self.assertIn(".latest-cache-continue-status-progress", app_css)
 
+    def test_warm_cache_continue_uses_internal_background_banner(self) -> None:
+        app_js = (ROOT / "web" / "steam_deals" / "app.js").read_text(
+            encoding="utf-8"
+        )
+        app_css = (ROOT / "web" / "steam_deals" / "app.css").read_text(
+            encoding="utf-8"
+        )
+
+        self.assertIn("function warmCacheBackgroundBannerEl", app_js)
+        self.assertIn("data-warm-cache-background-banner", app_js)
+        self.assertIn("role', 'status'", app_js)
+        self.assertIn("aria-live', 'polite'", app_js)
+        self.assertIn("function setWarmCacheBackgroundBanner", app_js)
+        self.assertIn("function updateWarmCacheBackgroundBannerFromEvent", app_js)
+        self.assertIn("function refreshLatestReportSummaryFromBanner", app_js)
+        self.assertIn("data-warm-cache-refresh-summary", app_js)
+        self.assertIn("preserveOutputFiles: true", app_js)
+        self.assertIn("preserveLatestReportOnDone: true", app_js)
+        self.assertIn("updateWarmCacheBackgroundBannerFromEvent", app_js)
+        self.assertIn("preserveLatestReportOnDone === true && !hasFiles", app_js)
+        self.assertIn("Puedes seguir revisando el último reporte", app_js)
+        self.assertIn("se usa --warm-cache, sin --no-cache", app_js)
+        self.assertIn("Caché actualizada; refresca el resumen", app_js)
+        self.assertIn("No se asume cobertura completa si todavía quedan pendientes/deferred", app_js)
+        self.assertIn("Refrescar resumen", app_js)
+        self.assertIn(".warm-cache-background-banner", app_css)
+        self.assertIn(".warm-cache-background-banner-progress", app_css)
+        self.assertIn(".warm-cache-background-banner-ok", app_css)
+        self.assertIn(".warm-cache-background-banner-warn", app_css)
+        self.assertIn(".warm-cache-background-refresh", app_css)
+
     def test_latest_report_renders_selection_review_ui_inside_details(self) -> None:
         app_js = (ROOT / "web" / "steam_deals" / "app.js").read_text(
             encoding="utf-8"
