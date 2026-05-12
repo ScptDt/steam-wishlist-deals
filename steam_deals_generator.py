@@ -1508,6 +1508,15 @@ def build_cache_state_summary(
     )
 
 
+def build_no_price_classification_summary(
+    target_ids: list[str] | tuple[str, ...],
+    cached: dict,
+) -> dict:
+    if _prices_module is None:
+        raise RuntimeError("Prices module is not available")
+    return _prices_module.build_no_price_classification_summary(target_ids, cached)
+
+
 def select_global_cache(
     cached: dict,
     cache_age: float,
@@ -2062,6 +2071,10 @@ def run_price_cache_stage(
         stale_grace_hours=PRICE_STALE_GRACE_HOURS,
         ttl_jitter_hours=PRICE_TTL_JITTER_HOURS,
     )
+    no_price_classification_summary = build_no_price_classification_summary(
+        wishlist_appids,
+        fetched_cache,
+    )
     emit_fn(f"  {build_price_cache_completion_message(deals, min_discount, n_fetched)}")
     return {
         "deals": deals,
@@ -2071,6 +2084,11 @@ def run_price_cache_stage(
         "cache_path": CACHE_FILE,
         "cache_state_counts": cache_state_summary["counts"],
         "cache_state_summary": cache_state_summary["states"],
+        "no_price_classification_advisory_only": no_price_classification_summary[
+            "advisory_only"
+        ],
+        "no_price_classification_counts": no_price_classification_summary["counts"],
+        "no_price_classification_samples": no_price_classification_summary["samples"],
         "refresh_candidate_count": price_fetch_stats["refresh_candidate_count"],
         "missing_count": price_fetch_stats["missing_count"],
         "stale_count": price_fetch_stats["stale_count"],
@@ -3380,6 +3398,43 @@ def build_price_cache_coverage(price_stage: dict | None) -> dict | None:
             for item in state_summary
             if isinstance(item, dict) and _safe_non_negative_int(item.get("count")) > 0
         ]
+    no_price_counts = price_stage.get("no_price_classification_counts")
+    if isinstance(no_price_counts, dict):
+        compact_counts = {
+            str(category): _safe_non_negative_int(count)
+            for category, count in no_price_counts.items()
+            if _safe_non_negative_int(count) > 0
+        }
+        if compact_counts:
+            coverage["no_price_classification_counts"] = compact_counts
+            coverage["no_price_classification_advisory_only"] = bool(
+                price_stage.get("no_price_classification_advisory_only", True)
+            )
+    no_price_samples = price_stage.get("no_price_classification_samples")
+    if isinstance(no_price_samples, list):
+        compact_samples = []
+        for item in no_price_samples[:8]:
+            if not isinstance(item, dict):
+                continue
+            category = str(item.get("category") or "")
+            if not category:
+                continue
+            sample = {
+                "appid": str(item.get("appid") or ""),
+                "category": category,
+                "label": str(item.get("label") or ""),
+                "reason": str(item.get("reason") or ""),
+            }
+            for key in ("name", "failure_reason"):
+                value = item.get(key)
+                if isinstance(value, str) and value:
+                    sample[key] = value[:100]
+            compact_samples.append(sample)
+        if compact_samples:
+            coverage["no_price_classification_samples"] = compact_samples
+            coverage["no_price_classification_advisory_only"] = bool(
+                price_stage.get("no_price_classification_advisory_only", True)
+            )
     coverage["coverage_label"] = (
         f"{_format_count_label(processed_count)}/{_format_count_label(candidate_total)}"
         if candidate_total

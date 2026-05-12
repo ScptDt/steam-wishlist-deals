@@ -3657,6 +3657,100 @@ function latestCacheStateItems(coverage) {
     .filter((item) => item.label && item.count > 0);
 }
 
+const LATEST_NO_PRICE_CLASSIFICATION_LABELS = {
+  coming_soon: 'Juegos por salir',
+  free_or_no_normal_price: 'Gratis o sin precio normal',
+  unavailable_or_removed_review: 'Revisar disponibilidad',
+  temporary_unconfirmed: 'No confirmado todavía',
+  unknown_no_price: 'Sin precio confirmado',
+};
+
+const LATEST_NO_PRICE_CLASSIFICATION_ORDER = [
+  'coming_soon',
+  'free_or_no_normal_price',
+  'unavailable_or_removed_review',
+  'temporary_unconfirmed',
+  'unknown_no_price',
+];
+
+function latestNoPriceClassificationLabel(category, fallback = '') {
+  const key = String(category || '').trim();
+  const label = String(fallback || '').trim();
+  return LATEST_NO_PRICE_CLASSIFICATION_LABELS[key] || label || key.replace(/_/g, ' ');
+}
+
+function latestNoPriceClassificationItems(coverage) {
+  const counts = coverage && typeof coverage.no_price_classification_counts === 'object'
+    ? coverage.no_price_classification_counts
+    : {};
+  const categories = LATEST_NO_PRICE_CLASSIFICATION_ORDER.concat(
+    Object.keys(counts).sort().filter((category) => !LATEST_NO_PRICE_CLASSIFICATION_ORDER.includes(category))
+  );
+  return categories
+    .map((category) => ({
+      category,
+      label: latestNoPriceClassificationLabel(category),
+      count: latestCoverageCount(counts[category]),
+    }))
+    .filter((item) => item.category && item.count > 0);
+}
+
+function latestNoPriceClassificationSamples(coverage) {
+  const samples = Array.isArray(coverage && coverage.no_price_classification_samples)
+    ? coverage.no_price_classification_samples
+    : [];
+  return samples.slice(0, 5).map((sample) => {
+    const category = String((sample && sample.category) || '').trim();
+    const appid = String((sample && sample.appid) || '').trim();
+    const name = String((sample && sample.name) || '').trim();
+    return {
+      appid,
+      name,
+      category,
+      label: latestNoPriceClassificationLabel(category, sample && sample.label),
+      reason: String((sample && sample.reason) || '').trim(),
+      failureReason: String((sample && sample.failure_reason) || '').trim(),
+    };
+  }).filter((sample) => sample.category || sample.name || sample.appid);
+}
+
+function renderLatestNoPriceClassification(coverage) {
+  const items = latestNoPriceClassificationItems(coverage);
+  const samples = latestNoPriceClassificationSamples(coverage);
+  if (!items.length && !samples.length) return '';
+  const sampleList = samples.length
+    ? `
+      <ul class="latest-cache-no-price-samples">
+        ${samples.map((sample) => {
+          const title = sample.name || (sample.appid ? `App ${sample.appid}` : sample.label);
+          const reason = sample.failureReason
+            ? `${sample.reason || 'No confirmado todavía'} (${sample.failureReason})`
+            : sample.reason;
+          return `
+            <li>
+              <strong>${escapeHtml(sample.label)}</strong>
+              <span>${escapeHtml(title)}</span>
+              ${reason ? `<small>${escapeHtml(reason)}</small>` : ''}
+            </li>
+          `;
+        }).join('')}
+      </ul>
+    `
+    : '';
+  return `
+    <div class="latest-cache-no-price" data-latest-no-price-classification>
+      <div class="latest-cache-no-price-title">Juegos sin precio clasificados</div>
+      <div class="latest-cache-no-price-copy">Solo revisión: estas categorías no eliminan juegos, no cambian ranking y no prueban que un juego esté retirado.</div>
+      ${items.length ? `
+        <div class="latest-cache-no-price-pills" aria-label="Categorías sin precio">
+          ${items.map((item) => `<strong data-no-price-category="${escapeHtml(item.category)}">${escapeHtml(item.label)}: ${escapeHtml(formatLatestCoverageCount(item.count))}</strong>`).join('')}
+        </div>
+      ` : ''}
+      ${sampleList}
+    </div>
+  `;
+}
+
 function renderLatestCacheStateSummary(coverage) {
   const items = latestCacheStateItems(coverage);
   if (!items.length) return '';
@@ -3673,7 +3767,9 @@ function renderLatestCacheCoverage(report) {
   if (!coverage || typeof coverage !== 'object') return '';
   const deferred = latestCoverageCount(coverage.deferred_count);
   const isPartial = coverage.is_partial === true || coverage.status === 'partial' || deferred > 0;
-  if (!isPartial || deferred <= 0) return '';
+  const hasDeferred = isPartial && deferred > 0;
+  const noPriceClassification = renderLatestNoPriceClassification(coverage);
+  if (!hasDeferred && !noPriceClassification) return '';
   const processed = latestCoverageCount(coverage.processed_count);
   const total = latestCoverageCount(coverage.refresh_candidate_count) || processed + deferred;
   const coverageLabel = String(coverage.coverage_label || '').trim() || `${formatLatestCoverageCount(processed)}/${formatLatestCoverageCount(total)}`;
@@ -3682,15 +3778,18 @@ function renderLatestCacheCoverage(report) {
     ? ` Usa Continuar warm-cache para revisar otra tanda con la misma caché (pista ${escapeHtml(nextHint)}), en una corrida normal con --warm-cache y sin --no-cache.`
     : ' Usa Continuar warm-cache para revisar otra tanda con la misma caché, en una corrida normal con --warm-cache y sin --no-cache.';
   return `
-    <div class="latest-cache-coverage latest-cache-coverage-partial" data-latest-cache-coverage>
-      <div class="latest-cache-coverage-title">Caché parcial</div>
+    <div class="latest-cache-coverage ${isPartial ? 'latest-cache-coverage-partial' : 'latest-cache-coverage-complete'}" data-latest-cache-coverage>
+      <div class="latest-cache-coverage-title">${isPartial ? 'Caché parcial' : 'Caché revisada'}</div>
       <div class="latest-cache-coverage-main">${escapeHtml(coverageLabel)} juegos revisados</div>
-      <div class="latest-cache-coverage-copy">Quedan ${escapeHtml(formatLatestCoverageCount(deferred))} pendientes por confirmar. Las ofertas mostradas pueden no incluir juegos aún no verificados.${resumeCopy}</div>
+      <div class="latest-cache-coverage-copy">${hasDeferred ? `Quedan ${escapeHtml(formatLatestCoverageCount(deferred))} pendientes por confirmar. Las ofertas mostradas pueden no incluir juegos aún no verificados.${resumeCopy}` : 'Sin pendientes por presupuesto en esta corrida; revisa por separado los juegos sin precio confirmado.'}</div>
       ${renderLatestCacheStateSummary(coverage)}
-      <div class="latest-cache-coverage-actions">
-        <button type="button" class="file-link file-link-button latest-cache-coverage-action" data-latest-action="continue-warm-cache">Continuar warm-cache</button>
-      </div>
-      <div class="latest-cache-continue-status hidden" data-latest-cache-continue-status role="status" aria-live="polite"></div>
+      ${noPriceClassification}
+      ${hasDeferred ? `
+        <div class="latest-cache-coverage-actions">
+          <button type="button" class="file-link file-link-button latest-cache-coverage-action" data-latest-action="continue-warm-cache">Continuar warm-cache</button>
+        </div>
+        <div class="latest-cache-continue-status hidden" data-latest-cache-continue-status role="status" aria-live="polite"></div>
+      ` : ''}
     </div>
   `;
 }

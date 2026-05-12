@@ -14,6 +14,31 @@ ENTRY_FAILED_AT_KEY = "_failed_at"
 ENTRY_FAILURE_REASON_KEY = "_failure_reason"
 FETCH_ERROR_KEY = "_steam_deals_fetch_error"
 PRICE_DATA_FAILURE_REASON = "no_price_data"
+NO_PRICE_CLASSIFICATION_KEY = "_no_price_classification"
+NO_PRICE_CATEGORY_LABELS = {
+    "coming_soon": "Juegos por salir",
+    "free_or_no_normal_price": "Gratis o sin precio normal",
+    "unavailable_or_removed_review": "Revisar disponibilidad",
+    "temporary_unconfirmed": "No confirmado todavía",
+    "unknown_no_price": "Sin precio confirmado",
+}
+NO_PRICE_CATEGORY_REASONS = {
+    "coming_soon": "Steam lo marca como próximo lanzamiento.",
+    "free_or_no_normal_price": "Steam no publica un precio normal para este juego.",
+    "unavailable_or_removed_review": (
+        "Steam respondió sin precio; podría no estar disponible para compra "
+        "o no tener precio regional."
+    ),
+    "temporary_unconfirmed": (
+        "La verificación falló o está en cooldown; conviene reintentar más tarde."
+    ),
+    "unknown_no_price": "La respuesta no trae datos suficientes para clasificarlo.",
+}
+TEMPORARY_NO_PRICE_FAILURE_PREFIXES = ("http_4", "http_5", "error_")
+TEMPORARY_NO_PRICE_FAILURE_REASONS = frozenset(
+    ("fallback_budget_deferred", "time_budget_deferred")
+)
+NO_PRICE_CLASSIFICATION_SAMPLE_LIMIT = 8
 DEFAULT_FAILURE_RETRY_HOURS = 2.0
 DEFAULT_HTTP_400_CIRCUIT_BREAKER_THRESHOLD = 3
 DEFAULT_INDIVIDUAL_FALLBACK_WORKERS = 1
@@ -126,6 +151,170 @@ def process_app_entry(
         "metacritic_score": info.get("metacritic", {}).get("score"),
         "metacritic_url": info.get("metacritic", {}).get("url", ""),
         "categories": [category["id"] for category in info.get("categories", [])],
+    }
+
+
+def _safe_no_price_text(value, *, limit: int = 100) -> str:
+    if not isinstance(value, str):
+        return ""
+    cleaned = re.sub(r"\s+", " ", value).strip()
+    return cleaned[:limit]
+
+
+def _appdetails_entry_for_appid(appid: str, data: dict | None) -> dict | None:
+    if not isinstance(data, dict):
+        return None
+    entry = data.get(appid)
+    return entry if isinstance(entry, dict) else None
+
+
+def _extract_appdetails_info(appdetails: dict | None) -> tuple[dict | None, bool]:
+    if not isinstance(appdetails, dict):
+        return None, False
+    if "success" in appdetails:
+        info = appdetails.get("data")
+        return (info if isinstance(info, dict) else None), appdetails.get("success") is True
+    return appdetails, True
+
+
+def _is_temporary_no_price_failure(failure_reason: str | None) -> bool:
+    if not isinstance(failure_reason, str) or not failure_reason:
+        return False
+    if failure_reason in TEMPORARY_NO_PRICE_FAILURE_REASONS:
+        return True
+    return failure_reason.startswith(TEMPORARY_NO_PRICE_FAILURE_PREFIXES)
+
+
+def _build_no_price_classification(
+    category: str,
+    *,
+    info: dict | None = None,
+    failure_reason: str | None = None,
+) -> dict:
+    classification = {
+        "category": category,
+        "label": NO_PRICE_CATEGORY_LABELS[category],
+        "reason": NO_PRICE_CATEGORY_REASONS[category],
+        "advisory_only": True,
+    }
+    if isinstance(info, dict):
+        name = _safe_no_price_text(info.get("name"))
+        if name:
+            classification["name"] = name
+    if isinstance(failure_reason, str) and failure_reason:
+        classification["failure_reason"] = _safe_no_price_text(failure_reason, limit=60)
+    return classification
+
+
+def classify_no_price_appdetails(
+    appdetails: dict | None,
+    failure_reason: str | None = None,
+) -> dict | None:
+    if _is_temporary_no_price_failure(failure_reason):
+        return _build_no_price_classification(
+            "temporary_unconfirmed",
+            failure_reason=failure_reason,
+        )
+
+    info, success = _extract_appdetails_info(appdetails)
+    if not success or not isinstance(info, dict) or not info:
+        return _build_no_price_classification(
+            "unknown_no_price",
+            info=info,
+            failure_reason=failure_reason,
+        )
+
+    if info.get("price_overview"):
+        return None
+
+    release_date = info.get("release_date")
+    if isinstance(release_date, dict) and release_date.get("coming_soon") is True:
+        return _build_no_price_classification(
+            "coming_soon",
+            info=info,
+            failure_reason=failure_reason,
+        )
+
+    if info.get("is_free") is True:
+        return _build_no_price_classification(
+            "free_or_no_normal_price",
+            info=info,
+            failure_reason=failure_reason,
+        )
+
+    return _build_no_price_classification(
+        "unavailable_or_removed_review",
+        info=info,
+        failure_reason=failure_reason,
+    )
+
+
+def _compact_no_price_classification(classification: dict | None) -> dict | None:
+    if not isinstance(classification, dict):
+        return None
+    category = classification.get("category")
+    if category not in NO_PRICE_CATEGORY_LABELS:
+        return None
+    compact = {
+        "category": category,
+        "label": str(classification.get("label") or NO_PRICE_CATEGORY_LABELS[category]),
+        "reason": str(classification.get("reason") or NO_PRICE_CATEGORY_REASONS[category]),
+        "advisory_only": True,
+    }
+    for key in ("name", "failure_reason"):
+        value = _safe_no_price_text(classification.get(key), limit=100)
+        if value:
+            compact[key] = value
+    return compact
+
+
+def classify_no_price_cache_entry(entry: dict | None) -> dict | None:
+    if not isinstance(entry, dict):
+        return None
+    existing = _compact_no_price_classification(entry.get(NO_PRICE_CLASSIFICATION_KEY))
+    if existing:
+        return existing
+    failure_reason = entry.get(ENTRY_FAILURE_REASON_KEY)
+    if not isinstance(failure_reason, str) or not failure_reason:
+        return None
+    return classify_no_price_appdetails(None, failure_reason=failure_reason)
+
+
+def build_no_price_classification_summary(
+    appids: list[str] | tuple[str, ...],
+    fetched_cache: dict,
+    *,
+    sample_limit: int = NO_PRICE_CLASSIFICATION_SAMPLE_LIMIT,
+) -> dict:
+    counts: dict[str, int] = {}
+    samples: list[dict] = []
+    safe_limit = max(0, int(sample_limit or 0))
+    for appid in appids:
+        entry = fetched_cache.get(appid) if isinstance(fetched_cache, dict) else None
+        classification = classify_no_price_cache_entry(entry)
+        if not classification:
+            continue
+        category = str(classification.get("category") or "")
+        if category not in NO_PRICE_CATEGORY_LABELS:
+            continue
+        counts[category] = int(counts.get(category, 0) or 0) + 1
+        if len(samples) >= safe_limit:
+            continue
+        sample = {
+            "appid": str(appid),
+            "category": category,
+            "label": str(classification.get("label") or NO_PRICE_CATEGORY_LABELS[category]),
+            "reason": str(classification.get("reason") or NO_PRICE_CATEGORY_REASONS[category]),
+        }
+        for key in ("name", "failure_reason"):
+            value = _safe_no_price_text(classification.get(key), limit=100)
+            if value:
+                sample[key] = value
+        samples.append(sample)
+    return {
+        "advisory_only": True,
+        "counts": counts,
+        "samples": samples,
     }
 
 
@@ -456,14 +645,20 @@ def _fetch_individual_fallback_entry(
     delay: float,
     fetch_single_fn,
     process_app_entry_fn,
-) -> tuple[str, dict | None, str | None]:
+) -> tuple[str, dict | None, str | None, dict | None]:
     single = fetch_single_fn(appid, country, delay)
     fetch_error_reason = _fetch_failure_reason(single)
     parsed = None
     if single and not fetch_error_reason:
         parsed = process_app_entry_fn(appid, single)
     failure_reason = None if parsed else (fetch_error_reason or PRICE_DATA_FAILURE_REASON)
-    return appid, parsed, failure_reason
+    classification = None
+    if not parsed:
+        classification = classify_no_price_appdetails(
+            _appdetails_entry_for_appid(appid, single),
+            failure_reason=failure_reason,
+        )
+    return appid, parsed, failure_reason, classification
 
 
 def _handle_individual_fallback(
@@ -517,7 +712,7 @@ def _handle_individual_fallback(
                 )
             )
 
-    for appid, parsed, failure_reason in results:
+    for appid, parsed, failure_reason, classification in results:
         batch_stats["total"] += 1
         previous_entry = fetched_cache.get(appid)
         if isinstance(stats_out, dict):
@@ -551,6 +746,7 @@ def _handle_individual_fallback(
                     parsed,
                     now_ts=now_ts,
                     failure_reason=failure_reason or PRICE_DATA_FAILURE_REASON,
+                    no_price_classification=classification,
                 )
     return batch_stats
 
@@ -697,9 +893,17 @@ def _resolve_batch_with_guardrails(
             continue
 
         for appid in current_batch:
+            parsed = process_app_entry_fn(appid, data)
+            classification = None
+            if not parsed:
+                classification = classify_no_price_appdetails(
+                    _appdetails_entry_for_appid(appid, data),
+                    failure_reason=PRICE_DATA_FAILURE_REASON,
+                )
             fetched_cache[appid] = _cache_result_entry(
-                process_app_entry_fn(appid, data),
+                parsed,
                 now_ts=now_ts,
+                no_price_classification=classification,
             )
         sleep_fn(delay)
 
@@ -831,12 +1035,17 @@ def _cache_result_entry(
     *,
     now_ts: float,
     failure_reason: str = PRICE_DATA_FAILURE_REASON,
+    no_price_classification: dict | None = None,
 ) -> dict:
     if not isinstance(entry, dict) or not entry:
-        return {
+        failed_entry = {
             ENTRY_FAILED_AT_KEY: now_ts,
             ENTRY_FAILURE_REASON_KEY: failure_reason or PRICE_DATA_FAILURE_REASON,
         }
+        classification = _compact_no_price_classification(no_price_classification)
+        if classification:
+            failed_entry[NO_PRICE_CLASSIFICATION_KEY] = classification
+        return failed_entry
     return _stamp_entry(entry, now_ts=now_ts)
 
 

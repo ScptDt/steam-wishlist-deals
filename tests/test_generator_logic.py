@@ -84,6 +84,8 @@ from steam_deals_family import (
     cross_hltb_with_family_context as module_cross_hltb_with_family_context,
 )
 from steam_deals_prices import (
+    build_no_price_classification_summary as module_build_no_price_classification_summary,
+    classify_no_price_appdetails as module_classify_no_price_appdetails,
     count_refresh_candidates as module_count_refresh_candidates,
     fetch_single as module_fetch_single,
     get_deals_from_wishlist as module_get_deals_from_wishlist,
@@ -2514,6 +2516,116 @@ class PriceCacheTests(unittest.TestCase):
         self.assertEqual(result, {"_steam_deals_fetch_error": "http_429"})
         self.assertEqual(sleep_calls, [1.5])
 
+    def test_classify_no_price_appdetails_uses_conservative_categories(self) -> None:
+        cases = [
+            (
+                {
+                    "success": True,
+                    "data": {
+                        "name": "Future Game",
+                        "release_date": {"coming_soon": True},
+                    },
+                },
+                None,
+                "coming_soon",
+            ),
+            (
+                {"success": True, "data": {"name": "Free Game", "is_free": True}},
+                None,
+                "free_or_no_normal_price",
+            ),
+            (
+                {"success": True, "data": {"name": "Regional Game"}},
+                None,
+                "unavailable_or_removed_review",
+            ),
+            (None, "http_429", "temporary_unconfirmed"),
+            ({"success": True, "data": {}}, None, "unknown_no_price"),
+        ]
+
+        for appdetails, failure_reason, expected_category in cases:
+            with self.subTest(expected_category=expected_category):
+                classification = module_classify_no_price_appdetails(
+                    appdetails,
+                    failure_reason=failure_reason,
+                )
+
+                self.assertIsNotNone(classification)
+                self.assertEqual(classification["category"], expected_category)
+                self.assertTrue(classification["advisory_only"])
+
+    def test_get_deals_from_wishlist_preserves_no_price_classification(self) -> None:
+        now_ts = 200000.0
+        fetched_cache = {}
+
+        deals, total = module_get_deals_from_wishlist(
+            ["10"],
+            fetched_cache,
+            "steam-id",
+            min_discount=50,
+            get_json=lambda _url, headers=None: {
+                "10": {
+                    "success": True,
+                    "data": {
+                        "name": "Future Game",
+                        "release_date": {"coming_soon": True},
+                    },
+                }
+            },
+            sleep_fn=lambda _seconds: None,
+            monotonic_fn=lambda: 0.0,
+            current_time_fn=lambda: now_ts,
+            save_price_cache_fn=lambda _steam_id, _cache: None,
+            fetch_single_fn=lambda _appid, _country, _delay: None,
+            process_app_entry_fn=lambda appid, data: module_process_app_entry(
+                appid, data, parse_release_year_fn=module_parse_release_year
+            ),
+            emit=lambda *_args, **_kwargs: None,
+            warn=lambda text: text,
+            dim=lambda text: text,
+            batch_size=1,
+        )
+
+        self.assertEqual(total, 1)
+        self.assertEqual(deals, [])
+        self.assertEqual(fetched_cache["10"].get("_failure_reason"), "no_price_data")
+        self.assertEqual(
+            fetched_cache["10"]["_no_price_classification"]["category"],
+            "coming_soon",
+        )
+
+    def test_no_price_classification_summary_counts_and_limits_samples(self) -> None:
+        fetched_cache = {
+            "10": {
+                "_failed_at": 200000.0,
+                "_failure_reason": "no_price_data",
+                "_no_price_classification": {
+                    "category": "coming_soon",
+                    "label": "Juegos por salir",
+                    "reason": "Steam lo marca como próximo lanzamiento.",
+                    "advisory_only": True,
+                    "name": "Future Game",
+                },
+            },
+            "20": {"_failed_at": 200000.0, "_failure_reason": "http_429"},
+            "30": {"_fetched_at": 200000.0, "discount_percent": 80},
+        }
+
+        summary = module_build_no_price_classification_summary(
+            ["10", "20", "30"],
+            fetched_cache,
+            sample_limit=1,
+        )
+
+        self.assertTrue(summary["advisory_only"])
+        self.assertEqual(
+            summary["counts"],
+            {"coming_soon": 1, "temporary_unconfirmed": 1},
+        )
+        self.assertEqual(len(summary["samples"]), 1)
+        self.assertEqual(summary["samples"][0]["appid"], "10")
+        self.assertEqual(summary["samples"][0]["name"], "Future Game")
+
     def test_cache_state_summary_derives_readable_states_from_existing_fields(self) -> None:
         now_ts = 1_700_000_000.0
         cached = {
@@ -4146,6 +4258,43 @@ class StopApiContractTests(unittest.TestCase):
         )
         self.assertIn("Caché parcial", coverage["summary"])
         self.assertIn("pueden no incluir juegos aún no verificados", coverage["detail"])
+
+    def test_build_price_cache_coverage_exposes_no_price_classification(self) -> None:
+        coverage = build_price_cache_coverage(
+            {
+                "deals": [],
+                "refresh_candidate_count": 5,
+                "processed_count": 5,
+                "deferred_by_time_budget": 0,
+                "time_budget_exhausted": False,
+                "no_price_classification_advisory_only": True,
+                "no_price_classification_counts": {
+                    "coming_soon": 2,
+                    "temporary_unconfirmed": 1,
+                    "unknown_no_price": 0,
+                },
+                "no_price_classification_samples": [
+                    {
+                        "appid": "10",
+                        "name": "Future Game",
+                        "category": "coming_soon",
+                        "label": "Juegos por salir",
+                        "reason": "Steam lo marca como próximo lanzamiento.",
+                    }
+                ],
+            }
+        )
+
+        self.assertIsNotNone(coverage)
+        self.assertTrue(coverage["no_price_classification_advisory_only"])
+        self.assertEqual(
+            coverage["no_price_classification_counts"],
+            {"coming_soon": 2, "temporary_unconfirmed": 1},
+        )
+        self.assertEqual(
+            coverage["no_price_classification_samples"][0]["category"],
+            "coming_soon",
+        )
 
     def test_generate_json_serializes_cache_coverage_for_latest_report_ui(self) -> None:
         coverage = build_price_cache_coverage(

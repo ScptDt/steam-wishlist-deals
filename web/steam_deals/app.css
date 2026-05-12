@@ -938,6 +938,65 @@ details .details-body .field:last-child {
   color: var(--text);
   font-weight: 600;
 }
+.latest-cache-no-price {
+  margin-top: 0.6rem;
+  padding: 0.65rem 0.7rem;
+  border-radius: 8px;
+  border: 1px solid rgba(102, 192, 244, 0.18);
+  background: rgba(12, 20, 30, 0.22);
+}
+.latest-cache-no-price-title {
+  color: var(--text);
+  font-size: 0.78rem;
+  font-weight: 700;
+}
+.latest-cache-no-price-copy {
+  margin-top: 0.25rem;
+  color: var(--text2);
+  font-size: 0.74rem;
+  line-height: 1.45;
+}
+.latest-cache-no-price-pills {
+  margin-top: 0.45rem;
+  display: flex;
+  flex-wrap: wrap;
+  gap: 0.35rem;
+}
+.latest-cache-no-price-pills strong {
+  padding: 0.18rem 0.45rem;
+  border-radius: 999px;
+  background: rgba(102, 192, 244, 0.1);
+  color: var(--blue);
+  font-size: 0.72rem;
+  font-weight: 700;
+}
+.latest-cache-no-price-samples {
+  margin: 0.5rem 0 0;
+  padding: 0;
+  display: grid;
+  gap: 0.35rem;
+  list-style: none;
+}
+.latest-cache-no-price-samples li {
+  padding: 0.45rem 0.5rem;
+  border-radius: 7px;
+  background: rgba(255,255,255,0.04);
+  color: var(--text);
+  font-size: 0.74rem;
+}
+.latest-cache-no-price-samples strong,
+.latest-cache-no-price-samples span,
+.latest-cache-no-price-samples small {
+  display: block;
+}
+.latest-cache-no-price-samples strong {
+  color: var(--blue);
+}
+.latest-cache-no-price-samples small {
+  margin-top: 0.12rem;
+  color: var(--text2);
+  line-height: 1.35;
+}
 .latest-cache-coverage-actions {
   margin-top: 0.55rem;
   display: flex;
