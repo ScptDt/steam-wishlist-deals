@@ -76,6 +76,43 @@ class WarmCacheSummaryTests(unittest.TestCase):
         self.assertEqual(summary.http_400_direct_fallback_batches, 144)
         self.assertIn("- Fallback directo HTTP 400: 2,880 juegos en 144 tandas", output)
 
+    def test_parse_warm_cache_log_text_extracts_http_400_batch_breakdown(self) -> None:
+        text = (
+            "HTTP 400 en batch de 20 juegos; reduciendo lote\n"
+            "HTTP 400 en batch de 10 juegos; reduciendo lote\n"
+            "HTTP 400 en batch de 10 juegos; reduciendo lote\n"
+            "HTTP 400 en batch, saltando\n"
+            "HTTP 400 en batch, saltando\n"
+        )
+
+        summary = parse_warm_cache_log_text(text)
+        output = format_warm_cache_summary(summary)
+
+        self.assertEqual(summary.http_400_batch_size_counts, {"20": 1, "10": 2})
+        self.assertEqual(summary.http_400_terminal_skip_count, 2)
+        self.assertIn(
+            "- Desglose HTTP 400: batch_size=10: 2 · batch_size=20: 1 · saltos a fallback=2",
+            output,
+        )
+
+    def test_parse_warm_cache_log_text_extracts_http_400_diagnostic_samples(self) -> None:
+        text = (
+            'HTTP 400 diagnostic samples: '
+            '[{"stage":"split","depth":0,"size":20,"appids":["10","20","30","40","50"]},'
+            '{"stage":"fallback","depth":3,"size":2,"appids":["60"]}]\n'
+        )
+
+        summary = parse_warm_cache_log_text(text)
+        output = format_warm_cache_summary(summary)
+
+        self.assertEqual(summary.http_400_batch_samples[0]["stage"], "split")
+        self.assertEqual(summary.http_400_batch_samples[0]["size"], 20)
+        self.assertEqual(summary.http_400_batch_samples[1]["appids"], ["60"])
+        self.assertIn(
+            "HTTP 400 diagnostic samples: split depth=0 size=20 appids=10,20,30,40,… | fallback depth=3 size=2 appids=60",
+            output,
+        )
+
     def test_parse_warm_cache_log_text_extracts_fallback_workers_tuning(self) -> None:
         text = "Tuning precios activo: batch_size=20 · halving_limit=3 · fallback_workers=4\n"
 
@@ -340,6 +377,27 @@ class WarmCacheSummaryTests(unittest.TestCase):
         self.assertIn("no bajes el default global", recommendations[0].action)
         self.assertNotIn("repeated-http-400", codes)
         self.assertIn("rate-limit-waits", codes)
+
+    def test_analyze_warm_cache_recommends_http_400_diagnostic_samples_when_missing(self) -> None:
+        recommendations = analyze_warm_cache_recommendations(
+            [
+                WarmCacheLogSummary(degraded_batch_count=1),
+                WarmCacheLogSummary(
+                    degraded_batch_count=2,
+                    http_400_terminal_skip_count=3,
+                ),
+            ]
+        )
+
+        action = next(
+            recommendation.action
+            for recommendation in recommendations
+            if recommendation.code == "http-400-diagnostic-samples"
+        )
+
+        self.assertIn("STEAM_DEALS_HTTP_400_DIAGNOSTIC_SAMPLE_LIMIT=5", action)
+        self.assertIn("3 saltos terminales", action)
+        self.assertIn("antes de cambiar defaults", action)
 
     def test_format_warm_cache_recommendations_mentions_rate_limit_waits(self) -> None:
         output = format_warm_cache_recommendations(

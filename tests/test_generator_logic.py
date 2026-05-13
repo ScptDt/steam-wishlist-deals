@@ -1857,6 +1857,9 @@ class WarmCacheTests(unittest.TestCase):
             received["batch_size"] = kwargs.get("batch_size")
             received["max_batch_halving"] = kwargs.get("max_batch_halving")
             received["individual_fallback_workers"] = kwargs.get("individual_fallback_workers")
+            received["http_400_diagnostic_sample_limit"] = kwargs.get(
+                "http_400_diagnostic_sample_limit"
+            )
             received["max_refresh_candidates_per_run"] = kwargs.get(
                 "max_refresh_candidates_per_run"
             )
@@ -1884,12 +1887,14 @@ class WarmCacheTests(unittest.TestCase):
                 "STEAM_DEALS_INDIVIDUAL_FALLBACK_WORKERS": "4",
                 "STEAM_DEALS_MAX_REFRESH_CANDIDATES_PER_RUN": "1",
                 "STEAM_DEALS_PRICE_REFRESH_TIME_BUDGET_SECONDS": "2.5",
+                "STEAM_DEALS_HTTP_400_DIAGNOSTIC_SAMPLE_LIMIT": "2",
             },
         )
 
         self.assertEqual(received["batch_size"], 8)
         self.assertEqual(received["max_batch_halving"], 5)
         self.assertEqual(received["individual_fallback_workers"], 4)
+        self.assertEqual(received["http_400_diagnostic_sample_limit"], 2)
         self.assertEqual(received["max_refresh_candidates_per_run"], 1)
         self.assertEqual(received["refresh_time_budget_seconds"], 2.5)
         self.assertEqual(result["refresh_candidate_count"], 2)
@@ -1911,6 +1916,7 @@ class WarmCacheTests(unittest.TestCase):
         self.assertEqual(result["batch_size"], 8)
         self.assertEqual(result["batch_halving_limit"], 5)
         self.assertEqual(result["individual_fallback_workers"], 4)
+        self.assertEqual(result["http_400_batch_samples"], [])
         self.assertEqual(result["max_refresh_candidates_per_run"], 1)
         self.assertEqual(result["refresh_time_budget_seconds"], 2.5)
         self.assertTrue(
@@ -1918,7 +1924,7 @@ class WarmCacheTests(unittest.TestCase):
         )
         self.assertTrue(
             any(
-                "Tuning precios activo: batch_size=8 · halving_limit=5 · fallback_workers=4 · max_refresh_candidates=1 · time_budget_seconds=2.5" in line
+                "Tuning precios activo: batch_size=8 · halving_limit=5 · fallback_workers=4 · max_refresh_candidates=1 · time_budget_seconds=2.5 · http400_diagnostic_samples=2" in line
                 for line in emitted
             )
         )
@@ -2656,6 +2662,7 @@ class PriceCacheTests(unittest.TestCase):
                 "individual_fallback_workers": 1,
                 "max_refresh_candidates_per_run": 400,
                 "refresh_time_budget_seconds": 600.0,
+                "http_400_diagnostic_sample_limit": 0,
                 "is_custom": False,
             },
         )
@@ -2667,6 +2674,7 @@ class PriceCacheTests(unittest.TestCase):
                     "STEAM_DEALS_INDIVIDUAL_FALLBACK_WORKERS": "4",
                     "STEAM_DEALS_MAX_REFRESH_CANDIDATES_PER_RUN": "100",
                     "STEAM_DEALS_PRICE_REFRESH_TIME_BUDGET_SECONDS": "2.5",
+                    "STEAM_DEALS_HTTP_400_DIAGNOSTIC_SAMPLE_LIMIT": "3",
                 }
             ),
             {
@@ -2675,6 +2683,7 @@ class PriceCacheTests(unittest.TestCase):
                 "individual_fallback_workers": 4,
                 "max_refresh_candidates_per_run": 100,
                 "refresh_time_budget_seconds": 2.5,
+                "http_400_diagnostic_sample_limit": 3,
                 "is_custom": True,
             },
         )
@@ -2696,8 +2705,23 @@ class PriceCacheTests(unittest.TestCase):
                 "individual_fallback_workers": 1,
                 "max_refresh_candidates_per_run": 400,
                 "refresh_time_budget_seconds": 600.0,
+                "http_400_diagnostic_sample_limit": 0,
                 "is_custom": False,
             },
+        )
+
+    def test_resolve_price_fetch_tuning_bounds_http_400_diagnostic_samples(self) -> None:
+        self.assertEqual(
+            resolve_price_fetch_tuning(
+                env={"STEAM_DEALS_HTTP_400_DIAGNOSTIC_SAMPLE_LIMIT": "99"}
+            )["http_400_diagnostic_sample_limit"],
+            20,
+        )
+        self.assertEqual(
+            resolve_price_fetch_tuning(
+                env={"STEAM_DEALS_HTTP_400_DIAGNOSTIC_SAMPLE_LIMIT": "-1"}
+            )["http_400_diagnostic_sample_limit"],
+            0,
         )
 
     def test_fetch_single_returns_failure_marker_for_http_errors(self) -> None:
@@ -3667,6 +3691,7 @@ class PriceCacheTests(unittest.TestCase):
         fetched_cache = {}
         requested_batches = []
         single_calls = []
+        stats = {}
 
         def fake_get_json(url, headers=None):
             self.assertEqual(headers, {"User-Agent": "Mozilla/5.0"})
@@ -3695,6 +3720,8 @@ class PriceCacheTests(unittest.TestCase):
             warn=lambda text: f"WARN:{text}",
             dim=lambda text: f"DIM:{text}",
             batch_size=4,
+            http_400_diagnostic_sample_limit=3,
+            stats_out=stats,
         )
 
         self.assertEqual(total, 4)
@@ -3703,6 +3730,29 @@ class PriceCacheTests(unittest.TestCase):
         self.assertEqual(single_calls, ["10", "20", "30", "40"])
         self.assertTrue(
             any("reduciendo lote" in line for line in emitted)
+        )
+        self.assertEqual(
+            stats["http_400_batch_samples"],
+            [
+                {
+                    "stage": "split",
+                    "depth": 0,
+                    "size": 4,
+                    "appids": ["10", "20", "30", "40"],
+                },
+                {
+                    "stage": "split",
+                    "depth": 1,
+                    "size": 2,
+                    "appids": ["10", "20"],
+                },
+                {
+                    "stage": "fallback",
+                    "depth": 2,
+                    "size": 1,
+                    "appids": ["10"],
+                },
+            ],
         )
 
     def test_get_deals_from_wishlist_skips_extra_sleep_before_http_400_fallback(
@@ -3796,6 +3846,7 @@ class PriceCacheTests(unittest.TestCase):
         self.assertEqual(single_calls, appids)
         self.assertEqual(stats["http_400_direct_fallback_batches"], 2)
         self.assertEqual(stats["http_400_direct_fallback_count"], 4)
+        self.assertEqual(stats["http_400_batch_samples"], [])
         self.assertTrue(
             any("fallback individual directo" in line for line in emitted)
         )

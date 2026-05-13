@@ -42,6 +42,7 @@ TEMPORARY_RETRY_FAILURE_REASONS = frozenset(("http_429",))
 NO_PRICE_CLASSIFICATION_SAMPLE_LIMIT = 8
 DEFAULT_FAILURE_RETRY_HOURS = 2.0
 DEFAULT_HTTP_400_CIRCUIT_BREAKER_THRESHOLD = 3
+DEFAULT_HTTP_400_DIAGNOSTIC_SAMPLE_LIMIT = 0
 DEFAULT_INDIVIDUAL_FALLBACK_WORKERS = 1
 MAX_INDIVIDUAL_FALLBACK_WORKERS = 4
 ADAPTIVE_FALLBACK_FAILURE_RATIO = 0.5
@@ -688,6 +689,29 @@ def _merge_fallback_stats(target: dict[str, int], source: dict[str, int]) -> Non
         target[key] = int(target.get(key, 0) or 0) + int(source.get(key, 0) or 0)
 
 
+def _record_http_400_batch_sample(
+    stats_out: dict | None,
+    batch: list[str],
+    *,
+    depth: int,
+    stage: str,
+    sample_limit: int,
+) -> None:
+    if not isinstance(stats_out, dict) or sample_limit <= 0:
+        return
+    samples = stats_out.setdefault("http_400_batch_samples", [])
+    if not isinstance(samples, list) or len(samples) >= sample_limit:
+        return
+    samples.append(
+        {
+            "stage": stage,
+            "depth": depth,
+            "size": len(batch),
+            "appids": [str(appid)[:24] for appid in batch[:20]],
+        }
+    )
+
+
 def _fetch_individual_fallback_entry(
     appid: str,
     *,
@@ -845,6 +869,7 @@ def _resolve_batch_with_guardrails(
     dim,
     min_discount: int,
     max_batch_halving: int = 3,
+    http_400_diagnostic_sample_limit: int = DEFAULT_HTTP_400_DIAGNOSTIC_SAMPLE_LIMIT,
     individual_fallback_workers: int = DEFAULT_INDIVIDUAL_FALLBACK_WORKERS,
     failure_retry_hours: float = DEFAULT_FAILURE_RETRY_HOURS,
     stats_out: dict | None = None,
@@ -882,6 +907,13 @@ def _resolve_batch_with_guardrails(
                     )
                     continue
                 if exc.code == 400 and len(current_batch) > 1 and depth < max_batch_halving:
+                    _record_http_400_batch_sample(
+                        stats_out,
+                        current_batch,
+                        depth=depth,
+                        stage="split",
+                        sample_limit=http_400_diagnostic_sample_limit,
+                    )
                     if isinstance(stats_out, dict):
                         stats_out["degraded_batch_count"] = (
                             int(stats_out.get("degraded_batch_count", 0) or 0) + 1
@@ -893,6 +925,14 @@ def _resolve_batch_with_guardrails(
                     )
                     should_split = True
                     break
+                if exc.code == 400:
+                    _record_http_400_batch_sample(
+                        stats_out,
+                        current_batch,
+                        depth=depth,
+                        stage="fallback",
+                        sample_limit=http_400_diagnostic_sample_limit,
+                    )
                 _emit(
                     emit,
                     f"\n  {warn(f'HTTP {exc.code} en batch, saltando')}",
@@ -1161,6 +1201,7 @@ def get_deals_from_wishlist(
     max_batch_halving: int = 3,
     failure_retry_hours: float = DEFAULT_FAILURE_RETRY_HOURS,
     http_400_circuit_breaker_threshold: int = DEFAULT_HTTP_400_CIRCUIT_BREAKER_THRESHOLD,
+    http_400_diagnostic_sample_limit: int = DEFAULT_HTTP_400_DIAGNOSTIC_SAMPLE_LIMIT,
     individual_fallback_workers: int = DEFAULT_INDIVIDUAL_FALLBACK_WORKERS,
     max_refresh_candidates_per_run: int | None = None,
     refresh_time_budget_seconds: float | None = None,
@@ -1228,6 +1269,7 @@ def get_deals_from_wishlist(
     tracking_stats.setdefault("individual_no_data", 0)
     tracking_stats.setdefault("http_400_direct_fallback_count", 0)
     tracking_stats.setdefault("http_400_direct_fallback_batches", 0)
+    tracking_stats.setdefault("http_400_batch_samples", [])
     tracking_stats.setdefault("individual_fallback_worker_downgrade_count", 0)
     tracking_stats.setdefault("individual_fallback_failure_reasons", {})
     tracking_stats.setdefault("deferred_by_fallback_budget", 0)
@@ -1422,6 +1464,7 @@ def get_deals_from_wishlist(
                 dim=dim,
                 min_discount=min_discount,
                 max_batch_halving=max_batch_halving,
+                http_400_diagnostic_sample_limit=http_400_diagnostic_sample_limit,
                 individual_fallback_workers=current_fallback_workers,
                 failure_retry_hours=failure_retry_hours,
                 stats_out=tracking_stats,

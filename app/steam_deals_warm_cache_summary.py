@@ -25,6 +25,9 @@ class WarmCacheLogSummary:
     stale_refresh_deferred_count: int = 0
     ttl_jitter_bucket_counts: dict[str, int] = field(default_factory=dict)
     degraded_batch_count: int = 0
+    http_400_batch_size_counts: dict[str, int] = field(default_factory=dict)
+    http_400_terminal_skip_count: int = 0
+    http_400_batch_samples: list[dict] = field(default_factory=list)
     individual_fallback_count: int = 0
     individual_fallback_batches: int = 0
     individual_fallback_resolved_count: int = 0
@@ -129,6 +132,47 @@ def _parse_ttl_jitter_bucket_counts(raw_value: str) -> dict[str, int]:
     return buckets
 
 
+def _increment_count(values: dict, field_name: str, key: str) -> None:
+    counts = values.get(field_name)
+    if not isinstance(counts, dict):
+        counts = {}
+    counts[key] = int(counts.get(key, 0) or 0) + 1
+    values[field_name] = counts
+
+
+def _optional_int(value) -> int | None:
+    try:
+        return int(value)
+    except (TypeError, ValueError):
+        return None
+
+
+def _parse_http_400_batch_samples(raw_value: str) -> list[dict]:
+    try:
+        payload = json.loads(raw_value)
+    except json.JSONDecodeError:
+        return []
+    if not isinstance(payload, list):
+        return []
+
+    samples: list[dict] = []
+    for sample in payload:
+        if not isinstance(sample, dict):
+            continue
+        normalized: dict = {}
+        if stage := str(sample.get("stage") or "").strip():
+            normalized["stage"] = stage
+        for key in ("depth", "size"):
+            if (value := _optional_int(sample.get(key))) is not None:
+                normalized[key] = value
+        appids = sample.get("appids")
+        if isinstance(appids, list):
+            normalized["appids"] = [str(appid)[:24] for appid in appids[:20]]
+        if normalized:
+            samples.append(normalized)
+    return samples
+
+
 def parse_warm_cache_log_text(
     text: str, *, source_path: str | None = None
 ) -> WarmCacheLogSummary:
@@ -178,6 +222,24 @@ def parse_warm_cache_log_text(
 
         if match := re.search(r"Batches degradados por HTTP 400: (?P<count>[\d,]+)", line):
             values["degraded_batch_count"] = _parse_int(match.group("count"))
+
+        if match := re.search(
+            r"HTTP 400 en batch de (?P<size>[\d,]+) juegos; reduciendo lote",
+            line,
+        ):
+            _increment_count(
+                values,
+                "http_400_batch_size_counts",
+                str(_parse_int(match.group("size"))),
+            )
+
+        if re.search(r"HTTP 400 en batch, saltando", line):
+            values["http_400_terminal_skip_count"] += 1
+
+        if match := re.search(r"HTTP 400 diagnostic samples: (?P<samples>\[.*\])", line):
+            values["http_400_batch_samples"] = _parse_http_400_batch_samples(
+                match.group("samples")
+            )
 
         if match := re.search(
             r"Fallback individual aplicado a (?P<total>[\d,]+) juegos en "
@@ -388,6 +450,17 @@ def _format_rate_limit_action(summary: WarmCacheLogSummary) -> str:
     )
 
 
+def _format_http_400_diagnostic_action(summary: WarmCacheLogSummary) -> str:
+    terminal = summary.http_400_terminal_skip_count
+    terminal_hint = f"; {terminal:,} saltos terminales a fallback" if terminal else ""
+    return (
+        "Diagnóstico offline HTTP 400: faltan appids de muestra"
+        f"{terminal_hint}; en el próximo benchmark aprobado usa "
+        "STEAM_DEALS_HTTP_400_DIAGNOSTIC_SAMPLE_LIMIT=5 y compara logs "
+        "antes de cambiar defaults."
+    )
+
+
 def _format_fallback_cooldown_action(summary: WarmCacheLogSummary) -> str:
     failed = summary.individual_fallback_failed_count
     total = summary.individual_fallback_count
@@ -423,6 +496,48 @@ def _format_coverage_state_legend(summary: WarmCacheLogSummary) -> str | None:
         "o fin de oferta · stale cache=dato viejo usado o pendiente · "
         "failed/cooldown=no confirmado por error/rate-limit"
     )
+
+
+def _format_http_400_breakdown(summary: WarmCacheLogSummary) -> str | None:
+    parts = [
+        f"batch_size={size}: {_format_value(count)}"
+        for size, count in sorted(
+            summary.http_400_batch_size_counts.items(),
+            key=lambda item: int(item[0]),
+        )
+    ]
+    if summary.http_400_terminal_skip_count:
+        parts.append(
+            f"saltos a fallback={_format_value(summary.http_400_terminal_skip_count)}"
+        )
+    if not parts:
+        return None
+    return "- Desglose HTTP 400: " + " · ".join(parts)
+
+
+def _format_http_400_sample(sample: dict) -> str:
+    stage = sample.get("stage") or "unknown"
+    details = [str(stage)]
+    if "depth" in sample:
+        details.append(f"depth={sample['depth']}")
+    if "size" in sample:
+        details.append(f"size={sample['size']}")
+    appids = sample.get("appids")
+    if isinstance(appids, list) and appids:
+        appid_text = ",".join(str(appid) for appid in appids[:4])
+        if len(appids) > 4:
+            appid_text += ",…"
+        details.append(f"appids={appid_text}")
+    return " ".join(details)
+
+
+def _format_http_400_samples(samples: list[dict]) -> str | None:
+    if not samples:
+        return None
+    formatted = [_format_http_400_sample(sample) for sample in samples[:3]]
+    if len(samples) > 3:
+        formatted.append(f"+{len(samples) - 3} más")
+    return "- HTTP 400 diagnostic samples: " + " | ".join(formatted)
 
 
 def _format_refresh_budget_coverage_lines(
@@ -525,6 +640,15 @@ def analyze_warm_cache_recommendations(
             )
         )
 
+    if latest.degraded_batch_count > 0 and not latest.http_400_batch_samples:
+        recommendations.append(
+            WarmCacheRecommendation(
+                "http-400-diagnostic-samples",
+                "info",
+                _format_http_400_diagnostic_action(latest),
+            )
+        )
+
     if has_fallback_no_data_cooldown:
         recommendations.append(
             WarmCacheRecommendation(
@@ -597,6 +721,10 @@ def format_warm_cache_summary(summary: WarmCacheLogSummary) -> str:
             f"{_format_value(summary.individual_fallback_failed_count)} sin oferta/datos)",
         ]
     )
+    if http_400_breakdown := _format_http_400_breakdown(summary):
+        lines.append(http_400_breakdown)
+    if http_400_samples := _format_http_400_samples(summary.http_400_batch_samples):
+        lines.append(http_400_samples)
     if summary.http_400_direct_fallback_count:
         lines.append(
             "- Fallback directo HTTP 400: "

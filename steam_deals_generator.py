@@ -1291,6 +1291,8 @@ else:
 CACHE_FILE = CACHE_DIR / "prices_cache.json"
 CACHE_MAX_HOURS = 24
 PRICE_BATCH_HALVING_LIMIT = 3
+PRICE_HTTP_400_DIAGNOSTIC_SAMPLE_LIMIT = 0
+PRICE_HTTP_400_DIAGNOSTIC_SAMPLE_LIMIT_MAX = 20
 REVIEWS_CACHE_FILE = CACHE_DIR / "reviews_cache.json"
 DECK_CACHE_FILE = CACHE_DIR / "deck_cache.json"
 EXTRA_CACHE_TTL = 168  # 7 days in hours
@@ -1385,17 +1387,26 @@ def resolve_price_fetch_tuning(*, env=None) -> dict[str, int | float | bool | No
         env=env,
         minimum=0.0,
     )
+    http_400_diagnostic_sample_limit = _resolve_positive_int_env(
+        "STEAM_DEALS_HTTP_400_DIAGNOSTIC_SAMPLE_LIMIT",
+        PRICE_HTTP_400_DIAGNOSTIC_SAMPLE_LIMIT,
+        env=env,
+        minimum=0,
+        maximum=PRICE_HTTP_400_DIAGNOSTIC_SAMPLE_LIMIT_MAX,
+    )
     return {
         "batch_size": batch_size,
         "batch_halving_limit": batch_halving_limit,
         "individual_fallback_workers": individual_fallback_workers,
         "max_refresh_candidates_per_run": max_refresh_candidates_per_run,
         "refresh_time_budget_seconds": refresh_time_budget_seconds,
+        "http_400_diagnostic_sample_limit": http_400_diagnostic_sample_limit,
         "is_custom": batch_size != BATCH_SIZE
         or batch_halving_limit != PRICE_BATCH_HALVING_LIMIT
         or individual_fallback_workers != PRICE_INDIVIDUAL_FALLBACK_WORKERS
         or max_refresh_candidates_per_run != PRICE_MAX_REFRESH_CANDIDATES_PER_RUN
-        or refresh_time_budget_seconds != PRICE_REFRESH_TIME_BUDGET_SECONDS,
+        or refresh_time_budget_seconds != PRICE_REFRESH_TIME_BUDGET_SECONDS
+        or http_400_diagnostic_sample_limit != PRICE_HTTP_400_DIAGNOSTIC_SAMPLE_LIMIT,
     }
 
 
@@ -1924,6 +1935,12 @@ def run_price_cache_stage(
                 f"{tuning_msg} · "
                 f"time_budget_seconds={refresh_time_budget_seconds:g}"
             )
+        if price_tuning.get("http_400_diagnostic_sample_limit"):
+            tuning_msg = (
+                f"{tuning_msg} · "
+                "http400_diagnostic_samples="
+                f"{int(price_tuning['http_400_diagnostic_sample_limit'])}"
+            )
         emit_fn(
             f"  {_dim(tuning_msg)}"
         )
@@ -1952,6 +1969,7 @@ def run_price_cache_stage(
         "next_resume_hint": "",
         "http_400_direct_fallback_count": 0,
         "http_400_direct_fallback_batches": 0,
+        "http_400_batch_samples": [],
         "individual_fallback_worker_count": int(
             price_tuning["individual_fallback_workers"]
         ),
@@ -1979,6 +1997,9 @@ def run_price_cache_stage(
             batch_size=int(price_tuning["batch_size"]),
             max_batch_halving=int(price_tuning["batch_halving_limit"]),
             individual_fallback_workers=int(price_tuning["individual_fallback_workers"]),
+            http_400_diagnostic_sample_limit=int(
+                price_tuning["http_400_diagnostic_sample_limit"]
+            ),
             max_refresh_candidates_per_run=max_refresh_candidates_per_run,
             refresh_time_budget_seconds=refresh_time_budget_seconds,
             stats_out=price_fetch_stats,
@@ -2030,6 +2051,13 @@ def run_price_cache_stage(
         emit_fn(
             f"  {_dim(direct_fallback_msg)}"
         )
+    if price_fetch_stats.get("http_400_batch_samples"):
+        samples_msg = "HTTP 400 diagnostic samples: " + json.dumps(
+            price_fetch_stats["http_400_batch_samples"],
+            ensure_ascii=False,
+            separators=(",", ":"),
+        )
+        emit_fn(f"  {_dim(samples_msg)}")
     if price_fetch_stats["individual_fallback_worker_downgrade_count"]:
         downgrade_msg = (
             "Fallback individual adaptativo: "
@@ -2130,6 +2158,7 @@ def run_price_cache_stage(
         "next_resume_hint": price_fetch_stats["next_resume_hint"],
         "http_400_direct_fallback_count": price_fetch_stats["http_400_direct_fallback_count"],
         "http_400_direct_fallback_batches": price_fetch_stats["http_400_direct_fallback_batches"],
+        "http_400_batch_samples": price_fetch_stats["http_400_batch_samples"],
         "individual_fallback_worker_count": price_fetch_stats["individual_fallback_worker_count"],
         "individual_fallback_worker_downgrade_count": price_fetch_stats[
             "individual_fallback_worker_downgrade_count"
@@ -2246,6 +2275,7 @@ def get_deals_from_wishlist(
     batch_size: int = BATCH_SIZE,
     max_batch_halving: int = PRICE_BATCH_HALVING_LIMIT,
     individual_fallback_workers: int = PRICE_INDIVIDUAL_FALLBACK_WORKERS,
+    http_400_diagnostic_sample_limit: int = PRICE_HTTP_400_DIAGNOSTIC_SAMPLE_LIMIT,
     stats_out: dict | None = None,
     max_refresh_candidates_per_run: int | None = None,
     refresh_time_budget_seconds: float | None = None,
@@ -2279,6 +2309,7 @@ def get_deals_from_wishlist(
         refresh_ids=refresh_ids,
         max_batch_halving=max_batch_halving,
         individual_fallback_workers=individual_fallback_workers,
+        http_400_diagnostic_sample_limit=http_400_diagnostic_sample_limit,
         failure_retry_hours=PRICE_FAILURE_RETRY_HOURS,
         max_refresh_candidates_per_run=max_refresh_candidates_per_run,
         refresh_time_budget_seconds=refresh_time_budget_seconds,

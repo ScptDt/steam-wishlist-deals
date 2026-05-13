@@ -52,6 +52,16 @@ python3 steam_deals_generator.py --vanity BG00G --warm-cache
 
 Usa `STEAM_DEALS_INDIVIDUAL_FALLBACK_WORKERS` con cautela: el default sigue siendo `1`, el máximo inicial es `4`, y cualquier mejora debe compararse contra un log cold-cache equivalente antes de subirlo a un flujo normal. Si la corrida detecta demasiados fallos con workers paralelos, el fallback adaptativo puede bajar a `1` worker y dejar evidencia como `Fallback individual adaptativo` y `Fallback individual fallos por razón`.
 
+Diagnóstico opt-in para capturar muestras acotadas de batches/appids cuando Steam degrada con HTTP 400:
+
+```bash
+STEAM_DEALS_HTTP_400_DIAGNOSTIC_SAMPLE_LIMIT=5 \
+STEAM_DEALS_CACHE_DIR="$HOME/.cache/steam_deals" \
+python3 steam_deals_generator.py --vanity gaben --warm-cache
+```
+
+Mantén el límite bajo: las muestras exponen appids de la wishlist en el log local y solo sirven para diseñar el siguiente ajuste offline. El default es `0`, por lo que no se imprimen appids si no activas explícitamente la variable.
+
 Para comparar dos o más corridas en Markdown, pasa todos los logs en orden cronológico; el resumen agrega una tabla con deltas contra el log anterior y un bloque `Warm-cache next actions` con recomendaciones automáticas:
 
 ```bash
@@ -73,6 +83,7 @@ python3 steam_deals_warm_cache_summary.py \
 - [ ] `Refresh budget resumible`, si aparece: `processed`, `deferred`, `exhausted` y `next_resume_hint`; tratar `deferred` como juegos no revalidados en esa corrida.
 - [ ] Cobertura parcial, si `deferred > 0`: registrar `processed/refresh_candidates`, pendientes, deals encontrados con la cobertura disponible y acción de continuación.
 - [ ] `Batches degradados por HTTP 400`, si aparece.
+- [ ] `HTTP 400 diagnostic samples`, solo si activaste `STEAM_DEALS_HTTP_400_DIAGNOSTIC_SAMPLE_LIMIT`.
 - [ ] `Fallback individual aplicado a X juegos en Y tandas`.
 - [ ] `Fallback individual directo por HTTP 400 repetido`, si aparece.
 - [ ] `Fallback individual adaptativo` y `Fallback individual fallos por razón`, si aparecen.
@@ -111,6 +122,7 @@ python3 steam_deals_warm_cache_summary.py \
 - Si `Fallback individual total` sigue alto con cache caliente, revisar primero batch sizing y distribución de fallos/no-data.
 - Si aparece `Fallback individual directo por HTTP 400 repetido`, compara duración y `Batches degradados HTTP 400` contra una corrida previa: debe reducir splits fallidos, aunque el fallback individual siga siendo el costo dominante.
 - Si un batch menor (`STEAM_DEALS_PRICE_BATCH_SIZE`) sube `Batches degradados HTTP 400` o activa esperas de rate-limit, vuelve al default/base y no sigas bajando el batch global; el siguiente paso debe ser analizar circuito/fallback directo o instrumentar appids/batches de forma acotada antes de otro benchmark.
+- Si usas `STEAM_DEALS_HTTP_400_DIAGNOSTIC_SAMPLE_LIMIT`, trata las muestras como evidencia local temporal: appids repetidos en `split`/`fallback` ayudan a diseñar fixtures o un ajuste de circuit breaker, pero no justifican cambiar defaults sin tests. Si el resumen muestra degradación HTTP 400 sin muestras, conserva los logs y activa ese límite solo en un próximo benchmark aprobado.
 - Si `Fallback individual total` cubre casi todos los candidatos y los HTTP 400 degradados ya son bajos, prueba una corrida aislada con `STEAM_DEALS_INDIVIDUAL_FALLBACK_WORKERS=4`; si mejora sin `429`, considerar hacerlo preset/configurable.
 - Si `fallback_workers > 1` baja fuerte la duración pero también baja deals/resueltos, revisa `Fallback individual adaptativo` y las razones de fallo; no uses esa configuración como default hasta que conserve calidad.
 - Si hay muchos `sin oferta/datos`, el cooldown debe evitar reintentos inmediatos; confirmar que aparecen como `fallos recientes en cooldown` en corridas posteriores.
@@ -120,6 +132,7 @@ python3 steam_deals_warm_cache_summary.py \
 ## Interpretación de `Warm-cache next actions`
 
 - `HTTP 400 repetido`: sigue el valor sugerido (`STEAM_DEALS_PRICE_BATCH_SIZE=N`, normalmente la mitad del batch actual/base) solo si no existe ya evidencia negativa de batch menor; no cambies cache por promo todavía.
+- `Diagnóstico offline HTTP 400`: no hay appids de muestra en los logs actuales; antes de otro cambio de defaults, captura una corrida aprobada con `STEAM_DEALS_HTTP_400_DIAGNOSTIC_SAMPLE_LIMIT=5` o diseña fixtures con la evidencia existente de tamaño/saltos.
 - `Batch menor no ayudó`: conserva o vuelve al default/base; no sigas bajando el batch global y prioriza circuito/fallback directo o instrumentación offline de appids/batches problemáticos.
 - `Rate-limit observado`: espera cooldown y evita repetir benchmarks; si apareció junto con batch menor, trátalo como señal contra bajar más el batch global.
 - `Mucho fallback sin datos`: usa el desglose `fallidos/total` y espera al menos el cooldown indicado (2h por defecto) antes de forzar `--no-cache` salvo que estés capturando evidencia explícita.
@@ -145,6 +158,7 @@ python3 steam_deals_warm_cache_summary.py \
 - Stale-while-revalidate usados/diferidos/jitter:
 - Refresh budget processed/deferred/exhausted/resume:
 - Batches degradados HTTP 400:
+- HTTP 400 diagnostic samples:
 - Fallback individual total:
 - Fallback directo HTTP 400:
 - Fallback workers:
