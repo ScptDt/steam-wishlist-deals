@@ -76,6 +76,51 @@ def _should_force_web_fallback(
     return _is_truthy_flag(runtime_env.get(FORCE_WEB_FALLBACK_ENV))
 
 
+def _linux_root_graphical_session_warning(
+    *,
+    env: dict[str, str] | None = None,
+    platform: str | None = None,
+    geteuid_fn=None,
+    stat_fn=None,
+) -> str:
+    platform_name = sys.platform if platform is None else str(platform)
+    if not platform_name.startswith("linux"):
+        return ""
+    if geteuid_fn is None:
+        geteuid_fn = getattr(os, "geteuid", lambda: -1)
+    try:
+        is_root = int(geteuid_fn()) == 0
+    except Exception:
+        is_root = False
+    if not is_root:
+        return ""
+
+    runtime_env = os.environ if env is None else env
+    display_vars = [
+        name for name in ("DISPLAY", "WAYLAND_DISPLAY") if runtime_env.get(name)
+    ]
+    if not display_vars:
+        return ""
+
+    lines = [
+        "Aviso: Steam Tools Desktop se esta ejecutando como root en una sesion grafica.",
+        "El navegador fallback/Qt puede fallar si la sesion grafica pertenece al usuario normal.",
+        "Ejecuta la UI como usuario grafico no-root, por ejemplo: .venv/bin/python steam_tools_desktop.py",
+    ]
+    xauthority = str(runtime_env.get("XAUTHORITY") or "").strip()
+    if xauthority:
+        stat_fn = os.stat if stat_fn is None else stat_fn
+        try:
+            xauthority_uid = int(stat_fn(xauthority).st_uid)
+        except Exception:
+            xauthority_uid = None
+        if xauthority_uid is not None and xauthority_uid != 0:
+            lines.append(
+                "$XAUTHORITY pertenece a otro usuario; evita sudo/root para abrir la UI desktop."
+            )
+    return "\n".join(lines)
+
+
 def _normalize_clipboard_text(text: object) -> str:
     value = str(text or "")
     if not value.strip():
@@ -378,6 +423,9 @@ def main() -> None:
         browser_fallback_opened.set()
         keep_server_alive = True
         print(FALLBACK_REASON_MESSAGES.get(reason, FALLBACK_REASON_MESSAGES["window-error"]))
+        root_warning = _linux_root_graphical_session_warning()
+        if root_warning:
+            print(root_warning)
         fallback_target = _fallback_url(reason, base_url=active_url)
         print(f"URL fallback: {fallback_target}")
         opened = False

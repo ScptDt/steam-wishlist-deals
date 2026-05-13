@@ -257,6 +257,16 @@ Si en KDE/X11 o en una sesion grafica normal el artefacto ya abre sin ese flag, 
 
 No cerrar el pendiente final de UX nativa con evidencia solo de root; repetir desde tu usuario grafico normal.
 
+Si `steam_tools_desktop.py` se ejecuta como `root` dentro de una sesion grafica que pertenece a otro usuario, el server local puede iniciar y el launcher puede caer correctamente al fallback web (`missing-webview` o `forced-web-fallback`), pero el navegador/Qt puede fallar al abrir porque `DISPLAY`/`WAYLAND_DISPLAY` y `$XAUTHORITY` pertenecen al usuario grafico.
+
+Accion recomendada:
+
+```bash
+.venv/bin/python steam_tools_desktop.py
+```
+
+Ejecuta ese comando desde la sesion del usuario grafico, sin `sudo`. Si necesitas validar solo el server, usa `steam_deals_web.py --no-open`; no mezcles permisos root con la UI desktop/fallback.
+
 ### Cache / logs / output no persisten entre lanzadas
 
 El desktop actualizado ya no debe guardar cache, logs ni reportes por defecto dentro de `_MEI`. Si quieres calentar cache o dejar evidencia de un run largo fuera de la UI:

@@ -38,6 +38,7 @@ from steam_tools_desktop import (
     _desktop_window_url,
     _find_free_port,
     _fallback_url,
+    _linux_root_graphical_session_warning,
     _normalize_clipboard_text,
     _probe_steam_deals_server,
     _resolve_server_target,
@@ -355,6 +356,47 @@ class DesktopLauncherFallbackTests(unittest.TestCase):
         )
         self.assertFalse(
             _should_force_web_fallback(argv=[], env={FORCE_WEB_FALLBACK_ENV: "0"})
+        )
+
+    def test_linux_root_graphical_session_warning_is_actionable(self) -> None:
+        class _FakeStat:
+            st_uid = 1000
+
+        stat_calls = []
+
+        def fake_stat(path):
+            stat_calls.append(path)
+            return _FakeStat()
+
+        warning = _linux_root_graphical_session_warning(
+            env={"DISPLAY": ":0", "XAUTHORITY": "/run/user/1000/xauth_test"},
+            platform="linux",
+            geteuid_fn=lambda: 0,
+            stat_fn=fake_stat,
+        )
+
+        self.assertIn("root", warning)
+        self.assertIn("usuario grafico no-root", warning)
+        self.assertIn(".venv/bin/python steam_tools_desktop.py", warning)
+        self.assertIn("$XAUTHORITY pertenece a otro usuario", warning)
+        self.assertEqual(stat_calls, ["/run/user/1000/xauth_test"])
+
+    def test_linux_root_graphical_session_warning_ignores_non_root_or_headless(self) -> None:
+        self.assertEqual(
+            _linux_root_graphical_session_warning(
+                env={"DISPLAY": ":0"},
+                platform="linux",
+                geteuid_fn=lambda: 1000,
+            ),
+            "",
+        )
+        self.assertEqual(
+            _linux_root_graphical_session_warning(
+                env={},
+                platform="linux",
+                geteuid_fn=lambda: 0,
+            ),
+            "",
         )
 
     def test_main_force_web_fallback_opens_browser_and_keeps_server(self) -> None:
