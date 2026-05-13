@@ -11,6 +11,7 @@ FAILED_AT_KEY = "_failed_at"
 FETCHED_AT_KEY = "_fetched_at"
 FAILURE_REASON_KEY = "_failure_reason"
 DEFERRED_REASON_KEY = "_deferred_reason"
+NEXT_RETRY_AFTER_KEY = "_next_retry_after"
 TIME_BUDGET_DEFERRED_REASON = "time_budget_deferred"
 FALLBACK_BUDGET_FAILURE_REASON = "fallback_budget_deferred"
 DEFAULT_FAILURE_RETRY_HOURS = 2.0
@@ -60,10 +61,18 @@ def _is_stale_entry(
         return True
     fetched_at = entry.get(FETCHED_AT_KEY)
     if not isinstance(fetched_at, (int, float)):
-        failed_at = entry.get(FAILED_AT_KEY)
-        if isinstance(failed_at, (int, float)):
-            age_hours = (float(now_ts) - float(failed_at)) / 3600.0
-            return age_hours >= failure_retry_hours
+        if _is_recent_failed_entry(
+            entry,
+            now_ts=now_ts,
+            failure_retry_hours=failure_retry_hours,
+        ):
+            return False
+        if _is_retryable_failure_entry(
+            entry,
+            now_ts=now_ts,
+            failure_retry_hours=failure_retry_hours,
+        ):
+            return True
         return True
     age_hours = (float(now_ts) - float(fetched_at)) / 3600.0
     return age_hours >= ttl_hours
@@ -105,8 +114,11 @@ def _deferred_failure_ids(
         failed_at = entry.get(FAILED_AT_KEY)
         if not isinstance(failed_at, (int, float)):
             continue
-        age_hours = (float(now_ts) - float(failed_at)) / 3600.0
-        if age_hours < failure_retry_hours:
+        if _is_recent_failed_entry(
+            entry,
+            now_ts=now_ts,
+            failure_retry_hours=failure_retry_hours,
+        ):
             ids.append(appid)
     return tuple(ids)
 
@@ -238,6 +250,9 @@ def _is_recent_failed_entry(
 ) -> bool:
     if not isinstance(entry, dict):
         return False
+    next_retry_after = entry.get(NEXT_RETRY_AFTER_KEY)
+    if isinstance(next_retry_after, (int, float)):
+        return float(now_ts) < float(next_retry_after)
     failed_at = entry.get(FAILED_AT_KEY)
     if not isinstance(failed_at, (int, float)):
         return False

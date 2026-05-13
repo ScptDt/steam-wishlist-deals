@@ -2726,6 +2726,42 @@ class PriceCacheTests(unittest.TestCase):
         self.assertEqual(decision.refresh_ids, ("20",))
         self.assertEqual(decision.deferred_failure_ids, ("10",))
 
+    def test_select_scoped_cache_respects_explicit_next_retry_after_for_http_429(self) -> None:
+        now_ts = 1_700_000_000.0
+        cache = {
+            "10": {
+                "_failed_at": now_ts - (3 * 3600),
+                "_failure_reason": "http_429",
+                "_next_retry_after": now_ts + 60,
+            }
+        }
+
+        deferred = module_select_scoped_cache(
+            ["10"],
+            cache,
+            2.0,
+            no_cache=False,
+            ttl_hours=24,
+            current_time_fn=lambda: now_ts,
+            entry_ttl_hours=24,
+            failure_retry_hours=2,
+        )
+        retryable = module_select_scoped_cache(
+            ["10"],
+            cache,
+            2.0,
+            no_cache=False,
+            ttl_hours=24,
+            current_time_fn=lambda: now_ts + 61,
+            entry_ttl_hours=24,
+            failure_retry_hours=2,
+        )
+
+        self.assertEqual(deferred.refresh_ids, ())
+        self.assertEqual(deferred.deferred_failure_ids, ("10",))
+        self.assertEqual(retryable.refresh_ids, ("10",))
+        self.assertEqual(retryable.deferred_failure_ids, ())
+
     def test_select_scoped_cache_clears_expired_payload_by_default(self) -> None:
         decision = module_select_scoped_cache(
             ["10", "20"],
@@ -3206,6 +3242,156 @@ class PriceCacheTests(unittest.TestCase):
         self.assertEqual(stale, 0)
         self.assertEqual(missing_after_retry, 0)
         self.assertEqual(stale_after_retry, 1)
+
+    def test_get_deals_from_wishlist_defers_http_429_until_next_retry_after(self) -> None:
+        now_ts = 200000.0
+        fetched_cache = {
+            "10": {
+                "_failed_at": now_ts - (3 * 3600),
+                "_failure_reason": "http_429",
+                "_next_retry_after": now_ts + 60,
+            }
+        }
+        stats = {}
+        calls: list[str] = []
+
+        deals, total = module_get_deals_from_wishlist(
+            ["10"],
+            fetched_cache,
+            "steam-id",
+            min_discount=50,
+            get_json=lambda _url, headers=None: {},
+            sleep_fn=lambda _seconds: None,
+            monotonic_fn=lambda: 0.0,
+            current_time_fn=lambda: now_ts,
+            save_price_cache_fn=lambda _steam_id, _cache: None,
+            fetch_single_fn=lambda appid, _country, _delay: calls.append(appid) or None,
+            process_app_entry_fn=lambda appid, data: module_process_app_entry(
+                appid, data, parse_release_year_fn=module_parse_release_year
+            ),
+            emit=lambda *_args, **_kwargs: None,
+            warn=lambda text: text,
+            dim=lambda text: text,
+            stats_out=stats,
+        )
+
+        self.assertEqual(total, 0)
+        self.assertEqual(deals, [])
+        self.assertEqual(calls, [])
+        self.assertEqual(stats["temporary_failure_cooldown_count"], 1)
+        self.assertEqual(stats["temporary_failure_retry_candidate_count"], 0)
+
+    def test_get_deals_from_wishlist_retries_http_429_after_cooldown(self) -> None:
+        now_ts = 200000.0
+        fetched_cache = {
+            "10": {
+                "_failed_at": now_ts - (3 * 3600),
+                "_failure_reason": "http_429",
+                "_next_retry_after": now_ts - 60,
+            }
+        }
+        stats = {}
+        calls: list[str] = []
+
+        def fake_fetch_single(appid, _country, _delay):
+            calls.append(appid)
+            return {
+                appid: {
+                    "success": True,
+                    "data": {
+                        "name": "Recovered Deal",
+                        "type": "game",
+                        "price_overview": {
+                            "discount_percent": 70,
+                            "final_formatted": "$7",
+                            "initial_formatted": "$20",
+                            "final": 700,
+                        },
+                        "genres": [{"description": "Action"}],
+                        "release_date": {"coming_soon": False, "date": "2020"},
+                        "short_description": "desc",
+                        "platforms": {"linux": False},
+                        "metacritic": {"score": 81, "url": "meta"},
+                        "categories": [{"id": 1}],
+                    },
+                }
+            }
+
+        deals, total = module_get_deals_from_wishlist(
+            ["10"],
+            fetched_cache,
+            "steam-id",
+            min_discount=50,
+            get_json=lambda _url, headers=None: {},
+            sleep_fn=lambda _seconds: None,
+            monotonic_fn=lambda: 0.0,
+            current_time_fn=lambda: now_ts,
+            save_price_cache_fn=lambda _steam_id, _cache: None,
+            fetch_single_fn=fake_fetch_single,
+            process_app_entry_fn=lambda appid, data: module_process_app_entry(
+                appid, data, parse_release_year_fn=module_parse_release_year
+            ),
+            emit=lambda *_args, **_kwargs: None,
+            warn=lambda text: text,
+            dim=lambda text: text,
+            stats_out=stats,
+        )
+
+        self.assertEqual(total, 1)
+        self.assertEqual(calls, ["10"])
+        self.assertEqual([deal["appid"] for deal in deals], ["10"])
+        self.assertNotIn("_failure_reason", fetched_cache["10"])
+        self.assertNotIn("_next_retry_after", fetched_cache["10"])
+        self.assertEqual(stats["temporary_failure_retry_candidate_count"], 1)
+        self.assertEqual(stats["temporary_failure_retry_processed_count"], 1)
+        self.assertEqual(stats["temporary_failure_retry_resolved_count"], 1)
+        self.assertEqual(stats["temporary_failure_retry_failed_count"], 0)
+
+    def test_get_deals_from_wishlist_keeps_repeated_http_429_temporary(self) -> None:
+        now_ts = 200000.0
+        fetched_cache = {
+            "10": {
+                "_failed_at": now_ts - (3 * 3600),
+                "_failure_reason": "http_429",
+                "_next_retry_after": now_ts - 60,
+            }
+        }
+        stats = {}
+
+        deals, total = module_get_deals_from_wishlist(
+            ["10"],
+            fetched_cache,
+            "steam-id",
+            min_discount=50,
+            get_json=lambda _url, headers=None: {},
+            sleep_fn=lambda _seconds: None,
+            monotonic_fn=lambda: 0.0,
+            current_time_fn=lambda: now_ts,
+            save_price_cache_fn=lambda _steam_id, _cache: None,
+            fetch_single_fn=lambda _appid, _country, _delay: {
+                "_steam_deals_fetch_error": "http_429"
+            },
+            process_app_entry_fn=lambda appid, data: module_process_app_entry(
+                appid, data, parse_release_year_fn=module_parse_release_year
+            ),
+            emit=lambda *_args, **_kwargs: None,
+            warn=lambda text: text,
+            dim=lambda text: text,
+            stats_out=stats,
+        )
+
+        self.assertEqual(total, 1)
+        self.assertEqual(deals, [])
+        self.assertEqual(fetched_cache["10"]["_failure_reason"], "http_429")
+        self.assertGreater(fetched_cache["10"]["_next_retry_after"], now_ts)
+        self.assertEqual(
+            fetched_cache["10"]["_no_price_classification"]["category"],
+            "temporary_unconfirmed",
+        )
+        self.assertEqual(stats["temporary_failure_retry_candidate_count"], 1)
+        self.assertEqual(stats["temporary_failure_retry_processed_count"], 1)
+        self.assertEqual(stats["temporary_failure_retry_resolved_count"], 0)
+        self.assertEqual(stats["temporary_failure_retry_failed_count"], 1)
 
     def test_get_deals_from_wishlist_reports_http_400_batch_degradation_and_keeps_entries_retryable(
         self,

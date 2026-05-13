@@ -1949,6 +1949,11 @@ def run_price_cache_stage(
         "individual_fallback_worker_downgrade_count": 0,
         "individual_fallback_failure_reasons": {},
         "null_batch_count": 0,
+        "temporary_failure_retry_candidate_count": 0,
+        "temporary_failure_cooldown_count": 0,
+        "temporary_failure_retry_processed_count": 0,
+        "temporary_failure_retry_resolved_count": 0,
+        "temporary_failure_retry_failed_count": 0,
     }
 
     try:
@@ -2124,6 +2129,21 @@ def run_price_cache_stage(
             "individual_fallback_failure_reasons"
         ],
         "null_batch_count": price_fetch_stats["null_batch_count"],
+        "temporary_failure_retry_candidate_count": price_fetch_stats[
+            "temporary_failure_retry_candidate_count"
+        ],
+        "temporary_failure_cooldown_count": price_fetch_stats[
+            "temporary_failure_cooldown_count"
+        ],
+        "temporary_failure_retry_processed_count": price_fetch_stats[
+            "temporary_failure_retry_processed_count"
+        ],
+        "temporary_failure_retry_resolved_count": price_fetch_stats[
+            "temporary_failure_retry_resolved_count"
+        ],
+        "temporary_failure_retry_failed_count": price_fetch_stats[
+            "temporary_failure_retry_failed_count"
+        ],
         "batch_size": int(price_tuning["batch_size"]),
         "batch_halving_limit": int(price_tuning["batch_halving_limit"]),
         "individual_fallback_workers": int(price_tuning["individual_fallback_workers"]),

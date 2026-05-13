@@ -38,6 +38,7 @@ TEMPORARY_NO_PRICE_FAILURE_PREFIXES = ("http_4", "http_5", "error_")
 TEMPORARY_NO_PRICE_FAILURE_REASONS = frozenset(
     ("fallback_budget_deferred", "time_budget_deferred")
 )
+TEMPORARY_RETRY_FAILURE_REASONS = frozenset(("http_429",))
 NO_PRICE_CLASSIFICATION_SAMPLE_LIMIT = 8
 DEFAULT_FAILURE_RETRY_HOURS = 2.0
 DEFAULT_HTTP_400_CIRCUIT_BREAKER_THRESHOLD = 3
@@ -183,6 +184,40 @@ def _is_temporary_no_price_failure(failure_reason: str | None) -> bool:
     if failure_reason in TEMPORARY_NO_PRICE_FAILURE_REASONS:
         return True
     return failure_reason.startswith(TEMPORARY_NO_PRICE_FAILURE_PREFIXES)
+
+
+def _is_temporary_retry_failure_reason(failure_reason: str | None) -> bool:
+    return isinstance(failure_reason, str) and failure_reason in TEMPORARY_RETRY_FAILURE_REASONS
+
+
+def _retry_delay_seconds(failure_retry_hours: float) -> float:
+    try:
+        retry_hours = float(failure_retry_hours)
+    except (TypeError, ValueError):
+        retry_hours = DEFAULT_FAILURE_RETRY_HOURS
+    return max(0.0, retry_hours) * 3600.0
+
+
+def _failed_entry_next_retry_after(
+    entry: dict | None,
+    *,
+    failure_retry_hours: float,
+) -> float | None:
+    if not isinstance(entry, dict):
+        return None
+    explicit_retry_after = entry.get(ENTRY_NEXT_RETRY_AFTER_KEY)
+    if isinstance(explicit_retry_after, (int, float)):
+        return float(explicit_retry_after)
+    failed_at = entry.get(ENTRY_FAILED_AT_KEY)
+    if not isinstance(failed_at, (int, float)):
+        return None
+    return float(failed_at) + _retry_delay_seconds(failure_retry_hours)
+
+
+def _is_temporary_failure_entry(entry: dict | None) -> bool:
+    if not isinstance(entry, dict):
+        return False
+    return _is_temporary_retry_failure_reason(entry.get(ENTRY_FAILURE_REASON_KEY))
 
 
 def _build_no_price_classification(
@@ -401,6 +436,21 @@ def _is_failure_retry_candidate(
     return not _is_recent_failed_entry(
         entry,
         now_ts,
+        failure_retry_hours=failure_retry_hours,
+    )
+
+
+def _is_temporary_failure_retry_candidate(
+    entry: dict | None,
+    *,
+    now_ts: float,
+    failure_retry_hours: float,
+) -> bool:
+    if not _is_temporary_failure_entry(entry):
+        return False
+    return _is_failure_retry_candidate(
+        entry,
+        now_ts=now_ts,
         failure_retry_hours=failure_retry_hours,
     )
 
@@ -672,6 +722,7 @@ def _handle_individual_fallback(
     fetch_single_fn,
     process_app_entry_fn,
     individual_fallback_workers: int = DEFAULT_INDIVIDUAL_FALLBACK_WORKERS,
+    failure_retry_hours: float = DEFAULT_FAILURE_RETRY_HOURS,
     stats_out: dict | None = None,
 ) -> dict[str, int]:
     batch_stats = _build_empty_fallback_stats()
@@ -715,6 +766,11 @@ def _handle_individual_fallback(
     for appid, parsed, failure_reason, classification in results:
         batch_stats["total"] += 1
         previous_entry = fetched_cache.get(appid)
+        was_temporary_retry = _is_temporary_failure_retry_candidate(
+            previous_entry,
+            now_ts=now_ts,
+            failure_retry_hours=failure_retry_hours,
+        )
         if isinstance(stats_out, dict):
             counter_key = (
                 "individual_fallback_resolved_count"
@@ -722,16 +778,32 @@ def _handle_individual_fallback(
                 else "individual_fallback_failed_count"
             )
             stats_out[counter_key] = int(stats_out.get(counter_key, 0) or 0) + 1
+            if was_temporary_retry:
+                stats_out["temporary_failure_retry_processed_count"] = (
+                    int(stats_out.get("temporary_failure_retry_processed_count", 0) or 0)
+                    + 1
+                )
         if isinstance(parsed, dict) and parsed:
             batch_stats["resolved"] += 1
             fetched_cache[appid] = _cache_result_entry(
                 parsed,
                 now_ts=now_ts,
                 failure_reason=failure_reason or PRICE_DATA_FAILURE_REASON,
+                failure_retry_hours=failure_retry_hours,
             )
+            if was_temporary_retry and isinstance(stats_out, dict):
+                stats_out["temporary_failure_retry_resolved_count"] = (
+                    int(stats_out.get("temporary_failure_retry_resolved_count", 0) or 0)
+                    + 1
+                )
         else:
             batch_stats["failed"] += 1
             _increment_failure_reason(stats_out, failure_reason)
+            if was_temporary_retry and isinstance(stats_out, dict):
+                stats_out["temporary_failure_retry_failed_count"] = (
+                    int(stats_out.get("temporary_failure_retry_failed_count", 0) or 0)
+                    + 1
+                )
             if _should_preserve_old_cache_on_fallback_failure(
                 previous_entry,
                 min_discount=min_discount,
@@ -747,6 +819,7 @@ def _handle_individual_fallback(
                     now_ts=now_ts,
                     failure_reason=failure_reason or PRICE_DATA_FAILURE_REASON,
                     no_price_classification=classification,
+                    failure_retry_hours=failure_retry_hours,
                 )
     return batch_stats
 
@@ -773,6 +846,7 @@ def _resolve_batch_with_guardrails(
     min_discount: int,
     max_batch_halving: int = 3,
     individual_fallback_workers: int = DEFAULT_INDIVIDUAL_FALLBACK_WORKERS,
+    failure_retry_hours: float = DEFAULT_FAILURE_RETRY_HOURS,
     stats_out: dict | None = None,
 ) -> dict[str, int]:
     aggregate_fallback_stats = _build_empty_fallback_stats()
@@ -857,6 +931,7 @@ def _resolve_batch_with_guardrails(
                 fetch_single_fn=fetch_single_fn,
                 process_app_entry_fn=process_app_entry_fn,
                 individual_fallback_workers=individual_fallback_workers,
+                failure_retry_hours=failure_retry_hours,
                 stats_out=stats_out,
             )
             _merge_fallback_stats(aggregate_fallback_stats, batch_fallback_stats)
@@ -887,6 +962,7 @@ def _resolve_batch_with_guardrails(
                 fetch_single_fn=fetch_single_fn,
                 process_app_entry_fn=process_app_entry_fn,
                 individual_fallback_workers=individual_fallback_workers,
+                failure_retry_hours=failure_retry_hours,
                 stats_out=stats_out,
             )
             _merge_fallback_stats(aggregate_fallback_stats, batch_fallback_stats)
@@ -968,11 +1044,13 @@ def _is_recent_failed_entry(
 ) -> bool:
     if not isinstance(entry, dict):
         return False
-    failed_at = entry.get(ENTRY_FAILED_AT_KEY)
-    if not isinstance(failed_at, (int, float)):
+    next_retry_after = _failed_entry_next_retry_after(
+        entry,
+        failure_retry_hours=failure_retry_hours,
+    )
+    if not isinstance(next_retry_after, (int, float)):
         return False
-    age_hours = (now_ts - float(failed_at)) / 3600.0
-    return age_hours < failure_retry_hours
+    return float(now_ts) < float(next_retry_after)
 
 
 def _is_stale_entry(
@@ -1036,12 +1114,17 @@ def _cache_result_entry(
     now_ts: float,
     failure_reason: str = PRICE_DATA_FAILURE_REASON,
     no_price_classification: dict | None = None,
+    failure_retry_hours: float = DEFAULT_FAILURE_RETRY_HOURS,
 ) -> dict:
     if not isinstance(entry, dict) or not entry:
         failed_entry = {
             ENTRY_FAILED_AT_KEY: now_ts,
             ENTRY_FAILURE_REASON_KEY: failure_reason or PRICE_DATA_FAILURE_REASON,
         }
+        if _is_temporary_retry_failure_reason(failure_reason):
+            failed_entry[ENTRY_NEXT_RETRY_AFTER_KEY] = now_ts + _retry_delay_seconds(
+                failure_retry_hours
+            )
         classification = _compact_no_price_classification(no_price_classification)
         if classification:
             failed_entry[NO_PRICE_CLASSIFICATION_KEY] = classification
@@ -1155,6 +1238,28 @@ def get_deals_from_wishlist(
         _bounded_individual_fallback_workers(individual_fallback_workers),
     )
     tracking_stats.setdefault("null_batch_count", 0)
+    tracking_stats["temporary_failure_retry_candidate_count"] = sum(
+        1
+        for appid in planned_fetch
+        if _is_temporary_failure_retry_candidate(
+            fetched_cache.get(appid),
+            now_ts=now_ts,
+            failure_retry_hours=failure_retry_hours,
+        )
+    )
+    tracking_stats["temporary_failure_cooldown_count"] = sum(
+        1
+        for appid in appids
+        if _is_temporary_failure_entry(fetched_cache.get(appid))
+        and _is_recent_failed_entry(
+            fetched_cache.get(appid),
+            now_ts,
+            failure_retry_hours=failure_retry_hours,
+        )
+    )
+    tracking_stats.setdefault("temporary_failure_retry_processed_count", 0)
+    tracking_stats.setdefault("temporary_failure_retry_resolved_count", 0)
+    tracking_stats.setdefault("temporary_failure_retry_failed_count", 0)
 
     if (
         tracking_stats.get("deferred_by_time_budget")
@@ -1280,6 +1385,7 @@ def get_deals_from_wishlist(
                     fetch_single_fn=fetch_single_fn,
                     process_app_entry_fn=process_app_entry_fn,
                     individual_fallback_workers=current_fallback_workers,
+                    failure_retry_hours=failure_retry_hours,
                     stats_out=tracking_stats,
                 )
                 current_fallback_workers = _downgrade_individual_fallback_workers_if_needed(
@@ -1317,6 +1423,7 @@ def get_deals_from_wishlist(
                 min_discount=min_discount,
                 max_batch_halving=max_batch_halving,
                 individual_fallback_workers=current_fallback_workers,
+                failure_retry_hours=failure_retry_hours,
                 stats_out=tracking_stats,
             )
 
