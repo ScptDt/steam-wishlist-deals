@@ -1,6 +1,6 @@
-# Contrato futuro: wishlist hygiene multi-store
+# Contrato: wishlist hygiene multi-store local
 
-Contrato de decisión para ampliar `wishlist_hygiene` con señales externas/multi-tienda sin cambiar el comportamiento actual.
+Contrato de decisión y uso para ampliar `wishlist_hygiene` con señales externas/multi-tienda sin cambiar el comportamiento advisory-only.
 
 ## Readiness del slice
 
@@ -23,6 +23,71 @@ Contrato de decisión para ampliar `wishlist_hygiene` con señales externas/mult
    - abrir carrito o compra.
 4. Precio disponible en otra tienda **no equivale** a que el usuario ya tenga el juego.
 5. Las señales de propiedad externa deben venir de fuentes explícitas del usuario o registros locales confiables, no de disponibilidad pública.
+
+## Uso actual: import local JSON
+
+El generator acepta un archivo local con matches externos:
+
+```bash
+python3 steam_deals_generator.py --vanity gaben \
+  --wishlist-external-matches-json ./wishlist-external-matches.json
+```
+
+La Web UI usa el mismo flujo desde `Archivos opcionales` → `Matches externos wishlist (JSON)`. La ruta se valida en preflight y no se expone en el JSON de salida.
+
+Shapes aceptadas por el import local:
+
+1. Lista directa de registros.
+2. Objeto `{ "external_matches": [...] }`.
+3. Objeto `{ "matches": [...] }`.
+4. Export manual simple con una lista en `games`, `items`, `library`, `orders`, `purchases` o `bundles`.
+
+Ejemplo normalizado explícito:
+
+```json
+{
+  "external_matches": [
+    {
+      "store_id": "gog",
+      "store_name": "GOG",
+      "store_type": "library",
+      "source": "user_library_export",
+      "external_id": "hades",
+      "external_name": "Hades",
+      "wishlist_appid": "1145360",
+      "match_method": "steam_appid",
+      "confidence": "high",
+      "evidence": "owned_in_user_export",
+      "observed_at": "2026-05-13"
+    }
+  ]
+}
+```
+
+Ejemplo de export manual multi-store:
+
+```json
+{
+  "store": "Fanatical",
+  "source": "user_order_export",
+  "orders": [
+    {
+      "title": "Bundle Game",
+      "appid": "200",
+      "bundle_owned": true,
+      "external_id": "bundle-game-key"
+    }
+  ]
+}
+```
+
+Reglas de interpretación del import:
+
+- `owned=true`, `store_type=library` o evidencia `owned_in_user_export` puede generar `external_owned` si la confianza queda alta.
+- `bundle_owned=true`, `store_type=bundle_export` u órdenes/bundles propios pueden generar `external_bundle_owned`.
+- `confidence=medium` o matches manuales sin ownership fuerte quedan como `external_review_needed`.
+- `price_only`, `price`, catálogo público, bundle público, promociones o `confidence=low` no generan higiene por sí solos.
+- Payload vacío (`null`, `{}`, `[]`) no genera ruido; JSON malformado o shapes incorrectas fallan con error accionable.
 
 ## Contrato actual que se debe preservar
 
@@ -160,11 +225,15 @@ Antes de implementar una fuente externa:
 | Markdown/HTML/Web UI visible | tests de renderer/assets + escaping |
 | Fuente con red/API real | primero `ExternalScout`/docs actuales, fixtures fake, luego smoke aprobado y acotado |
 
-## Próximo slice implementable recomendado
+## Próximos slices implementables
 
-Primer corte seguro si se prioriza implementación:
+Primer corte seguro ya implementado:
 
-> Parser local de export manual GOG/Epic/Fanatical → normaliza una lista de juegos externos a `external_matches` → `build_wishlist_hygiene_signals` lo consume como señal opcional.
+> Parser local de export manual GOG/Epic/Fanatical → normaliza listas locales a `external_matches` → `build_wishlist_hygiene_signals` lo consume como señal opcional.
+
+Siguiente corte solo si aparece un export concreto:
+
+> Parser específico por formato real documentado/fixture local, manteniendo el mismo contrato y sin APIs reales.
 
 Fuera de ese primer corte:
 

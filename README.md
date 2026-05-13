@@ -14,6 +14,7 @@ Analiza tu wishlist de Steam y genera reportes detallados con deals, comparacion
 - **Etiquetas (SteamSpy)** — Categorización por etiquetas + estimación de jugadores
 - **ITAD (IsThereAnyDeal)** — Mínimo histórico, precios multi-tienda, bundles activos
 - **HLTB (HowLongToBeat)** — Cruce con tu backlog exportado de HLTB
+- **Higiene de wishlist** — Sugerencias locales de revisión, incluyendo matches externos importados manualmente (`advisory-only`, sin borrar ni cambiar score)
 - **Historial de precios** — Tendencias locales con sparklines SVG en el HTML
 - **Top Picks** — Ranking por value score (reviews, descuento, prioridad, $/hora, Deck, Metacritic y antigüedad, medida como años desde lanzamiento) con recomendación rápida y razones visibles
 
@@ -142,6 +143,37 @@ python3 steam_deals_generator.py --vanity gaben --md-frontmatter
 
 `--max-workers` controla el paralelismo de fetch en enrichment. Recomendación práctica: dejar `16` (default actual), bajar a `12` o `8` si notas rate limits/red inestable, y evitar valores muy altos para reducir riesgo de fallos externos. Este ajuste ya está expuesto también en **Filtros avanzados** de la UI compartida (web + desktop), y los presets sugieren valores rápidos (`rapido=12`, `completo=16`, `ahorro=8`).
 
+### Import local para revisar la wishlist
+
+Puedes aportar un JSON local con matches externos para que `Revisar wishlist` sugiera juegos que quizá ya tienes en otra tienda. Es **solo revisión manual**: no borra juegos, no auto-excluye, no cambia score/ranking y no llama APIs externas.
+
+```bash
+python3 steam_deals_generator.py --vanity gaben \
+  --wishlist-external-matches-json ./mis-matches-wishlist.json
+```
+
+La Web UI expone el mismo flujo en **Archivos opcionales** → `Matches externos wishlist (JSON)`.
+
+Shapes aceptadas:
+
+```json
+{
+  "external_matches": [
+    {
+      "store": "GOG",
+      "external_name": "Hades",
+      "wishlist_appid": "1145360",
+      "evidence": "owned_in_user_export",
+      "confidence": "high"
+    }
+  ]
+}
+```
+
+También acepta lista directa, `{ "matches": [...] }` y exports manuales simples con `games`, `library`, `orders`, `purchases` o `bundles`. Los imports de biblioteca/órdenes pueden generar `external_owned` o `external_bundle_owned`; matches medios quedan como `external_review_needed`; precio/catálogo público o `confidence=low` no cuentan como higiene.
+
+Contrato completo y ejemplos: `docs/runbooks/wishlist-hygiene-multistore-contract.md`.
+
 ### Warm cache headless
 
 Si quieres dejar una corrida de preparación en segundo plano sin abrir la Web UI o Desktop, usa:
@@ -242,7 +274,7 @@ El JSON está pensado para scripting y automatización local. Incluye, entre otr
 
 - `meta` / `inputs` / `summary`
 - `top_picks` con `recommendation` y `score_reasons`
-- `deals`, `watchlist_alerts`, `budget_result`, `compare_data`
+- `deals`, `watchlist_alerts`, `wishlist_hygiene`, `budget_result`, `compare_data`
 
 La Web UI también expone un endpoint local útil:
 
@@ -536,6 +568,7 @@ Flags más usados:
 | `--compare` | Comparar con otro perfil |
 | `--watchlist` | `add/remove/list` de precio objetivo |
 | `--csv` / `--md-frontmatter` | Exports extra para Sheets, Obsidian o Notion |
+| `--wishlist-external-matches-json` | Import local advisory-only para sugerencias `Revisar wishlist` |
 | `--max-workers` | Paralelismo de enrichment; default actual: 16 |
 | `--warm-cache` | Precalentar caché de precios sin generar reportes |
 | `--interactive` | Habilitar prompts de configuración en terminal |
