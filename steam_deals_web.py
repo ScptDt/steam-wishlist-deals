@@ -708,6 +708,11 @@ def build_command(config: dict, filters: dict) -> list[str]:
             cmd += ["--genre"] + genres
     if config.get("family_json"):
         cmd += ["--family-json", config["family_json"]]
+    if config.get("wishlist_external_matches_json"):
+        cmd += [
+            "--wishlist-external-matches-json",
+            config["wishlist_external_matches_json"],
+        ]
     warm_cache = bool(filters.get("warm_cache"))
     if warm_cache:
         cmd.append("--warm-cache")
@@ -962,6 +967,16 @@ class Handler(BaseHTTPRequestHandler):
                 + redact_sensitive_text(
                     family_json,
                     extra_values=[Path(family_json).expanduser()],
+                )
+            )
+
+        external_matches_json = (config.get("wishlist_external_matches_json") or "").strip()
+        if external_matches_json and not Path(external_matches_json).expanduser().exists():
+            issues.append(
+                "No se encontró JSON de matches externos wishlist: "
+                + redact_sensitive_text(
+                    external_matches_json,
+                    extra_values=[Path(external_matches_json).expanduser()],
                 )
             )
 
@@ -1371,7 +1386,14 @@ class Handler(BaseHTTPRequestHandler):
 
         # Save config for future sessions
         save_cfg = {}
-        for k in ("vanity", "key", "hltb", "family_json", "itad_key"):
+        for k in (
+            "vanity",
+            "key",
+            "hltb",
+            "family_json",
+            "wishlist_external_matches_json",
+            "itad_key",
+        ):
             if config.get(k) and not is_redacted_config_secret(config.get(k)):
                 save_cfg[k] = config[k]
         if config.get("output"):

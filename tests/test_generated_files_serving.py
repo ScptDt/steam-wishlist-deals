@@ -171,6 +171,21 @@ class GeneratedFilesServingTests(unittest.TestCase):
         self.assertIn("--warm-cache", warm_cmd)
         self.assertNotIn("--no-cache", warm_cmd)
 
+    def test_build_command_passes_wishlist_external_matches_json(self) -> None:
+        cmd = build_command(
+            {
+                "vanity": "gaben",
+                "wishlist_external_matches_json": "/tmp/wishlist-external.json",
+            },
+            {},
+        )
+
+        self.assertIn("--wishlist-external-matches-json", cmd)
+        self.assertEqual(
+            cmd[cmd.index("--wishlist-external-matches-json") + 1],
+            "/tmp/wishlist-external.json",
+        )
+
     def test_open_output_folder_creates_directory_and_uses_platform_opener(self) -> None:
         with TemporaryDirectory() as temp_dir:
             target = Path(temp_dir) / "reports"
@@ -241,6 +256,7 @@ class GeneratedFilesServingTests(unittest.TestCase):
         original_load_config = web.load_config
         hltb_path = "/usr/bin/steamtools-missing.csv"
         family_path = "/private/tmp/steamtools-family-missing.json"
+        wishlist_matches_path = "/private/tmp/wishlist-external-missing.json"
         output_path = "/srv/app/steamtools-output-secret"
 
         web.load_config = lambda: {"key": "SAVED-SECRET"}
@@ -250,6 +266,7 @@ class GeneratedFilesServingTests(unittest.TestCase):
                     "vanity": "gaben",
                     "hltb": hltb_path,
                     "family_json": family_path,
+                    "wishlist_external_matches_json": wishlist_matches_path,
                     "output": output_path,
                 }
             }
@@ -263,8 +280,10 @@ class GeneratedFilesServingTests(unittest.TestCase):
         self.assertEqual(handler.status, 200)
         self.assertNotIn(hltb_path, payload)
         self.assertNotIn(family_path, payload)
+        self.assertNotIn(wishlist_matches_path, payload)
         self.assertNotIn(output_path, payload)
         self.assertIn("[ruta]", payload)
+        self.assertIn("JSON de matches externos wishlist", payload)
 
     def test_generated_file_content_type_matches_report_extensions(self) -> None:
         self.assertEqual(generated_file_content_type(".html"), "text/html")

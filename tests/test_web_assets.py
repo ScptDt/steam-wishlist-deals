@@ -126,6 +126,24 @@ class WebAssetsTests(unittest.TestCase):
         self.assertIn(".advanced-filters-help-grid", app_css)
         self.assertIn(".advanced-filters-intro", app_css)
 
+    def test_wishlist_external_matches_import_is_visible_and_advisory_only(self) -> None:
+        index_html = (ROOT / "web" / "steam_deals" / "index.html").read_text(
+            encoding="utf-8"
+        )
+        app_js = (ROOT / "web" / "steam_deals" / "app.js").read_text(
+            encoding="utf-8"
+        )
+
+        self.assertIn("Matches externos wishlist (JSON)", index_html)
+        self.assertIn('id="wishlist_external_matches_json"', index_html)
+        self.assertIn("Import local advisory-only", index_html)
+        self.assertIn("No borra, no auto-excluye y no cambia el score", index_html)
+        self.assertIn("wishlist_external_matches_json", app_js)
+        self.assertIn(
+            "'wishlist_external_matches_json'",
+            app_js,
+        )
+
     def test_execution_log_copy_uses_native_bridge_then_browser_clipboard(self) -> None:
         index_html = (ROOT / "web" / "steam_deals" / "index.html").read_text(
             encoding="utf-8"
