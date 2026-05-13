@@ -461,6 +461,61 @@ def _format_http_400_diagnostic_action(summary: WarmCacheLogSummary) -> str:
     )
 
 
+def _http_400_sample_appid_counts(summary: WarmCacheLogSummary) -> dict[str, int]:
+    counts: dict[str, int] = {}
+    for sample in summary.http_400_batch_samples:
+        appids = sample.get("appids")
+        if not isinstance(appids, list):
+            continue
+        seen_in_sample: set[str] = set()
+        for appid in appids:
+            appid_text = str(appid).strip()
+            if not appid_text or appid_text in seen_in_sample:
+                continue
+            seen_in_sample.add(appid_text)
+            counts[appid_text] = counts.get(appid_text, 0) + 1
+    return counts
+
+
+def _format_http_400_sample_fixture_action(summary: WarmCacheLogSummary) -> str:
+    sample_count = len(summary.http_400_batch_samples)
+    fallback_count = sum(
+        1
+        for sample in summary.http_400_batch_samples
+        if str(sample.get("stage") or "").strip() == "fallback"
+    )
+    fallback_label = ""
+    if fallback_count == 1:
+        fallback_label = "; 1 muestra terminal a fallback"
+    elif fallback_count > 1:
+        fallback_label = f"; {fallback_count:,} muestras terminales a fallback"
+
+    repeated_appids = sorted(
+        (
+            (appid, count)
+            for appid, count in _http_400_sample_appid_counts(summary).items()
+            if count > 1
+        ),
+        key=lambda item: (-item[1], item[0]),
+    )
+    repeated_label = "; sin appids repetidos en la muestra acotada"
+    if repeated_appids:
+        repeated_text = ", ".join(
+            f"{appid}×{count}" for appid, count in repeated_appids[:3]
+        )
+        if len(repeated_appids) > 3:
+            repeated_text += f", +{len(repeated_appids) - 3} más"
+        repeated_label = f"; appids repetidos en muestras: {repeated_text}"
+
+    return (
+        "Muestras HTTP 400 disponibles: "
+        f"{sample_count:,} muestras{fallback_label}{repeated_label}; "
+        "conviértelas en fixture offline para probar circuit breaker/fallback "
+        "directo antes de otro benchmark; no cambies defaults ni captures "
+        "más appids sin aprobación."
+    )
+
+
 def _format_fallback_cooldown_action(summary: WarmCacheLogSummary) -> str:
     failed = summary.individual_fallback_failed_count
     total = summary.individual_fallback_count
@@ -640,7 +695,15 @@ def analyze_warm_cache_recommendations(
             )
         )
 
-    if latest.degraded_batch_count > 0 and not latest.http_400_batch_samples:
+    if latest.degraded_batch_count > 0 and latest.http_400_batch_samples:
+        recommendations.append(
+            WarmCacheRecommendation(
+                "http-400-samples-fixture",
+                "info",
+                _format_http_400_sample_fixture_action(latest),
+            )
+        )
+    elif latest.degraded_batch_count > 0:
         recommendations.append(
             WarmCacheRecommendation(
                 "http-400-diagnostic-samples",

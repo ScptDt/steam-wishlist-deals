@@ -133,6 +133,7 @@ python3 steam_deals_warm_cache_summary.py \
 
 - `HTTP 400 repetido`: sigue el valor sugerido (`STEAM_DEALS_PRICE_BATCH_SIZE=N`, normalmente la mitad del batch actual/base) solo si no existe ya evidencia negativa de batch menor; no cambies cache por promo todavía.
 - `Diagnóstico offline HTTP 400`: no hay appids de muestra en los logs actuales; antes de otro cambio de defaults, captura una corrida aprobada con `STEAM_DEALS_HTTP_400_DIAGNOSTIC_SAMPLE_LIMIT=5` o diseña fixtures con la evidencia existente de tamaño/saltos.
+- `Muestras HTTP 400 disponibles`: no necesitas otro benchmark para analizarlas; convierte esos appids/orden/profundidad en fixture offline para probar circuit breaker o fallback directo. Si hay appids repetidos, prioriza esos casos; no cambies defaults ni captures más appids sin aprobación.
 - `Batch menor no ayudó`: conserva o vuelve al default/base; no sigas bajando el batch global y prioriza circuito/fallback directo o instrumentación offline de appids/batches problemáticos.
 - `Rate-limit observado`: espera cooldown y evita repetir benchmarks; si apareció junto con batch menor, trátalo como señal contra bajar más el batch global.
 - `Mucho fallback sin datos`: usa el desglose `fallidos/total` y espera al menos el cooldown indicado (2h por defecto) antes de forzar `--no-cache` salvo que estés capturando evidencia explícita.

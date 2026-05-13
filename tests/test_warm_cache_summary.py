@@ -399,6 +399,34 @@ class WarmCacheSummaryTests(unittest.TestCase):
         self.assertIn("3 saltos terminales", action)
         self.assertIn("antes de cambiar defaults", action)
 
+    def test_analyze_warm_cache_recommends_fixture_when_http_400_samples_exist(self) -> None:
+        recommendations = analyze_warm_cache_recommendations(
+            [
+                WarmCacheLogSummary(degraded_batch_count=1),
+                WarmCacheLogSummary(
+                    degraded_batch_count=2,
+                    http_400_batch_samples=[
+                        {"stage": "split", "appids": ["10", "20"]},
+                        {"stage": "fallback", "appids": ["20", "30"]},
+                    ],
+                ),
+            ]
+        )
+
+        action = next(
+            recommendation.action
+            for recommendation in recommendations
+            if recommendation.code == "http-400-samples-fixture"
+        )
+        codes = {recommendation.code for recommendation in recommendations}
+
+        self.assertIn("2 muestras", action)
+        self.assertIn("1 muestra terminal a fallback", action)
+        self.assertIn("20×2", action)
+        self.assertIn("fixture offline", action)
+        self.assertIn("no cambies defaults", action)
+        self.assertNotIn("http-400-diagnostic-samples", codes)
+
     def test_format_warm_cache_recommendations_mentions_rate_limit_waits(self) -> None:
         output = format_warm_cache_recommendations(
             [
