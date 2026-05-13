@@ -356,10 +356,11 @@ def _is_lower_batch_experiment_negative(
 ) -> bool:
     if previous is None:
         return False
-    if not previous.batch_size or not latest.batch_size:
+    if not latest.batch_size:
         return False
+    baseline_batch_size = previous.batch_size or DEFAULT_PRICE_BATCH_SIZE
     return (
-        latest.batch_size < previous.batch_size
+        latest.batch_size < baseline_batch_size
         and previous.degraded_batch_count > 0
         and latest.degraded_batch_count > previous.degraded_batch_count
     )
@@ -368,11 +369,12 @@ def _is_lower_batch_experiment_negative(
 def _format_negative_batch_experiment_action(
     latest: WarmCacheLogSummary, previous: WarmCacheLogSummary
 ) -> str:
+    baseline_batch_size = previous.batch_size or DEFAULT_PRICE_BATCH_SIZE
     return (
         "Batch menor no ayudó: "
         f"batch_size={latest.batch_size} generó {latest.degraded_batch_count:,} "
         f"HTTP 400 vs {previous.degraded_batch_count:,} con "
-        f"batch_size={previous.batch_size}; no bajes el default global, "
+        f"batch_size={baseline_batch_size}; no bajes el default global, "
         "analiza offline appids/batches tóxicos o fallback directo antes de otro benchmark."
     )
 

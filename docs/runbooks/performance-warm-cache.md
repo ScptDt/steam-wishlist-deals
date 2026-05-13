@@ -110,6 +110,7 @@ python3 steam_deals_warm_cache_summary.py \
 - Evita copy como “deals actuales” o “caché actualizada” sin matiz cuando hay diferidos; usa “deals encontrados con la cobertura disponible” y “caché actualizada parcialmente”.
 - Si `Fallback individual total` sigue alto con cache caliente, revisar primero batch sizing y distribución de fallos/no-data.
 - Si aparece `Fallback individual directo por HTTP 400 repetido`, compara duración y `Batches degradados HTTP 400` contra una corrida previa: debe reducir splits fallidos, aunque el fallback individual siga siendo el costo dominante.
+- Si un batch menor (`STEAM_DEALS_PRICE_BATCH_SIZE`) sube `Batches degradados HTTP 400` o activa esperas de rate-limit, vuelve al default/base y no sigas bajando el batch global; el siguiente paso debe ser analizar circuito/fallback directo o instrumentar appids/batches de forma acotada antes de otro benchmark.
 - Si `Fallback individual total` cubre casi todos los candidatos y los HTTP 400 degradados ya son bajos, prueba una corrida aislada con `STEAM_DEALS_INDIVIDUAL_FALLBACK_WORKERS=4`; si mejora sin `429`, considerar hacerlo preset/configurable.
 - Si `fallback_workers > 1` baja fuerte la duración pero también baja deals/resueltos, revisa `Fallback individual adaptativo` y las razones de fallo; no uses esa configuración como default hasta que conserve calidad.
 - Si hay muchos `sin oferta/datos`, el cooldown debe evitar reintentos inmediatos; confirmar que aparecen como `fallos recientes en cooldown` en corridas posteriores.
@@ -118,7 +119,9 @@ python3 steam_deals_warm_cache_summary.py \
 
 ## Interpretación de `Warm-cache next actions`
 
-- `HTTP 400 repetido`: sigue el valor sugerido (`STEAM_DEALS_PRICE_BATCH_SIZE=N`, normalmente la mitad del batch actual/base) antes de repetir una wishlist grande; no cambies cache por promo todavía.
+- `HTTP 400 repetido`: sigue el valor sugerido (`STEAM_DEALS_PRICE_BATCH_SIZE=N`, normalmente la mitad del batch actual/base) solo si no existe ya evidencia negativa de batch menor; no cambies cache por promo todavía.
+- `Batch menor no ayudó`: conserva o vuelve al default/base; no sigas bajando el batch global y prioriza circuito/fallback directo o instrumentación offline de appids/batches problemáticos.
+- `Rate-limit observado`: espera cooldown y evita repetir benchmarks; si apareció junto con batch menor, trátalo como señal contra bajar más el batch global.
 - `Mucho fallback sin datos`: usa el desglose `fallidos/total` y espera al menos el cooldown indicado (2h por defecto) antes de forzar `--no-cache` salvo que estés capturando evidencia explícita.
 - `Cache efectivo`: la segunda corrida redujo fuerte los refresh candidates; conserva cache caliente antes de ampliar políticas de invalidación.
 - `Fallback sigue alto`: prioriza batching/fallback antes de invalidar cache por promos.

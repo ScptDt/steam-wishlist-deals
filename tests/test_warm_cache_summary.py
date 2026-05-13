@@ -323,7 +323,7 @@ class WarmCacheSummaryTests(unittest.TestCase):
     def test_analyze_warm_cache_marks_negative_lower_batch_experiment(self) -> None:
         recommendations = analyze_warm_cache_recommendations(
             [
-                WarmCacheLogSummary(degraded_batch_count=21, batch_size=20),
+                WarmCacheLogSummary(degraded_batch_count=21),
                 WarmCacheLogSummary(
                     degraded_batch_count=154,
                     batch_size=10,
