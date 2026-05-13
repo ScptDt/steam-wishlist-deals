@@ -4,9 +4,9 @@ Contrato de decisión y uso para ampliar `wishlist_hygiene` con señales externa
 
 ## Readiness del slice
 
-- Objetivo: definir qué señales externas pueden alimentar `wishlist_hygiene` en un futuro y cómo normalizarlas sin implementar integraciones.
-- Fuera de alcance: APIs reales, scraping, credenciales, UI, renderers, scoring, borrado, auto-exclusión, `BG00G`, `--no-cache`, builds y reportes generados.
-- Archivos afectados por este slice: `PENDIENTES.md`, `BITACORA.md`, este runbook y el índice de runbooks.
+- Objetivo: documentar el contrato y uso actual del import local `external_matches` para `wishlist_hygiene`, dejando claro qué señales externas pueden alimentar revisiones manuales.
+- Fuera de alcance permanente: APIs reales, scraping, credenciales, scoring, borrado, auto-exclusión, `BG00G`, `--no-cache`, builds y reportes generados.
+- Archivos relacionados: `README.md`, `PENDIENTES.md`, `BITACORA.md`, este runbook, el índice de runbooks y los runbooks Windows.
 - Validación mínima: revisión documental + `git diff --check`.
 - Evidencia esperada: cierre compacto en `BITACORA.md` y resumen corto en `PENDIENTES.md`.
 - No hacer permanente: convertir señales externas en acción destructiva o en ajuste de score/ranking.

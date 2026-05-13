@@ -26,8 +26,8 @@
 | `stop-on-failure.md` | Cuando falla una validación, smoke o build | Detener, reportar, proponer, pedir aprobación y escalar |
 | `performance-warm-cache.md` | Preparar o medir corridas grandes/wishlists grandes | Warm-cache, logs, fallback individual, duración y artifacts |
 | `features-validation.md` | Validar features específicas sin cargar el README | Frontmatter Obsidian/Notion, `Tu Presupuesto Ideal`, share E2E |
-| `wishlist-hygiene-windows-validation.md` | Validar en Windows que `wishlist_hygiene` se vea en Web UI y reportes generados | JSON `wishlist_hygiene.items`, sección `Revisar wishlist`, caso oculto cuando no hay items |
-| `wishlist-hygiene-multistore-contract.md` | Diseñar futuras señales multi-store para `wishlist_hygiene` antes de implementar | Contrato `external_matches`, señales aceptables/rechazadas y guardrails advisory-only |
+| `wishlist-hygiene-windows-validation.md` | Validar en Windows que `wishlist_hygiene` se vea en Web UI/reportes y que el import local opcional funcione como revisión | JSON `wishlist_hygiene.items`, sección `Revisar wishlist`, `external_matches` advisory-only |
+| `wishlist-hygiene-multistore-contract.md` | Consultar contrato y uso local de señales multi-store para `wishlist_hygiene` | `--wishlist-external-matches-json`, shapes aceptadas, señales aceptables/rechazadas y guardrails advisory-only |
 
 ## Selector rápido por wave/tipo
 
