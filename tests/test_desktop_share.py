@@ -38,6 +38,7 @@ from steam_tools_desktop import (
     _desktop_window_url,
     _find_free_port,
     _fallback_url,
+    _linux_root_browser_manual_hint,
     _linux_root_graphical_session_warning,
     _normalize_clipboard_text,
     _probe_steam_deals_server,
@@ -399,6 +400,37 @@ class DesktopLauncherFallbackTests(unittest.TestCase):
             "",
         )
 
+    def test_linux_root_browser_manual_hint_suggests_graphical_user_command(self) -> None:
+        class _FakeStat:
+            st_uid = 1000
+
+        class _FakeUser:
+            pw_name = "adolfo"
+
+        hint = _linux_root_browser_manual_hint(
+            "http://127.0.0.1:8080?desktop_fallback=1&reason=forced-web-fallback",
+            env={"DISPLAY": ":0", "XAUTHORITY": "/run/user/1000/xauth_test"},
+            platform="linux",
+            geteuid_fn=lambda: 0,
+            stat_fn=lambda _path: _FakeStat(),
+            getpwuid_fn=lambda _uid: _FakeUser(),
+        )
+
+        self.assertIn("No se intento abrir el navegador automaticamente", hint)
+        self.assertIn("Abre manualmente: http://127.0.0.1:8080", hint)
+        self.assertIn("runuser -u adolfo -- xdg-open", hint)
+
+    def test_linux_root_browser_manual_hint_ignores_non_root(self) -> None:
+        self.assertEqual(
+            _linux_root_browser_manual_hint(
+                "http://127.0.0.1:8080",
+                env={"DISPLAY": ":0"},
+                platform="linux",
+                geteuid_fn=lambda: 1000,
+            ),
+            "",
+        )
+
     def test_main_force_web_fallback_opens_browser_and_keeps_server(self) -> None:
         class _FakeProc:
             def __init__(self):
@@ -427,6 +459,7 @@ class DesktopLauncherFallbackTests(unittest.TestCase):
         original_discover_live_url = desktop_module._discover_live_url
         original_popen = desktop_module.subprocess.Popen
         original_webbrowser_open = desktop_module.webbrowser.open
+        original_manual_hint = desktop_module._linux_root_browser_manual_hint
         try:
             sys.argv = ["desktop", FORCE_WEB_FALLBACK_FLAG]
             desktop_module._resolve_server_target = lambda _port: {
@@ -442,6 +475,7 @@ class DesktopLauncherFallbackTests(unittest.TestCase):
                 lambda *args, **kwargs: popen_calls.append((args, kwargs)) or fake_proc
             )
             desktop_module.webbrowser.open = lambda url: opened_urls.append(url) or True
+            desktop_module._linux_root_browser_manual_hint = lambda _url: ""
             with contextlib.redirect_stdout(stdout):
                 desktop_main()
         finally:
@@ -450,6 +484,7 @@ class DesktopLauncherFallbackTests(unittest.TestCase):
             desktop_module._discover_live_url = original_discover_live_url
             desktop_module.subprocess.Popen = original_popen
             desktop_module.webbrowser.open = original_webbrowser_open
+            desktop_module._linux_root_browser_manual_hint = original_manual_hint
 
         self.assertEqual(
             opened_urls,
@@ -462,6 +497,69 @@ class DesktopLauncherFallbackTests(unittest.TestCase):
         self.assertEqual(fake_proc.kill_called, 0)
         self.assertIn("Fallback web forzado", stdout.getvalue())
         self.assertIn("URL fallback: http://127.0.0.1:8090", stdout.getvalue())
+
+    def test_main_force_web_fallback_skips_browser_for_root_graphical_session(self) -> None:
+        class _FakeProc:
+            def __init__(self):
+                self.terminate_called = 0
+                self.kill_called = 0
+
+            def poll(self):
+                return None
+
+            def terminate(self):
+                self.terminate_called += 1
+
+            def wait(self, timeout=None):
+                return 0
+
+            def kill(self):
+                self.kill_called += 1
+
+        fake_proc = _FakeProc()
+        opened_urls = []
+        stdout = io.StringIO()
+
+        original_argv = sys.argv[:]
+        original_resolve_server_target = desktop_module._resolve_server_target
+        original_discover_live_url = desktop_module._discover_live_url
+        original_popen = desktop_module.subprocess.Popen
+        original_webbrowser_open = desktop_module.webbrowser.open
+        original_root_warning = desktop_module._linux_root_graphical_session_warning
+        original_manual_hint = desktop_module._linux_root_browser_manual_hint
+        try:
+            sys.argv = ["desktop", FORCE_WEB_FALLBACK_FLAG]
+            desktop_module._resolve_server_target = lambda _port: {
+                "reuse_existing": False,
+                "active_url": "http://127.0.0.1:8091",
+                "launch_port": 8091,
+                "discover_start_port": 8091,
+            }
+            desktop_module._discover_live_url = (
+                lambda _port, timeout=0.0: "http://127.0.0.1:8091"
+            )
+            desktop_module.subprocess.Popen = lambda *args, **kwargs: fake_proc
+            desktop_module.webbrowser.open = lambda url: opened_urls.append(url) or True
+            desktop_module._linux_root_graphical_session_warning = lambda: "root warning"
+            desktop_module._linux_root_browser_manual_hint = (
+                lambda url: f"manual root hint: runuser -u adolfo -- xdg-open '{url}'"
+            )
+            with contextlib.redirect_stdout(stdout):
+                desktop_main()
+        finally:
+            sys.argv = original_argv
+            desktop_module._resolve_server_target = original_resolve_server_target
+            desktop_module._discover_live_url = original_discover_live_url
+            desktop_module.subprocess.Popen = original_popen
+            desktop_module.webbrowser.open = original_webbrowser_open
+            desktop_module._linux_root_graphical_session_warning = original_root_warning
+            desktop_module._linux_root_browser_manual_hint = original_manual_hint
+
+        self.assertEqual(opened_urls, [])
+        self.assertEqual(fake_proc.terminate_called, 0)
+        self.assertEqual(fake_proc.kill_called, 0)
+        self.assertIn("root warning", stdout.getvalue())
+        self.assertIn("manual root hint: runuser -u adolfo", stdout.getvalue())
 
     def test_wait_server_returns_false_after_timeout_when_endpoint_never_responds(
         self,

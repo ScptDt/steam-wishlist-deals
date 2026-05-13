@@ -10,6 +10,7 @@ This is a first baseline for desktop packaging:
 from __future__ import annotations
 
 import os
+import shlex
 import subprocess
 import socket
 import sys
@@ -76,16 +77,15 @@ def _should_force_web_fallback(
     return _is_truthy_flag(runtime_env.get(FORCE_WEB_FALLBACK_ENV))
 
 
-def _linux_root_graphical_session_warning(
+def _is_linux_root_graphical_session(
     *,
     env: dict[str, str] | None = None,
     platform: str | None = None,
     geteuid_fn=None,
-    stat_fn=None,
-) -> str:
+) -> bool:
     platform_name = sys.platform if platform is None else str(platform)
     if not platform_name.startswith("linux"):
-        return ""
+        return False
     if geteuid_fn is None:
         geteuid_fn = getattr(os, "geteuid", lambda: -1)
     try:
@@ -93,13 +93,53 @@ def _linux_root_graphical_session_warning(
     except Exception:
         is_root = False
     if not is_root:
-        return ""
-
+        return False
     runtime_env = os.environ if env is None else env
-    display_vars = [
-        name for name in ("DISPLAY", "WAYLAND_DISPLAY") if runtime_env.get(name)
-    ]
-    if not display_vars:
+    return any(runtime_env.get(name) for name in ("DISPLAY", "WAYLAND_DISPLAY"))
+
+
+def _xauthority_owner_name(
+    *,
+    env: dict[str, str] | None = None,
+    stat_fn=None,
+    getpwuid_fn=None,
+) -> str:
+    runtime_env = os.environ if env is None else env
+    xauthority = str(runtime_env.get("XAUTHORITY") or "").strip()
+    if xauthority:
+        stat_fn = os.stat if stat_fn is None else stat_fn
+        try:
+            xauthority_uid = int(stat_fn(xauthority).st_uid)
+        except Exception:
+            xauthority_uid = None
+        if xauthority_uid is not None and xauthority_uid != 0:
+            try:
+                if getpwuid_fn is None:
+                    import pwd
+
+                    getpwuid_fn = pwd.getpwuid
+                return str(getpwuid_fn(xauthority_uid).pw_name or "").strip()
+            except Exception:
+                return ""
+    sudo_user = str(runtime_env.get("SUDO_USER") or "").strip()
+    if sudo_user and sudo_user != "root":
+        return sudo_user
+    return ""
+
+
+def _linux_root_graphical_session_warning(
+    *,
+    env: dict[str, str] | None = None,
+    platform: str | None = None,
+    geteuid_fn=None,
+    stat_fn=None,
+) -> str:
+    runtime_env = os.environ if env is None else env
+    if not _is_linux_root_graphical_session(
+        env=runtime_env,
+        platform=platform,
+        geteuid_fn=geteuid_fn,
+    ):
         return ""
 
     lines = [
@@ -118,6 +158,39 @@ def _linux_root_graphical_session_warning(
             lines.append(
                 "$XAUTHORITY pertenece a otro usuario; evita sudo/root para abrir la UI desktop."
             )
+    return "\n".join(lines)
+
+
+def _linux_root_browser_manual_hint(
+    fallback_target: str,
+    *,
+    env: dict[str, str] | None = None,
+    platform: str | None = None,
+    geteuid_fn=None,
+    stat_fn=None,
+    getpwuid_fn=None,
+) -> str:
+    runtime_env = os.environ if env is None else env
+    if not _is_linux_root_graphical_session(
+        env=runtime_env,
+        platform=platform,
+        geteuid_fn=geteuid_fn,
+    ):
+        return ""
+    lines = [
+        "No se intento abrir el navegador automaticamente porque el launcher corre como root en una sesion grafica.",
+        f"Abre manualmente: {fallback_target}",
+    ]
+    owner_name = _xauthority_owner_name(
+        env=runtime_env,
+        stat_fn=stat_fn,
+        getpwuid_fn=getpwuid_fn,
+    )
+    if owner_name:
+        lines.append(
+            "Opcional desde root: "
+            f"runuser -u {shlex.quote(owner_name)} -- xdg-open {shlex.quote(fallback_target)}"
+        )
     return "\n".join(lines)
 
 
@@ -428,6 +501,10 @@ def main() -> None:
             print(root_warning)
         fallback_target = _fallback_url(reason, base_url=active_url)
         print(f"URL fallback: {fallback_target}")
+        manual_hint = _linux_root_browser_manual_hint(fallback_target)
+        if manual_hint:
+            print(manual_hint)
+            return
         opened = False
         try:
             opened = webbrowser.open(fallback_target)
