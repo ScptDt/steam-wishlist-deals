@@ -167,6 +167,7 @@ from steam_deals_generator import (
     build_smart_alert_counts as generator_build_smart_alert_counts,
     build_gift_ideas,
     build_wishlist_hygiene_signals,
+    load_wishlist_external_matches,
     compute_budget_picks,
     compute_deal_comparison,
     compute_value_score,
@@ -1102,6 +1103,107 @@ class WishlistHygieneTests(unittest.TestCase):
         self.assertEqual(item["external_matches"][0]["external_name"], "Café™ Racer: Deluxe")
         self.assertEqual(item["external_matches"][0]["external_id"], "cafe-racer-deluxe")
 
+    def test_load_wishlist_external_matches_accepts_common_json_shapes(self) -> None:
+        records = [
+            {"store_id": "gog", "external_name": "Hades", "wishlist_appid": "10"},
+            {"store_id": "epic", "external_name": "Celeste", "wishlist_appid": "20"},
+            {"store_id": "fanatical", "external_name": "Bastion", "wishlist_appid": "30"},
+        ]
+
+        cases = [
+            ([records[0]], [records[0]]),
+            ({"external_matches": [records[1]]}, [records[1]]),
+            ({"matches": [records[2]]}, [records[2]]),
+        ]
+
+        with TemporaryDirectory() as temp_dir:
+            for index, (payload, expected) in enumerate(cases):
+                path = Path(temp_dir) / f"matches_{index}.json"
+                path.write_text(json.dumps(payload), encoding="utf-8")
+
+                self.assertEqual(load_wishlist_external_matches(path), expected)
+
+    def test_load_wishlist_external_matches_keeps_empty_payloads_quiet(self) -> None:
+        cases = ["", "null", "{}", "[]", '{"external_matches": null}', '{"matches": null}']
+
+        with TemporaryDirectory() as temp_dir:
+            for index, content in enumerate(cases):
+                path = Path(temp_dir) / f"empty_{index}.json"
+                path.write_text(content, encoding="utf-8")
+
+                self.assertEqual(load_wishlist_external_matches(path), [])
+
+    def test_load_wishlist_external_matches_rejects_malformed_payloads(self) -> None:
+        cases = [
+            ("{bad", "JSON de matches externos wishlist inválido"),
+            (json.dumps({"external_matches": {}}), "external_matches debe ser una lista"),
+            (
+                json.dumps({"unexpected": []}),
+                "clave 'external_matches' o 'matches'",
+            ),
+            (json.dumps([None]), "external_matches\\[0\\] debe ser un objeto JSON"),
+        ]
+
+        with TemporaryDirectory() as temp_dir:
+            for index, (content, expected_error) in enumerate(cases):
+                path = Path(temp_dir) / f"bad_{index}.json"
+                path.write_text(content, encoding="utf-8")
+
+                with self.assertRaisesRegex(ValueError, expected_error):
+                    load_wishlist_external_matches(path)
+
+    def test_loaded_wishlist_external_matches_feed_hygiene_signals(self) -> None:
+        payload = {
+            "external_matches": [
+                {
+                    "store_id": "gog",
+                    "store_type": "library",
+                    "external_name": "Owned Elsewhere",
+                    "wishlist_appid": "10",
+                    "confidence": "high",
+                    "evidence": "owned_in_user_export",
+                },
+                {
+                    "store_id": "itad",
+                    "store_type": "price_index",
+                    "external_name": "Price Context",
+                    "wishlist_appid": "20",
+                    "confidence": "high",
+                    "evidence": "price_only",
+                },
+                {
+                    "store_id": "epic",
+                    "store_type": "manual",
+                    "external_name": "Needs Review",
+                    "wishlist_appid": "30",
+                    "confidence": "medium",
+                    "evidence": "manual_match",
+                },
+            ]
+        }
+
+        with TemporaryDirectory() as temp_dir:
+            path = Path(temp_dir) / "wishlist_external_matches.json"
+            path.write_text(json.dumps(payload), encoding="utf-8")
+            external_matches = load_wishlist_external_matches(path)
+
+        hygiene = build_wishlist_hygiene_signals(
+            [
+                {"appid": "10", "name": "Owned Elsewhere"},
+                {"appid": "20", "name": "Price Context"},
+                {"appid": "30", "name": "Needs Review"},
+            ],
+            external_matches=external_matches,
+        )
+
+        by_appid = {item["appid"]: item for item in hygiene["items"]}
+
+        self.assertEqual(set(by_appid), {"10", "30"})
+        self.assertEqual(by_appid["10"]["signals"], ["external_owned"])
+        self.assertEqual(by_appid["30"]["signals"], ["external_review_needed"])
+        self.assertTrue(all(item["advisory_only"] for item in hygiene["items"]))
+        self.assertTrue(all(item["action"] == "review" for item in hygiene["items"]))
+
 
 class ConfigTests(unittest.TestCase):
     def test_load_and_save_user_config_roundtrip(self) -> None:
@@ -1145,6 +1247,8 @@ class ConfigTests(unittest.TestCase):
                 "16",
                 "--md-frontmatter",
                 "--warm-cache",
+                "--wishlist-external-matches-json",
+                "/tmp/wishlist_matches.json",
                 "--alert-rise-pct",
                 "12.5",
                 "--alert-global-margin-pct",
@@ -1163,6 +1267,7 @@ class ConfigTests(unittest.TestCase):
         self.assertEqual(result[11]["max_workers"], 16)
         self.assertEqual(result[11]["md_frontmatter"], True)
         self.assertEqual(result[11]["warm_cache"], True)
+        self.assertEqual(result[11]["wishlist_external_matches_json"], Path("/tmp/wishlist_matches.json"))
         self.assertEqual(result[11]["alert_rise_pct"], 12.5)
         self.assertEqual(result[11]["alert_global_margin_pct"], 3.0)
         self.assertEqual(result[11]["alert_score_min"], 80.0)

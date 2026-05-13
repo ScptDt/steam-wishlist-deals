@@ -1,6 +1,8 @@
 from __future__ import annotations
 
+import json
 import re
+from pathlib import Path
 
 
 _STORE_NAMES = {
@@ -70,6 +72,62 @@ def _records(records) -> list[dict]:
         else:
             result.append({})
     return result
+
+
+def _copy_external_match_records(records, *, context: str) -> list[dict]:
+    if records is None:
+        return []
+    if not isinstance(records, list):
+        raise ValueError(f"{context} debe ser una lista")
+    copied: list[dict] = []
+    for index, record in enumerate(records):
+        if not isinstance(record, dict):
+            raise ValueError(f"{context}[{index}] debe ser un objeto JSON")
+        copied.append(dict(record))
+    return copied
+
+
+def _external_matches_from_payload(payload) -> list[dict]:
+    if payload is None:
+        return []
+    if isinstance(payload, list):
+        return _copy_external_match_records(payload, context="external_matches")
+    if isinstance(payload, dict):
+        if not payload:
+            return []
+        for key in ("external_matches", "matches"):
+            if key in payload:
+                return _copy_external_match_records(payload[key], context=key)
+        raise ValueError(
+            "debe ser una lista o un objeto con clave 'external_matches' o 'matches'"
+        )
+    raise ValueError("debe ser una lista o un objeto JSON")
+
+
+def load_wishlist_external_matches(json_path: Path | str | None) -> list[dict]:
+    """Load user-provided local external matches for wishlist hygiene."""
+    if json_path is None:
+        return []
+    path = Path(json_path).expanduser()
+    try:
+        raw = path.read_text(encoding="utf-8")
+    except OSError as exc:
+        raise ValueError(
+            f"No se pudo leer JSON de matches externos wishlist ({path}): {exc}"
+        ) from exc
+    if not raw.strip():
+        return []
+    try:
+        payload = json.loads(raw)
+    except json.JSONDecodeError as exc:
+        raise ValueError(
+            "JSON de matches externos wishlist inválido "
+            f"({path}): {exc.msg} en línea {exc.lineno}, columna {exc.colno}"
+        ) from exc
+    try:
+        return _external_matches_from_payload(payload)
+    except ValueError as exc:
+        raise ValueError(f"JSON de matches externos wishlist inválido ({path}): {exc}") from exc
 
 
 def _normalize_appids(values) -> set[str]:

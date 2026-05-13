@@ -117,9 +117,11 @@ except Exception:
 try:
     from steam_deals_wishlist_hygiene import (
         build_wishlist_hygiene_signals as _build_wishlist_hygiene_signals_impl,
+        load_wishlist_external_matches as _load_wishlist_external_matches_impl,
     )
 except Exception:
     _build_wishlist_hygiene_signals_impl = None
+    _load_wishlist_external_matches_impl = None
 
 
 try:
@@ -673,6 +675,13 @@ def build_wishlist_hygiene_signals(wishlist, **kwargs):
     if _build_wishlist_hygiene_signals_impl is None:
         raise RuntimeError("Wishlist hygiene module is not available")
     return _build_wishlist_hygiene_signals_impl(wishlist, **kwargs)
+
+
+def load_wishlist_external_matches(json_path: Path | str | None) -> list[dict]:
+    """Load local external matches for wishlist hygiene."""
+    if _load_wishlist_external_matches_impl is None:
+        raise RuntimeError("Wishlist hygiene module is not available")
+    return _load_wishlist_external_matches_impl(json_path)
 
 
 def load_family_games(json_path: Path) -> set[str]:
@@ -3701,6 +3710,7 @@ def main():
     MAX_WORKERS = _resolve_max_workers(FILTERS.get("max_workers"), MAX_WORKERS)
     WEB_EVENT_MODE = bool(WEB_RUN)
     WARM_CACHE_ONLY = bool(FILTERS.get("warm_cache"))
+    WISHLIST_EXTERNAL_MATCHES_JSON = FILTERS.get("wishlist_external_matches_json")
     emit = print
     warm_cache_log_handle = None
     if WARM_CACHE_ONLY:
@@ -3770,6 +3780,19 @@ def main():
     if FAMILY_JSON and not FAMILY_JSON.exists():
         emit(f"{_err(f'Family JSON no encontrado: {FAMILY_JSON}')}")
         FAMILY_JSON = None
+    wishlist_external_matches = []
+    if WISHLIST_EXTERNAL_MATCHES_JSON:
+        try:
+            wishlist_external_matches = load_wishlist_external_matches(
+                WISHLIST_EXTERNAL_MATCHES_JSON
+            )
+        except ValueError as exc:
+            emit(f"{_err(str(exc))}")
+            return 1
+        if wishlist_external_matches:
+            emit(
+                f"  {_dim(f'Matches externos wishlist: {len(wishlist_external_matches):,} registros')}"
+            )
 
     try:
         # [1] Steam ID
@@ -4083,6 +4106,7 @@ def main():
         family_appids=family_renderer_kwargs.get("family_appids"),
         library_games=have_on_sale,
         hltb_records=hltb_hours,
+        external_matches=wishlist_external_matches,
     )
 
     # Generar MD

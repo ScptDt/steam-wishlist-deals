@@ -64,6 +64,10 @@ def build_parser() -> argparse.ArgumentParser:
         help="Ruta al JSON de biblioteca familiar. Sin valor = omitir",
     )
     parser.add_argument(
+        "--wishlist-external-matches-json",
+        help="Ruta al JSON local de matches externos para wishlist hygiene",
+    )
+    parser.add_argument(
         "--itad-key", help="IsThereAnyDeal API Key (para mínimo histórico)"
     )
     parser.add_argument(
@@ -326,6 +330,9 @@ def _build_filters(args, cfg: dict, *, environ=None) -> dict:
         "new_only": args.new_only,
         "csv": args.csv,
         "warm_cache": args.warm_cache,
+        "wishlist_external_matches_json": Path(args.wishlist_external_matches_json).expanduser()
+        if args.wishlist_external_matches_json
+        else None,
         "budget": args.budget,
         "compare": args.compare,
         "telegram_token": resolve_config_secret(
