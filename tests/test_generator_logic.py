@@ -150,6 +150,7 @@ from steam_deals_watchlist import (
     load_watchlist as module_load_watchlist,
     save_watchlist as module_save_watchlist,
 )
+from steam_deals_wishlist_hygiene import normalize_manual_external_library_export
 from steam_deals_generator import (
     _format_cli_user_error,
     _handle_cli_value_error,
@@ -1123,6 +1124,100 @@ class WishlistHygieneTests(unittest.TestCase):
 
                 self.assertEqual(load_wishlist_external_matches(path), expected)
 
+    def test_normalize_manual_external_library_export_maps_owned_and_review_matches(self) -> None:
+        external_matches = normalize_manual_external_library_export(
+            {
+                "store": "GOG",
+                "source": "user_library_export",
+                "observed_at": "2026-05-13",
+                "games": [
+                    {
+                        "title": "Hades",
+                        "id": "hades",
+                        "steam_appid": "1145360",
+                        "owned": True,
+                    },
+                    {
+                        "title": "Celeste",
+                        "slug": "celeste",
+                        "confidence": "medium",
+                        "owned": False,
+                    },
+                    {
+                        "title": "Price Context",
+                        "steam_appid": "30",
+                        "price": 99.0,
+                    },
+                ],
+            }
+        )
+        hygiene = build_wishlist_hygiene_signals(
+            [
+                {"appid": "1145360", "name": "Hades"},
+                {"appid": "20", "name": "Celeste"},
+                {"appid": "30", "name": "Price Context"},
+            ],
+            external_matches=external_matches,
+        )
+
+        by_name = {item["name"]: item for item in hygiene["items"]}
+
+        self.assertEqual(by_name["Hades"]["signals"], ["external_owned"])
+        self.assertEqual(by_name["Celeste"]["signals"], ["external_review_needed"])
+        self.assertNotIn("Price Context", by_name)
+        self.assertEqual(external_matches[0]["store_id"], "gog")
+        self.assertEqual(external_matches[0]["store_type"], "library")
+        self.assertEqual(external_matches[0]["evidence"], "owned_in_user_export")
+
+    def test_load_wishlist_external_matches_accepts_manual_bundle_export_shape(self) -> None:
+        payload = {
+            "store": "Fanatical",
+            "source": "user_order_export",
+            "orders": [
+                {
+                    "title": "Bundle Game",
+                    "appid": "200",
+                    "bundle_owned": True,
+                    "external_id": "bundle-game-key",
+                }
+            ],
+        }
+
+        with TemporaryDirectory() as temp_dir:
+            path = Path(temp_dir) / "fanatical_orders.json"
+            path.write_text(json.dumps(payload), encoding="utf-8")
+            external_matches = load_wishlist_external_matches(path)
+
+        hygiene = build_wishlist_hygiene_signals(
+            [{"appid": "200", "name": "Bundle Game"}],
+            external_matches=external_matches,
+        )
+
+        item = hygiene["items"][0]
+
+        self.assertEqual(item["signals"], ["external_bundle_owned"])
+        self.assertEqual(item["external_matches"][0]["store_name"], "Fanatical")
+        self.assertEqual(item["external_matches"][0]["store_type"], "bundle_export")
+        self.assertEqual(
+            item["external_matches"][0]["evidence"],
+            "owned_in_bundle_export",
+        )
+
+    def test_normalize_manual_external_library_export_dedupes_special_characters(self) -> None:
+        external_matches = normalize_manual_external_library_export(
+            {
+                "store": "Epic",
+                "library": [
+                    {"name": "Café™ Racer: Deluxe", "slug": "cafe-racer-deluxe"},
+                    {"title": "Café™ Racer: Deluxe", "id": "cafe-racer-deluxe"},
+                ],
+            }
+        )
+
+        self.assertEqual(len(external_matches), 1)
+        self.assertEqual(external_matches[0]["store_id"], "epic")
+        self.assertEqual(external_matches[0]["external_name"], "Café™ Racer: Deluxe")
+
     def test_load_wishlist_external_matches_keeps_empty_payloads_quiet(self) -> None:
         cases = ["", "null", "{}", "[]", '{"external_matches": null}', '{"matches": null}']
 
@@ -1142,6 +1237,7 @@ class WishlistHygieneTests(unittest.TestCase):
                 "clave 'external_matches' o 'matches'",
             ),
             (json.dumps([None]), "external_matches\\[0\\] debe ser un objeto JSON"),
+            (json.dumps({"games": {}}), "games debe ser una lista"),
         ]
 
         with TemporaryDirectory() as temp_dir:

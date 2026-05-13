@@ -19,6 +19,14 @@ _CONFIDENCES = {"high", "medium", "low"}
 _OWNERSHIP_EVIDENCE = {"owned_in_user_export", "owned_in_library_export", "in_user_library", "owned"}
 _BUNDLE_EVIDENCE = {"owned_in_bundle_export", "owned_in_order_export", "bundle_owned", "in_user_order"}
 _CONTEXT_ONLY_EVIDENCE = {"price_only", "catalog_match", "public_bundle", "public_catalog", "discount_only", "promo_only"}
+_MANUAL_EXPORT_COLLECTION_KEYS = (
+    "games",
+    "items",
+    "library",
+    "orders",
+    "purchases",
+    "bundles",
+)
 
 
 def _appid(record) -> str:
@@ -87,6 +95,123 @@ def _copy_external_match_records(records, *, context: str) -> list[dict]:
     return copied
 
 
+def _manual_export_records(payload) -> tuple[list[dict], dict]:
+    if isinstance(payload, list):
+        return _records(payload), {}
+    if not isinstance(payload, dict):
+        raise ValueError("export manual debe ser una lista o un objeto JSON")
+    for key in _MANUAL_EXPORT_COLLECTION_KEYS:
+        if key in payload:
+            records = payload[key]
+            if records is None:
+                return [], payload
+            if not isinstance(records, list):
+                raise ValueError(f"{key} debe ser una lista")
+            return _records(records), payload
+    raise ValueError(
+        "export manual debe incluir una lista en 'games', 'items', 'library', "
+        "'orders', 'purchases' o 'bundles'"
+    )
+
+
+def _manual_export_store_type(record: dict, defaults: dict) -> str:
+    if record.get("bundle_owned") is True or record.get("bundle") is True:
+        return "bundle_export"
+    raw_type = record.get("store_type") or record.get("type") or defaults.get("store_type")
+    source = _slug(record.get("source") or defaults.get("source"))
+    if not raw_type and any(token in source for token in ("order", "purchase", "bundle")):
+        return "order_export"
+    return _enum(raw_type, _STORE_TYPES, "library")
+
+
+def _manual_export_evidence(record: dict, store_type: str) -> str:
+    if record.get("price_only") is True or record.get("price") is not None:
+        return "price_only"
+    if record.get("bundle_owned") is True or record.get("bundle") is True:
+        return "owned_in_bundle_export"
+    if store_type == "bundle_export":
+        return "owned_in_bundle_export"
+    if store_type == "order_export":
+        return "owned_in_order_export"
+    if record.get("owned") is False:
+        return "manual_match"
+    if record.get("owned") is True or store_type == "library":
+        return "owned_in_user_export"
+    return "manual_match"
+
+
+def _manual_export_record_to_external_match(record: dict, defaults: dict) -> dict | None:
+    if not isinstance(record, dict):
+        return None
+    external_name = _external_name(record)
+    appid = _external_target_appid(record)
+    if not external_name and not appid:
+        return None
+    store_id = _slug(
+        record.get("store_id")
+        or record.get("store")
+        or record.get("storefront")
+        or defaults.get("store_id")
+        or defaults.get("store")
+        or defaults.get("storefront")
+    )
+    store_type = _manual_export_store_type(record, defaults)
+    evidence = _clean_text(record.get("evidence")) or _manual_export_evidence(record, store_type)
+    confidence = _clean_text(record.get("confidence")) or _external_confidence(record, evidence)
+    normalized = {
+        "store_id": store_id,
+        "store_name": _store_name(
+            store_id,
+            record.get("store_name")
+            or record.get("store")
+            or record.get("storefront")
+            or defaults.get("store_name")
+            or defaults.get("store")
+            or defaults.get("storefront"),
+        ),
+        "store_type": store_type,
+        "source": _clean_text(record.get("source") or defaults.get("source"))
+        or "manual_external_export",
+        "external_name": external_name or _clean_text(record.get("steam_name")),
+        "match_method": _external_match_method(record, appid),
+        "confidence": _enum(confidence, _CONFIDENCES, "low"),
+        "evidence": _slug(evidence),
+    }
+    if appid:
+        normalized["wishlist_appid"] = appid
+    if external_id := _clean_text(record.get("external_id") or record.get("id") or record.get("slug")):
+        normalized["external_id"] = external_id
+    if reason := _clean_text(record.get("reason")):
+        normalized["reason"] = reason
+    if observed_at := _clean_text(record.get("observed_at") or record.get("imported_at") or defaults.get("observed_at")):
+        normalized["observed_at"] = observed_at
+    return normalized
+
+
+def normalize_manual_external_library_export(payload) -> list[dict]:
+    """Normalize a user-provided local store export into external_matches records."""
+    records, defaults = _manual_export_records(payload)
+    normalized: list[dict] = []
+    seen: set[tuple[str, ...]] = set()
+    for record in records:
+        match = _manual_export_record_to_external_match(record, defaults)
+        if not match:
+            continue
+        fingerprint = (
+            match["store_id"],
+            match["store_type"],
+            _clean_text(match.get("external_id")),
+            _name_key(match["external_name"]),
+            _clean_text(match.get("wishlist_appid")),
+            match["evidence"],
+        )
+        if fingerprint in seen:
+            continue
+        seen.add(fingerprint)
+        normalized.append(match)
+    return normalized
+
+
 def _external_matches_from_payload(payload) -> list[dict]:
     if payload is None:
         return []
@@ -98,6 +223,8 @@ def _external_matches_from_payload(payload) -> list[dict]:
         for key in ("external_matches", "matches"):
             if key in payload:
                 return _copy_external_match_records(payload[key], context=key)
+        if any(key in payload for key in _MANUAL_EXPORT_COLLECTION_KEYS):
+            return normalize_manual_external_library_export(payload)
         raise ValueError(
             "debe ser una lista o un objeto con clave 'external_matches' o 'matches'"
         )
