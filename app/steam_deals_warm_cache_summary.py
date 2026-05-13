@@ -45,6 +45,8 @@ class WarmCacheLogSummary:
     batch_size: int | None = None
     batch_halving_limit: int | None = None
     individual_fallback_workers: int | None = None
+    rate_limit_wait_count: int = 0
+    rate_limit_max_wait_seconds: int | None = None
     deals_count: int | None = None
     min_discount: int | None = None
     wishlist_count: int | None = None
@@ -218,6 +220,12 @@ def parse_warm_cache_log_text(
                 "individual_fallback_failure_reasons"
             ].get("no_price_data", 0)
 
+        if match := re.search(r"Rate limit.*esperando (?P<seconds>[\d,]+)s", line):
+            wait_seconds = _parse_int(match.group("seconds"))
+            values["rate_limit_wait_count"] += 1
+            current_max = values["rate_limit_max_wait_seconds"] or 0
+            values["rate_limit_max_wait_seconds"] = max(current_max, wait_seconds)
+
         if match := re.search(
             r"Fallback budget adaptativo: attempts=(?P<attempts>[\d,]+) · "
             r"no_data=(?P<no_data>[\d,]+) · deferred=(?P<deferred>[\d,]+) · "
@@ -343,6 +351,41 @@ def _format_http_400_action(
     )
 
 
+def _is_lower_batch_experiment_negative(
+    latest: WarmCacheLogSummary, previous: WarmCacheLogSummary | None
+) -> bool:
+    if previous is None:
+        return False
+    if not previous.batch_size or not latest.batch_size:
+        return False
+    return (
+        latest.batch_size < previous.batch_size
+        and previous.degraded_batch_count > 0
+        and latest.degraded_batch_count > previous.degraded_batch_count
+    )
+
+
+def _format_negative_batch_experiment_action(
+    latest: WarmCacheLogSummary, previous: WarmCacheLogSummary
+) -> str:
+    return (
+        "Batch menor no ayudó: "
+        f"batch_size={latest.batch_size} generó {latest.degraded_batch_count:,} "
+        f"HTTP 400 vs {previous.degraded_batch_count:,} con "
+        f"batch_size={previous.batch_size}; no bajes el default global, "
+        "analiza offline appids/batches tóxicos o fallback directo antes de otro benchmark."
+    )
+
+
+def _format_rate_limit_action(summary: WarmCacheLogSummary) -> str:
+    return (
+        "Rate-limit observado: "
+        f"{summary.rate_limit_wait_count:,} esperas"
+        f" (máx {summary.rate_limit_max_wait_seconds}s); "
+        "no repitas benchmarks ni bajes batch global sin aislar primero batches/appids problemáticos."
+    )
+
+
 def _format_fallback_cooldown_action(summary: WarmCacheLogSummary) -> str:
     failed = summary.individual_fallback_failed_count
     total = summary.individual_fallback_count
@@ -448,17 +491,35 @@ def analyze_warm_cache_recommendations(
     has_repeated_http_400 = bool(
         previous and previous.degraded_batch_count > 0 and latest.degraded_batch_count > 0
     )
+    has_negative_lower_batch = _is_lower_batch_experiment_negative(latest, previous)
     has_fallback_no_data_cooldown = (
         latest.individual_fallback_count >= HIGH_FALLBACK_THRESHOLD
         and _fallback_failed_ratio(latest) >= HIGH_FAILED_FALLBACK_RATIO
     )
 
-    if has_repeated_http_400:
+    if has_negative_lower_batch and previous is not None:
+        recommendations.append(
+            WarmCacheRecommendation(
+                "lower-batch-negative",
+                "warn",
+                _format_negative_batch_experiment_action(latest, previous),
+            )
+        )
+    elif has_repeated_http_400:
         recommendations.append(
             WarmCacheRecommendation(
                 "repeated-http-400",
                 "warn",
                 _format_http_400_action(latest, previous),
+            )
+        )
+
+    if latest.rate_limit_wait_count > 0:
+        recommendations.append(
+            WarmCacheRecommendation(
+                "rate-limit-waits",
+                "warn",
+                _format_rate_limit_action(latest),
             )
         )
 
@@ -553,6 +614,12 @@ def format_warm_cache_summary(summary: WarmCacheLogSummary) -> str:
             )
         ]
         lines.append("- Fallback razones: " + ", ".join(reason_parts))
+    if summary.rate_limit_wait_count:
+        lines.append(
+            "- Rate-limit waits: "
+            f"{_format_value(summary.rate_limit_wait_count)} esperas"
+            f" (máx {_format_value(summary.rate_limit_max_wait_seconds, 's')})"
+        )
     if (
         summary.individual_attempts
         or summary.deferred_by_fallback_budget

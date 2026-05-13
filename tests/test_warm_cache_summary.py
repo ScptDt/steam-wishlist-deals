@@ -108,6 +108,19 @@ class WarmCacheSummaryTests(unittest.TestCase):
         self.assertIn("- Fallback adaptativo: 1 bajadas de workers", output)
         self.assertIn("- Fallback razones: http_429=12, no_price_data=34", output)
 
+    def test_parse_warm_cache_log_text_extracts_rate_limit_waits(self) -> None:
+        text = (
+            "Rate limit — esperando 30s (intento 1/4)\n"
+            "Rate limit — esperando 120s (intento 3/4)\n"
+        )
+
+        summary = parse_warm_cache_log_text(text)
+        output = format_warm_cache_summary(summary)
+
+        self.assertEqual(summary.rate_limit_wait_count, 2)
+        self.assertEqual(summary.rate_limit_max_wait_seconds, 120)
+        self.assertIn("- Rate-limit waits: 2 esperas (máx 120s)", output)
+
     def test_parse_warm_cache_log_text_extracts_fallback_budget_metrics(self) -> None:
         text = (
             "Fallback budget adaptativo: attempts=80 · no_data=72 · "
@@ -306,6 +319,44 @@ class WarmCacheSummaryTests(unittest.TestCase):
         self.assertEqual(recommendations[0].code, "repeated-http-400")
         self.assertIn("ya estás en batch_size=1", recommendations[0].action)
         self.assertNotIn("STEAM_DEALS_PRICE_BATCH_SIZE=", recommendations[0].action)
+
+    def test_analyze_warm_cache_marks_negative_lower_batch_experiment(self) -> None:
+        recommendations = analyze_warm_cache_recommendations(
+            [
+                WarmCacheLogSummary(degraded_batch_count=21, batch_size=20),
+                WarmCacheLogSummary(
+                    degraded_batch_count=154,
+                    batch_size=10,
+                    rate_limit_wait_count=3,
+                    rate_limit_max_wait_seconds=120,
+                ),
+            ]
+        )
+
+        codes = [recommendation.code for recommendation in recommendations]
+        self.assertEqual(codes[0], "lower-batch-negative")
+        self.assertIn("batch_size=10 generó 154 HTTP 400", recommendations[0].action)
+        self.assertIn("batch_size=20", recommendations[0].action)
+        self.assertIn("no bajes el default global", recommendations[0].action)
+        self.assertNotIn("repeated-http-400", codes)
+        self.assertIn("rate-limit-waits", codes)
+
+    def test_format_warm_cache_recommendations_mentions_rate_limit_waits(self) -> None:
+        output = format_warm_cache_recommendations(
+            [
+                WarmCacheLogSummary(refresh_candidates=500, batch_size=20),
+                WarmCacheLogSummary(
+                    refresh_candidates=500,
+                    batch_size=10,
+                    rate_limit_wait_count=2,
+                    rate_limit_max_wait_seconds=120,
+                ),
+            ]
+        )
+
+        self.assertIn("Rate-limit observado", output)
+        self.assertIn("2 esperas", output)
+        self.assertIn("máx 120s", output)
 
     def test_analyze_warm_cache_recommends_cooldown_for_no_data_fallback(self) -> None:
         recommendations = analyze_warm_cache_recommendations(
