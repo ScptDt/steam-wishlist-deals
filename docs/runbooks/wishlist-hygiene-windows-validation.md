@@ -1,11 +1,12 @@
 # Validación Windows: Wishlist hygiene visible
 
-Checklist para probar en Windows que las señales `wishlist_hygiene` aparecen donde corresponde:
+Checklist para probar en Windows que las señales `wishlist_hygiene` aparecen donde corresponde, incluyendo el import local opcional de `external_matches`:
 
 - Web UI: `Último reporte` → `Acciones y recomendaciones del último reporte` → `Revisar wishlist`.
 - Reporte Markdown generado: sección `## 🧹 Revisar wishlist`.
 - Reporte HTML generado: sección `Revisar wishlist`.
 - JSON generado: campo `wishlist_hygiene.items`.
+- Import local opcional: `--wishlist-external-matches-json` o Web UI → `Archivos opcionales` → `Matches externos wishlist (JSON)`.
 
 > Importante: la sección se oculta a propósito si `wishlist_hygiene.items` viene vacío o no existe. Si no ves nada, primero revisa el JSON.
 
@@ -19,6 +20,7 @@ Debe quedar claro que:
 - No auto-excluye juegos.
 - No cambia score, ranking ni filtros.
 - Solo muestra señales locales para revisar manualmente.
+- Si se importan `external_matches`, siguen siendo señales de revisión manual.
 - En Web UI muestra máximo 3 items.
 - En reportes generados muestra una sección compacta solo cuando hay items.
 
@@ -28,6 +30,7 @@ Debe quedar claro que:
 - No usar `--no-cache`.
 - No hacer cold-cache largo.
 - No hacer builds desktop.
+- No llamar APIs externas, hacer scraping ni usar credenciales para forzar señales externas.
 - No versionar archivos de `output/`, logs ni reportes generados.
 - No probar borrado real ni limpieza automática de wishlist, porque no existe esa acción.
 
@@ -38,17 +41,17 @@ En PowerShell, desde la raíz del repo:
 ```powershell
 git pull
 git log --oneline -5
+Select-String -Path README.md -Pattern "--wishlist-external-matches-json"
+Select-String -Path docs\runbooks\wishlist-hygiene-multistore-contract.md -Pattern "Uso actual: import local JSON"
 ```
 
-Debes ver estos commits entre los últimos:
+Debes confirmar:
 
-```text
-2f3069c feat: surface wishlist hygiene in reports
-f5cceed feat: surface wishlist hygiene in web ui
-c1c128d feat: expose wishlist hygiene in json
-```
+- `git log --oneline -5` muestra commits recientes de `main` después de hacer `git pull`.
+- `README.md` menciona `--wishlist-external-matches-json`.
+- El contrato multi-store menciona `Uso actual: import local JSON`.
 
-Si no aparecen, no estás probando la versión correcta.
+Si esos marcadores no aparecen, no estás probando la documentación/versión correcta.
 
 ## 2. Smoke recomendado desde Web UI
 
@@ -72,6 +75,8 @@ En la Web UI:
 4. Ve a `Resumen de tu última ejecución`.
 5. Abre el desplegable `Acciones y recomendaciones del último reporte`.
 6. Busca la sección `Revisar wishlist`.
+
+Si también quieres validar import local, configura antes de ejecutar `Archivos opcionales` → `Matches externos wishlist (JSON)` con un JSON local temporal. No uses APIs externas ni scraping.
 
 ### Resultado esperado si hay señales
 
@@ -128,7 +133,48 @@ Interpretación:
 | `items: []` | No debe aparecer la sección. |
 | No existe `wishlist_hygiene` | Probablemente abriste un reporte viejo o no estás en la versión correcta. |
 
-## 4. Validar reportes generados
+Si usaste import local, revisa además que el item conserve `external_matches` como metadata explicativa y que las señales sean `external_owned`, `external_bundle_owned` o `external_review_needed` según la evidencia.
+
+## 4. Import local `external_matches` opcional
+
+Para forzar una señal visible sin depender de datos reales, crea un JSON temporal desde un juego del reporte chico ya generado:
+
+```powershell
+$reportJson = Read-Host "Ruta del JSON del reporte chico"
+$data = Get-Content $reportJson -Raw | ConvertFrom-Json
+$firstDeal = $data.deals | Select-Object -First 1
+
+if (-not $firstDeal) {
+  Write-Host "No hay deals en el reporte chico; omite este bloque opcional."
+} else {
+  $matches = Join-Path $env:TEMP "wishlist-external-matches.json"
+  @{
+    external_matches = @(
+      @{
+        store = "GOG"
+        store_type = "library"
+        source = "user_library_export"
+        external_name = $firstDeal.name
+        wishlist_appid = [string]$firstDeal.appid
+        evidence = "owned_in_user_export"
+        confidence = "high"
+      }
+    )
+  } | ConvertTo-Json -Depth 5 | Set-Content $matches -Encoding UTF8
+}
+```
+
+Luego úsalo por CLI con `--wishlist-external-matches-json $matches` o desde Web UI en `Matches externos wishlist (JSON)`.
+
+Comprobar:
+
+- La corrida termina sin traceback.
+- El JSON nuevo contiene una señal externa esperada.
+- El item mantiene `action=review` y `advisory_only=true`.
+- La ruta local del JSON no queda expuesta en el JSON de salida.
+- No aparecen acciones para borrar, auto-excluir, comprar ni cambiar score/ranking.
+
+## 5. Validar reportes generados
 
 Después de una corrida que sí tenga `wishlist_hygiene.items`:
 
@@ -174,12 +220,13 @@ Abre el `.json` generado y confirma:
 
 o un número mayor que cero si hubo items.
 
-## 5. Validación determinística opcional sin depender de datos reales
+## 6. Validación determinística opcional sin depender de datos reales
 
 Si la wishlist real no produce señales y quieres confirmar que el código sí está funcionando, corre tests locales:
 
 ```powershell
-.\.venv\Scripts\python.exe -m unittest tests.test_generator_logic.WishlistHygieneTests tests.test_generator_logic.RunOutputTests tests.test_web_assets
+.\.venv\Scripts\python.exe -m py_compile app\steam_deals_wishlist_hygiene.py steam_deals_wishlist_hygiene.py steam_deals_generator.py tests\test_generator_logic.py tests\test_web_assets.py tests\test_generated_files_serving.py
+.\.venv\Scripts\python.exe -m unittest tests.test_generator_logic.WishlistHygieneTests tests.test_web_assets.WebAssetsTests tests.test_generated_files_serving.GeneratedFilesServingTests
 ```
 
 Resultado esperado:
@@ -196,7 +243,7 @@ Steam rechazó la API key al resolver el perfil (HTTP 403). Intentando fallback 
 
 Ese warning ya es conocido y no invalida esta prueba si los tests terminan en `OK`.
 
-## 6. Qué reportar si algo no coincide
+## 7. Qué reportar si algo no coincide
 
 Pásame esto:
 
@@ -208,14 +255,17 @@ Pásame esto:
    - o ausente.
 4. Si apareció en Markdown (`## 🧹 Revisar wishlist`).
 5. Si apareció en HTML (`Revisar wishlist`).
-6. Screenshot si se ve mal o si debería aparecer y no aparece.
-7. Cualquier error de PowerShell o consola del browser.
+6. Si usaste import local, qué señal generó (`external_owned`, `external_bundle_owned`, `external_review_needed` o ninguna) y si quedó advisory-only.
+7. Screenshot si se ve mal o si debería aparecer y no aparece.
+8. Cualquier error de PowerShell o consola del browser.
 
 ## Checklist rápido
 
-- [ ] `git log` contiene `2f3069c`, `f5cceed`, `c1c128d`.
+- [ ] `git pull` completó y `git log` muestra commits recientes de `main`.
+- [ ] README/contrato documentan `--wishlist-external-matches-json` e import local JSON.
 - [ ] Corrida normal con perfil chico termina.
 - [ ] JSON revisado: `wishlist_hygiene.items` está claro.
+- [ ] Si se usó import local `external_matches`, la señal queda advisory-only y sin ruta local filtrada.
 - [ ] Si `items` tiene datos, Web UI muestra `Revisar wishlist`.
 - [ ] Si `items` tiene datos, Markdown muestra `## 🧹 Revisar wishlist`.
 - [ ] Si `items` tiene datos, HTML muestra `Revisar wishlist`.

@@ -18,13 +18,15 @@ Runbook manual para validar el wrapper desktop de Steam Tools en Windows.
 
 ## Checklist visible para prueba Windows
 
-Usa esta checklist como guía principal. Incluye lo nuevo de `wishlist_hygiene` y las validaciones previas de Windows/Desktop/Web/Share. Las secciones históricas del runbook siguen abajo como referencia resumida.
+Usa esta checklist como guía principal. Incluye `wishlist_hygiene`, import local `external_matches` y las validaciones previas de Windows/Desktop/Web/Share. Las secciones históricas del runbook siguen abajo como referencia resumida.
 
 ### A. Confirmar versión y preparar entorno
 
 ```powershell
 git pull
-git log -1 --oneline
+git log --oneline -5
+Select-String -Path README.md -Pattern "--wishlist-external-matches-json"
+Select-String -Path docs\runbooks\wishlist-hygiene-multistore-contract.md -Pattern "Uso actual: import local JSON"
 py -3 --version
 py -3 -m venv .venv
 .\.venv\Scripts\Activate.ps1
@@ -32,8 +34,9 @@ python -m pip install -r requirements-desktop.txt -c constraints/desktop.txt
 ```
 
 Comprobar:
-- [ ] `git log -1 --oneline` muestra `2f3069c feat: surface wishlist hygiene in reports` o un commit posterior que lo incluya.
-- [ ] `git log --oneline -5` contiene también `f5cceed feat: surface wishlist hygiene in web ui` y `c1c128d feat: expose wishlist hygiene in json`.
+- [ ] `git log --oneline -5` muestra commits recientes de `main` después de hacer `git pull`.
+- [ ] README menciona `--wishlist-external-matches-json`.
+- [ ] El contrato multi-store menciona `Uso actual: import local JSON`.
 - [ ] Python 3 funciona desde PowerShell.
 - [ ] `.venv` activa sin errores.
 - [ ] Dependencias desktop instalan sin errores bloqueantes.
@@ -43,14 +46,13 @@ Comprobar:
 ### B. Tests rápidos sin red
 
 ```powershell
-.\.venv\Scripts\python.exe -m py_compile renderers\markdown_renderer.py renderers\html_renderer.py steam_deals_generator.py tests\test_generator_logic.py
-.\.venv\Scripts\python.exe -m unittest tests.test_generator_logic.WishlistHygieneTests tests.test_generator_logic.RunOutputTests
+.\.venv\Scripts\python.exe -m py_compile app\steam_deals_wishlist_hygiene.py steam_deals_wishlist_hygiene.py steam_deals_generator.py tests\test_generator_logic.py tests\test_web_assets.py tests\test_generated_files_serving.py
+.\.venv\Scripts\python.exe -m unittest tests.test_generator_logic.WishlistHygieneTests tests.test_web_assets.WebAssetsTests tests.test_generated_files_serving.GeneratedFilesServingTests
 ```
 
 Esperado:
 
 ```text
-Ran 8 tests
 OK
 ```
 
@@ -103,6 +105,47 @@ Comprobar:
 - [ ] Si hay items, `action` es `review` y `advisory_only` es `True`.
 - [ ] Si `items` está vacío, Markdown/HTML/Web UI deben ocultar la sección. Eso es correcto.
 - [ ] Si `wishlist_hygiene` no existe, probablemente se abrió un reporte viejo o falta actualizar con `git pull`.
+
+### D2. Import local `external_matches` opcional
+
+Si necesitas forzar una señal visible sin depender de datos reales, genera un JSON local a partir de un juego del reporte chico ya creado. No uses APIs externas ni scraping.
+
+```powershell
+$firstDeal = $data.deals | Select-Object -First 1
+if (-not $firstDeal) {
+  Write-Host "No hay deals en el reporte chico; omite este bloque opcional."
+} else {
+  $matches = Join-Path $env:TEMP "wishlist-external-matches.json"
+  @{
+    external_matches = @(
+      @{
+        store = "GOG"
+        store_type = "library"
+        source = "user_library_export"
+        external_name = $firstDeal.name
+        wishlist_appid = [string]$firstDeal.appid
+        evidence = "owned_in_user_export"
+        confidence = "high"
+      }
+    )
+  } | ConvertTo-Json -Depth 5 | Set-Content $matches -Encoding UTF8
+
+  .\.venv\Scripts\python.exe steam_deals_generator.py `
+    --vanity "https://steamcommunity.com/id/joseluis12351" `
+    --output $out `
+    --discount 0 `
+    --top 10 `
+    --wishlist-external-matches-json $matches
+}
+```
+
+Comprobar si ejecutaste este bloque:
+- [ ] La corrida termina sin traceback.
+- [ ] El JSON nuevo contiene una señal `external_owned`, `external_bundle_owned` o `external_review_needed` según el match.
+- [ ] El item mantiene `action=review` y `advisory_only=True`.
+- [ ] El item conserva metadata `external_matches` con tienda/fuente visible.
+- [ ] No aparecen acciones para borrar, auto-excluir, comprar ni cambiar score/ranking.
+- [ ] El archivo `$matches` queda local/temporal y no se versiona.
 
 ### E. Revisar Markdown generado
 
@@ -171,6 +214,7 @@ Comprobar:
 En navegador:
 - [ ] Ejecutar preflight / Probar config.
 - [ ] Ejecutar Steam Deals con `https://steamcommunity.com/id/joseluis12351`.
+- [ ] Si validas import local, configurar `Archivos opcionales` → `Matches externos wishlist (JSON)` con el JSON temporal y confirmar que preflight no expone rutas sensibles.
 - [ ] Ver progreso sin congelamiento de SSE/log.
 - [ ] Al terminar, revisar `Resumen de tu última ejecución`.
 - [ ] Abrir `Acciones y recomendaciones del último reporte`.
@@ -179,6 +223,7 @@ En navegador:
 
 Wishlist hygiene en Web UI:
 - [ ] Si el JSON trae `wishlist_hygiene.items` con datos, aparece `Revisar wishlist`.
+- [ ] Si usaste `Matches externos wishlist (JSON)`, aparecen señales externas como `external_owned`, `external_bundle_owned` o `external_review_needed` solo como revisión.
 - [ ] Muestra máximo 3 sugerencias.
 - [ ] Si hay más, muestra texto tipo `N más en el JSON completo`.
 - [ ] Badge/copy `Solo revisión` visible.
@@ -211,6 +256,7 @@ Comprobar:
 - [ ] Server/API local responde en `127.0.0.1`.
 - [ ] Ejecutar **Doctor desktop** desde la UI.
 - [ ] Ejecutar **Probar config**.
+- [ ] Si validas import local, configurar `Matches externos wishlist (JSON)` igual que en Web UI directa.
 - [ ] Correr Steam Deals con `joseluis12351`.
 - [ ] Outputs se generan y los links abren.
 - [ ] HTML interactivo y Share HTML abren.
@@ -325,7 +371,7 @@ Manda resumen corto, no logs completos:
 - [ ] Resultado de `py -3 --version`.
 - [ ] Último commit probado (`git log -1 --oneline`).
 - [ ] WebView2 OK/FAIL/no claro.
-- [ ] Resultado de tests rápidos (`8 OK` o error corto).
+- [ ] Resultado de tests rápidos (`OK` / `N tests OK` o error corto).
 - [ ] Resultado de `python .\steam_tools_desktop.py --doctor`.
 - [ ] Build OK/FAIL y si existe `dist\SteamToolsDesktop.exe` si hiciste build.
 - [ ] Resultado de `smoke_test_windows.ps1` (`SMOKE_OK`/`SMOKE_FAIL`) si lo corriste.
@@ -334,6 +380,7 @@ Manda resumen corto, no logs completos:
 - [ ] Outputs generados: `.md`, `.html`, `.csv`, `.json`, `share.html`.
 - [ ] Wishlist hygiene: indicar si `wishlist_hygiene.items` estaba vacío, ausente o con datos.
 - [ ] Wishlist hygiene: indicar si apareció `Revisar wishlist` en Web UI, Markdown y HTML.
+- [ ] External matches: indicar si se usó JSON local y qué señal generó (`external_owned`, `external_bundle_owned`, `external_review_needed` o ninguna).
 - [ ] HTML interactivo OK/FAIL.
 - [ ] Share HTML/modal/link OK/FAIL/no probado.
 - [ ] `Copiar log` OK/FAIL/no probado.
@@ -349,6 +396,7 @@ PASS si:
 - App source o exe abre y corre `joseluis12351` hasta generar outputs.
 - HTML/Share/log/fallback principal funcionan o fallan con mensaje accionable.
 - `wishlist_hygiene` aparece/oculta correctamente según el JSON en Web UI, Markdown y HTML.
+- Si se usó import local `external_matches`, queda como advisory-only y sin acciones destructivas.
 - Cierra limpio.
 
 FAIL si:
@@ -358,6 +406,7 @@ FAIL si:
 - Outputs esperados faltan.
 - `wishlist_hygiene.items` tiene datos pero no aparece `Revisar wishlist` en Web UI/Markdown/HTML.
 - `wishlist_hygiene.items` está vacío pero aparece una sección vacía o ruidosa.
+- El import local produce borrado/auto-exclusión/cambio de score o filtra la ruta local en el JSON de salida.
 - Fallback web no abre o no muestra aviso.
 - Se filtran secretos/rutas sensibles/tracebacks largos.
 - Quedan procesos rotos o la app no cierra.
@@ -434,8 +483,9 @@ Dentro de la UI desktop:
 4. no usar `BG00G` como quick smoke ni con cold-cache accidental; si se usa, aislar cache/logs y registrarlo como medición larga
 5. durante un run suficientemente largo, probar **Detener** una vez solo si ese comportamiento cambió o falta evidencia de la build actual
 6. verificar `.md`, `.html`, `.csv` y, si aplican, `.json`/`share.html`
-7. probar **Copiar log** o confirmar fallback accionable sin crash
-8. cerrar la app
+7. si estás validando wishlist hygiene, revisar `wishlist_hygiene` y, opcionalmente, `--wishlist-external-matches-json`/campo Web con un JSON temporal
+8. probar **Copiar log** o confirmar fallback accionable sin crash
+9. cerrar la app
 
 ## 7. Fallback web (mitigacion)
 
@@ -472,6 +522,7 @@ python .\steam_deals_web.py --no-open --port 8080
 - apertura local OK/FAIL
 - resultado del smoke script (`SMOKE_OK` / `SMOKE_FAIL`)
 - outputs `.md`, `.html`, `.csv`
+- wishlist hygiene / import local `external_matches` OK/FAIL/no probado
 - perfil usado: `joseluis12351` para smoke rápido y/o `BG00G` para validación larga/stress explícita
 - **Copiar log** OK/FAIL/no probado si se valida la UX desktop
 - cierre limpio
