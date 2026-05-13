@@ -3794,6 +3794,50 @@ function renderLatestNoPriceClassification(coverage) {
   `;
 }
 
+function latestWarmCacheBlockProgress(coverage) {
+  const progress = coverage && typeof coverage.block_progress === 'object'
+    ? coverage.block_progress
+    : null;
+  if (!progress) return null;
+  const label = String(progress.label || '').trim();
+  const initial = latestCoverageCount(progress.initial_candidate_count);
+  const accumulated = latestCoverageCount(progress.processed_accumulated_count);
+  if (!label || !initial) return null;
+  return {
+    label,
+    initial,
+    accumulated,
+    pendingDynamic: latestCoverageCount(progress.pending_dynamic_count),
+    currentRunProcessed: latestCoverageCount(progress.current_run_processed_count),
+    currentRunDeferred: latestCoverageCount(progress.current_run_deferred_count),
+    nextHint: String(progress.next_resume_hint || '').trim(),
+    isEstimated: progress.is_estimated === true,
+  };
+}
+
+function renderLatestWarmCacheBlockProgress(coverage) {
+  const progress = latestWarmCacheBlockProgress(coverage);
+  if (!progress) return '';
+  const pendingCopy = progress.pendingDynamic > 0
+    ? `Pendientes dinámicos por presupuesto/stale/cooldown: ${formatLatestCoverageCount(progress.pendingDynamic)}.`
+    : 'Sin pendientes dinámicos por presupuesto; revisa estados finales para cooldown/no-price.';
+  const hintCopy = progress.nextHint
+    ? ` Última pista de continuación: ${escapeHtml(progress.nextHint)}.`
+    : '';
+  const estimateCopy = progress.isEstimated ? ' aproximado' : '';
+  return `
+    <div class="latest-cache-block-progress" data-latest-cache-block-progress>
+      <div class="latest-cache-block-title">Avance por bloques warm-cache</div>
+      <div class="latest-cache-block-main">${escapeHtml(progress.label)}${escapeHtml(estimateCopy)}</div>
+      <div class="latest-cache-block-copy">Cobertura acumulada: ${escapeHtml(formatLatestCoverageCount(progress.accumulated))}/${escapeHtml(formatLatestCoverageCount(progress.initial))} juegos revisados. ${escapeHtml(pendingCopy)}${hintCopy}</div>
+      <div class="latest-cache-block-pills" aria-label="Detalle del bloque warm-cache">
+        <strong>Último bloque procesó ${escapeHtml(formatLatestCoverageCount(progress.currentRunProcessed))}</strong>
+        <strong>Diferidos del último bloque ${escapeHtml(formatLatestCoverageCount(progress.currentRunDeferred))}</strong>
+      </div>
+    </div>
+  `;
+}
+
 function renderLatestCacheStateSummary(coverage) {
   const items = latestCacheStateItems(coverage);
   if (!items.length) return '';
@@ -3811,9 +3855,10 @@ function renderLatestCacheCoverage(report) {
   const deferred = latestCoverageCount(coverage.deferred_count);
   const isPartial = coverage.is_partial === true || coverage.status === 'partial' || deferred > 0;
   const hasDeferred = isPartial && deferred > 0;
+  const blockProgress = renderLatestWarmCacheBlockProgress(coverage);
   const finalStates = renderLatestFinalCacheStates(coverage);
   const noPriceClassification = renderLatestNoPriceClassification(coverage);
-  if (!hasDeferred && !finalStates && !noPriceClassification) return '';
+  if (!hasDeferred && !blockProgress && !finalStates && !noPriceClassification) return '';
   const processed = latestCoverageCount(coverage.processed_count);
   const total = latestCoverageCount(coverage.refresh_candidate_count) || processed + deferred;
   const coverageLabel = String(coverage.coverage_label || '').trim() || `${formatLatestCoverageCount(processed)}/${formatLatestCoverageCount(total)}`;
@@ -3826,6 +3871,7 @@ function renderLatestCacheCoverage(report) {
       <div class="latest-cache-coverage-title">${isPartial ? 'Caché parcial' : 'Cola resumible terminada'}</div>
       <div class="latest-cache-coverage-main">${escapeHtml(coverageLabel)} juegos revisados</div>
       <div class="latest-cache-coverage-copy">${hasDeferred ? `Quedan ${escapeHtml(formatLatestCoverageCount(deferred))} pendientes por confirmar. Las ofertas mostradas pueden no incluir juegos aún no verificados.${resumeCopy}` : 'Sin pendientes por presupuesto; eso no implica cobertura perfecta si quedan fallos/cooldown o juegos sin precio confirmado.'}</div>
+      ${blockProgress}
       ${renderLatestCacheStateSummary(coverage)}
       ${finalStates}
       ${noPriceClassification}

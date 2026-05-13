@@ -3423,6 +3423,65 @@ def _build_final_cache_state_summary(
     ]
 
 
+def _ceil_div(numerator: int, denominator: int) -> int:
+    if denominator <= 0:
+        return 0
+    return (max(0, numerator) + denominator - 1) // denominator
+
+
+def _build_warm_cache_block_progress(
+    *,
+    is_partial: bool,
+    processed_count: int,
+    deferred_count: int,
+    candidate_total: int,
+    state_counts: dict,
+    max_refresh_candidates_per_run,
+    next_resume_hint: str,
+) -> dict | None:
+    state_total = sum(_safe_non_negative_int(count) for count in state_counts.values())
+    initial_candidate_count = max(candidate_total, state_total)
+    if initial_candidate_count <= 0:
+        return None
+    pending_dynamic_count = max(
+        deferred_count,
+        _safe_non_negative_int(state_counts.get("pending_deferred")),
+    )
+    processed_accumulated_count = max(
+        processed_count,
+        initial_candidate_count - pending_dynamic_count,
+    )
+    block_size = _safe_non_negative_int(max_refresh_candidates_per_run) or _safe_non_negative_int(
+        PRICE_MAX_REFRESH_CANDIDATES_PER_RUN
+    )
+    if block_size <= 0:
+        block_size = max(1, processed_count or initial_candidate_count)
+    estimated_total_blocks = max(1, _ceil_div(initial_candidate_count, block_size))
+    current_block = min(
+        estimated_total_blocks,
+        _ceil_div(processed_accumulated_count, block_size),
+    )
+    is_estimated = is_partial or pending_dynamic_count > 0
+    label = (
+        f"Bloque {current_block}/~{estimated_total_blocks}"
+        if is_estimated
+        else f"Bloque {current_block}/{estimated_total_blocks}"
+    )
+    return {
+        "label": label,
+        "current_block": current_block,
+        "estimated_total_blocks": estimated_total_blocks,
+        "block_size": block_size,
+        "is_estimated": is_estimated,
+        "processed_accumulated_count": processed_accumulated_count,
+        "initial_candidate_count": initial_candidate_count,
+        "pending_dynamic_count": pending_dynamic_count,
+        "current_run_processed_count": processed_count,
+        "current_run_deferred_count": deferred_count,
+        "next_resume_hint": next_resume_hint,
+    }
+
+
 def build_price_cache_coverage(price_stage: dict | None) -> dict | None:
     if not isinstance(price_stage, dict):
         return None
@@ -3510,6 +3569,17 @@ def build_price_cache_coverage(price_stage: dict | None) -> dict | None:
     coverage["resumable_queue_label"] = (
         "Cola resumible pendiente" if is_partial else "Cola resumible terminada"
     )
+    block_progress = _build_warm_cache_block_progress(
+        is_partial=is_partial,
+        processed_count=processed_count,
+        deferred_count=deferred_count,
+        candidate_total=candidate_total,
+        state_counts=compact_state_counts,
+        max_refresh_candidates_per_run=price_stage.get("max_refresh_candidates_per_run"),
+        next_resume_hint=coverage["next_resume_hint"],
+    )
+    if block_progress:
+        coverage["block_progress"] = block_progress
     coverage["final_state_summary"] = _build_final_cache_state_summary(
         is_partial=is_partial,
         deferred_count=deferred_count,

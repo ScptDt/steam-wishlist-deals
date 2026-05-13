@@ -938,6 +938,44 @@ details .details-body .field:last-child {
   color: var(--text);
   font-weight: 600;
 }
+.latest-cache-block-progress {
+  margin-top: 0.6rem;
+  padding: 0.65rem 0.7rem;
+  border-radius: 8px;
+  border: 1px solid rgba(240, 178, 50, 0.22);
+  background: rgba(12, 20, 30, 0.18);
+}
+.latest-cache-block-title {
+  color: var(--yellow);
+  font-size: 0.78rem;
+  font-weight: 700;
+}
+.latest-cache-block-main {
+  margin-top: 0.22rem;
+  color: var(--text);
+  font-size: 0.86rem;
+  font-weight: 700;
+}
+.latest-cache-block-copy {
+  margin-top: 0.25rem;
+  color: var(--text2);
+  font-size: 0.74rem;
+  line-height: 1.45;
+}
+.latest-cache-block-pills {
+  margin-top: 0.45rem;
+  display: flex;
+  flex-wrap: wrap;
+  gap: 0.35rem;
+}
+.latest-cache-block-pills strong {
+  padding: 0.18rem 0.45rem;
+  border-radius: 999px;
+  background: rgba(240, 178, 50, 0.1);
+  color: var(--yellow);
+  font-size: 0.72rem;
+  font-weight: 700;
+}
 .latest-cache-final-states {
   margin-top: 0.6rem;
   padding: 0.65rem 0.7rem;

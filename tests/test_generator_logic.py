@@ -4424,6 +4424,7 @@ class StopApiContractTests(unittest.TestCase):
                 "deferred_by_time_budget": 2575,
                 "time_budget_exhausted": True,
                 "next_resume_hint": "542050",
+                "max_refresh_candidates_per_run": 400,
                 "cache_state_counts": {"fresh": 300, "pending_deferred": 2575},
                 "cache_state_summary": [
                     {"state": "fresh", "label": "fresh cache", "count": 300},
@@ -4437,6 +4438,10 @@ class StopApiContractTests(unittest.TestCase):
         self.assertEqual(coverage["coverage_label"], "360/2,935")
         self.assertEqual(coverage["deferred_count"], 2575)
         self.assertEqual(coverage["deals_count"], 2)
+        self.assertEqual(coverage["block_progress"]["label"], "Bloque 1/~8")
+        self.assertEqual(coverage["block_progress"]["processed_accumulated_count"], 360)
+        self.assertEqual(coverage["block_progress"]["initial_candidate_count"], 2935)
+        self.assertEqual(coverage["block_progress"]["pending_dynamic_count"], 2575)
         self.assertEqual(coverage["state_counts"]["pending_deferred"], 2575)
         self.assertIn(
             {"state": "fresh", "label": "fresh cache", "count": 300},
@@ -4444,6 +4449,33 @@ class StopApiContractTests(unittest.TestCase):
         )
         self.assertIn("Caché parcial", coverage["summary"])
         self.assertIn("pueden no incluir juegos aún no verificados", coverage["detail"])
+
+    def test_build_price_cache_coverage_estimates_warm_cache_block_progress(self) -> None:
+        coverage = build_price_cache_coverage(
+            {
+                "deals": [{"appid": "10"}],
+                "refresh_candidate_count": 729,
+                "processed_count": 380,
+                "deferred_by_time_budget": 349,
+                "time_budget_exhausted": True,
+                "next_resume_hint": "730430",
+                "max_refresh_candidates_per_run": 400,
+                "cache_state_counts": {
+                    "fresh": 2149,
+                    "cooldown": 87,
+                    "failed_no_data": 349,
+                    "pending_deferred": 349,
+                },
+            }
+        )
+
+        self.assertIsNotNone(coverage)
+        self.assertEqual(coverage["block_progress"]["label"], "Bloque 7/~8")
+        self.assertEqual(coverage["block_progress"]["current_block"], 7)
+        self.assertEqual(coverage["block_progress"]["estimated_total_blocks"], 8)
+        self.assertEqual(coverage["block_progress"]["processed_accumulated_count"], 2585)
+        self.assertEqual(coverage["block_progress"]["initial_candidate_count"], 2934)
+        self.assertEqual(coverage["block_progress"]["pending_dynamic_count"], 349)
 
     def test_build_price_cache_coverage_exposes_no_price_classification(self) -> None:
         coverage = build_price_cache_coverage(
@@ -4490,6 +4522,7 @@ class StopApiContractTests(unittest.TestCase):
                 "processed_count": 2934,
                 "deferred_by_time_budget": 0,
                 "time_budget_exhausted": False,
+                "max_refresh_candidates_per_run": 400,
                 "cache_state_counts": {
                     "fresh": 2435,
                     "cooldown": 110,
@@ -4513,6 +4546,8 @@ class StopApiContractTests(unittest.TestCase):
         self.assertEqual(coverage["status"], "complete")
         self.assertEqual(coverage["resumable_queue_status"], "finished")
         self.assertEqual(coverage["resumable_queue_label"], "Cola resumible terminada")
+        self.assertEqual(coverage["block_progress"]["label"], "Bloque 8/8")
+        self.assertEqual(coverage["block_progress"]["pending_dynamic_count"], 0)
         self.assertIn("Cola resumible terminada", coverage["summary"])
         self.assertIn("fallos/cooldown", coverage["detail"])
         self.assertIn(
