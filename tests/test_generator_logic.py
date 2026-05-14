@@ -3909,6 +3909,82 @@ class PriceCacheTests(unittest.TestCase):
             any(sample.get("size") == 20 for sample in stats["http_400_batch_samples"])
         )
 
+    def test_get_deals_from_wishlist_keeps_mixed_http_400_pattern_on_batches(
+        self,
+    ) -> None:
+        fetched_cache = {}
+        emitted = []
+        requested_batches = []
+        single_calls = []
+        stats = {}
+        appids = [str(1000 + index) for index in range(80)]
+        toxic_appids = set(appids[:20] + appids[40:60])
+
+        def fake_get_json(url, headers=None):
+            ids_text = url.split("appids=", 1)[1].split("&", 1)[0]
+            requested_batches.append(ids_text)
+            ids = ids_text.split(",")
+            if all(appid in toxic_appids for appid in ids):
+                raise urllib.error.HTTPError(url, 400, "Bad Request", hdrs=None, fp=None)
+            return {
+                appid: {
+                    "success": True,
+                    "data": {
+                        "name": f"Game {appid}",
+                        "type": "game",
+                        "price_overview": {
+                            "discount_percent": 60,
+                            "final_formatted": "$6",
+                            "initial_formatted": "$15",
+                            "final": 600,
+                        },
+                        "genres": [],
+                        "platforms": {},
+                        "release_date": {"date": "Jan 1, 2020"},
+                    },
+                }
+                for appid in ids
+            }
+
+        def fake_fetch_single(appid, _country, _delay):
+            single_calls.append(appid)
+            return None
+
+        deals, total = module_get_deals_from_wishlist(
+            appids,
+            fetched_cache,
+            "steam-id",
+            min_discount=50,
+            get_json=fake_get_json,
+            sleep_fn=lambda _seconds: None,
+            monotonic_fn=lambda: 0.0,
+            current_time_fn=lambda: 200000.0,
+            save_price_cache_fn=lambda _steam_id, _cache: None,
+            fetch_single_fn=fake_fetch_single,
+            process_app_entry_fn=lambda appid, data: module_process_app_entry(
+                appid, data, parse_release_year_fn=module_parse_release_year
+            ),
+            emit=emitted.append,
+            warn=lambda text: f"WARN:{text}",
+            dim=lambda text: f"DIM:{text}",
+            batch_size=20,
+            max_batch_halving=1,
+            http_400_circuit_breaker_threshold=2,
+            stats_out=stats,
+        )
+
+        self.assertEqual(total, 80)
+        self.assertEqual(len(deals), 40)
+        self.assertEqual(single_calls, appids[:20] + appids[40:60])
+        self.assertEqual(stats["degraded_batch_count"], 2)
+        self.assertEqual(stats["http_400_direct_fallback_batches"], 0)
+        self.assertEqual(stats["http_400_direct_fallback_count"], 0)
+        self.assertEqual(stats["individual_fallback_count"], 40)
+        self.assertIn(",".join(appids[60:80]), requested_batches)
+        self.assertFalse(
+            any("fallback individual directo" in line for line in emitted)
+        )
+
     def test_get_deals_from_wishlist_uses_bounded_individual_fallback_workers(
         self,
     ) -> None:
