@@ -427,6 +427,31 @@ class WarmCacheSummaryTests(unittest.TestCase):
         self.assertIn("no cambies defaults", action)
         self.assertNotIn("http-400-diagnostic-samples", codes)
 
+    def test_analyze_warm_cache_recognizes_http_400_direct_fallback(self) -> None:
+        recommendations = analyze_warm_cache_recommendations(
+            [
+                WarmCacheLogSummary(degraded_batch_count=21),
+                WarmCacheLogSummary(
+                    degraded_batch_count=21,
+                    http_400_direct_fallback_count=20,
+                    http_400_direct_fallback_batches=1,
+                ),
+            ]
+        )
+
+        codes = {recommendation.code for recommendation in recommendations}
+        action = next(
+            recommendation.action
+            for recommendation in recommendations
+            if recommendation.code == "http-400-direct-fallback-active"
+        )
+
+        self.assertIn("circuit breaker", action)
+        self.assertIn("20 juegos en 1 tanda", action)
+        self.assertIn("fixture offline", action)
+        self.assertNotIn("http-400-diagnostic-samples", codes)
+        self.assertNotIn("repeated-http-400", codes)
+
     def test_format_warm_cache_recommendations_mentions_rate_limit_waits(self) -> None:
         output = format_warm_cache_recommendations(
             [

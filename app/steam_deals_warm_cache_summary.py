@@ -461,6 +461,18 @@ def _format_http_400_diagnostic_action(summary: WarmCacheLogSummary) -> str:
     )
 
 
+def _format_http_400_direct_fallback_action(summary: WarmCacheLogSummary) -> str:
+    games = summary.http_400_direct_fallback_count
+    batches = summary.http_400_direct_fallback_batches
+    batch_label = "1 tanda" if batches == 1 else f"{batches:,} tandas"
+    return (
+        "Fallback directo HTTP 400 activo: el circuit breaker ya mandó "
+        f"{games:,} juegos en {batch_label} a fallback individual; usa el "
+        "fixture offline existente para ajustar umbral/fallback directo antes "
+        "de capturar más appids o cambiar defaults."
+    )
+
+
 def _http_400_sample_appid_counts(summary: WarmCacheLogSummary) -> dict[str, int]:
     counts: dict[str, int] = {}
     for sample in summary.http_400_batch_samples:
@@ -664,6 +676,7 @@ def analyze_warm_cache_recommendations(
         previous and previous.degraded_batch_count > 0 and latest.degraded_batch_count > 0
     )
     has_negative_lower_batch = _is_lower_batch_experiment_negative(latest, previous)
+    has_http_400_direct_fallback = latest.http_400_direct_fallback_count > 0
     has_fallback_no_data_cooldown = (
         latest.individual_fallback_count >= HIGH_FALLBACK_THRESHOLD
         and _fallback_failed_ratio(latest) >= HIGH_FAILED_FALLBACK_RATIO
@@ -677,7 +690,7 @@ def analyze_warm_cache_recommendations(
                 _format_negative_batch_experiment_action(latest, previous),
             )
         )
-    elif has_repeated_http_400:
+    elif has_repeated_http_400 and not has_http_400_direct_fallback:
         recommendations.append(
             WarmCacheRecommendation(
                 "repeated-http-400",
@@ -701,6 +714,14 @@ def analyze_warm_cache_recommendations(
                 "http-400-samples-fixture",
                 "info",
                 _format_http_400_sample_fixture_action(latest),
+            )
+        )
+    elif has_http_400_direct_fallback:
+        recommendations.append(
+            WarmCacheRecommendation(
+                "http-400-direct-fallback-active",
+                "info",
+                _format_http_400_direct_fallback_action(latest),
             )
         )
     elif latest.degraded_batch_count > 0:
