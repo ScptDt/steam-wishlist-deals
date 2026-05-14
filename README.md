@@ -25,7 +25,7 @@ Analiza tu wishlist de Steam y genera reportes detallados con deals, comparacion
 - **Notificaciones** — Telegram y Discord webhook con resumen de cambios
 - **Scheduler** — Ejecución automática cada N horas
 - **Comparación entre runs** — Detecta deals nuevos, terminados y bajadas de precio; incluye quick compare de los últimos 2 runs, búsqueda/paginación de historial, filtros persistentes, deep links por URL y drilldown `Ver historial` por juego
-- **Alertas inteligentes v2** — Umbrales configurables por subida (`--alert-rise-pct`), margen sobre mínimo global (`--alert-global-margin-pct`) y priorización por score mínimo (`--alert-score-min`)
+- **Alertas inteligentes v2** — Umbrales configurables por subida (`--alert-rise-pct`), margen sobre mínimo global (`--alert-global-margin-pct`) y priorización por score mínimo (`--alert-score-min`); aparecen como resumen visible/JSON y no equivalen por defecto a notificaciones Telegram/Discord por juego
 
 ### Salida
 - **Markdown** — Reporte completo con tablas, secciones, y badges
@@ -34,7 +34,7 @@ Analiza tu wishlist de Steam y genera reportes detallados con deals, comparacion
 - **Título de reporte con nombre de perfil** — El `<title>` de HTML/Share usa el nombre visible del perfil Steam cuando está disponible (con fallback al identificador original)
 - **JSON** — Export estructurado para automatización local (`meta`, `inputs`, `summary`, `top_picks`, `deals`, `budget_result`, etc.)
 - **CSV** — Exportación para Excel/Google Sheets (+ botón "Copiar para Sheets" en el HTML)
-- **Resumen final inteligente** — Alertas clave por run: mejor precio local, subidas vs run anterior, mínimo histórico global y bundles activos
+- **Resumen final inteligente** — Alertas clave por run: mejor precio local, subidas vs run anterior, mínimo histórico global y bundles activos, pensadas como revisión de volumen antes de automatizar notificaciones externas
 
 ## Requisitos
 
@@ -538,6 +538,8 @@ python3 steam_deals_generator.py --vanity gaben \
   --discord-webhook WEBHOOK_URL
 ```
 
+Las notificaciones Telegram/Discord actuales usan un resumen compacto de cambios notables (deals nuevos, bajadas, watchlist y top picks). **Alertas inteligentes v2** se calcula para el resumen final/JSON y no se envía como una notificación por juego por defecto; antes de conectarlas a canales externos conviene revisar una corrida natural con `price_changes` y definir un digest con límites anti-spam/preview.
+
 ## Scheduler
 
 ```bash
@@ -574,7 +576,7 @@ Flags más usados:
 | `--interactive` | Habilitar prompts de configuración en terminal |
 | `--no-cache` | Forzar re-fetch cuando haga falta |
 
-También existen flags avanzados para HLTB, familia, notificaciones, scheduler y alertas inteligentes; consulta `--help` antes de automatizar.
+También existen flags avanzados para HLTB, familia, notificaciones, scheduler y alertas inteligentes; consulta `--help` antes de automatizar. Si combinas scheduler/notificaciones con Alertas inteligentes v2, primero valida el volumen en el resumen/JSON y evita enviar alertas por-juego sin límites explícitos.
 
 ## PAYDAY 2 DLC Tracker
 
