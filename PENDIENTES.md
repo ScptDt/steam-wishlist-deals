@@ -22,8 +22,8 @@ Para cada Track, Quick Win o tarea no trivial —incluyendo trabajo iniciado por
 ## Estado General
 
 - Objetivo: llevar Steam Tools a una experiencia ultra user friendly y preparada para ejecutable desktop.
-- Fase actual: P2 en validacion cross-platform (cierre manual pendiente por host nativo).
-- Item activo: Alertas inteligentes v2 queda abierto solo por calibración real/larga: criterios offline/guardrails determinísticos ya documentados y sin recalibrar thresholds ni cerrar el track sin corrida real/larga. `Recomendaciones sociales y regalos` queda cerrado base/MVP y P2 desktop sigue condicionado a host macOS nativo.
+- Fase actual: P2 desktop queda pendiente solo por cierre manual en host macOS nativo; Linux desktop ya tiene evidencia funcional y Windows queda como baseline de apoyo si hay host.
+- Item activo: no hay slice local obligatorio abierto; Alertas inteligentes v2 espera una corrida natural con `price_changes`, PAYDAY 2/performance solo se reabren con fricción/evidencia nueva, y P2 desktop sigue condicionado a host macOS nativo.
 - Benchmarks operativos: usar `https://steamcommunity.com/id/joseluis12351` como wishlist pequeña para smokes/Share/outputs rápidos, y `BG00G` como wishlist grande para performance cold-vs-hot, stress de outputs, Shuffle con variedad y desktop/binario largo. No usar `BG00G` en quick wins si implica cold-cache largo salvo que la medición performance sea el objetivo explícito.
 
 ## Registro compacto de riesgos/decisiones activas
@@ -51,6 +51,7 @@ Regla: no abrir más meta-planificación salvo blocker nuevo. Para cada slice nu
 | Performance priorizada | Mantener warm-cache/HTTP 400 offline pausado hasta nueva evidencia | No usar `BG00G`/red salvo benchmark aprobado | Parser offline + tests fake cache/fetch/time si cambia código; `git diff --check` si es docs-only | Reabrir solo con log/samples nuevos, decisión explícita de umbral/circuit breaker o benchmark aislado aprobado |
 | PAYDAY 2 data/UX priorizado | Pulir dashboard solo si el uso real muestra fricción | No hardcodear DLCs; red live no requerida para tests | Tests fake/cache/assets + revisión visual si cambia UI | Ejecutar slice PAYDAY 2 acotado por fricción real |
 | Host macOS disponible | Runbook macOS `.app` + smoke funcional pequeño | Requiere host macOS nativo | `desktop-macos.md`; evidencia en `BITACORA.md` | Cerrar P2 macOS solo con `.app` real |
+| Host Windows disponible | Baseline Windows desktop/Web con checklist vigente | Requiere host Windows; no sustituye macOS | `desktop-windows.md`; evidencia en `BITACORA.md` | Registrar baseline de apoyo, icono/fallback/logs si aplica |
 | Mantenibilidad/P3 priorizada | Guardrail de regresión arquitectónica | No abrir otro refactor sin drift nuevo | Tests puros/shape/import guard del área tocada | Mantener cerrado; reabrir solo con evidencia nueva |
 | Release/smoke planificado | Aplicar release hygiene + validación proporcional | No versionar outputs/logs/specs | `git status`, `git diff --check`, runbook OS si aplica | Registrar evidencia compacta y limpiar artefactos locales |
 
@@ -158,11 +159,11 @@ Regla: no abrir más meta-planificación salvo blocker nuevo. Para cada slice nu
 
 ### P2 - Cross-platform
 
-- [ ] [Track] Validar build desktop en Linux (Ubuntu LTS). [Estado: evidencia funcional Linux ya capturada desde binario y no debe repetirse como E2E largo; smoke mínimo no-root 2026-05-14 confirmó `dist/SteamToolsDesktop`, ventana nativa, Doctor frozen sin FAIL reales, Probar config/preflight, run pequeño `joseluis12351`, outputs `.md/.html/.csv/.json/share.html`, **Copiar log** y cierre limpio sin procesos colgados. Queda abierto solo si se exige gate Ubuntu LTS exacto o cambia runtime/binario; no relanzar `BG00G` ni repetir E2E largo salvo cambio sustancial, release gate o performance explícita. Evidencia detallada en `BITACORA.md` y checklist en `docs/runbooks/desktop-linux.md`.]
+- [x] [Track] Validar build desktop en Linux (Ubuntu LTS). [Cerrado 2026-05-14: evidencia funcional Linux ya capturada desde binario y no debe repetirse como E2E largo; smoke mínimo no-root confirmó `dist/SteamToolsDesktop`, ventana nativa, Doctor frozen sin FAIL reales, Probar config/preflight, run pequeño `joseluis12351`, outputs `.md/.html/.csv/.json/share.html`, **Copiar log** y cierre limpio sin procesos colgados. Reabrir solo si se exige gate Ubuntu LTS exacto o cambia runtime/binario; no relanzar `BG00G` ni repetir E2E largo salvo cambio sustancial, release gate o performance explícita. Evidencia detallada en `BITACORA.md` y checklist en `docs/runbooks/desktop-linux.md`.]
   - Nota 2026-05-13: el crash source-mode al guardar reviews fue ownership local (`reviews_cache.json` `root:root`), corregido a `adolfo:adolfo`; rerun como `adolfo` sin `--no-cache` terminó OK y queda registrado en `BITACORA.md`. Si reaparece `PermissionError`, revisar ownership de cache/log/output antes de repetir smokes.
 - [ ] [Track] Validar build desktop en macOS (app bundle + apertura local). [Estado: pendiente por falta de host nativo. Falta: ejecutar runbook macOS con `.app`, smoke funcional y cierre limpio. Evidencia: entrada en `BITACORA.md` con build/apertura/outputs/cierre.]
 - [x] Documentar dependencias nativas por plataforma para pywebview.
-- [ ] [Track] Validar cross-platform el fallback web. [Estado: modo degradado dirigido ya soportado con `STEAM_TOOLS_FORCE_WEB_FALLBACK=1` o `--force-web-fallback`; launcher imprime URL fallback, abre navegador con `desktop_fallback=1&reason=forced-web-fallback`, deja el server vivo y la UI muestra hint visible. Linux/source smoke headless validó activación y URL; Linux/source real también validó fallback automático por `missing-webview` al fallar import de `pywebview/webview`, con URL `?desktop_fallback=1&reason=missing-webview`; runbooks Linux/Windows/macOS documentan el flujo. Falta: validar visualmente apertura en navegador default en hosts gráficos Windows/macOS/Linux cuando toque cierre manual. Evidencia: `BITACORA.md` 2026-05-05 y 2026-05-08.]
+- [ ] [Track] Validar cross-platform el fallback web. [Estado: modo degradado dirigido ya soportado con `STEAM_TOOLS_FORCE_WEB_FALLBACK=1` o `--force-web-fallback`; launcher imprime URL fallback, abre navegador con `desktop_fallback=1&reason=forced-web-fallback`, deja el server vivo y la UI muestra hint visible. Linux/source smoke headless validó activación y URL; Linux/source real también validó fallback automático por `missing-webview` al fallar import de `pywebview/webview`, con URL `?desktop_fallback=1&reason=missing-webview`; runbooks Linux/Windows/macOS documentan el flujo. Falta: validar visualmente apertura en navegador default en hosts gráficos Windows/macOS cuando toque cierre manual; Linux solo si un futuro gate toca fallback. Evidencia: `BITACORA.md` 2026-05-05 y 2026-05-08.]
 - [ ] [Track] Automatizar y reforzar readiness desktop/cross-platform. [Estado: CLI `--doctor`/`--doctor-fix`, Web UI `Doctor desktop`/`Autofix desktop`, cobertura base Linux/macOS/Windows, runbooks, fallback mínimo de assets faltantes, packaging de assets PAYDAY 2 SVG, claridad source/frozen del Doctor, helper `desktop_readiness_plan.py` para imprimir planes reproducibles y collector `desktop_readiness_collect.py` para checks offline seguros ya existen. Falta: automatizar ejecución/recolección de build/smoke manual con aprobaciones y un instalador/autofix real de nivel sistema. Evidencia: comandos reproducibles que listan checks/blockers/pasos sin ejecutar builds/smokes/red por defecto y collector opt-in que solo corre checks seguros de la plataforma actual.]
 - [x] [Quick Win] Agregar helper de plan desktop/readiness sin ejecución automática. [Cerrado 2026-05-14: `desktop_readiness_plan.py` imprime planes Linux/Windows/macOS/all con prerrequisitos, blockers, guardrails, checks, build/smoke manuales y evidencia esperada, marcando pasos que requieren aprobación y sin ejecutar comandos. Autor/ejecutor: OpenCoder. Evidencia: `.venv/bin/python -m py_compile desktop_readiness_plan.py tests/test_desktop_readiness_plan.py`, `.venv/bin/python -m unittest tests.test_desktop_readiness_plan` y `git diff --check` OK; sin builds, red real, `BG00G`, `--no-cache`, smokes manuales, reportes generados ni cerrar macOS/Windows/Linux.]
 - [x] [Quick Win] Agregar collector seguro de checks desktop/readiness. [Cerrado 2026-05-14: `desktop_readiness_collect.py` lista checks offline en modo dry-run por defecto y solo ejecuta tests desktop/readiness + Desktop Doctor de la plataforma actual con `--execute-safe-checks`; rechaza ejecución cross-platform y no incluye build/fallback/smoke. Autor/ejecutor: OpenCoder. Evidencia: `.venv/bin/python -m py_compile desktop_readiness_collect.py tests/test_desktop_readiness_collect.py`, `.venv/bin/python -m unittest tests.test_desktop_readiness_collect` (7 OK) y `git diff --check` OK; sin builds, red real, `BG00G`, `--no-cache`, smokes manuales, reportes generados ni cerrar macOS/Windows/Linux.]
@@ -281,7 +282,7 @@ P2 se considera **cerrado** cuando se cumpla TODO:
 
 ### Orden del Track Desktop
 
-1. **Fase 1 — Linux desktop binario (cierre prioritario)**
+1. **Fase 1 — Linux desktop binario (cerrada; repetir solo por gate/delta)**
    - build local
    - apertura de ventana nativa
    - smoke funcional desde el binario (E2E largo ya capturado; usar smoke mínimo para deltas)
@@ -312,13 +313,13 @@ P2 se considera **cerrado** cuando se cumpla TODO:
 
 ## Proximo Paso Operativo
 
-- Acción inmediata: elegir el próximo slice desde el selector de siguiente acción. Con Wave 2 Performance, Wave 3 PAYDAY 2 cache/diagnóstico/docs y Wave 5 P3 cerrados, no queda slice P3 activo; PAYDAY 2 UX continúa solo si aparece fricción real y performance solo como benchmark/control follow-up explícito con cache/log aislado.
-- Bloqueo actual: la validación manual macOS queda pospuesta hasta contar con host nativo disponible; Linux no necesita repetir E2E largo salvo gate Ubuntu LTS exacto o cambio sustancial del binario/runtime.
+- Acción inmediata: no hay slice local obligatorio; elegir solo por host/evidencia nueva: macOS nativo para cerrar P2, Windows si hay host disponible como baseline de apoyo, Alertas v2 cuando aparezca `price_changes` natural, PAYDAY 2 si hay fricción real y Performance solo con logs/samples nuevos o benchmark aprobado.
+- Bloqueo actual: la validación manual macOS queda pospuesta hasta contar con host nativo disponible; Linux ya está cubierto y no necesita repetir E2E largo salvo gate Ubuntu LTS exacto o cambio sustancial del binario/runtime.
 - Registro: pasos/checklists en `docs/runbooks/desktop-*.md`, evidencia larga en `BITACORA.md`, y este archivo solo se actualiza si cambia estado, prioridad o próximo paso.
 
 ## Trabajo no bloqueado
 
-Mientras macOS manual siga pendiente por host nativo o aparezca un gate Linux nuevo, avanzar solo en frentes que no sustituyen el cierre formal de P2:
+Mientras macOS manual siga pendiente por host nativo, y sin gate Linux/Windows nuevo, avanzar solo en frentes que no sustituyen el cierre formal de P2:
 
 1. Consolidar evidencia Windows desktop si hay host disponible, usando `docs/runbooks/desktop-windows.md` como baseline de apoyo.
 2. Seguir el selector de siguiente acción y evitar nuevos cortes meta salvo blocker nuevo.
