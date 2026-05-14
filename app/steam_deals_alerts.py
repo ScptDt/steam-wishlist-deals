@@ -13,13 +13,14 @@ def _safe_float(value) -> float | None:
 def _qualifying_appids(top_picks: list[dict], alert_score_min: float) -> set[str] | None:
     if alert_score_min <= 0:
         return None
-    return {
-        str(pick["appid"])
-        for pick in top_picks
-        if pick.get("appid")
-        and (score := _safe_float(pick.get("score"))) is not None
-        and score >= alert_score_min
-    }
+    qualifying: set[str] = set()
+    for pick in top_picks:
+        if not isinstance(pick, dict) or not pick.get("appid"):
+            continue
+        score = _safe_float(pick.get("score"))
+        if score is not None and score >= alert_score_min:
+            qualifying.add(str(pick["appid"]))
+    return qualifying
 
 
 def _is_in_scope(appid: str, qualifying_appids: set[str] | None) -> bool:
