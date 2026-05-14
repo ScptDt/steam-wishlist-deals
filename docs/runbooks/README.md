@@ -16,6 +16,7 @@
 | `desktop-linux.md` | Cerrar o retestar deltas de Fase 1 — Linux desktop binario | Evidencia ya capturada, smoke mínimo no redundante, `.md/.html/.csv`, copiar log y cierre limpio |
 | `desktop-macos.md` | Cerrar Fase 3 — macOS native-host closure cuando haya host | Build `.app`, apertura local, smoke funcional pequeño, cierre limpio |
 | `desktop-windows.md` | Mantener baseline de apoyo en Windows | Build `.exe`, smoke rápido/manual, WebView2/fallback si aplica; no sustituye Linux/macOS |
+| `desktop-readiness-plan.md` | Imprimir un plan reproducible por plataforma antes de ejecutar checks/build/smoke | `desktop_readiness_plan.py`, blockers por host, guardrails y comandos no ejecutados |
 | `desktop-constraints.md` | Refrescar o auditar dependencias desktop | Constraints versionados, comando de instalación, validación mínima |
 | `release-hygiene.md` | Antes/después de builds, smokes o limpieza de repo | Qué se versiona, qué se ignora, cómo registrar evidencia |
 | `evidence-template.md` | Cerrar quick wins sin duplicar evidencia | Plantilla `BITACORA.md`, resumen `PENDIENTES.md`, variantes por slice |
@@ -39,6 +40,7 @@
 | P2 desktop Linux | `desktop-linux.md` | smoke mínimo con `joseluis12351` si solo hay deltas | no repetir E2E largo salvo gate release/runtime |
 | P2 desktop macOS | `desktop-macos.md` | `.app` en host macOS nativo | CI/Windows/source no sustituyen host nativo |
 | Windows baseline | `desktop-windows.md` | build/smoke rápido/manual | apoyo solamente; no cierra Linux/macOS |
+| Plan desktop previo | `desktop-readiness-plan.md` | `.venv/bin/python desktop_readiness_plan.py --platform all` | solo imprime plan; no ejecuta builds/smokes/red |
 | Constraints desktop | `desktop-constraints.md` | install con constraints + tests dirigidos | no upgrades oportunistas |
 | Release hygiene/evidencia | `release-hygiene.md`, `evidence-template.md` | `git status`, `git diff --check`, revisión docs | no commitear outputs/logs/reportes generados |
 | Alineación documental | `docs-alignment.md` | revisión docs + `git diff --check` | no duplicar README/runbooks/backlog |
