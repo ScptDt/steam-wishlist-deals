@@ -16,6 +16,7 @@ from steam_deals_web import (
     Handler,
     build_command,
     build_pd2_command,
+    detect_file_path,
     generated_file_error_page,
     generated_file_content_disposition,
     generated_file_content_type,
@@ -369,6 +370,21 @@ class GeneratedFilesServingTests(unittest.TestCase):
 
         self.assertNotIn("/home/user", public_name)
         self.assertNotEqual(public_name, "secrets.json")
+
+    def test_detect_file_path_only_accepts_expected_generated_artifacts(self) -> None:
+        self.assertEqual(
+            detect_file_path("✓ /tmp/output/Steam Deals 2026-04-24.json"),
+            "/tmp/output/Steam Deals 2026-04-24.json",
+        )
+        self.assertEqual(
+            detect_file_path(r"OK C:\\Users\\tester\\output\\Steam Deals 2026-04-24.html"),
+            r"C:\\Users\\tester\\output\\Steam Deals 2026-04-24.html",
+        )
+        self.assertIsNone(
+            detect_file_path("Caché objetivo: /home/user/.cache/steam_deals/prices_cache.json")
+        )
+        self.assertIsNone(detect_file_path("✓ /home/user/.cache/steam_deals/prices_cache.json"))
+        self.assertIsNone(detect_file_path("✓ /home/user/output/secrets.json"))
 
     def test_allowed_generated_file_path_rejects_directories_and_symlinks(self) -> None:
         with TemporaryDirectory() as temp_dir:

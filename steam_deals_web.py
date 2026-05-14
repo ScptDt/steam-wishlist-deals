@@ -634,16 +634,23 @@ def extract_progress(text: str) -> tuple[int, int, str] | None:
 
 def detect_file_path(text: str) -> str | None:
     """Detect generated file paths from ✓ output lines."""
+    def valid_generated_artifact(candidate: str) -> str | None:
+        value = candidate.strip()
+        name = re.split(r"[\\/]", value)[-1]
+        if is_expected_generated_artifact_name(name):
+            return value
+        return None
+
     stripped = text.strip()
     m = re.search(
         r"(?:✓|OK)\s+(.+\.(?:md|html|csv|json))$", stripped, flags=re.IGNORECASE
     )
     if m:
-        return m.group(1).strip()
+        return valid_generated_artifact(m.group(1))
     if re.search(r"\.(?:md|html|csv|json)$", stripped, flags=re.IGNORECASE) and (
         "\\" in stripped or "/" in stripped
     ):
-        return stripped
+        return valid_generated_artifact(stripped)
     return None
 
 

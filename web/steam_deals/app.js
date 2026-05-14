@@ -1625,6 +1625,13 @@ function buildWarmCacheContinueFilters() {
   return filters;
 }
 
+function buildUpdatedCacheReportFilters() {
+  const filters = Object.assign({}, getFilters());
+  filters.warm_cache = false;
+  filters.no_cache = false;
+  return filters;
+}
+
 function warmCacheBackgroundBannerEl() {
   let el = $('warm-cache-background-banner');
   if (el) return el;
@@ -1645,11 +1652,16 @@ function bindWarmCacheBackgroundBannerActions(el) {
   if (!el) return;
   const btn = el.querySelector('[data-warm-cache-refresh-summary]');
   if (btn) btn.addEventListener('click', () => refreshLatestReportSummaryFromBanner(btn));
+  const reportBtn = el.querySelector('[data-warm-cache-generate-report]');
+  if (reportBtn) reportBtn.addEventListener('click', () => generateReportFromUpdatedCache(reportBtn));
 }
 
 function setWarmCacheBackgroundBanner(state, title, message, detail = '', options = {}) {
   const el = warmCacheBackgroundBannerEl();
   if (!el) return;
+  const reportAction = options.showReportAction
+    ? '<button type="button" class="file-link file-link-button warm-cache-background-refresh" data-warm-cache-generate-report>Generar reporte con caché actualizada</button>'
+    : '';
   const refreshAction = options.showRefresh
     ? '<button type="button" class="file-link file-link-button warm-cache-background-refresh" data-warm-cache-refresh-summary>Refrescar resumen</button>'
     : '';
@@ -1660,6 +1672,7 @@ function setWarmCacheBackgroundBanner(state, title, message, detail = '', option
       <span>${escapeHtml(message)}</span>
       ${detail ? `<small>${escapeHtml(detail)}</small>` : ''}
     </div>
+    ${reportAction}
     ${refreshAction}
   `;
   bindWarmCacheBackgroundBannerActions(el);
@@ -1673,12 +1686,12 @@ function updateWarmCacheBackgroundBannerFromEvent(ev) {
       ok ? 'ok' : 'warn',
       ok ? 'Warm-cache finalizado' : 'Warm-cache no completado',
       ok
-        ? 'La continuación terminó; actualizando el resumen visible desde el JSON local.'
+        ? 'La continuación terminó; genera un reporte normal para ver HTML/JSON con la caché actualizada.'
         : 'Revisa el log antes de reintentar la continuación warm-cache.',
       ok
-        ? 'No se asume cobertura completa hasta refrescar los contadores de Caché parcial.'
+        ? 'No se asume cobertura completa si todavía quedan pendientes/deferred.'
         : 'Se respetó el lock actual y no se usó --no-cache.',
-      {showRefresh: ok}
+      {showRefresh: ok, showReportAction: ok}
     );
     return;
   }
@@ -1720,6 +1733,44 @@ async function refreshLatestReportSummaryFromBanner(btn) {
   }
 }
 
+async function generateReportFromUpdatedCache(btn) {
+  const originalLabel = btn ? btn.textContent : 'Generar reporte con caché actualizada';
+  if (btn) {
+    btn.disabled = true;
+    btn.textContent = 'Generando reporte...';
+  }
+  setWarmCacheBackgroundBanner(
+    'progress',
+    'Generando reporte con caché actualizada',
+    'Ejecutando Steam Deals normal para regenerar HTML/JSON con la caché ya precalentada.',
+    'Se usa la misma caché, sin --warm-cache y sin --no-cache.'
+  );
+  const completed = await runSteamDealsUI({
+    filters: buildUpdatedCacheReportFilters(),
+    startLabel: 'Generando reporte con caché actualizada...',
+    introLine: 'Generando reporte normal con la caché actualizada (sin --warm-cache y sin --no-cache).',
+    conflictMessage: 'Ya hay una ejecucion en curso. Espera a que termine antes de generar el reporte actualizado.',
+    triggerButton: btn,
+    preserveOutputFiles: false,
+    preserveLatestReportOnDone: false,
+  });
+  if (btn && btn.isConnected) {
+    btn.textContent = originalLabel;
+    btn.disabled = false;
+  }
+  setWarmCacheBackgroundBanner(
+    completed ? 'ok' : 'warn',
+    completed ? 'Reporte actualizado generado' : 'No se pudo generar reporte actualizado',
+    completed
+      ? 'El HTML/JSON se regeneró con la caché actualizada; revisa los enlaces y el último reporte.'
+      : 'Revisa el log; no se usó --no-cache y la caché precalentada se conserva.',
+    completed
+      ? 'Si todavía queda Caché parcial, puedes continuar warm-cache y volver a generar el reporte.'
+      : 'Puedes reintentar cuando no haya otra ejecución activa.',
+    {showReportAction: !completed}
+  );
+}
+
 function setWarmCacheContinueStatus(btn, message, state = 'progress') {
   if (!btn) return;
   const coverageCard = btn.closest('[data-latest-cache-coverage]');
@@ -1734,6 +1785,8 @@ async function streamSteamDealsRunResponse(resp, options = {}) {
   const decoder = new TextDecoder();
   const onEvent = typeof options.onEvent === 'function' ? options.onEvent : null;
   let buffer = '';
+  let completedOk = false;
+  let sawDone = false;
 
   while (true) {
     const {value, done} = await reader.read();
@@ -1750,11 +1803,16 @@ async function streamSteamDealsRunResponse(resp, options = {}) {
             const ev = JSON.parse(line.slice(6));
             handleEvent(ev, options);
             if (onEvent) onEvent(ev);
+            if (ev.type === 'done') {
+              sawDone = true;
+              completedOk = Number(ev.exit_code || 0) === 0;
+            }
           } catch(e) {}
         }
       }
     }
   }
+  return sawDone && completedOk;
 }
 
 async function runSteamDealsUI(options = {}) {
@@ -1817,11 +1875,10 @@ async function runSteamDealsUI(options = {}) {
       return false;
     }
 
-    await streamSteamDealsRunResponse(resp, {
+    return await streamSteamDealsRunResponse(resp, {
       onEvent: options.onEvent,
       preserveLatestReportOnDone: options.preserveLatestReportOnDone === true,
     });
-    return true;
   } catch(e) {
     if (e.name !== 'AbortError') {
       appendLine('Error de conexion: ' + e.message, 'err');
@@ -3963,18 +4020,18 @@ async function continueWarmCacheFromLatestReport(btn) {
   }
   setWarmCacheBackgroundBanner(
     completed && refreshed ? 'ok' : 'warn',
-    completed && refreshed ? 'Resumen warm-cache actualizado' : completed ? 'Warm-cache terminó; falta refrescar resumen' : 'No se pudo actualizar caché',
+    completed && refreshed ? 'Resumen warm-cache actualizado' : completed ? 'Warm-cache finalizado; genera reporte actualizado' : 'No se pudo actualizar caché',
     completed && refreshed
-      ? 'La continuación terminó y el resumen visible se releyó desde el JSON local.'
+      ? 'La continuación terminó. Genera un reporte normal para que HTML/JSON usen la caché actualizada.'
       : completed
-        ? 'La continuación terminó, pero el resumen visible no se pudo actualizar automáticamente.'
+        ? 'La continuación terminó, pero warm-cache no genera HTML/JSON por sí mismo.'
         : 'Revisa el log; si ya hay una ejecución activa, espera a que termine antes de reintentar.',
     completed && refreshed
-      ? 'Si todavía aparece Caché parcial, puedes continuar otra tanda con la misma caché.'
+      ? 'Usa el reporte actualizado para ver nuevas ofertas, Top Picks y recomendaciones recalculadas.'
       : completed
-        ? refreshError || 'Usa Refrescar resumen para confirmar la cobertura disponible.'
+        ? refreshError || 'Genera un reporte normal con la caché actualizada para ver los cambios.'
         : 'Se respetó el lock actual y no se usó --no-cache.',
-    {showRefresh: completed}
+    {showRefresh: completed, showReportAction: completed}
   );
 }
 
