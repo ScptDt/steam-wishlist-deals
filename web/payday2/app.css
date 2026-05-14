@@ -113,7 +113,10 @@ a { color: var(--accent); text-decoration: none; } a:hover { text-decoration: un
 .sale-banner { background: var(--gold); color: #1b2838; padding: .6rem 1rem; border-radius: 8px; font-weight: 600; text-align: center; margin-bottom: .75rem; font-size: .9rem; }
 .rec-buy { background: rgba(108,198,68,.1); border: 1px solid rgba(108,198,68,.3); padding: .7rem 1rem; border-radius: 8px; margin-bottom: .75rem; font-size: .85rem; }
 .rec-buy a { background: rgba(108,198,68,.15); padding: .15rem .5rem; border-radius: 4px; margin: 0 .2rem; white-space: nowrap; }
+.rec-review { background: rgba(86,168,255,.08); border: 1px solid rgba(86,168,255,.28); padding: .7rem 1rem; border-radius: 8px; margin-bottom: .75rem; font-size: .85rem; }
+.rec-review a, .rec-wait a { background: rgba(7,11,18,.32); padding: .15rem .5rem; border-radius: 4px; margin: 0 .2rem; white-space: nowrap; }
 .rec-wait { background: rgba(240,178,50,.07); border: 1px solid rgba(240,178,50,.25); color: var(--yellow); padding: .7rem 1rem; border-radius: 8px; margin-bottom: .75rem; font-size: .85rem; }
+.rec-note { color: var(--text2); font-size: .72rem; margin-top: .35rem; }
 .comp-row { font-size: .78rem; color: var(--text2); margin-bottom: .6rem; text-align: center; }
 .comp-badge { display: inline-block; padding: .1rem .4rem; border-radius: 3px; font-size: .7rem; font-weight: 600; }
 .comp-green { background: rgba(108,198,68,.2); color: var(--green); }

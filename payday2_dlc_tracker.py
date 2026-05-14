@@ -1154,6 +1154,10 @@ def compute_recommendations(
 
     buy_now = [d for d in on_sale if d.get("buy_now")]
     review_deals = [d for d in on_sale if d.get("purchase_action") == "review"]
+    wait_deals = sorted(
+        [d for d in enriched_missing if d.get("purchase_action") == "wait"],
+        key=payday2_budget_sort_key,
+    )
 
     alerts = []
     if alert_price:
@@ -1177,6 +1181,7 @@ def compute_recommendations(
     return {
         "buy_now": buy_now,
         "review_deals": review_deals,
+        "wait_deals": wait_deals,
         "alerts": alerts,
         "budget_fit": budget_fit,
         "optimal_next": optimal,

@@ -859,6 +859,26 @@ class Payday2BudgetImportanceTests(unittest.TestCase):
         )
         self.assertEqual(rec["review_deals"][0]["purchase_action"], "review")
 
+    def test_recommendations_include_wait_deals_for_non_compelling_items(self) -> None:
+        missing = [
+            {
+                "appid": "300",
+                "steam_name": "PAYDAY 2: Legacy Pack",
+                "price_raw": 8000,
+                "price_fmt": "Mex$ 80.00",
+                "orig_raw": 10000,
+                "discount": 20,
+            }
+        ]
+
+        rec = payday2_dlc_tracker.compute_recommendations(
+            missing, budget=None, alert_price=None, min_deal=50
+        )
+
+        self.assertEqual([d["appid"] for d in rec["wait_deals"]], ["300"])
+        self.assertEqual(rec["wait_deals"][0]["purchase_action"], "wait")
+        self.assertIn("Descuento menor", rec["wait_deals"][0]["purchase_reasons"][0])
+
     def test_general_dlc_can_be_buy_now_when_price_is_compelling(self) -> None:
         missing = [
             {
@@ -889,6 +909,24 @@ class Payday2BudgetImportanceTests(unittest.TestCase):
                 "orig_raw": 12800,
                 "orig_fmt": "",
                 "discount": 50,
+            },
+            "100": {
+                "appid": "100",
+                "steam_name": "PAYDAY 2: Very Cheap Tailor Pack",
+                "price_raw": 3900,
+                "price_fmt": "Mex$ 39.00",
+                "orig_raw": 39000,
+                "orig_fmt": "",
+                "discount": 90,
+            },
+            "300": {
+                "appid": "300",
+                "steam_name": "PAYDAY 2: Legacy Pack",
+                "price_raw": 8000,
+                "price_fmt": "Mex$ 80.00",
+                "orig_raw": 10000,
+                "orig_fmt": "",
+                "discount": 20,
             }
         }
         recommendations = payday2_dlc_tracker.compute_recommendations(
@@ -904,7 +942,7 @@ class Payday2BudgetImportanceTests(unittest.TestCase):
                         "last_refresh": None,
                         "vanity": "tester",
                         "steam_id": "steam-id",
-                        "pd2_dlc_appids": ["200"],
+                        "pd2_dlc_appids": ["200", "100", "300"],
                         "all_dlcs": all_dlcs,
                         "owned": set(),
                         "prices": all_dlcs,
@@ -916,9 +954,9 @@ class Payday2BudgetImportanceTests(unittest.TestCase):
                         "itad_lows": {},
                         "cache_status": {
                             "source": "Steam appdetails data.dlc del app 218620",
-                            "catalog": {"count": 1, "ageHours": 2.0, "ttlHours": 168, "stale": False},
-                            "names": {"count": 1, "ageHours": 2.0, "ttlHours": 168, "stale": False},
-                            "prices": {"count": 1, "ageHours": 2.0, "ttlHours": 24, "stale": False},
+                            "catalog": {"count": 3, "ageHours": 2.0, "ttlHours": 168, "stale": False},
+                            "names": {"count": 3, "ageHours": 2.0, "ttlHours": 168, "stale": False},
+                            "prices": {"count": 3, "ageHours": 2.0, "ttlHours": 24, "stale": False},
                             "bundles": {"count": 0, "ageHours": None, "ttlHours": 168, "stale": True},
                             "diagnostic": "diagnóstico seguro",
                         },
@@ -931,13 +969,31 @@ class Payday2BudgetImportanceTests(unittest.TestCase):
                 payday2_web._store.clear()
                 payday2_web._store.update(original_store)
 
-        self.assertEqual(payload["dlcs"][0]["importanceTier"], "S")
-        self.assertGreater(payload["dlcs"][0]["valueScore"], 0)
-        self.assertIn("Heist", payload["dlcs"][0]["valueReasons"][0])
+        dlcs_by_id = {dlc["id"]: dlc for dlc in payload["dlcs"]}
+        self.assertEqual(dlcs_by_id["200"]["importanceTier"], "S")
+        self.assertGreater(dlcs_by_id["200"]["valueScore"], 0)
+        self.assertIn("Heist", dlcs_by_id["200"]["valueReasons"][0])
         self.assertEqual(payload["buyNow"][0]["importanceTier"], "S")
         self.assertEqual(payload["buyNow"][0]["recommendationLabel"], "Comprar ahora")
         self.assertIn("Contenido jugable prioritario", payload["buyNow"][0]["recommendationReasons"])
-        self.assertEqual(payload["cacheStatus"]["catalog"]["count"], 1)
+        self.assertEqual(payload["reviewDeals"][0]["recommendationAction"], "review")
+        self.assertEqual(payload["reviewDeals"][0]["recommendationLabel"], "Revisar si quieres completar")
+        self.assertEqual(payload["waitDeals"][0]["recommendationAction"], "wait")
+        self.assertIn("Descuento menor", payload["waitDeals"][0]["recommendationReasons"][0])
+        self.assertEqual(payload["cacheStatus"]["catalog"]["count"], 3)
+
+    def test_payday2_review_wait_advice_is_visible_and_advisory_only(self) -> None:
+        app_js = (ROOT / "web" / "payday2" / "app.js").read_text(encoding="utf-8")
+        app_css = (ROOT / "web" / "payday2" / "app.css").read_text(encoding="utf-8")
+
+        self.assertIn("reviewDeals", app_js)
+        self.assertIn("waitDeals", app_js)
+        self.assertIn("Revisar antes de comprar", app_js)
+        self.assertIn("Esperar mejor oferta", app_js)
+        self.assertIn("Solo sugerencias", app_js)
+        self.assertIn("no marca DLCs como comprados", app_js)
+        self.assertIn(".rec-review", app_css)
+        self.assertIn(".rec-note", app_css)
 
     def test_payday2_cache_status_payload_reports_counts_and_staleness(self) -> None:
         payload = payday2_web.build_cache_status_payload(

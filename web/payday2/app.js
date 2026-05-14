@@ -148,6 +148,15 @@ function renderCacheStatus() {
     '<div class="cache-refresh-help">Actualizar datos = refresh normal con caché/TTL. Forzar catálogo = --no-cache; no inventa DLCs que Steam no expone ni borra tus marcados manuales.</div>';
 }
 
+function renderAdviceLinks(items, limit) {
+  return (items || []).filter(d => d && d.id).slice(0, limit).map(d => {
+    const reasons = Array.isArray(d.recommendationReasons) ? d.recommendationReasons.slice(0, 2).join(' · ') : '';
+    const detail = reasons || d.recommendationLabel || '';
+    return '<a href="' + STORE + encodeURIComponent(String(d.id)) + '/" target="_blank">' +
+      esc(d.name || d.id) + (detail ? ' <small>' + esc(detail) + '</small>' : '') + '</a>';
+  }).join(' ');
+}
+
 function renderBanners() {
   let html = '';
   const c = DATA.comparison || {};
@@ -166,7 +175,13 @@ function renderBanners() {
       '<a href="' + STORE + d.id + '/" target="_blank">' + esc(d.name) + ' <small>-' + d.discount + '%</small></a>'
     ).join(' ');
     html += '<div class="rec-buy">&#128722; <strong>Comprar ahora:</strong> ' + items + '</div>';
-  } else if (DATA.onSaleCount === 0 && DATA.missingCount > 0) {
+  }
+  if (DATA.reviewDeals && DATA.reviewDeals.length > 0) {
+    html += '<div class="rec-review">&#128269; <strong>Revisar antes de comprar:</strong> ' + renderAdviceLinks(DATA.reviewDeals, 4) + '<div class="rec-note">Solo sugerencias: no marca DLCs como comprados ni cambia tus marcados manuales.</div></div>';
+  }
+  if (DATA.waitDeals && DATA.waitDeals.length > 0) {
+    html += '<div class="rec-wait">&#9203; <strong>Esperar mejor oferta:</strong> ' + renderAdviceLinks(DATA.waitDeals, 3) + '<div class="rec-note">No cumplen el umbral actual o no tienen oferta activa.</div></div>';
+  } else if ((!DATA.buyNow || DATA.buyNow.length === 0) && DATA.onSaleCount === 0 && DATA.missingCount > 0) {
     html += '<div class="rec-wait">&#9203; Sin ofertas activas &mdash; espera al <strong>Summer Sale</strong> (25 jun, ~75% off). Costo estimado: <strong>Mex$ ' + fmt(DATA.estSummer75) + '</strong></div>';
   }
   $('banners').innerHTML = html;

@@ -198,6 +198,19 @@ def build_cache_status_payload(
     }
 
 
+def _purchase_advice_payload(d: dict) -> dict:
+    return {
+        "id": d.get("appid", ""),
+        "name": d.get("steam_name", "?"),
+        "discount": d.get("discount", 0),
+        "priceFmt": d.get("price_fmt", "?"),
+        "importanceTier": d.get("importance_tier", ""),
+        "recommendationAction": d.get("purchase_action", ""),
+        "recommendationLabel": d.get("purchase_label", ""),
+        "recommendationReasons": d.get("purchase_reasons", []),
+    }
+
+
 def load_from_cache():
     """Load whatever data we have from disk cache for instant display."""
     cfg = pd2.load_user_config()
@@ -370,19 +383,11 @@ def get_data_json() -> dict:
 
         # Recommendation data
         rec = recommendations or {}
-        buy_now = []
-        for d in rec.get("buy_now", []):
-            buy_now.append(
-                {
-                    "id": d.get("appid", ""),
-                    "name": d.get("steam_name", "?"),
-                    "discount": d.get("discount", 0),
-                    "priceFmt": d.get("price_fmt", "?"),
-                    "importanceTier": d.get("importance_tier", ""),
-                    "recommendationLabel": d.get("purchase_label", "Comprar ahora"),
-                    "recommendationReasons": d.get("purchase_reasons", []),
-                }
-            )
+        buy_now = [_purchase_advice_payload(d) for d in rec.get("buy_now", [])]
+        review_deals = [
+            _purchase_advice_payload(d) for d in rec.get("review_deals", [])
+        ]
+        wait_deals = [_purchase_advice_payload(d) for d in rec.get("wait_deals", [])]
 
         # Comparison
         comp = {}
@@ -411,6 +416,8 @@ def get_data_json() -> dict:
             "owned": owned_list,
             "history": history_data,
             "buyNow": buy_now,
+            "reviewDeals": review_deals,
+            "waitDeals": wait_deals,
             "onSaleSavings": round(rec.get("on_sale_savings", 0)),
             "comparison": comp,
             "upcomingSales": [
