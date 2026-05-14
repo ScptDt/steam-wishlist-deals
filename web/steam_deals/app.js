@@ -1666,7 +1666,23 @@ function setWarmCacheBackgroundBanner(state, title, message, detail = '', option
 }
 
 function updateWarmCacheBackgroundBannerFromEvent(ev) {
-  if (!ev || ev.type !== 'progress') return;
+  if (!ev) return;
+  if (ev.type === 'done') {
+    const ok = Number(ev.exit_code || 0) === 0;
+    setWarmCacheBackgroundBanner(
+      ok ? 'ok' : 'warn',
+      ok ? 'Warm-cache finalizado' : 'Warm-cache no completado',
+      ok
+        ? 'La continuación terminó; actualizando el resumen visible desde el JSON local.'
+        : 'Revisa el log antes de reintentar la continuación warm-cache.',
+      ok
+        ? 'No se asume cobertura completa hasta refrescar los contadores de Caché parcial.'
+        : 'Se respetó el lock actual y no se usó --no-cache.',
+      {showRefresh: ok}
+    );
+    return;
+  }
+  if (ev.type !== 'progress') return;
   const current = Number(ev.current || 0);
   const total = Number(ev.total || 0);
   const label = String(ev.label || 'Warm-cache').trim();
@@ -1682,9 +1698,8 @@ function updateWarmCacheBackgroundBannerFromEvent(ev) {
 async function refreshLatestReportSummaryFromBanner(btn) {
   if (btn) btn.disabled = true;
   try {
-    const files = await fetchGeneratedFilesList();
-    await syncLatestReportEmptyState(files);
-    await syncLatestReportCard(files);
+    const refreshed = await syncLatestReportSummary();
+    if (!refreshed) throw new Error('No hay JSON local disponible para refrescar.');
     setWarmCacheBackgroundBanner(
       'ok',
       'Resumen refrescado',
@@ -1995,7 +2010,7 @@ btnOpenLast.addEventListener('click', async () => {
 });
 
 function appendLine(text, cls) {
-  const safeText = String(text ?? '');
+  const safeText = normalizeRedactedPathMarkers(text);
   const safeCls = cls || 'normal';
   const div = document.createElement('div');
   div.className = 'line line-' + safeCls;
@@ -2005,6 +2020,10 @@ function appendLine(text, cls) {
   executionLogEntries.push({text: safeText, cls: safeCls});
   updateExecutionLogButtons();
   maybeShowActionableHint(safeText, safeCls);
+}
+
+function normalizeRedactedPathMarkers(text) {
+  return String(text ?? '').replace(/(?:\[ruta\]){2,}/gi, '[ruta]');
 }
 
 function getExecutionLogText() {
@@ -3913,27 +3932,48 @@ async function continueWarmCacheFromLatestReport(btn) {
     preserveLatestReportOnDone: true,
     onEvent: updateWarmCacheBackgroundBannerFromEvent,
   });
+  let refreshed = false;
+  let refreshError = '';
+  if (completed) {
+    setWarmCacheContinueStatus(
+      btn,
+      'Continuación warm-cache finalizada. Actualizando el resumen visible desde el JSON local...',
+      'progress'
+    );
+    try {
+      refreshed = await syncLatestReportSummary();
+      if (!refreshed) throw new Error('No hay JSON local disponible para refrescar.');
+    } catch (e) {
+      refreshError = e && e.message ? e.message : 'No se pudo refrescar el resumen visible.';
+    }
+  }
   if (btn && btn.isConnected) {
     btn.textContent = originalLabel;
     btn.removeAttribute('aria-busy');
     btn.classList.remove('is-running');
     setWarmCacheContinueStatus(
       btn,
-      completed
-        ? 'Continuación warm-cache finalizada. Si todavía queda Caché parcial, puedes continuar otra tanda con la misma caché.'
-        : 'No se pudo continuar warm-cache. Revisa el log; si ya hay una ejecución activa, espera a que termine.',
-      completed ? 'ok' : 'warn'
+      completed && refreshed
+        ? 'Continuación warm-cache finalizada y resumen actualizado. Si todavía queda Caché parcial, puedes continuar otra tanda con la misma caché.'
+        : completed
+          ? 'Continuación warm-cache finalizada, pero no se pudo refrescar el resumen automáticamente. Usa Refrescar resumen.'
+          : 'No se pudo continuar warm-cache. Revisa el log; si ya hay una ejecución activa, espera a que termine.',
+      completed && refreshed ? 'ok' : 'warn'
     );
   }
   setWarmCacheBackgroundBanner(
-    completed ? 'ok' : 'warn',
-    completed ? 'Caché actualizada; refresca el resumen' : 'No se pudo actualizar caché',
-    completed
-      ? 'La continuación terminó. Refresca manualmente el resumen para confirmar si la cobertura quedó completa o sigue parcial.'
-      : 'Revisa el log; si ya hay una ejecución activa, espera a que termine antes de reintentar.',
-    completed
-      ? 'No se asume cobertura completa si todavía quedan pendientes/deferred.'
-      : 'Se respetó el lock actual y no se usó --no-cache.',
+    completed && refreshed ? 'ok' : 'warn',
+    completed && refreshed ? 'Resumen warm-cache actualizado' : completed ? 'Warm-cache terminó; falta refrescar resumen' : 'No se pudo actualizar caché',
+    completed && refreshed
+      ? 'La continuación terminó y el resumen visible se releyó desde el JSON local.'
+      : completed
+        ? 'La continuación terminó, pero el resumen visible no se pudo actualizar automáticamente.'
+        : 'Revisa el log; si ya hay una ejecución activa, espera a que termine antes de reintentar.',
+    completed && refreshed
+      ? 'Si todavía aparece Caché parcial, puedes continuar otra tanda con la misma caché.'
+      : completed
+        ? refreshError || 'Usa Refrescar resumen para confirmar la cobertura disponible.'
+        : 'Se respetó el lock actual y no se usó --no-cache.',
     {showRefresh: completed}
   );
 }
@@ -4004,23 +4044,31 @@ function renderLatestReportCard(report, files = null) {
 async function syncLatestReportCard(files = null) {
   if (Array.isArray(files) && !hasJsonArtifact(files)) {
     hideLatestReportCard();
-    return;
+    return false;
   }
   try {
     const reportFiles = Array.isArray(files) ? files : await fetchGeneratedFilesList();
     if (Array.isArray(reportFiles) && !hasJsonArtifact(reportFiles)) {
       hideLatestReportCard();
-      return;
+      return false;
     }
     const resp = await fetch('/api/latest-report');
     if (!resp.ok) {
       hideLatestReportCard();
-      return;
+      return false;
     }
     renderLatestReportCard(await resp.json(), reportFiles);
+    return true;
   } catch (e) {
     hideLatestReportCard();
+    return false;
   }
+}
+
+async function syncLatestReportSummary() {
+  const files = await fetchGeneratedFilesList();
+  await syncLatestReportEmptyState(files);
+  return syncLatestReportCard(files);
 }
 
 function latestReportEmptyStateEl() {
