@@ -578,9 +578,9 @@ También existen flags avanzados para HLTB, familia, notificaciones, scheduler y
 
 ## PAYDAY 2 DLC Tracker
 
-Tracker standalone para DLCs de PAYDAY 2: faltantes, precios, ofertas, historial y recomendaciones de compra. Guía completa: `payday2_guia.md`.
+Tracker standalone para DLCs de PAYDAY 2: faltantes, precios, ofertas, historial y recomendaciones de compra. Las sugerencias separan `Comprar ahora`, `Revisar antes de comprar` y `Esperar mejor oferta` con razones visibles, siempre advisory-only. Guía completa: `payday2_guia.md`.
 
-> La API de Steam no detecta DLCs poseídos automáticamente. Márcalos manualmente con checkboxes en el dashboard o con `--mark-owned` / `--mark-unowned` en CLI.
+> La API de Steam no detecta DLCs poseídos automáticamente. Márcalos manualmente con checkboxes en el dashboard o con `--mark-owned` / `--mark-unowned` en CLI; las recomendaciones no modifican ese estado.
 
 ### Dashboard Web
 
@@ -594,7 +594,7 @@ python3 payday2_web.py
 ```bash
 python3 payday2_dlc_tracker.py --vanity gaben
 python3 payday2_dlc_tracker.py --budget 500
-python3 payday2_dlc_tracker.py --min-deal 75          # umbral de descuento para recomendar
+python3 payday2_dlc_tracker.py --min-deal 75          # umbral para comprar/revisar/esperar
 python3 payday2_dlc_tracker.py --itad-key TU_KEY      # mínimos históricos
 python3 payday2_dlc_tracker.py --mark-owned 259381    # marcar DLC como comprado
 python3 payday2_dlc_tracker.py --no-cache             # forzar catálogo/precios live
