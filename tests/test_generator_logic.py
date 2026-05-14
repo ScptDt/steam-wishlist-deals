@@ -3851,6 +3851,64 @@ class PriceCacheTests(unittest.TestCase):
             any("fallback individual directo" in line for line in emitted)
         )
 
+    def test_get_deals_from_wishlist_direct_fallback_matches_large_http_400_pattern(
+        self,
+    ) -> None:
+        fetched_cache = {}
+        emitted = []
+        requested_batches = []
+        single_calls = []
+        stats = {}
+        appids = [str(1000 + index) for index in range(80)]
+
+        def fake_get_json(url, headers=None):
+            requested_batches.append(url.split("appids=", 1)[1].split("&", 1)[0])
+            raise urllib.error.HTTPError(url, 400, "Bad Request", hdrs=None, fp=None)
+
+        def fake_fetch_single(appid, _country, _delay):
+            single_calls.append(appid)
+            return None
+
+        deals, total = module_get_deals_from_wishlist(
+            appids,
+            fetched_cache,
+            "steam-id",
+            min_discount=50,
+            get_json=fake_get_json,
+            sleep_fn=lambda _seconds: None,
+            monotonic_fn=lambda: 0.0,
+            current_time_fn=lambda: 200000.0,
+            save_price_cache_fn=lambda _steam_id, _cache: None,
+            fetch_single_fn=fake_fetch_single,
+            process_app_entry_fn=lambda appid, data: module_process_app_entry(
+                appid, data, parse_release_year_fn=module_parse_release_year
+            ),
+            emit=emitted.append,
+            warn=lambda text: f"WARN:{text}",
+            dim=lambda text: f"DIM:{text}",
+            batch_size=20,
+            max_batch_halving=3,
+            http_400_circuit_breaker_threshold=3,
+            http_400_diagnostic_sample_limit=12,
+            stats_out=stats,
+        )
+
+        self.assertEqual(total, 80)
+        self.assertEqual(deals, [])
+        self.assertEqual(single_calls, appids)
+        self.assertEqual(stats["degraded_batch_count"], 21)
+        self.assertEqual(stats["http_400_direct_fallback_batches"], 1)
+        self.assertEqual(stats["http_400_direct_fallback_count"], 20)
+        self.assertEqual(stats["individual_fallback_count"], 80)
+        self.assertEqual(len(requested_batches), 45)
+        self.assertFalse(any(batch.startswith("1060") for batch in requested_batches))
+        self.assertTrue(
+            any("fallback individual directo" in line for line in emitted)
+        )
+        self.assertTrue(
+            any(sample.get("size") == 20 for sample in stats["http_400_batch_samples"])
+        )
+
     def test_get_deals_from_wishlist_uses_bounded_individual_fallback_workers(
         self,
     ) -> None:
