@@ -142,6 +142,17 @@ python3 steam_deals_warm_cache_summary.py \
 - `Fallback sigue alto`: prioriza batching/fallback antes de invalidar cache por promos.
 - `Sin acción automática`: no hay una señal clara; captura otra corrida si cambia la promo o la wishlist.
 
+## Pausa del frente HTTP 400 offline
+
+Pausa este frente y no abras otro slice si ya están cubiertos estos cuatro puntos:
+
+- hay samples o logs suficientes para explicar la degradación HTTP 400;
+- existe un fixture offline grande que demuestra la entrada a fallback directo tras HTTP 400 repetidos;
+- existe un fixture mixto que evita falsos positivos cuando hay batches exitosos entre fallos;
+- el resumen warm-cache reconoce `http-400-direct-fallback-active` y deja de pedir más samples/batch menor.
+
+Con esa evidencia, el siguiente cambio ya no debe ser “capturar más appids” ni bajar defaults. Reabre solo si aparece un log/samples nuevos, si se aprueba explícitamente ajustar umbral/circuit breaker con fixture offline, o si se planifica un benchmark aislado con alcance, cache y validación definidos de antemano.
+
 ## Plantilla para BITACORA.md
 
 ```markdown
