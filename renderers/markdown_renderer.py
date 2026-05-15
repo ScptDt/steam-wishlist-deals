@@ -101,6 +101,20 @@ def _wishlist_hygiene_items(payload: dict | None, *, limit: int = 12) -> tuple[l
     return items[:limit], total, max(0, total - limit)
 
 
+def _safe_int(value, default: int = 0) -> int:
+    try:
+        return int(value)
+    except (TypeError, ValueError):
+        return default
+
+
+def _safe_float(value) -> float | None:
+    try:
+        return float(value)
+    except (TypeError, ValueError):
+        return None
+
+
 def _wishlist_hygiene_game_label(item: dict) -> str:
     appid = str(item.get("appid") or item.get("steam_appid") or "").strip()
     fallback_name = f"AppID {appid}" if appid else "Entrada sin appid"
@@ -177,6 +191,79 @@ def _build_wishlist_hygiene_lines(payload: dict | None) -> list[str]:
         )
     if hidden_count:
         lines += ["", f"> {hidden_count:,} más en el payload completo."]
+    lines += ["", "---", ""]
+    return lines
+
+
+def _smart_alert_digest_sections(payload: dict | None) -> list[dict]:
+    if not isinstance(payload, dict):
+        return []
+    if payload.get("dry_run") is not True or payload.get("send_ready") is not False:
+        return []
+    sections = payload.get("sections")
+    if not isinstance(sections, list):
+        return []
+    return [section for section in sections if isinstance(section, dict)]
+
+
+def _smart_alert_item_label(item: dict) -> str:
+    title = str(item.get("title") or "").strip()
+    if title:
+        return _md_esc(title)
+    appid = str(item.get("appid") or item.get("steam_appid") or "").strip()
+    name = str(item.get("name") or item.get("steam_name") or f"AppID {appid}").strip()
+    return _link(name, appid) if appid.isdigit() else _md_esc(name)
+
+
+def _smart_alert_item_details(item: dict) -> str:
+    details = []
+    change_pct = _safe_float(item.get("change_pct"))
+    current_price = _safe_float(item.get("current_price"))
+    historical_low = _safe_float(item.get("historical_low"))
+    if change_pct is not None:
+        details.append(f"+{change_pct:.0f}%")
+    if current_price is not None:
+        details.append(f"actual ${current_price:.0f}")
+    if historical_low is not None:
+        details.append(f"mín. ${historical_low:.0f}")
+    if item.get("games_count") is not None:
+        details.append(f"{_safe_int(item.get('games_count'))} juegos")
+    reason = str(item.get("reason") or "").strip()
+    if reason:
+        details.append(reason)
+    return _md_esc(" · ".join(details))
+
+
+def _smart_alert_examples(section: dict) -> str:
+    items = [item for item in section.get("items", []) if isinstance(item, dict)]
+    examples = []
+    for item in items[:3]:
+        label = _smart_alert_item_label(item)
+        details = _smart_alert_item_details(item)
+        examples.append(f"{label} ({details})" if details else label)
+    hidden_count = _safe_int(section.get("hidden_count"), 0)
+    if hidden_count:
+        examples.append(f"+{hidden_count:,} más")
+    return " · ".join(examples) if examples else "Ver JSON completo"
+
+
+def _build_smart_alert_digest_lines(payload: dict | None) -> list[str]:
+    sections = _smart_alert_digest_sections(payload)
+    if not sections:
+        return []
+    total_count = _safe_int(payload.get("total_count"), 0) if isinstance(payload, dict) else 0
+    lines = [
+        "## 🔔 Alertas inteligentes — preview local",
+        "",
+        f"> **{total_count:,} señales agrupadas** en digest dry-run. No envía Telegram/Discord, no habilita notificaciones por juego y requiere revisión antes de conectar canales externos.",
+        "",
+        "| Sección | Señales | Ejemplos |",
+        "|---------|---------|----------|",
+    ]
+    for section in sections:
+        label = _md_esc(str(section.get("label") or section.get("id") or "Sección"))
+        count = _safe_int(section.get("count"), 0)
+        lines.append(f"| {label} | {count:,} | {_smart_alert_examples(section)} |")
     lines += ["", "---", ""]
     return lines
 
@@ -546,6 +633,7 @@ def generate_md(
     wishlist_hygiene: dict | None = None,
     include_frontmatter: bool = False,
     active_promo_context: dict | None = None,
+    smart_alert_digest: dict | None = None,
     *,
     group_by_tier,
     filter_by_genres,
@@ -576,6 +664,7 @@ def generate_md(
     recommended_collections = recommended_collections or []
     personalized_recommendations = personalized_recommendations or {"items": []}
     wishlist_hygiene = wishlist_hygiene or {"items": []}
+    smart_alert_digest = smart_alert_digest if isinstance(smart_alert_digest, dict) else None
     watchlist_alerts = watchlist_alerts or []
     comp = comparison or {}
     owned_and_wishlisted = sorted(
@@ -686,6 +775,7 @@ def generate_md(
     lines += _build_recommended_collection_lines(recommended_collections)
     lines += _build_personalized_recommendation_lines(personalized_recommendations)
     lines += _build_wishlist_hygiene_lines(wishlist_hygiene)
+    lines += _build_smart_alert_digest_lines(smart_alert_digest)
 
     if watchlist_alerts:
         lines += [

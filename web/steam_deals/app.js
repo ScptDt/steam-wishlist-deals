@@ -2779,6 +2779,92 @@ function renderLatestPromoContext(report) {
   `;
 }
 
+function latestSmartAlertSections(payload) {
+  if (!payload || typeof payload !== 'object') return [];
+  if (payload.dry_run !== true || payload.send_ready !== false) return [];
+  return Array.isArray(payload.sections)
+    ? payload.sections.filter(section => section && typeof section === 'object')
+    : [];
+}
+
+function latestSmartAlertItemTitle(item) {
+  const source = item && typeof item === 'object' ? item : {};
+  const title = String(source.title || '').trim();
+  if (title) return {label: title, appid: ''};
+  const appid = String(source.appid || source.steam_appid || '').trim();
+  const name = String(source.name || source.steam_name || (appid ? `AppID ${appid}` : 'Señal')).trim();
+  return {label: name, appid: /^\d+$/.test(appid) ? appid : ''};
+}
+
+function latestSmartAlertItemMeta(item) {
+  const source = item && typeof item === 'object' ? item : {};
+  const parts = [];
+  const changePct = Number(source.change_pct);
+  const currentPrice = Number(source.current_price);
+  const historicalLow = Number(source.historical_low);
+  const gamesCount = Number(source.games_count);
+  if (Number.isFinite(changePct)) parts.push(`+${changePct.toFixed(0)}%`);
+  if (Number.isFinite(currentPrice)) parts.push(`actual $${currentPrice.toFixed(0)}`);
+  if (Number.isFinite(historicalLow)) parts.push(`mín. $${historicalLow.toFixed(0)}`);
+  if (Number.isFinite(gamesCount)) parts.push(`${gamesCount.toFixed(0)} juegos`);
+  const reason = String(source.reason || '').trim();
+  if (reason) parts.push(reason);
+  return parts.join(' · ');
+}
+
+function renderLatestSmartAlertItem(item) {
+  const title = latestSmartAlertItemTitle(item);
+  const meta = latestSmartAlertItemMeta(item);
+  const labelHtml = title.appid
+    ? `<a href="https://store.steampowered.com/app/${escapeHtml(title.appid)}/" target="_blank" rel="noopener noreferrer">${escapeHtml(title.label)}</a>`
+    : `<span>${escapeHtml(title.label)}</span>`;
+  return `
+    <li class="latest-smart-alert-item">
+      <strong>${labelHtml}</strong>
+      ${meta ? `<small>${escapeHtml(meta)}</small>` : ''}
+    </li>
+  `;
+}
+
+function renderLatestSmartAlertSection(section) {
+  const items = Array.isArray(section && section.items)
+    ? section.items.filter(item => item && typeof item === 'object').slice(0, 3)
+    : [];
+  const hiddenCount = Math.max(0, Number(section && section.hidden_count) || 0);
+  const count = Math.max(0, Number(section && section.count) || 0);
+  return `
+    <article class="latest-smart-alert-section" data-latest-smart-alert-section="${escapeHtml(String((section && section.id) || ''))}">
+      <div class="latest-smart-alert-section-head">
+        <strong>${escapeHtml(String((section && (section.label || section.id)) || 'Sección'))}</strong>
+        <span>${escapeHtml(count.toFixed(0))}</span>
+      </div>
+      ${items.length ? `<ol class="latest-smart-alert-list">${items.map(renderLatestSmartAlertItem).join('')}</ol>` : '<div class="latest-smart-alert-empty">Ver JSON completo</div>'}
+      ${hiddenCount ? `<div class="latest-smart-alert-more">+${escapeHtml(hiddenCount.toFixed(0))} más en el JSON</div>` : ''}
+    </article>
+  `;
+}
+
+function renderLatestSmartAlertDigest(report) {
+  const payload = report && typeof report === 'object' ? (report.smart_alert_digest || null) : null;
+  const sections = latestSmartAlertSections(payload);
+  if (!sections.length) return '';
+  const totalCount = Math.max(0, Number(payload.total_count) || 0);
+  return `
+    <div class="latest-smart-alert-digest" data-latest-smart-alert-digest>
+      <div class="latest-smart-alert-head">
+        <div>
+          <div class="latest-smart-alert-title">Alertas inteligentes — preview local</div>
+          <div class="latest-smart-alert-subtitle">${escapeHtml(totalCount.toFixed(0))} señales agrupadas en digest dry-run. No envía Telegram/Discord ni activa notificaciones por juego.</div>
+        </div>
+        <span class="latest-smart-alert-badge">Dry-run</span>
+      </div>
+      <div class="latest-smart-alert-grid">
+        ${sections.map(renderLatestSmartAlertSection).join('')}
+      </div>
+    </div>
+  `;
+}
+
 function toBudgetNumber(value) {
   const num = Number(value);
   return Number.isFinite(num) ? num : 0;
@@ -3758,6 +3844,7 @@ function renderLatestReportDetails(report, files = null) {
   const body = [
     renderLatestReportActions(files),
     renderLatestPromoContext(report),
+    renderLatestSmartAlertDigest(report),
     renderLatestRecommendedCollections(report),
     renderLatestPersonalizedRecommendations(report, files),
     renderLatestGiftIdeas(report),
@@ -3771,7 +3858,7 @@ function renderLatestReportDetails(report, files = null) {
     <details class="latest-report-details">
       <summary>
         <span>Acciones y recomendaciones del último reporte</span>
-        <span class="latest-report-details-hint">HTML, Share, JSON, carpeta, wishlist, regalos y selección</span>
+        <span class="latest-report-details-hint">HTML, Share, JSON, carpeta, alertas, wishlist, regalos y selección</span>
       </summary>
       <div class="latest-report-details-body">${body}</div>
     </details>

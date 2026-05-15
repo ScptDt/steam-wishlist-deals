@@ -785,6 +785,102 @@ def _html_wishlist_hygiene(payload: dict | None) -> str:
 </section>'''
 
 
+def _safe_int(value, default: int = 0) -> int:
+    try:
+        return int(value)
+    except (TypeError, ValueError):
+        return default
+
+
+def _safe_float(value) -> float | None:
+    try:
+        return float(value)
+    except (TypeError, ValueError):
+        return None
+
+
+def _smart_alert_digest_sections(payload: dict | None) -> list[dict]:
+    if not isinstance(payload, dict):
+        return []
+    if payload.get("dry_run") is not True or payload.get("send_ready") is not False:
+        return []
+    sections = payload.get("sections")
+    if not isinstance(sections, list):
+        return []
+    return [section for section in sections if isinstance(section, dict)]
+
+
+def _html_smart_alert_item_label(item: dict) -> str:
+    title = str(item.get("title") or "").strip()
+    if title:
+        return _html_esc(title)
+    appid = str(item.get("appid") or item.get("steam_appid") or "").strip()
+    name = str(item.get("name") or item.get("steam_name") or f"AppID {appid}").strip()
+    return _html_link(name, appid) if is_numeric_appid(appid) else _html_esc(name)
+
+
+def _html_smart_alert_item_meta(item: dict) -> str:
+    details = []
+    change_pct = _safe_float(item.get("change_pct"))
+    current_price = _safe_float(item.get("current_price"))
+    historical_low = _safe_float(item.get("historical_low"))
+    if change_pct is not None:
+        details.append(f"+{change_pct:.0f}%")
+    if current_price is not None:
+        details.append(f"actual ${current_price:.0f}")
+    if historical_low is not None:
+        details.append(f"mín. ${historical_low:.0f}")
+    if item.get("games_count") is not None:
+        details.append(f"{_safe_int(item.get('games_count'))} juegos")
+    reason = str(item.get("reason") or "").strip()
+    if reason:
+        details.append(reason)
+    return _html_esc(" · ".join(details))
+
+
+def _html_smart_alert_item(item: dict) -> str:
+    meta = _html_smart_alert_item_meta(item)
+    return f'''<li class="smart-alert-item">
+  <strong>{_html_smart_alert_item_label(item)}</strong>
+  {f'<span>{meta}</span>' if meta else ''}
+</li>'''
+
+
+def _html_smart_alert_digest(payload: dict | None) -> str:
+    sections = _smart_alert_digest_sections(payload)
+    if not sections:
+        return ""
+    total_count = _safe_int(payload.get("total_count"), 0) if isinstance(payload, dict) else 0
+    section_html = []
+    for section in sections:
+        items = [item for item in section.get("items", []) if isinstance(item, dict)]
+        hidden_count = _safe_int(section.get("hidden_count"), 0)
+        hidden_html = f'<div class="smart-alert-more">+{hidden_count:,} más en el JSON</div>' if hidden_count else ""
+        examples = (
+            f'<ol class="smart-alert-items">{"".join(_html_smart_alert_item(item) for item in items[:3])}</ol>'
+            if items
+            else '<div class="smart-alert-empty">Ver JSON completo</div>'
+        )
+        section_html.append(f'''<article class="smart-alert-section" data-smart-alert-section="{_html_esc(str(section.get('id') or ''))}">
+  <div class="smart-alert-section-head">
+    <strong>{_html_esc(str(section.get("label") or section.get("id") or "Sección"))}</strong>
+    <span>{_safe_int(section.get("count"), 0):,}</span>
+  </div>
+  {examples}
+  {hidden_html}
+</article>''')
+    return f'''<section class="smart-alert-digest" data-smart-alert-digest>
+  <div class="smart-alert-digest-head">
+    <div>
+      <h2>Alertas inteligentes — preview local</h2>
+      <p class="section-desc"><strong>{total_count:,} señales agrupadas</strong> en digest dry-run. No envía Telegram/Discord, no habilita notificaciones por juego y requiere revisión antes de conectar canales externos.</p>
+    </div>
+    <span class="smart-alert-digest-badge">Dry-run</span>
+  </div>
+  <div class="smart-alert-sections">{"".join(section_html)}</div>
+</section>'''
+
+
 def _html_budget_pick_context(pick: dict) -> str:
     recommendation = _html_esc(pick.get("recommendation", ""))
     reasons = _html_esc(" · ".join(pick.get("score_reasons", [])))
@@ -1197,6 +1293,20 @@ a.pick-card:hover { border-color: var(--accent-blue); transform: translateY(-2px
 .wishlist-hygiene-reasons, .wishlist-hygiene-more { color: var(--text-secondary); font-size: .75rem; line-height: 1.4; }
 .wishlist-hygiene-more { margin-top: .6rem; }
 @media (max-width: 767px) { .wishlist-hygiene-head, .wishlist-hygiene-item { flex-direction: column; } .wishlist-hygiene-head-badge, .wishlist-hygiene-badge { align-self: flex-start; } }
+.smart-alert-digest { margin: 0 0 1.5rem; padding: 1rem; border: 1px solid rgba(102,192,244,.26); border-radius: 10px; background: linear-gradient(135deg, rgba(102,192,244,.08), rgba(12,20,30,.25)); }
+.smart-alert-digest-head { display: flex; justify-content: space-between; gap: 1rem; align-items: flex-start; }
+.smart-alert-digest h2 { font-size: 1.2rem; margin-bottom: .3rem; }
+.smart-alert-digest-badge { white-space: nowrap; border: 1px solid rgba(102,192,244,.4); border-radius: 999px; color: var(--accent-blue); background: rgba(12,20,30,.32); padding: .16rem .55rem; font-size: .74rem; font-weight: 700; }
+.smart-alert-sections { display: grid; grid-template-columns: repeat(auto-fit, minmax(240px, 1fr)); gap: .7rem; }
+.smart-alert-section { background: var(--bg-card); border: 1px solid rgba(102,192,244,.22); border-radius: 8px; padding: .75rem; }
+.smart-alert-section-head { display: flex; justify-content: space-between; gap: .6rem; margin-bottom: .5rem; }
+.smart-alert-section-head strong { color: var(--text-primary); font-size: .86rem; }
+.smart-alert-section-head span { color: var(--accent-blue); font-weight: 700; }
+.smart-alert-items { list-style: none; display: grid; gap: .45rem; }
+.smart-alert-item strong, .smart-alert-item a { display: block; color: var(--text-primary); font-size: .8rem; text-decoration: none; }
+.smart-alert-item span, .smart-alert-more, .smart-alert-empty { color: var(--text-secondary); font-size: .74rem; line-height: 1.4; }
+.smart-alert-more { margin-top: .45rem; }
+@media (max-width: 767px) { .smart-alert-digest-head { flex-direction: column; } .smart-alert-digest-badge { align-self: flex-start; } }
 .share-btn-mini { position: absolute; top: .4rem; right: .4rem; background: var(--bg-card); border: 1px solid var(--border); border-radius: 4px; padding: .3rem .5rem; cursor: pointer; font-size: .9rem; opacity: 0.6; transition: opacity .2s; }
 .share-btn-mini:hover { opacity: 1; background: var(--accent-blue); }
 .share-modal { display: none; position: fixed; inset: 0; background: rgba(0,0,0,0.7); z-index: 1000; align-items: center; justify-content: center; }
@@ -1841,6 +1951,7 @@ def generate_html(
     price_history: dict | None = None,
     profile_display_name: str | None = None,
     active_promo_context: dict | None = None,
+    smart_alert_digest: dict | None = None,
     *,
     group_by_tier,
     group_deals_by_tag,
@@ -1867,6 +1978,7 @@ def generate_html(
     recommended_collections = recommended_collections or []
     personalized_recommendations = personalized_recommendations or {"items": []}
     wishlist_hygiene = wishlist_hygiene or {"items": []}
+    smart_alert_digest = smart_alert_digest if isinstance(smart_alert_digest, dict) else None
     achievements_data = achievements_data or {}
     watchlist_alerts = watchlist_alerts or []
     price_history_games = (price_history or {}).get("games", {})
@@ -2010,6 +2122,7 @@ def generate_html(
     parts.append(_html_recommended_collections(recommended_collections))
     parts.append(_html_personalized_recommendations(personalized_recommendations))
     parts.append(_html_wishlist_hygiene(wishlist_hygiene))
+    parts.append(_html_smart_alert_digest(smart_alert_digest))
 
     if watchlist_alerts:
         wl_rows = []

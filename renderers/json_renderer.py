@@ -23,6 +23,15 @@ def _count_new_deals(deals: list[dict], previous_appids: set[str]) -> int:
     return sum(1 for deal in deals if deal["appid"] not in previous_appids)
 
 
+def _smart_alert_digest_total(digest: dict | None) -> int:
+    if not isinstance(digest, dict):
+        return 0
+    try:
+        return max(0, int(digest.get("total_count") or 0))
+    except (TypeError, ValueError):
+        return 0
+
+
 def generate_json(
     deals: list[dict],
     backlog_on_sale: list[dict],
@@ -60,6 +69,7 @@ def generate_json(
     cache_coverage: dict | None = None,
     profile_display_name: str | None = None,
     active_promo_context: dict | None = None,
+    smart_alert_digest: dict | None = None,
 ) -> str:
     previous_appids = previous_appids or set()
     family_appids = family_appids or set()
@@ -81,6 +91,7 @@ def generate_json(
     recommended_collections = recommended_collections or []
     personalized_recommendations = personalized_recommendations or {"items": []}
     wishlist_hygiene = wishlist_hygiene or {"items": [], "summary": {}}
+    smart_alert_digest = smart_alert_digest if isinstance(smart_alert_digest, dict) else None
 
     payload = {
         "meta": {
@@ -108,6 +119,7 @@ def generate_json(
                 personalized_recommendations.get("items", [])
             ),
             "watchlist_alerts_count": len(watchlist_alerts),
+            "smart_alerts_count": _smart_alert_digest_total(smart_alert_digest),
             "gift_ideas_count": len(gift_ideas),
             "wishlist_hygiene_count": len(wishlist_hygiene.get("items", [])),
         },
@@ -139,4 +151,6 @@ def generate_json(
         payload["cache_coverage"] = _json_safe(cache_coverage)
     if active_promo_context:
         payload["meta"]["active_promo_context"] = _json_safe(active_promo_context)
+    if smart_alert_digest:
+        payload["smart_alert_digest"] = _json_safe(smart_alert_digest)
     return json.dumps(payload, ensure_ascii=False, indent=2)

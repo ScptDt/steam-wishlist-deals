@@ -155,9 +155,13 @@ except Exception:
 
 
 try:
-    from steam_deals_alerts import build_smart_alert_counts as _build_smart_alert_counts_impl
+    from steam_deals_alerts import (
+        build_smart_alert_counts as _build_smart_alert_counts_impl,
+        build_smart_alert_digest as _build_smart_alert_digest_impl,
+    )
 except Exception:
     _build_smart_alert_counts_impl = None
+    _build_smart_alert_digest_impl = None
 
 
 try:
@@ -1247,6 +1251,12 @@ def build_smart_alert_counts(**kwargs) -> dict[str, int]:
     if _build_smart_alert_counts_impl is None:
         raise RuntimeError("Alerts module is not available")
     return _build_smart_alert_counts_impl(**kwargs)
+
+
+def build_smart_alert_digest(**kwargs) -> dict:
+    if _build_smart_alert_digest_impl is None:
+        raise RuntimeError("Alerts module is not available")
+    return _build_smart_alert_digest_impl(**kwargs)
 
 
 def emit_final_closeout(
@@ -2935,6 +2945,7 @@ def generate_md(
     hltb_hours=None,
     include_frontmatter: bool = False,
     active_promo_context: dict | None = None,
+    smart_alert_digest: dict | None = None,
 ) -> str:
     if _generate_md_renderer is None:
         raise RuntimeError("Markdown renderer module is not available")
@@ -3001,6 +3012,7 @@ def generate_md(
         wishlist_hygiene=wishlist_hygiene,
         include_frontmatter=include_frontmatter,
         active_promo_context=active_promo_context,
+        smart_alert_digest=smart_alert_digest,
         group_by_tier=group_by_tier,
         filter_by_genres=filter_by_genres,
         group_deals_by_tag=group_deals_by_tag,
@@ -3056,6 +3068,7 @@ def generate_html(
     price_history: dict | None = None,
     profile_display_name: str | None = None,
     active_promo_context: dict | None = None,
+    smart_alert_digest: dict | None = None,
     recommended_collections: list[dict] | None = None,
     personalized_recommendations: dict | None = None,
     wishlist_hygiene=None,
@@ -3126,6 +3139,7 @@ def generate_html(
             price_history=price_history,
             profile_display_name=profile_display_name,
             active_promo_context=active_promo_context,
+            smart_alert_digest=smart_alert_digest,
             group_by_tier=group_by_tier,
             group_deals_by_tag=group_deals_by_tag,
         )
@@ -3164,6 +3178,7 @@ def generate_html(
         price_history=price_history,
         profile_display_name=profile_display_name,
         active_promo_context=active_promo_context,
+        smart_alert_digest=smart_alert_digest,
         group_by_tier=group_by_tier,
         group_deals_by_tag=group_deals_by_tag,
     )
@@ -3334,6 +3349,7 @@ def generate_json(
     cache_coverage: dict | None = None,
     profile_display_name: str | None = None,
     active_promo_context: dict | None = None,
+    smart_alert_digest: dict | None = None,
 ) -> str:
     if _generate_json_renderer is None:
         raise RuntimeError("JSON renderer module is not available")
@@ -3401,6 +3417,7 @@ def generate_json(
         cache_coverage=cache_coverage,
         profile_display_name=profile_display_name,
         active_promo_context=active_promo_context,
+        smart_alert_digest=smart_alert_digest,
     )
 
 
@@ -4092,7 +4109,7 @@ def main():
     deals = post_processing_outputs.deals
     top_picks = post_processing_outputs.top_picks
 
-    smart_alerts = build_smart_alert_counts(
+    smart_alert_digest = build_smart_alert_digest(
         deals=alert_deals,
         historical_lows=historical_lows,
         active_bundles=active_bundles,
@@ -4103,6 +4120,7 @@ def main():
         alert_rise_pct=alert_rise_pct,
         alert_score_min=alert_score_min,
     )
+    smart_alerts = smart_alert_digest.get("counts", {})
 
     engagement_outputs = run_engagement_post_run(
         deals,
@@ -4180,6 +4198,7 @@ def main():
         hltb_hours=hltb_hours,
         include_frontmatter=bool(FILTERS.get("md_frontmatter")),
         active_promo_context=active_promo_context,
+        smart_alert_digest=smart_alert_digest,
     )
 
     # Generar HTML interactivo
@@ -4216,6 +4235,7 @@ def main():
         price_history=price_history,
         profile_display_name=profile_display_name,
         active_promo_context=active_promo_context,
+        smart_alert_digest=smart_alert_digest,
         **family_renderer_kwargs,
     )
 
@@ -4275,6 +4295,7 @@ def main():
         cache_coverage=cache_coverage,
         profile_display_name=profile_display_name,
         active_promo_context=active_promo_context,
+        smart_alert_digest=smart_alert_digest,
         **family_renderer_kwargs,
     )
 

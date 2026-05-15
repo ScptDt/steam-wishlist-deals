@@ -169,6 +169,7 @@ from steam_deals_generator import (
     build_recommended_collections,
     build_selection_review,
     build_smart_alert_counts as generator_build_smart_alert_counts,
+    build_smart_alert_digest as generator_build_smart_alert_digest,
     build_gift_ideas,
     build_wishlist_hygiene_signals,
     load_wishlist_external_matches,
@@ -4822,6 +4823,47 @@ class StopApiContractTests(unittest.TestCase):
         self.assertEqual(data["comparison"]["new_deals"], ["10"])
         self.assertEqual(data["top_picks"][0]["score"], 95.4)
 
+    def test_generate_json_serializes_smart_alert_digest_preview(self) -> None:
+        digest = {
+            "mode": "preview",
+            "dry_run": True,
+            "preview_only": True,
+            "send_ready": False,
+            "total_count": 2,
+            "sections": [
+                {
+                    "id": "price_up",
+                    "label": "Subidas vs run anterior",
+                    "count": 2,
+                    "items": [{"appid": "10", "name": "Portal 2"}],
+                    "hidden_count": 1,
+                }
+            ],
+            "notification_policy": {"external_send_enabled": False, "channels": []},
+        }
+
+        payload = generate_json(
+            deals=[{"appid": "10", "name": "Portal 2", "discount": 80}],
+            backlog_on_sale=[],
+            have_on_sale=[],
+            vanity="gaben",
+            owned={},
+            wishlist_appids=["10"],
+            min_discount=50,
+            genres=[],
+            smart_alert_digest=digest,
+        )
+
+        data = json.loads(payload)
+
+        self.assertEqual(data["summary"]["smart_alerts_count"], 2)
+        self.assertEqual(data["smart_alert_digest"]["mode"], "preview")
+        self.assertTrue(data["smart_alert_digest"]["dry_run"])
+        self.assertFalse(data["smart_alert_digest"]["send_ready"])
+        self.assertFalse(
+            data["smart_alert_digest"]["notification_policy"]["external_send_enabled"]
+        )
+
     def test_build_price_cache_coverage_marks_partial_deferred_candidates(self) -> None:
         coverage = build_price_cache_coverage(
             {
@@ -5279,6 +5321,66 @@ class StopApiContractTests(unittest.TestCase):
         self.assertIn("Abrir en Steam", html)
         self.assertIn("Solo revisión", html)
         self.assertNotIn("Owned <Game> & Co", html)
+
+    def test_generated_reports_render_smart_alert_digest_preview(self) -> None:
+        digest = {
+            "mode": "preview",
+            "dry_run": True,
+            "preview_only": True,
+            "send_ready": False,
+            "total_count": 2,
+            "sections": [
+                {
+                    "id": "price_up",
+                    "label": "Subidas vs run anterior",
+                    "count": 2,
+                    "items": [
+                        {
+                            "appid": "10",
+                            "name": "Portal 2",
+                            "change_pct": 15.0,
+                            "reason": "subió frente al run anterior",
+                        }
+                    ],
+                    "hidden_count": 1,
+                }
+            ],
+            "notification_policy": {"external_send_enabled": False, "channels": []},
+        }
+        md = generate_md(
+            deals=[],
+            backlog_on_sale=[],
+            have_on_sale=[],
+            vanity="gaben",
+            owned={},
+            wishlist_appids=["10"],
+            min_discount=50,
+            genres=[],
+            smart_alert_digest=digest,
+        )
+        html = generate_html(
+            deals=[],
+            backlog_on_sale=[],
+            have_on_sale=[],
+            vanity="gaben",
+            owned={},
+            wishlist_appids=["10"],
+            min_discount=50,
+            genres=[],
+            smart_alert_digest=digest,
+        )
+
+        self.assertIn("Alertas inteligentes — preview local", md)
+        self.assertIn("digest dry-run", md)
+        self.assertIn("No envía Telegram/Discord", md)
+        self.assertIn("no habilita notificaciones por juego", md)
+        self.assertIn("[Portal 2](https://store.steampowered.com/app/10/)", md)
+        self.assertIn("+1 más", md)
+        self.assertIn('data-smart-alert-digest', html)
+        self.assertIn("Alertas inteligentes — preview local", html)
+        self.assertIn("No envía Telegram/Discord", html)
+        self.assertIn("Portal 2", html)
+        self.assertIn("Dry-run", html)
 
     def test_generate_reports_explain_appid_only_wishlist_hygiene_items(self) -> None:
         hygiene = {
@@ -6015,6 +6117,20 @@ class SmartAlertsTests(unittest.TestCase):
                 "active_bundle_games_count": 0,
             },
         )
+
+    def test_generator_smart_alert_digest_wrapper_keeps_preview_policy(self) -> None:
+        digest = generator_build_smart_alert_digest(
+            deals=[],
+            historical_lows=None,
+            active_bundles=None,
+            comparison=None,
+            local_trends=None,
+        )
+
+        self.assertEqual(digest["mode"], "preview")
+        self.assertTrue(digest["dry_run"])
+        self.assertFalse(digest["send_ready"])
+        self.assertFalse(digest["notification_policy"]["external_send_enabled"])
 
 
 class RuntimeReportingTests(unittest.TestCase):
