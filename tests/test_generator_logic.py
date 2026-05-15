@@ -7912,6 +7912,60 @@ class RankTopPicksTests(unittest.TestCase):
             md,
         )
 
+    def test_generate_md_renders_overlap_rows_with_normalized_appids(self) -> None:
+        md = generate_md(
+            deals=[
+                {
+                    "appid": "20",
+                    "name": "Shared Deal",
+                    "discount": 75,
+                    "price_final": "$50",
+                    "price_original": "$200",
+                }
+            ],
+            backlog_on_sale=[],
+            have_on_sale=[],
+            vanity="gaben",
+            owned={},
+            wishlist_appids=["20"],
+            min_discount=50,
+            genres=[],
+            compare_data={"friend_vanity": "friend", "overlap": {20}},
+            gift_ideas=[],
+            recommended_collections=[],
+            personalized_recommendations={"items": []},
+        )
+
+        self.assertIn("### En común y en oferta (1 juegos)", md)
+        self.assertIn(
+            "| -75% | $50 | [Shared Deal](https://store.steampowered.com/app/20/) |",
+            md,
+        )
+
+    def test_generate_md_shows_empty_state_for_social_sections_without_rows(self) -> None:
+        md = generate_md(
+            deals=[],
+            backlog_on_sale=[],
+            have_on_sale=[],
+            vanity="gaben",
+            owned={},
+            wishlist_appids=[],
+            min_discount=50,
+            genres=[],
+            compare_data={"friend_vanity": "friend", "overlap_count": 2},
+            gift_ideas=[{}, "invalid"],
+            recommended_collections=[],
+            personalized_recommendations={"items": []},
+        )
+
+        self.assertIn(
+            "Hay juegos en común, pero ninguno tiene una oferta renderizable", md
+        )
+        self.assertIn(
+            "Hay datos de regalos, pero no hay items concretos para mostrar", md
+        )
+        self.assertNotIn("| % | Precio | Juego |", md)
+
     def test_generate_md_surfaces_active_promo_context(self) -> None:
         md = generate_md(
             deals=[],
@@ -8243,6 +8297,70 @@ class RankTopPicksTests(unittest.TestCase):
             html,
         )
         self.assertNotIn("lo tiene en wishlist · <script>alert(1)</script>", html)
+
+    def test_generate_html_renders_social_rows_from_alternate_shapes(self) -> None:
+        html = generate_html(
+            deals=[
+                {
+                    "appid": "20",
+                    "name": "Shared Deal",
+                    "discount": 75,
+                    "price_final": "$50",
+                    "price_original": "$200",
+                }
+            ],
+            backlog_on_sale=[],
+            have_on_sale=[],
+            vanity="gaben",
+            owned={},
+            wishlist_appids=["20", "30"],
+            min_discount=50,
+            genres=[],
+            compare_data={"friend_vanity": "friend", "overlap": {20}},
+            gift_ideas=[
+                {
+                    "steam_appid": "30",
+                    "steam_name": "Co-op Gift",
+                    "discount": "60",
+                    "price": "$99",
+                    "reasons": ["lo tiene en wishlist", "se parece a Co-op"],
+                }
+            ],
+            recommended_collections=[],
+            personalized_recommendations={"items": []},
+        )
+
+        self.assertIn("1 juegos en com&uacute;n &middot; 1 en oferta", html)
+        self.assertIn("Shared Deal", html)
+        self.assertIn("steam/apps/20/capsule_231x87.jpg", html)
+        self.assertIn("Co-op Gift", html)
+        self.assertIn("lo tiene en wishlist · se parece a Co-op", html)
+        self.assertIn('href="https://store.steampowered.com/app/30/"', html)
+
+    def test_generate_html_shows_empty_state_for_social_sections_without_rows(self) -> None:
+        html = generate_html(
+            deals=[],
+            backlog_on_sale=[],
+            have_on_sale=[],
+            vanity="gaben",
+            owned={},
+            wishlist_appids=[],
+            min_discount=50,
+            genres=[],
+            compare_data={"friend_vanity": "friend", "overlap_count": 2},
+            gift_ideas=[{}, "invalid"],
+            recommended_collections=[],
+            personalized_recommendations={"items": []},
+        )
+
+        self.assertIn(
+            "Hay juegos en común, pero ninguno tiene una oferta renderizable", html
+        )
+        self.assertIn(
+            "Hay datos de regalos, pero no hay items concretos para mostrar", html
+        )
+        social_section = html.split('<details open class="filter-panel"', 1)[0]
+        self.assertNotIn("<tbody></tbody>", social_section)
 
     def test_generate_html_escapes_personalized_recommendation_data(self) -> None:
         html = generate_html(

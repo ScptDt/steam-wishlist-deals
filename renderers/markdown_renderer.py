@@ -3,6 +3,12 @@ from __future__ import annotations
 from datetime import date
 
 from .common import markdown_escape
+from .social_rows import (
+    compare_overlap_count,
+    is_numeric_appid,
+    normalize_gift_idea_rows,
+    normalize_overlap_deal_rows,
+)
 
 
 STORE_URL = "https://store.steampowered.com/app/{appid}/"
@@ -29,6 +35,10 @@ def _md_esc(text: str) -> str:
 
 def _link(name: str, appid: str) -> str:
     return f"[{_md_esc(name)}]({STORE_URL.format(appid=appid)})"
+
+
+def _optional_link(name: str, appid: str) -> str:
+    return _link(name, appid) if is_numeric_appid(appid) else _md_esc(name)
 
 
 def _compact_social_reasons(item: dict, *, limit: int = 2) -> str:
@@ -719,15 +729,16 @@ def generate_md(
         lines += ["", "---", ""]
 
     if compare_data:
-        friend = compare_data.get("friend_vanity", "?")
-        overlap = compare_data.get("overlap", set())
+        friend = compare_data.get("friend_name") or compare_data.get("friend_vanity", "?")
+        friend_label = _md_esc(str(friend))
+        overlap_count = compare_overlap_count(compare_data)
         lines += [
-            f"## 👥 Wishlist Comparison — {friend}",
+            f"## 👥 Wishlist Comparison — {friend_label}",
             "",
-            f"> **{len(overlap)} juegos en común** entre tu wishlist y la de {friend}.",
+            f"> **{overlap_count} juegos en común** entre tu wishlist y la de {friend_label}.",
             "",
         ]
-        overlap_deals = [d for d in deals if d["appid"] in overlap]
+        overlap_deals = normalize_overlap_deal_rows(deals, compare_data)
         if overlap_deals:
             lines += [
                 f"### En común y en oferta ({len(overlap_deals)} juegos)",
@@ -735,16 +746,19 @@ def generate_md(
                 "| % | Precio | Juego |",
                 "|---|--------|-------|",
             ]
-            for d in sorted(overlap_deals, key=lambda x: -x["discount"])[:20]:
+            for row in overlap_deals:
                 lines.append(
-                    f"| -{d['discount']}% | {d['price_final']} | {_link(d['name'], d['appid'])} |"
+                    f"| -{int(row['discount'])}% | {_md_esc(str(row['price_final']))} | {_optional_link(str(row['name']), str(row['appid']))} |"
                 )
             lines.append("")
-        if gift_ideas:
-            visible_gift_ideas = gift_ideas[:20]
-            has_social_reasons = any(
-                _compact_social_reasons(g) for g in visible_gift_ideas
-            )
+        elif overlap_count:
+            lines += [
+                "> Hay juegos en común, pero ninguno tiene una oferta renderizable en este reporte.",
+                "",
+            ]
+        gift_rows = normalize_gift_idea_rows(gift_ideas or [])
+        if gift_rows:
+            has_social_reasons = any(row.get("reason") for row in gift_rows)
             header = (
                 "| % | Precio | Juego | Por qué |"
                 if has_social_reasons
@@ -756,21 +770,28 @@ def generate_md(
                 else "|---|--------|-------|"
             )
             lines += [
-                f"### 🎁 Gift Ideas para {friend} ({len(gift_ideas)} juegos)",
+                f"### 🎁 Gift Ideas para {friend_label} ({len(gift_rows)} juegos)",
                 "",
-                f"> Juegos que {friend} quiere, están en oferta, y tú no los tienes.",
+                f"> Juegos que {friend_label} quiere, están en oferta, y tú no los tienes.",
                 "",
                 header,
                 separator,
             ]
-            for g in visible_gift_ideas:
-                row = (
-                    f"| -{g['discount']}% | {g['price_final']} | {_link(g['name'], g['appid'])} |"
+            for gift_row in gift_rows:
+                line = (
+                    f"| -{int(gift_row['discount'])}% | {_md_esc(str(gift_row['price_final']))} | {_optional_link(str(gift_row['name']), str(gift_row['appid']))} |"
                 )
                 if has_social_reasons:
-                    reason = _compact_social_reasons(g) or "—"
-                    row += f" {_md_esc(reason)} |"
-                lines.append(row)
+                    reason = str(gift_row.get("reason") or "—")
+                    line += f" {_md_esc(reason)} |"
+                lines.append(line)
+        elif gift_ideas:
+            lines += [
+                f"### 🎁 Gift Ideas para {friend_label}",
+                "",
+                "> Hay datos de regalos, pero no hay items concretos para mostrar.",
+                "",
+            ]
         lines += ["", "---", ""]
 
     if active_bundles_data:

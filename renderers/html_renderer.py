@@ -7,6 +7,12 @@ import re
 from share_payload import normalize_share_payload
 
 from .common import html_escape
+from .social_rows import (
+    compare_overlap_count,
+    is_numeric_appid,
+    normalize_gift_idea_rows,
+    normalize_overlap_deal_rows,
+)
 
 
 STORE_URL = "https://store.steampowered.com/app/{appid}/"
@@ -35,6 +41,26 @@ def _html_esc(text: str) -> str:
 
 def _html_link(name: str, appid: str) -> str:
     return f'<a href="{STORE_URL.format(appid=appid)}" target="_blank">{_html_esc(name)}</a>'
+
+
+def _html_social_game_cell(row: dict) -> str:
+    appid = str(row.get("appid") or "").strip()
+    name = str(row.get("name") or "Juego sin nombre").strip()
+    if not is_numeric_appid(appid):
+        return _html_esc(name)
+    capsule = CAPSULE_URL.format(appid=appid)
+    store_url = STORE_URL.format(appid=appid)
+    safe_name = _html_esc(name)
+    return f'''<div class="social-game-cell">
+      <a class="social-game-thumb" href="{store_url}" target="_blank" aria-label="Abrir {safe_name} en Steam">
+        <img src="{capsule}" alt="" loading="lazy" onerror="this.style.display='none'">
+      </a>
+      <a href="{store_url}" target="_blank">{safe_name}</a>
+    </div>'''
+
+
+def _html_social_empty(message: str) -> str:
+    return f'<p class="section-desc social-empty">{_html_esc(message)}</p>'
 
 
 def _compact_social_reasons(item: dict, *, limit: int = 2) -> str:
@@ -2051,37 +2077,44 @@ def generate_html(
 </section>""")
 
     if compare_data:
-        friend = compare_data.get("friend_vanity", "?")
-        overlap = compare_data.get("overlap", set())
-        overlap_deals = [d for d in deals if d["appid"] in overlap]
+        friend = str(
+            compare_data.get("friend_name") or compare_data.get("friend_vanity", "?")
+        ).strip() or "?"
+        overlap_count = compare_overlap_count(compare_data)
+        overlap_deals = normalize_overlap_deal_rows(deals, compare_data)
         comp_html = f"""<section style="margin-bottom:1.5rem">
   <h2>&#128101; Wishlist Comparison &mdash; {_html_esc(friend)}</h2>
-  <p class="section-desc">{len(overlap)} juegos en com&uacute;n"""
+  <p class="section-desc">{overlap_count} juegos en com&uacute;n"""
         if overlap_deals:
             comp_html += f" &middot; {len(overlap_deals)} en oferta"
         comp_html += "</p>"
         if overlap_deals:
             ol_rows = ""
-            for d in sorted(overlap_deals, key=lambda x: -x["discount"])[:20]:
-                capsule = CAPSULE_URL.format(appid=d["appid"])
-                ol_rows += f'<tr><td>-{d["discount"]}%</td><td>{_html_esc(d["price_final"])}</td><td><div class="game-cell"><img class="game-thumb" src="{capsule}" alt="" loading="lazy" onerror="this.style.display=\'none\'"><span>{_html_link(d["name"], d["appid"])}</span></div></td></tr>'
+            for row in overlap_deals:
+                ol_rows += f'<tr><td>-{int(row["discount"])}%</td><td>{_html_esc(str(row["price_final"]))}</td><td>{_html_social_game_cell(row)}</td></tr>'
             comp_html += f'<h3 style="font-size:.95rem;margin:.8rem 0 .4rem">En com&uacute;n y en oferta</h3><div class="table-wrap"><table class="deals-table"><thead><tr><th>%</th><th>Precio</th><th>Juego</th></tr></thead><tbody>{ol_rows}</tbody></table></div>'
-        gift_ideas_list = gift_ideas or []
-        if gift_ideas_list:
-            gi_rows = ""
-            visible_gift_ideas = gift_ideas_list[:20]
-            has_social_reasons = any(
-                _compact_social_reasons(game) for game in visible_gift_ideas
+        elif overlap_count:
+            comp_html += _html_social_empty(
+                "Hay juegos en común, pero ninguno tiene una oferta renderizable en este reporte."
             )
-            for game in gift_ideas_list[:20]:
-                capsule = CAPSULE_URL.format(appid=game["appid"])
+        gift_ideas_list = gift_ideas or []
+        gift_rows = normalize_gift_idea_rows(gift_ideas_list)
+        if gift_rows:
+            gi_rows = ""
+            has_social_reasons = any(row.get("reason") for row in gift_rows)
+            for row in gift_rows:
                 reason_cell = ""
                 if has_social_reasons:
-                    reason = _compact_social_reasons(game) or "—"
+                    reason = str(row.get("reason") or "—")
                     reason_cell = f'<td><span class="gift-reason">{_html_esc(reason)}</span></td>'
-                gi_rows += f'<tr><td>-{game["discount"]}%</td><td>{_html_esc(game["price_final"])}</td><td><div class="game-cell"><img class="game-thumb" src="{capsule}" alt="" loading="lazy" onerror="this.style.display=\'none\'"><span>{_html_link(game["name"], game["appid"])}</span></div></td>{reason_cell}</tr>'
+                gi_rows += f'<tr><td>-{int(row["discount"])}%</td><td>{_html_esc(str(row["price_final"]))}</td><td>{_html_social_game_cell(row)}</td>{reason_cell}</tr>'
             reason_header = "<th>Por qu&eacute;</th>" if has_social_reasons else ""
             comp_html += f'<h3 style="font-size:.95rem;margin:.8rem 0 .4rem">&#127873; Gift Ideas para {_html_esc(friend)}</h3><div class="table-wrap"><table class="deals-table"><thead><tr><th>%</th><th>Precio</th><th>Juego</th>{reason_header}</tr></thead><tbody>{gi_rows}</tbody></table></div>'
+        elif gift_ideas_list:
+            comp_html += '<h3 style="font-size:.95rem;margin:.8rem 0 .4rem">&#127873; Gift Ideas para ' + _html_esc(friend) + '</h3>'
+            comp_html += _html_social_empty(
+                "Hay datos de regalos, pero no hay items concretos para mostrar."
+            )
         comp_html += "</section>"
         parts.append(comp_html)
 
