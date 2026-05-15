@@ -30,7 +30,10 @@ from share_payload import (
     decode_share_payload,
     normalize_share_payload,
 )
-from steam_deals_alerts import build_smart_alert_counts as module_build_smart_alert_counts
+from steam_deals_alerts import (
+    build_smart_alert_counts as module_build_smart_alert_counts,
+    build_smart_alert_digest as module_build_smart_alert_digest,
+)
 from steam_deals_cache_policy import (
     build_cache_state_summary as module_build_cache_state_summary,
     clear_cache_files as module_clear_cache_files,
@@ -5917,6 +5920,81 @@ class SmartAlertsTests(unittest.TestCase):
                 "active_bundle_games_count": 1,
             },
         )
+
+    def test_smart_alert_digest_is_preview_only_grouped_and_capped(self) -> None:
+        digest = module_build_smart_alert_digest(
+            deals=[
+                {"appid": "10", "name": "Alpha", "price_raw": 1000},
+                {"appid": "20", "name": "Beta", "price_raw": 900},
+                {"appid": "30", "name": "Gamma", "price_raw": 500},
+            ],
+            historical_lows={"10": {"price": 10.0}, "20": {"price": 9.0}},
+            active_bundles={
+                "10": [{"title": "Bundle Alpha"}],
+                "20": [{"title": "Bundle Beta"}],
+            },
+            comparison={
+                "price_changes": {
+                    "10": {"direction": "up", "change_pct": 15.0},
+                    "20": {"direction": "up", "change_pct": 12.0},
+                }
+            },
+            local_trends={
+                "10": {"is_best_local": True, "is_first_time": False},
+                "20": {"is_best_local": True, "is_first_time": False},
+            },
+            alert_global_margin_pct=0.0,
+            alert_rise_pct=10.0,
+            max_items_per_section=1,
+        )
+
+        self.assertTrue(digest["dry_run"])
+        self.assertTrue(digest["preview_only"])
+        self.assertFalse(digest["send_ready"])
+        self.assertFalse(digest["notification_policy"]["external_send_enabled"])
+        self.assertTrue(digest["anti_spam"]["grouped_digest"])
+        self.assertFalse(digest["anti_spam"]["per_game_notifications"])
+        self.assertEqual(digest["anti_spam"]["max_items_per_section"], 1)
+        by_id = {section["id"]: section for section in digest["sections"]}
+        self.assertEqual(by_id["price_up"]["count"], 2)
+        self.assertEqual(len(by_id["price_up"]["items"]), 1)
+        self.assertEqual(by_id["price_up"]["hidden_count"], 1)
+        self.assertEqual(by_id["active_bundles"]["games_count"], 2)
+        self.assertIn("Preview local", " ".join(digest["notes"]))
+
+    def test_smart_alert_digest_respects_score_minimum_without_changing_defaults(self) -> None:
+        digest = module_build_smart_alert_digest(
+            deals=[
+                {"appid": "10", "name": "High Score", "price_raw": 1000},
+                {"appid": "20", "name": "Low Score", "price_raw": 900},
+            ],
+            historical_lows={"10": {"price": 10.0}, "20": {"price": 9.0}},
+            active_bundles={"10": [{"title": "Bundle Alpha"}], "20": [{"title": "Bundle Beta"}]},
+            comparison={
+                "price_changes": {
+                    "10": {"direction": "up", "change_pct": 15.0},
+                    "20": {"direction": "up", "change_pct": 15.0},
+                }
+            },
+            local_trends={
+                "10": {"is_best_local": True, "is_first_time": False},
+                "20": {"is_best_local": True, "is_first_time": False},
+            },
+            top_picks=[{"appid": "10", "score": 80.0}, {"appid": "20", "score": 79.9}, "bad"],
+            alert_global_margin_pct=0.0,
+            alert_rise_pct=10.0,
+            alert_score_min=80.0,
+            max_items_per_section=3,
+        )
+
+        self.assertEqual(digest["counts"]["price_up_count"], 1)
+        self.assertEqual(digest["counts"]["best_local_count"], 1)
+        self.assertEqual(digest["counts"]["global_historical_low_count"], 1)
+        self.assertEqual(digest["counts"]["active_bundles_count"], 1)
+        rendered_names = json.dumps(digest, ensure_ascii=False)
+        self.assertIn("High Score", rendered_names)
+        self.assertNotIn("Low Score", rendered_names)
+        self.assertEqual(digest["notification_policy"]["channels"], [])
 
     def test_generator_smart_alerts_wrapper_accepts_empty_sources(self) -> None:
         result = generator_build_smart_alert_counts(
