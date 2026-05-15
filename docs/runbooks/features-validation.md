@@ -59,6 +59,8 @@ python3 steam_deals_generator.py --vanity gaben --budget 500
    - Ejecutar un run con presupuesto activo.
    - En la tarjeta **Último reporte**, cambiar entre `Lista chica`, `Lista media` y `Lista grande`.
    - Verificar que el techo activo siga igual al presupuesto del run y que cambien juegos/totales según la variante.
+   - Si una variante muestra conteos/totales, verificar que también renderiza filas de juegos; no cerrar con tablas que solo tengan headers.
+   - Si el payload no trae filas para una variante, debe haber fallback explícito o estado vacío claro, no una tabla vacía silenciosa.
 3. **Cambio por juego**
    - Abrir `Cambiar este juego` en un pick que tenga reemplazos.
    - Verificar que el preview actualice `Total` y `Restante` sin exceder el mismo presupuesto.
@@ -66,6 +68,27 @@ python3 steam_deals_generator.py --vanity gaben --budget 500
 4. **Cobertura automatizada mínima**
    - `tests/test_generator_logic.py` valida variantes `small` / `balanced` / `large`.
    - También valida acciones de `probar otra lista` / `cambiar este juego`, totales, reemplazos y render en `.md`, `.html` y `.json`.
+
+## Wishlist Comparison / Gift Ideas
+
+### Objetivo
+
+Validar que las secciones sociales no muestren solo títulos/headers cuando existen datos de comparación o regalos.
+
+### Checklist manual
+
+1. Generar un reporte con comparación de wishlist/friend que tenga al menos un juego en común/en oferta.
+2. Abrir el HTML/Markdown generado y confirmar:
+   - `Wishlist Comparison` muestra filas cuando el resumen indica juegos en común/en oferta.
+   - `Gift Ideas` muestra filas con juego, precio/descuento y `Por qué` cuando `gift_ideas` trae items.
+   - Si no hay items concretos, se muestra un estado vacío claro en vez de una tabla con headers solos.
+3. Mantener el flujo advisory-only: no carrito, checkout, compras ni tiendas externas.
+
+### Cobertura automatizada mínima
+
+- Fixtures de `tests/test_generator_logic.py` para comparación con una oferta común.
+- Fixtures de `gift_ideas` con `social_reasons` y fallback de razón cuando falten razones.
+- Regresión de caso vacío para evitar tablas sin filas.
 
 ## Share / Compartir deals
 

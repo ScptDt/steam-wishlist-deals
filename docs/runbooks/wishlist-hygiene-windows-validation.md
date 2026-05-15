@@ -88,6 +88,16 @@ Debe aparecer una sección `Revisar wishlist` con:
 - Links a Steam solo si el AppID es numérico.
 - Texto tipo `N más en el JSON completo` si hay más de 3 items.
 
+### AppID-only / nombres faltantes
+
+Si una sugerencia solo tiene AppID y no nombre local disponible:
+
+- Debe mostrarse como `AppID <número>` o con un copy equivalente claro, no como una tarjeta críptica sin contexto.
+- Debe explicar que no hay nombre local disponible para ese AppID.
+- Debe conservar la razón accionable (`aparece en biblioteca local`, `aparece en HLTB local`, `revisa si quieres mantenerlo en wishlist`).
+- Debe ofrecer link `Abrir en Steam` solo cuando el AppID sea numérico.
+- Debe seguir siendo advisory-only: no borrar, no auto-excluir y no cambiar score/ranking.
+
 ### Resultado esperado si NO hay señales
 
 La sección `Revisar wishlist` no aparece. Eso es correcto si el JSON trae:

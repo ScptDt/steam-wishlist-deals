@@ -80,6 +80,16 @@ El nombre de la oferta se usa para:
 
 Se exporta manualmente desde la web de HLTB: **Mi perfil → Exportar CSV**.
 
+En Web/Desktop se puede pegar una ruta local al CSV. En Windows, las rutas con espacios deben conservarse completas, por ejemplo:
+
+```text
+C:/Users/Bryan Grijalva/Downloads/HLTB_Games_2026-05-15.csv
+```
+
+En la UI web no hace falta envolver la ruta en comillas; en CLI sí conviene usar comillas si la ruta tiene espacios. El preflight debe tratar la ruta como dato local sensible: confirmar si existe o no, pero sin filtrar la ruta completa en mensajes públicos/logs.
+
+Plan de mejora pendiente: detectar de forma explícita y no intrusiva exports `HLTB*.csv` en `Documents/SteamTools/imports`, `Documents` o `Downloads` cuando el campo esté vacío, manteniendo la ruta redactada y sin subir archivos al navegador.
+
 En la implementación actual, este dominio ya vive en `steam_deals_hltb.py`, mientras `steam_deals_generator.py` mantiene wrappers compatibles durante la modularización incremental.
 
 El CSV tiene columnas relevantes:
