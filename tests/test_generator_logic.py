@@ -9084,6 +9084,96 @@ class RankTopPicksTests(unittest.TestCase):
         self.assertIn("Lista media", html)
         self.assertIn("Alpha", html)
         self.assertIn('data-budget-row="balanced::a"', html)
+        self.assertNotIn("budget-empty-state", html)
+
+    def test_generate_html_renders_budget_variant_items_rows(self) -> None:
+        html = generate_html(
+            deals=[],
+            backlog_on_sale=[],
+            have_on_sale=[],
+            vanity="gaben",
+            owned={},
+            wishlist_appids=["a"],
+            min_discount=50,
+            genres=[],
+            budget_result={
+                "budget": 500,
+                "selected_variant": "balanced",
+                "selected": [],
+                "total_spent": 10,
+                "total_savings": 90,
+                "remaining": 490,
+                "games_count": 1,
+                "variants": [
+                    {
+                        "id": "balanced",
+                        "label": "Lista media",
+                        "description": "Balance recomendado",
+                        "budget": 500,
+                        "total_spent": 10,
+                        "total_savings": 90,
+                        "remaining": 490,
+                        "games_count": 1,
+                        "items": [
+                            {
+                                "appid": "a",
+                                "name": "Alpha",
+                                "discount": 90,
+                                "price_final": "$10",
+                                "score": 95.4,
+                                "recommendation": "Comprar ahora",
+                            }
+                        ],
+                    }
+                ],
+            },
+        )
+
+        self.assertIn("Tu Presupuesto Ideal", html)
+        self.assertIn("Alpha", html)
+        self.assertIn('data-budget-row="balanced::a"', html)
+        self.assertNotIn("budget-empty-state", html)
+
+    def test_generate_html_shows_budget_empty_state_when_variant_rows_missing(self) -> None:
+        html = generate_html(
+            deals=[],
+            backlog_on_sale=[],
+            have_on_sale=[],
+            vanity="gaben",
+            owned={},
+            wishlist_appids=["a"],
+            min_discount=50,
+            genres=[],
+            budget_result={
+                "budget": 500,
+                "selected_variant": "balanced",
+                "selected": [],
+                "total_spent": 100,
+                "total_savings": 90,
+                "remaining": 400,
+                "games_count": 2,
+                "variants": [
+                    {
+                        "id": "balanced",
+                        "label": "Lista media",
+                        "description": "Balance recomendado",
+                        "budget": 500,
+                        "total_spent": 100,
+                        "total_savings": 90,
+                        "remaining": 400,
+                        "games_count": 2,
+                    }
+                ],
+            },
+        )
+
+        self.assertIn("2 juegos", html)
+        self.assertIn("budget-empty-state", html)
+        self.assertIn("Esta variante no trae filas de juegos", html)
+        panel_start = html.index('data-budget-panel="balanced"')
+        panel_block = html[panel_start : html.index("</section>", panel_start)]
+        self.assertNotIn("<tbody></tbody>", panel_block)
+        self.assertNotIn("data-budget-row=", panel_block)
 
     def test_generate_html_hides_local_history_column_without_useful_snapshots(self) -> None:
         html = generate_html(

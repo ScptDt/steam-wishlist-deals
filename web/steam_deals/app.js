@@ -2808,6 +2808,30 @@ function buildFallbackBudgetVariant(budgetResult) {
   };
 }
 
+function budgetVariantRawRows(variant) {
+  if (!variant || typeof variant !== 'object') return [];
+  if (Array.isArray(variant.selected) && variant.selected.length) return variant.selected;
+  if (Array.isArray(variant.items) && variant.items.length) return variant.items;
+  return [];
+}
+
+function shouldUseRootBudgetRowsForVariant(budgetResult, variant) {
+  if (!budgetResult || typeof budgetResult !== 'object' || !variant) return false;
+  const rootRows = Array.isArray(budgetResult.selected) ? budgetResult.selected : [];
+  if (!rootRows.length || budgetVariantRawRows(variant).length) return false;
+  const variants = Array.isArray(budgetResult.variants) ? budgetResult.variants : [];
+  const selectedVariant = String(budgetResult.selected_variant || '').trim();
+  const variantId = String(variant.id || '').trim();
+  return (selectedVariant && variantId === selectedVariant) || (!selectedVariant && variants.length === 1);
+}
+
+function budgetVariantRowsForUi(budgetResult, variant) {
+  const rows = budgetVariantRawRows(variant);
+  if (rows.length) return rows;
+  if (shouldUseRootBudgetRowsForVariant(budgetResult, variant)) return budgetResult.selected;
+  return [];
+}
+
 function findBudgetVariant(budgetResult, variantId) {
   const variants = Array.isArray(budgetResult && budgetResult.variants) ? budgetResult.variants : [];
   if (!variants.length) return buildFallbackBudgetVariant(budgetResult);
@@ -2835,7 +2859,7 @@ function getActiveBudgetPreview() {
   if (!variant) return null;
 
   const budget = toBudgetNumber(budgetResult.budget || variant.budget);
-  let selected = (Array.isArray(variant.selected) ? variant.selected : []).map(cloneBudgetPickForUi);
+  let selected = budgetVariantRowsForUi(budgetResult, variant).map(cloneBudgetPickForUi);
   let totalSpent = toBudgetNumber(variant.total_spent ?? budgetResult.total_spent);
   let remaining = toBudgetNumber(variant.remaining ?? budgetResult.remaining);
 
@@ -2876,6 +2900,9 @@ function getActiveBudgetPreview() {
     totalSpent,
     remaining,
     totalSavings: estimateBudgetSavingsFromPicks(selected),
+    emptyMessage: selected.length
+      ? ''
+      : 'Esta variante no trae filas de juegos en el JSON local. Revisa el JSON técnico o regenera el reporte; no se muestra una tabla vacía.',
     replacementSourceAppid,
     replacementCandidateAppid,
   };
@@ -2941,7 +2968,7 @@ function renderLatestBudgetReplacementOptions(pick, preview) {
 function renderLatestBudgetSelection(preview) {
   const selected = Array.isArray(preview && preview.selected) ? preview.selected : [];
   if (!selected.length) {
-    return '<div class="latest-budget-empty">No hubo juegos que entraran en el presupuesto de este run.</div>';
+    return `<div class="latest-budget-empty">${escapeHtml((preview && preview.emptyMessage) || 'No hubo juegos que entraran en el presupuesto de este run.')}</div>`;
   }
   return `
     <div class="latest-budget-selection-grid">

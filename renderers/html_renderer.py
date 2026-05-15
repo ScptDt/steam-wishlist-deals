@@ -831,23 +831,39 @@ def _html_budget_variant_controls(variants: list[dict], *, selected_variant: str
 </div>'''
 
 
+def _budget_variant_rows(variant: dict) -> list[dict]:
+    if not isinstance(variant, dict):
+        return []
+    selected = variant.get("selected")
+    if isinstance(selected, list) and selected:
+        return selected
+    items = variant.get("items")
+    if isinstance(items, list) and items:
+        return items
+    return []
+
+
 def _html_budget_variant_panel(variant: dict, *, is_selected: bool) -> str:
     budget_rows = ""
-    for idx, pick in enumerate(variant.get("selected", []), 1):
-        capsule = CAPSULE_URL.format(appid=pick["appid"])
-        pick_context = _html_budget_pick_context(pick)
-        reroll_button = _html_budget_reroll_button(pick, variant=variant)
-        row_key = f'{variant.get("id", "variant")}::{pick.get("appid", "")}'
+    variant_rows = _budget_variant_rows(variant)
+    for idx, pick in enumerate(variant_rows, 1):
+        pick_data = pick if isinstance(pick, dict) else {}
+        appid = str(pick_data.get("appid") or "")
+        pick_name = str(pick_data.get("name") or appid or "Juego sin nombre")
+        capsule = CAPSULE_URL.format(appid=appid)
+        pick_context = _html_budget_pick_context(pick_data)
+        reroll_button = _html_budget_reroll_button(pick_data, variant=variant)
+        row_key = f'{variant.get("id", "variant")}::{appid}'
         budget_rows += f'''<tr data-budget-row="{_html_esc(row_key)}">
   <td><div class="budget-row-index"><span>{idx}</span>{reroll_button}</div></td>
-  <td class="budget-value-score">{_html_esc(str(pick.get("score", "—")))}</td>
-  <td class="budget-value-discount">-{pick["discount"]}%</td>
-  <td class="budget-value-price">{_html_esc(pick["price_final"])}</td>
+  <td class="budget-value-score">{_html_esc(str(pick_data.get("score", "—")))}</td>
+  <td class="budget-value-discount">-{_html_esc(str(pick_data.get("discount", 0)))}%</td>
+  <td class="budget-value-price">{_html_esc(str(pick_data.get("price_final", "—")))}</td>
   <td>
     <div class="game-cell">
       <img class="game-thumb" src="{capsule}" alt="" loading="lazy" onerror="this.style.display='none'">
       <span>
-        <a class="budget-value-link" href="{STORE_URL.format(appid=pick['appid'])}" target="_blank">{_html_esc(pick['name'])}</a>
+        <a class="budget-value-link" href="{STORE_URL.format(appid=appid)}" target="_blank">{_html_esc(pick_name)}</a>
         <span class="budget-value-context">{pick_context}</span>
         <div class="budget-reroll-preview hidden"></div>
       </span>
@@ -859,10 +875,16 @@ def _html_budget_variant_panel(variant: dict, *, is_selected: bool) -> str:
         f'{variant.get("games_count", 0)} juegos &middot; ${variant.get("total_spent", 0):.0f} gastados '
         f'&middot; ${variant.get("remaining", 0):.0f} restante'
     )
+    rows_html = (
+        '<div class="table-wrap"><table class="deals-table"><thead><tr><th>#</th><th>Score</th><th>%</th><th>Precio</th><th>Juego</th></tr></thead><tbody>'
+        f'{budget_rows}</tbody></table></div>'
+        if budget_rows
+        else '<p class="section-desc budget-empty-state">Esta variante no trae filas de juegos en el JSON local. Revisa el JSON técnico o regenera el reporte; no se muestra una tabla vacía.</p>'
+    )
     return f'''<div class="{panel_class}" data-budget-panel="{_html_esc(str(variant.get("id") or ""))}">
   <p class="section-desc budget-panel-desc">{summary}</p>
   <div class="budget-reroll-help">Usa <strong>Reroll</strong> junto al número para cambiar este juego sin romper el presupuesto.</div>
-  <div class="table-wrap"><table class="deals-table"><thead><tr><th>#</th><th>Score</th><th>%</th><th>Precio</th><th>Juego</th></tr></thead><tbody>{budget_rows}</tbody></table></div>
+  {rows_html}
 </div>'''
 
 
@@ -882,16 +904,19 @@ def _html_budget_variants_with_fallback_rows(budget_data: dict) -> list[dict]:
     if not variants:
         return [budget_data]
 
-    root_selection = budget_data.get("selected") or []
-    if not root_selection:
+    root_selection = budget_data.get("selected")
+    if not isinstance(root_selection, list) or not root_selection:
         return variants
 
-    selected_variant = budget_data.get("selected_variant")
-    single_variant_without_selection = selected_variant is None and len(variants) == 1
+    selected_variant = str(budget_data.get("selected_variant") or "").strip()
+    single_variant_without_selection = not selected_variant and len(variants) == 1
     return [
         {**variant, "selected": root_selection}
-        if not variant.get("selected")
-        and (variant.get("id") == selected_variant or single_variant_without_selection)
+        if not _budget_variant_rows(variant)
+        and (
+            (selected_variant and str(variant.get("id") or "").strip() == selected_variant)
+            or single_variant_without_selection
+        )
         else variant
         for variant in variants
     ]
@@ -1953,9 +1978,11 @@ def generate_html(
 
     if budget_result:
         budget_data = budget_result
-        selected_variant = budget_data.get("selected_variant")
         variants = budget_data.get("variants") or []
         panel_variants = _html_budget_variants_with_fallback_rows(budget_data)
+        selected_variant = budget_data.get("selected_variant")
+        if not selected_variant and len(panel_variants) == 1:
+            selected_variant = panel_variants[0].get("id")
         pct_used = (
             budget_data["total_spent"] / budget_data["budget"] * 100
             if budget_data["budget"] > 0

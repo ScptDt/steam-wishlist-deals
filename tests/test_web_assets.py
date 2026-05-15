@@ -526,6 +526,19 @@ class WebAssetsTests(unittest.TestCase):
         self.assertIn(".latest-selection-result-conservar", app_css)
         self.assertIn(".latest-selection-result-signals", app_css)
 
+    def test_latest_budget_preview_normalizes_variant_rows_and_empty_state(self) -> None:
+        app_js = (ROOT / "web" / "steam_deals" / "app.js").read_text(
+            encoding="utf-8"
+        )
+
+        self.assertIn("function budgetVariantRawRows", app_js)
+        self.assertIn("Array.isArray(variant.selected) && variant.selected.length", app_js)
+        self.assertIn("Array.isArray(variant.items) && variant.items.length", app_js)
+        self.assertIn("function shouldUseRootBudgetRowsForVariant", app_js)
+        self.assertIn("budgetVariantRowsForUi(budgetResult, variant).map", app_js)
+        self.assertIn("Esta variante no trae filas de juegos", app_js)
+        self.assertIn("latest-budget-empty", app_js)
+
     def test_selection_review_ui_keeps_no_commerce_copy_guardrail(self) -> None:
         app_js = (ROOT / "web" / "steam_deals" / "app.js").read_text(
             encoding="utf-8"
