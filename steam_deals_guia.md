@@ -86,9 +86,9 @@ En Web/Desktop se puede pegar una ruta local al CSV. En Windows, las rutas con e
 C:/Users/Bryan Grijalva/Downloads/HLTB_Games_2026-05-15.csv
 ```
 
-En la UI web no hace falta envolver la ruta en comillas; en CLI sí conviene usar comillas si la ruta tiene espacios. El preflight debe tratar la ruta como dato local sensible: confirmar si existe o no, pero sin filtrar la ruta completa en mensajes públicos/logs.
+En la UI web no hace falta envolver la ruta en comillas; en CLI sí conviene usar comillas si la ruta tiene espacios. El preflight trata la ruta como dato local sensible: confirma si existe o no, pero sin filtrar la ruta completa en mensajes públicos/logs.
 
-Plan de mejora pendiente: detectar de forma explícita y no intrusiva exports `HLTB*.csv` en `Documents/SteamTools/imports`, `Documents` o `Downloads` cuando el campo esté vacío, manteniendo la ruta redactada y sin subir archivos al navegador.
+Si el campo HLTB está vacío, Web/Desktop puede sugerir de forma opt-in y no intrusiva un export local `HLTB*.csv` encontrado en `Documents/SteamTools/imports`, `Documents` o `Downloads`. La sugerencia muestra el origen redactado como `[ruta]`, no sube archivos al navegador y no usa el CSV automáticamente: hay que confirmar pegando explícitamente la ruta completa en el campo HLTB.
 
 En la implementación actual, este dominio ya vive en `steam_deals_hltb.py`, mientras `steam_deals_generator.py` mantiene wrappers compatibles durante la modularización incremental.
 

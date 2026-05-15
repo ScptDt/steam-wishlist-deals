@@ -367,6 +367,11 @@ a:hover { text-decoration: underline; }
   color: #9eacb6;
   opacity: 0.92;
 }
+.hltb-autodetect-suggestion {
+  border-left: 2px solid var(--accent);
+  padding-left: 0.5rem;
+  opacity: 1 !important;
+}
 .optional { color: var(--text2); font-weight: 400; font-size: 0.75rem; }
 input[type="text"], input[type="number"], input[type="password"], select {
   width: 100%; padding: 0.55rem 0.75rem; font-size: 0.9rem;

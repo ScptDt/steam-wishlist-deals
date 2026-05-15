@@ -14,9 +14,11 @@ from steam_deals_paths import OUTPUT_DIR_ENV_VAR
 from steam_deals_web import (
     DEFAULT_OUTPUT_DIR,
     Handler,
+    build_hltb_autodetect_public_suggestion,
     build_command,
     build_pd2_command,
     detect_file_path,
+    find_hltb_csv_candidates,
     generated_file_error_page,
     generated_file_content_disposition,
     generated_file_content_type,
@@ -198,6 +200,63 @@ class GeneratedFilesServingTests(unittest.TestCase):
             self.assertEqual(cmd[cmd.index("--hltb") + 1], hltb_path)
             self.assertEqual(cmd.count(hltb_path), 1)
 
+    def test_find_hltb_csv_candidates_prefers_newest_matching_export(self) -> None:
+        with TemporaryDirectory() as temp_dir:
+            imports_dir = Path(temp_dir) / "Documents" / "SteamTools" / "imports"
+            documents_dir = Path(temp_dir) / "Documents"
+            downloads_dir = Path(temp_dir) / "Downloads"
+            imports_dir.mkdir(parents=True)
+            documents_dir.mkdir(exist_ok=True)
+            downloads_dir.mkdir()
+            old_export = imports_dir / "HLTB_Games_2026-05-14.csv"
+            newest_export = downloads_dir / "HLTB_Games_2026-05-15.csv"
+            ignored_lowercase = downloads_dir / "hltb_games_2026-05-16.csv"
+            old_export.write_text("Title\nOld", encoding="utf-8")
+            newest_export.write_text("Title\nNew", encoding="utf-8")
+            ignored_lowercase.write_text("Title\nIgnored", encoding="utf-8")
+            os.utime(old_export, (1_700_000_000, 1_700_000_000))
+            os.utime(newest_export, (1_700_100_000, 1_700_100_000))
+            os.utime(ignored_lowercase, (1_700_200_000, 1_700_200_000))
+
+            candidates = find_hltb_csv_candidates(home=Path(temp_dir))
+
+        self.assertEqual(candidates[0], newest_export)
+        self.assertIn(old_export, candidates)
+        self.assertNotIn(ignored_lowercase, candidates)
+
+    def test_find_hltb_csv_candidates_uses_directory_priority_for_ties(self) -> None:
+        with TemporaryDirectory() as temp_dir:
+            imports_dir = Path(temp_dir) / "imports"
+            documents_dir = Path(temp_dir) / "documents"
+            downloads_dir = Path(temp_dir) / "downloads"
+            for directory in (imports_dir, documents_dir, downloads_dir):
+                directory.mkdir()
+            imports_export = imports_dir / "HLTB_imports.csv"
+            documents_export = documents_dir / "HLTB_documents.csv"
+            downloads_export = downloads_dir / "HLTB_downloads.csv"
+            for path in (imports_export, documents_export, downloads_export):
+                path.write_text("Title\nGame", encoding="utf-8")
+                os.utime(path, (1_700_000_000, 1_700_000_000))
+
+            candidates = find_hltb_csv_candidates(
+                search_dirs=[imports_dir, documents_dir, downloads_dir]
+            )
+
+        self.assertEqual(candidates[:3], [imports_export, documents_export, downloads_export])
+
+    def test_hltb_autodetect_public_suggestion_redacts_path_and_requires_confirmation(self) -> None:
+        private_path = Path("/private/home/user/Downloads/HLTB_Games_2026-05-15.csv")
+
+        suggestion = build_hltb_autodetect_public_suggestion(private_path)
+
+        self.assertIsNotNone(suggestion)
+        payload = json.dumps(suggestion, ensure_ascii=False)
+        self.assertIn("[ruta]", payload)
+        self.assertIn("No se usará automáticamente", payload)
+        self.assertTrue(suggestion["requires_confirmation"])
+        self.assertNotIn(str(private_path), payload)
+        self.assertNotIn("HLTB_Games_2026-05-15.csv", payload)
+
     def test_open_output_folder_creates_directory_and_uses_platform_opener(self) -> None:
         with TemporaryDirectory() as temp_dir:
             target = Path(temp_dir) / "reports"
@@ -299,6 +358,45 @@ class GeneratedFilesServingTests(unittest.TestCase):
         self.assertIn("[ruta]", payload)
         self.assertIn("ruta completa sin comillas", payload)
         self.assertIn("JSON de matches externos wishlist", payload)
+
+    def test_preflight_suggests_redacted_hltb_autodetect_only_when_field_empty(self) -> None:
+        original_find_hltb_csv_candidates = web.find_hltb_csv_candidates
+        original_load_config = web.load_config
+        detected_path = Path("/private/home/user/Downloads/HLTB_Games_2026-05-15.csv")
+        calls = []
+
+        def fake_find_hltb_csv_candidates():
+            calls.append("called")
+            return [detected_path]
+
+        web.find_hltb_csv_candidates = fake_find_hltb_csv_candidates
+        web.load_config = lambda: {"key": "SAVED-SECRET"}
+        try:
+            empty_handler = _FakeJsonHandler(
+                {"config": {"vanity": "gaben", "hltb": ""}}
+            )
+            Handler._serve_preflight(empty_handler)
+
+            with TemporaryDirectory() as temp_dir:
+                existing_hltb = Path(temp_dir) / "HLTB_Games.csv"
+                existing_hltb.write_text("Title\nGame", encoding="utf-8")
+                filled_handler = _FakeJsonHandler(
+                    {"config": {"vanity": "gaben", "hltb": str(existing_hltb)}}
+                )
+                Handler._serve_preflight(filled_handler)
+        finally:
+            web.find_hltb_csv_candidates = original_find_hltb_csv_candidates
+            web.load_config = original_load_config
+
+        payload = json.dumps(empty_handler.json, ensure_ascii=False)
+        self.assertEqual(empty_handler.status, 200)
+        self.assertEqual(calls, ["called"])
+        self.assertIn("hltb_autodetect", empty_handler.json)
+        self.assertIn("[ruta]", payload)
+        self.assertIn("No se usará automáticamente", payload)
+        self.assertNotIn(str(detected_path), payload)
+        self.assertNotIn("HLTB_Games_2026-05-15.csv", payload)
+        self.assertIsNone(filled_handler.json["hltb_autodetect"])
 
     def test_generated_file_content_type_matches_report_extensions(self) -> None:
         self.assertEqual(generated_file_content_type(".html"), "text/html")

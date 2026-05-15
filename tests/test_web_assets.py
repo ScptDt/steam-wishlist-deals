@@ -158,6 +158,9 @@ class WebAssetsTests(unittest.TestCase):
         self.assertIn("rutas Windows con espacios", index_html)
         self.assertIn("se conservan como un solo argumento", index_html)
         self.assertIn("[ruta]", index_html)
+        self.assertIn('id="hltb-autodetect-suggestion"', index_html)
+        self.assertIn("hltb_autodetect", app_js)
+        self.assertIn("No se usará automáticamente", app_js)
         self.assertIn("'hltb'", app_js)
 
     def test_execution_log_copy_uses_native_bridge_then_browser_clipboard(self) -> None:

@@ -14,6 +14,7 @@ import sys
 import threading
 import urllib.parse
 import webbrowser
+from collections.abc import Iterable
 from datetime import datetime
 from http.server import HTTPServer, BaseHTTPRequestHandler, ThreadingHTTPServer
 from pathlib import Path
@@ -86,6 +87,12 @@ STEAM_DEALS_MISSING_ASSETS_HTML = build_missing_assets_html(
     "web/steam_deals/index.html + app.css + app.js",
 )
 DEFAULT_OUTPUT_DIR = PROJECT_DIR / "output"
+HLTB_AUTODETECT_PATTERN = "HLTB*.csv"
+HLTB_AUTODETECT_RELATIVE_DIRS = (
+    Path("Documents") / "SteamTools" / "imports",
+    Path("Documents"),
+    Path("Downloads"),
+)
 LOCAL_SESSION_TOKEN = create_local_session_token()
 PROTECTED_POST_PATHS = frozenset(
     {
@@ -698,6 +705,61 @@ def normalize_optional_local_path_value(raw: object) -> str:
     return value
 
 
+def hltb_autodetect_search_dirs(home: Path | None = None) -> list[Path]:
+    root = Path.home() if home is None else Path(home).expanduser()
+    return [root / relative_dir for relative_dir in HLTB_AUTODETECT_RELATIVE_DIRS]
+
+
+def find_hltb_csv_candidates(
+    *,
+    home: Path | None = None,
+    search_dirs: Iterable[Path | str] | None = None,
+) -> list[Path]:
+    directories = (
+        [Path(path).expanduser() for path in search_dirs]
+        if search_dirs is not None
+        else hltb_autodetect_search_dirs(home)
+    )
+    candidates: list[tuple[float, int, str, Path]] = []
+    for priority, directory in enumerate(directories):
+        try:
+            if not directory.is_dir():
+                continue
+            matches = list(directory.glob(HLTB_AUTODETECT_PATTERN))
+        except OSError:
+            continue
+        for candidate in matches:
+            try:
+                if not candidate.is_file():
+                    continue
+                modified_at = candidate.stat().st_mtime
+            except OSError:
+                continue
+            candidates.append((modified_at, priority, candidate.name.lower(), candidate))
+    candidates.sort(key=lambda item: (-item[0], item[1], item[2]))
+    return [candidate for _, _, _, candidate in candidates]
+
+
+def build_hltb_autodetect_public_suggestion(candidate: Path | None) -> dict | None:
+    if candidate is None:
+        return None
+    expanded = candidate.expanduser()
+    label = redact_sensitive_text(str(expanded), extra_values=[candidate, expanded])
+    if label == str(expanded):
+        label = "[ruta]"
+    message = (
+        f"Se detectó un posible export HLTB CSV local en {label}. "
+        "No se usará automáticamente; confirma explícitamente pegando la ruta completa "
+        "en el campo HLTB si quieres incluirlo."
+    )
+    return {
+        "found": True,
+        "label": label,
+        "message": message,
+        "requires_confirmation": True,
+    }
+
+
 # ─── Build CLI command ───────────────────────────
 
 
@@ -969,6 +1031,7 @@ class Handler(BaseHTTPRequestHandler):
                 "Falta el perfil de Steam (vanity, Steam ID o URL de perfil)."
             )
 
+        hltb_autodetect = None
         hltb = normalize_optional_local_path_value(config.get("hltb"))
         if hltb and not Path(hltb).expanduser().exists():
             issues.append(
@@ -976,6 +1039,13 @@ class Handler(BaseHTTPRequestHandler):
                 "las rutas Windows con espacios se conservan como un solo argumento: "
                 + redact_sensitive_text(hltb, extra_values=[Path(hltb).expanduser()])
             )
+        elif not hltb:
+            hltb_candidates = find_hltb_csv_candidates()
+            hltb_autodetect = build_hltb_autodetect_public_suggestion(
+                hltb_candidates[0] if hltb_candidates else None
+            )
+            if hltb_autodetect:
+                warnings.append(hltb_autodetect["message"])
 
         family_json = (config.get("family_json") or "").strip()
         if family_json and not Path(family_json).expanduser().exists():
@@ -1021,6 +1091,7 @@ class Handler(BaseHTTPRequestHandler):
                 "ok": len(issues) == 0,
                 "issues": issues,
                 "warnings": warnings,
+                "hltb_autodetect": hltb_autodetect,
                 "output_dir": redact_sensitive_text(str(output_dir), extra_values=[output_dir]),
                 "output_label": output_label,
             }

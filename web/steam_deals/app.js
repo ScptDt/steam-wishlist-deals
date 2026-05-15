@@ -1604,6 +1604,19 @@ function maybeShowActionableHint(text, cls) {
   if (hint) appendLine(hint, 'warn');
 }
 
+function updateHltbAutodetectSuggestion(suggestion) {
+  const el = $('hltb-autodetect-suggestion');
+  if (!el) return;
+  const hltbInput = $('hltb');
+  if (!suggestion || !suggestion.found || (hltbInput && hltbInput.value.trim())) {
+    el.textContent = '';
+    el.classList.add('hidden');
+    return;
+  }
+  el.textContent = suggestion.message || 'Se detectó un posible export HLTB CSV local en [ruta]. No se usará automáticamente; confirma pegando la ruta completa en el campo HLTB si quieres usarlo.';
+  el.classList.remove('hidden');
+}
+
 async function runPreflightUI(filtersOverride = null) {
   const filters = filtersOverride || getFilters();
   const pre = await localMutableFetch('/api/preflight', {
@@ -1612,6 +1625,7 @@ async function runPreflightUI(filtersOverride = null) {
     body: JSON.stringify({config: getConfig(), filters}),
   });
   const preData = await pre.json();
+  updateHltbAutodetectSuggestion(preData.hltb_autodetect || null);
   appendLine('Preflight ejecutado.', preData.ok ? 'ok' : 'warn');
   (preData.warnings || []).forEach(w => appendLine('WARN: ' + w, 'warn'));
   (preData.issues || []).forEach(i => appendLine('ISSUE: ' + i, 'err'));
@@ -1986,6 +2000,11 @@ btnPreflight.addEventListener('click', async () => {
   } catch(e) {
     appendLine('No se pudo ejecutar preflight: ' + e.message, 'err');
   }
+});
+
+const hltbField = $('hltb');
+if (hltbField) hltbField.addEventListener('input', () => {
+  if (hltbField.value.trim()) updateHltbAutodetectSuggestion(null);
 });
 
 btnDesktopDoctor.addEventListener('click', async () => {
