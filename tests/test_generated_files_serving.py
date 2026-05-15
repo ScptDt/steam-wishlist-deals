@@ -187,6 +187,17 @@ class GeneratedFilesServingTests(unittest.TestCase):
             "/tmp/wishlist-external.json",
         )
 
+    def test_build_command_preserves_hltb_windows_paths_with_spaces(self) -> None:
+        path_with_slashes = "C:/Users/Bryan Grijalva/Downloads/HLTB_Games_2026-05-15.csv"
+        path_with_backslashes = r"C:\Users\Bryan Grijalva\Downloads\HLTB_Games_2026-05-15.csv"
+
+        for hltb_path in (path_with_slashes, path_with_backslashes):
+            cmd = build_command({"vanity": "gaben", "hltb": f'  "{hltb_path}"  '}, {})
+
+            self.assertIn("--hltb", cmd)
+            self.assertEqual(cmd[cmd.index("--hltb") + 1], hltb_path)
+            self.assertEqual(cmd.count(hltb_path), 1)
+
     def test_open_output_folder_creates_directory_and_uses_platform_opener(self) -> None:
         with TemporaryDirectory() as temp_dir:
             target = Path(temp_dir) / "reports"
@@ -255,7 +266,7 @@ class GeneratedFilesServingTests(unittest.TestCase):
 
     def test_preflight_sanitizes_public_path_fields_and_messages(self) -> None:
         original_load_config = web.load_config
-        hltb_path = "/usr/bin/steamtools-missing.csv"
+        hltb_path = "C:/Users/Bryan Grijalva/Downloads/HLTB_Games_2026-05-15.csv"
         family_path = "/private/tmp/steamtools-family-missing.json"
         wishlist_matches_path = "/private/tmp/wishlist-external-missing.json"
         output_path = "/srv/app/steamtools-output-secret"
@@ -280,10 +291,13 @@ class GeneratedFilesServingTests(unittest.TestCase):
         payload = str(handler.json)
         self.assertEqual(handler.status, 200)
         self.assertNotIn(hltb_path, payload)
+        self.assertNotIn("Bryan Grijalva", payload)
+        self.assertNotIn("HLTB_Games_2026-05-15.csv", payload)
         self.assertNotIn(family_path, payload)
         self.assertNotIn(wishlist_matches_path, payload)
         self.assertNotIn(output_path, payload)
         self.assertIn("[ruta]", payload)
+        self.assertIn("ruta completa sin comillas", payload)
         self.assertIn("JSON de matches externos wishlist", payload)
 
     def test_generated_file_content_type_matches_report_extensions(self) -> None:

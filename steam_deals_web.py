@@ -690,6 +690,14 @@ def normalize_steam_profile_value(raw: str | None) -> str:
     return f"https://steamcommunity.com/id/{value}/"
 
 
+def normalize_optional_local_path_value(raw: object) -> str:
+    """Trim UI path input while preserving spaces inside the path."""
+    value = str(raw or "").strip()
+    if len(value) >= 2 and value[0] == value[-1] and value[0] in {'"', "'"}:
+        value = value[1:-1].strip()
+    return value
+
+
 # ─── Build CLI command ───────────────────────────
 
 
@@ -702,8 +710,9 @@ def build_command(config: dict, filters: dict) -> list[str]:
     vanity = normalize_steam_profile_value(config.get("vanity"))
     if vanity:
         cmd += ["--vanity", vanity]
-    if config.get("hltb"):
-        cmd += ["--hltb", config["hltb"]]
+    hltb_path = normalize_optional_local_path_value(config.get("hltb"))
+    if hltb_path:
+        cmd += ["--hltb", hltb_path]
     cmd += ["--output", str(resolve_output_dir(config.get("output")))]
     if config.get("discount") is not None:
         cmd += ["--discount", str(config["discount"])]
@@ -960,10 +969,11 @@ class Handler(BaseHTTPRequestHandler):
                 "Falta el perfil de Steam (vanity, Steam ID o URL de perfil)."
             )
 
-        hltb = (config.get("hltb") or "").strip()
+        hltb = normalize_optional_local_path_value(config.get("hltb"))
         if hltb and not Path(hltb).expanduser().exists():
             issues.append(
-                "No se encontró HLTB CSV: "
+                "No se encontró HLTB CSV local. En Web/Desktop pega la ruta completa sin comillas; "
+                "las rutas Windows con espacios se conservan como un solo argumento: "
                 + redact_sensitive_text(hltb, extra_values=[Path(hltb).expanduser()])
             )
 

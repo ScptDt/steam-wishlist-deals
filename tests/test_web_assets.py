@@ -144,6 +144,22 @@ class WebAssetsTests(unittest.TestCase):
             app_js,
         )
 
+    def test_hltb_path_copy_handles_windows_paths_without_quotes(self) -> None:
+        index_html = (ROOT / "web" / "steam_deals" / "index.html").read_text(
+            encoding="utf-8"
+        )
+        app_js = (ROOT / "web" / "steam_deals" / "app.js").read_text(
+            encoding="utf-8"
+        )
+
+        self.assertIn("Export de HowLongToBeat (CSV)", index_html)
+        self.assertIn("HLTB_Games_2026-05-15.csv", index_html)
+        self.assertIn("En Web/Desktop no uses comillas", index_html)
+        self.assertIn("rutas Windows con espacios", index_html)
+        self.assertIn("se conservan como un solo argumento", index_html)
+        self.assertIn("[ruta]", index_html)
+        self.assertIn("'hltb'", app_js)
+
     def test_execution_log_copy_uses_native_bridge_then_browser_clipboard(self) -> None:
         index_html = (ROOT / "web" / "steam_deals" / "index.html").read_text(
             encoding="utf-8"
