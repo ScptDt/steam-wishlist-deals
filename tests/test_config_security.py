@@ -2,6 +2,7 @@ from __future__ import annotations
 
 import io
 import unittest
+from unittest.mock import patch
 
 import payday2_dlc_tracker
 import payday2_web
@@ -289,6 +290,24 @@ class ConfigSecretRedactionTests(unittest.TestCase):
         self.assertEqual(handler.status, 200)
         self.assertEqual(handler.json["vanity"], "gaben")
         self.assertNotIn("EXPECTED-TOKEN", str(handler.json))
+
+    def test_steam_deals_get_config_survives_unavailable_cwd_during_redaction(self) -> None:
+        original_load_config = steam_deals_web.load_config
+        steam_deals_web.load_config = lambda: {"vanity": "gaben", "key": "STEAM-SECRET"}
+        handler = _make_steam_route_handler("/api/config")
+        try:
+            with patch(
+                "shared_web_infra.Path.cwd",
+                side_effect=FileNotFoundError("cwd no longer exists"),
+            ):
+                steam_deals_web.Handler.do_GET(handler)
+        finally:
+            steam_deals_web.load_config = original_load_config
+
+        self.assertEqual(handler.status, 200)
+        self.assertEqual(handler.json["vanity"], "gaben")
+        self.assertTrue(handler.json["has_key"])
+        self.assertNotIn("STEAM-SECRET", str(handler.json))
 
     def test_payday2_public_config_response_redacts_secrets(self) -> None:
         result = payday2_web.build_public_config_response(

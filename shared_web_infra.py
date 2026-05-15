@@ -304,7 +304,14 @@ def _known_sensitive_values(extra_values: Iterable[Any] = ()) -> list[str]:
         env_value = os.environ.get(env_name)
         if env_value:
             values.append(env_value)
-    for path_value in (Path.home(), Path.cwd(), getattr(sys, "_MEIPASS", None)):
+    path_values: list[Any] = []
+    for path_getter in (Path.home, Path.cwd):
+        try:
+            path_values.append(path_getter())
+        except OSError:
+            continue
+    path_values.append(getattr(sys, "_MEIPASS", None))
+    for path_value in path_values:
         if path_value:
             values.append(str(path_value))
     for value in extra_values:

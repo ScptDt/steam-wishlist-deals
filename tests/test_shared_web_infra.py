@@ -282,6 +282,22 @@ class PublicErrorRedactionTests(unittest.TestCase):
         self.assertIn("[redactado]", redacted)
         self.assertIn("[ruta]", redacted)
 
+    def test_redact_sensitive_text_tolerates_unavailable_cwd(self) -> None:
+        with patch(
+            "shared_web_infra.Path.cwd",
+            side_effect=FileNotFoundError("cwd no longer exists"),
+        ):
+            redacted = redact_sensitive_text(
+                "Traceback at /tmp/private key=STEAMSECRET123",
+                extra_values=["STEAMSECRET123"],
+            )
+
+        self.assertNotIn("Traceback", redacted)
+        self.assertNotIn("/tmp/private", redacted)
+        self.assertNotIn("STEAMSECRET123", redacted)
+        self.assertIn("[ruta]", redacted)
+        self.assertIn("[redactado]", redacted)
+
     def test_safe_public_error_payload_sanitizes_exception_detail(self) -> None:
         payload = safe_public_error_payload(
             "boom",
