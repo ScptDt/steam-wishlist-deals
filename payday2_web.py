@@ -491,6 +491,8 @@ def mark_bundle_owned(bundle_id: str) -> dict:
         bundle_appids = pd2.normalize_payday2_bundle_dlc_appids(
             bundle, _store["pd2_dlc_appids"]
         )
+        if not bundle_appids:
+            return {"bundle_id": bundle_id, "marked": [], "total_marked": 0}
         for appid in bundle_appids:
             if appid not in owned:
                 owned.add(appid)
@@ -529,6 +531,8 @@ def unmark_bundle_owned(bundle_id: str) -> dict:
         bundle_appids = pd2.normalize_payday2_bundle_dlc_appids(
             bundle, _store["pd2_dlc_appids"]
         )
+        if not bundle_appids:
+            return {"bundle_id": bundle_id, "unmarked": [], "total_unmarked": 0}
         for appid in bundle_appids:
             if appid in owned:
                 owned.discard(appid)

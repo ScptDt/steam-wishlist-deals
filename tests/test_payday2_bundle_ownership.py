@@ -30,7 +30,13 @@ class Payday2BundleOwnershipTests(unittest.TestCase):
             payday2_web._store.clear()
             payday2_web._store.update(self.original_store)
 
-    def _load_store(self, *, owned: set[str]) -> None:
+    def _load_store(
+        self,
+        *,
+        owned: set[str],
+        bundles: list[dict] | None = None,
+        recommendations: dict | None = None,
+    ) -> None:
         all_dlcs = {
             "10": _dlc("10", "PAYDAY 2: Valid Heist"),
             "20": _dlc("20", "PAYDAY 2: Valid Weapon Pack"),
@@ -48,8 +54,8 @@ class Payday2BundleOwnershipTests(unittest.TestCase):
                     "owned": set(owned),
                     "prices": all_dlcs,
                     "sale_name": "",
-                    "recommendations": {},
-                    "bundles": [
+                    "recommendations": recommendations if recommendations is not None else {},
+                    "bundles": bundles if bundles is not None else [
                         {
                             "bundle_id": "bundle-1",
                             "name": "Mixed bundle",
@@ -91,6 +97,39 @@ class Payday2BundleOwnershipTests(unittest.TestCase):
 
         self.assertEqual(result["unmarked"], ["10", "20"])
         self.assertEqual(saved, [("steam-id", ["999"])])
+
+    def test_empty_bundle_action_does_not_persist_or_recompute(self) -> None:
+        saved: list[tuple[str, list[str]]] = []
+        payday2_web.pd2.save_owned = lambda steam_id, owned: saved.append(
+            (steam_id, sorted(owned))
+        )
+        recommendations = {"sentinel": object()}
+        self._load_store(
+            owned={"20"},
+            recommendations=recommendations,
+            bundles=[
+                {
+                    "bundle_id": "empty-bundle",
+                    "name": "Only unknown apps",
+                    "dlc_appids": ["999", "888", "999"],
+                }
+            ],
+        )
+
+        mark_result = payday2_web.mark_bundle_owned("empty-bundle")
+        unmark_result = payday2_web.unmark_bundle_owned("empty-bundle")
+        payload = payday2_web.get_data_json()
+
+        self.assertEqual(mark_result["marked"], [])
+        self.assertEqual(mark_result["total_marked"], 0)
+        self.assertEqual(unmark_result["unmarked"], [])
+        self.assertEqual(unmark_result["total_unmarked"], 0)
+        self.assertEqual(saved, [])
+        self.assertIs(payday2_web._store["recommendations"], recommendations)
+        self.assertEqual(payday2_web._store["owned"], {"20"})
+        self.assertEqual(payload["ownedCount"], 1)
+        self.assertEqual(payload["missingCount"], 1)
+        self.assertEqual(payload["bundles"], [])
 
 
 if __name__ == "__main__":
