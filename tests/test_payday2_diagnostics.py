@@ -133,6 +133,13 @@ class Payday2DlcDiagnosticTests(unittest.TestCase):
         self.assertIn("Acción sugerida", report)
         self.assertNotIn("Traceback", report)
 
+    def test_bundle_dlc_normalization_filters_unknowns_and_duplicates(self) -> None:
+        bundle = {"dlc_appids": ["101", "999", "101", 202, "", None]}
+
+        normalized = pd2.normalize_payday2_bundle_dlc_appids(bundle, ["101", "202"])
+
+        self.assertEqual(normalized, ["101", "202"])
+
 
 if __name__ == "__main__":
     unittest.main()

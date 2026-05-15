@@ -351,6 +351,24 @@ def _strip_prefix(name: str) -> str:
     return re.sub(r"^PAYDAY\s*2\s*[:：\-–]\s*", "", name, flags=re.IGNORECASE).strip()
 
 
+def normalize_payday2_bundle_dlc_appids(bundle: dict, pd2_dlc_appids) -> list[str]:
+    catalog_appids = {str(appid).strip() for appid in pd2_dlc_appids if str(appid).strip()}
+    if not isinstance(bundle, dict):
+        return []
+    raw_appids = bundle.get("dlc_appids", [])
+    if not isinstance(raw_appids, list):
+        return []
+    seen = set()
+    normalized = []
+    for raw_appid in raw_appids:
+        appid = str(raw_appid).strip()
+        if not appid or appid not in catalog_appids or appid in seen:
+            continue
+        seen.add(appid)
+        normalized.append(appid)
+    return normalized
+
+
 def fetch_bundles(pd2_dlc_appids: list[str], no_cache: bool = False) -> list[dict]:
     """Fetch PD2 bundles from Steam store. Returns [{name, bundle_id, dlc_appids: [str]}]."""
     cache, age = _load_cache(BUNDLES_CACHE)
@@ -374,7 +392,6 @@ def fetch_bundles(pd2_dlc_appids: list[str], no_cache: bool = False) -> list[dic
         return cache.get("bundles", [])
 
     # Step 2: fetch contents of each bundle
-    dlc_set = set(pd2_dlc_appids)
     bundles = []
     for bid in bundle_ids:
         try:
@@ -391,7 +408,9 @@ def fetch_bundles(pd2_dlc_appids: list[str], no_cache: bool = False) -> list[dic
             # Extract appids
             appids = sorted(set(re.findall(r'data-ds-appid="(\d+)"', bhtml)))
             # Filter to only PD2 DLCs (not base game, not other games)
-            dlc_appids = [a for a in appids if a in dlc_set]
+            dlc_appids = normalize_payday2_bundle_dlc_appids(
+                {"dlc_appids": appids}, pd2_dlc_appids
+            )
 
             if dlc_appids:
                 bundles.append(

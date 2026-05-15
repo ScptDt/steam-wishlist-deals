@@ -431,12 +431,16 @@ def get_data_json() -> dict:
             ],
             "bundles": [
                 {
-                    "name": b["name"],
-                    "id": b["bundle_id"],
-                    "dlcAppids": b["dlc_appids"],
-                    "count": len(b["dlc_appids"]),
+                    "name": b.get("name", "Bundle"),
+                    "id": b.get("bundle_id", ""),
+                    "dlcAppids": bundle_appids,
+                    "count": len(bundle_appids),
                 }
                 for b in s.get("bundles", [])
+                for bundle_appids in [
+                    pd2.normalize_payday2_bundle_dlc_appids(b, pd2_dlc_appids)
+                ]
+                if b.get("bundle_id") and bundle_appids
             ],
             "cacheStatus": s.get("cache_status", {}),
         }
@@ -478,13 +482,16 @@ def mark_bundle_owned(bundle_id: str) -> dict:
     """Mark all DLCs in a bundle as owned. Returns list of marked appids."""
     with _store_lock:
         bundles = _store.get("bundles", [])
-        bundle = next((b for b in bundles if b["bundle_id"] == bundle_id), None)
+        bundle = next((b for b in bundles if str(b.get("bundle_id", "")) == bundle_id), None)
         if not bundle:
             return {"error": "Bundle not found", "marked": []}
 
         owned = _store["owned"]
         marked = []
-        for appid in bundle["dlc_appids"]:
+        bundle_appids = pd2.normalize_payday2_bundle_dlc_appids(
+            bundle, _store["pd2_dlc_appids"]
+        )
+        for appid in bundle_appids:
             if appid not in owned:
                 owned.add(appid)
                 marked.append(appid)
@@ -513,13 +520,16 @@ def unmark_bundle_owned(bundle_id: str) -> dict:
     """Unmark all DLCs in a bundle. Returns list of unmarked appids."""
     with _store_lock:
         bundles = _store.get("bundles", [])
-        bundle = next((b for b in bundles if b["bundle_id"] == bundle_id), None)
+        bundle = next((b for b in bundles if str(b.get("bundle_id", "")) == bundle_id), None)
         if not bundle:
             return {"error": "Bundle not found", "unmarked": []}
 
         owned = _store["owned"]
         unmarked = []
-        for appid in bundle["dlc_appids"]:
+        bundle_appids = pd2.normalize_payday2_bundle_dlc_appids(
+            bundle, _store["pd2_dlc_appids"]
+        )
+        for appid in bundle_appids:
             if appid in owned:
                 owned.discard(appid)
                 unmarked.append(appid)
