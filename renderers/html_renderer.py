@@ -658,12 +658,28 @@ def _html_personalized_recommendations(payload: dict | None) -> str:
 
 def _html_wishlist_hygiene_name(item: dict) -> str:
     appid = str(item.get("appid") or item.get("steam_appid") or "").strip()
+    fallback_name = f"AppID {appid}" if appid else "Entrada sin appid"
     name = str(
         item.get("name")
         or item.get("steam_name")
-        or (f"App {appid}" if appid else "Entrada sin appid")
+        or fallback_name
     ).strip()
     return _html_link(name, appid) if appid.isdigit() else _html_esc(name)
+
+
+def _html_wishlist_hygiene_is_appid_only(item: dict) -> bool:
+    appid = str(item.get("appid") or item.get("steam_appid") or "").strip()
+    return bool(
+        appid
+        and (
+            item.get("missing_local_name") is True
+            or not str(item.get("name") or item.get("steam_name") or "").strip()
+        )
+    )
+
+
+def _html_wishlist_hygiene_missing_name_reason() -> str:
+    return "No tenemos nombre local para este AppID; revisa si quieres mantenerlo en wishlist"
 
 
 def _html_wishlist_hygiene_signals(item: dict) -> str:
@@ -684,7 +700,23 @@ def _html_wishlist_hygiene_signals(item: dict) -> str:
 def _html_wishlist_hygiene_reasons(item: dict) -> str:
     reasons = item.get("reasons") if isinstance(item, dict) else []
     compact = [str(reason or "").strip() for reason in reasons if str(reason or "").strip()]
+    missing_reason = _html_wishlist_hygiene_missing_name_reason()
+    if _html_wishlist_hygiene_is_appid_only(item) and not any(
+        "No tenemos nombre local" in reason for reason in compact
+    ):
+        compact.insert(0, missing_reason)
     return _html_esc(" · ".join(compact[:2]) or "revisar manualmente antes de limpiar")
+
+
+def _html_wishlist_hygiene_steam_link(item: dict) -> str:
+    appid = str(item.get("appid") or item.get("steam_appid") or "").strip()
+    if not appid.isdigit():
+        return ""
+    safe_appid = _html_esc(appid)
+    return (
+        f'<a class="wishlist-hygiene-steam-link" href="https://store.steampowered.com/app/{safe_appid}/" '
+        'target="_blank" rel="noopener noreferrer">Abrir en Steam</a>'
+    )
 
 
 def _html_wishlist_hygiene_item(item: dict) -> str:
@@ -693,9 +725,10 @@ def _html_wishlist_hygiene_item(item: dict) -> str:
     action_label = "Solo revisión" if item.get("action") == "review" else "Revisar"
     return f'''<li class="wishlist-hygiene-item"{data_attr}>
   <div class="wishlist-hygiene-main">
-    <strong>{_html_wishlist_hygiene_name(item)}</strong>
-    <div class="wishlist-hygiene-signals">{_html_wishlist_hygiene_signals(item)}</div>
-    <div class="wishlist-hygiene-reasons">{_html_wishlist_hygiene_reasons(item)}</div>
+        <strong>{_html_wishlist_hygiene_name(item)}</strong>
+        <div class="wishlist-hygiene-signals">{_html_wishlist_hygiene_signals(item)}</div>
+        <div class="wishlist-hygiene-reasons">{_html_wishlist_hygiene_reasons(item)}</div>
+        {_html_wishlist_hygiene_steam_link(item)}
   </div>
   <span class="wishlist-hygiene-badge">{_html_esc(action_label)}</span>
 </li>'''

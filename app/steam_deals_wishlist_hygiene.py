@@ -454,6 +454,14 @@ def _append_signal(signals: list[str], reasons: list[str], signal: str, reason: 
         reasons.append(reason)
 
 
+def _missing_local_name_reason() -> str:
+    return "No tenemos nombre local para este AppID; revisa si quieres mantenerlo en wishlist"
+
+
+def _appid_only_label(appid: str) -> str:
+    return f"AppID {appid}" if appid else "Entrada sin appid"
+
+
 def _hltb_status(record: dict) -> str:
     return str(record.get("hltb_status") or record.get("status") or "registrado").strip().lower()
 
@@ -462,8 +470,8 @@ def _hltb_reason(record: dict) -> str:
     status = _hltb_status(record)
     storefront = str(record.get("storefront") or record.get("store") or "").strip()
     if storefront:
-        return f"aparece en HLTB ({status}) para {storefront}"
-    return f"aparece en HLTB ({status})"
+        return f"aparece en HLTB local ({status}) para {storefront}"
+    return f"aparece en HLTB local ({status})"
 
 
 def build_wishlist_hygiene_signals(
@@ -479,6 +487,7 @@ def build_wishlist_hygiene_signals(
 ) -> dict:
     """Build advisory-only hygiene hints from local wishlist signals."""
     wishlist_records = _records(wishlist)
+    owned_by_appid, _owned_by_name = _index_records(owned)
     owned_set = _normalize_appids(owned)
     family_set = _normalize_appids(family_appids)
     catalog_set = _normalize_appids(known_catalog_appids) if known_catalog_appids is not None else None
@@ -491,7 +500,9 @@ def build_wishlist_hygiene_signals(
 
     for index, record in enumerate(wishlist_records):
         appid = _appid(record)
-        name = _name(record) or (f"App {appid}" if appid else "Entrada sin appid")
+        name = _name(record)
+        if not name and appid and appid in owned_by_appid:
+            name = _name(owned_by_appid[appid])
         signals: list[str] = []
         reasons: list[str] = []
         if not appid:
@@ -501,11 +512,15 @@ def build_wishlist_hygiene_signals(
         if appid in family_set:
             _append_signal(signals, reasons, "family", "ya disponible en biblioteca familiar")
         if library_record := _lookup(record, library_by_appid, library_by_name):
-            _append_signal(signals, reasons, "library_match", "aparece en datos locales de biblioteca")
+            _append_signal(signals, reasons, "library_match", "aparece en biblioteca local")
             if not appid:
                 appid = _appid(library_record)
+            if not name:
+                name = _name(library_record)
         if hltb_record := _lookup(record, hltb_by_appid, hltb_by_name):
             _append_signal(signals, reasons, "hltb_match", _hltb_reason(hltb_record))
+            if not name:
+                name = _name(hltb_record)
             storefront = str(hltb_record.get("storefront") or hltb_record.get("store") or "").strip().lower()
             if storefront and storefront != "steam":
                 _append_signal(signals, reasons, "other_store", f"ya figura en otra tienda: {hltb_record.get('storefront') or hltb_record.get('store')}")
@@ -524,17 +539,23 @@ def build_wishlist_hygiene_signals(
                 appid = external_match["_target_appid"]
         if not signals:
             continue
+        missing_local_name = bool(appid and not name)
+        if missing_local_name:
+            reasons.insert(0, _missing_local_name_reason())
+        display_name = name or _appid_only_label(appid)
         for signal in signals:
             signal_counts[signal] = signal_counts.get(signal, 0) + 1
         item = {
             "appid": appid,
-            "name": name,
+            "name": display_name,
             "signals": signals,
             "reasons": reasons,
             "action": "review",
             "advisory_only": True,
             "wishlist_index": index,
         }
+        if missing_local_name:
+            item["missing_local_name"] = True
         if accepted_external_matches:
             item["external_matches"] = accepted_external_matches
         items.append(item)

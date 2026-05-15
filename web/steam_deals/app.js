@@ -3297,22 +3297,33 @@ function renderLatestWishlistHygieneItem(item) {
   const source = item && typeof item === 'object' ? item : {};
   const appid = String(source.appid || source.steam_appid || '').trim();
   const safeAppid = /^\d+$/.test(appid) ? appid : '';
-  const name = source.name || source.steam_name || (appid ? `App ${appid}` : 'Entrada sin appid');
+  const rawName = String(source.name || source.steam_name || '').trim();
+  const isAppidOnly = Boolean(appid && (source.missing_local_name === true || !rawName));
+  const name = rawName || (appid ? `AppID ${appid}` : 'Entrada sin appid');
   const reasons = Array.isArray(source.reasons)
     ? source.reasons.map(reason => String(reason || '').trim()).filter(Boolean).slice(0, 2)
     : [];
+  const missingNameReason = 'No tenemos nombre local para este AppID; revisa si quieres mantenerlo en wishlist';
+  if (isAppidOnly && !reasons.some(reason => reason.includes('No tenemos nombre local'))) {
+    reasons.unshift(missingNameReason);
+  }
+  const visibleReasons = reasons.slice(0, 2);
   const signals = Array.isArray(source.signals)
     ? source.signals.map(latestWishlistHygieneSignalLabel).filter(Boolean).slice(0, 3)
     : [];
   const nameHtml = safeAppid
     ? `<a href="https://store.steampowered.com/app/${escapeHtml(safeAppid)}/" target="_blank" rel="noopener noreferrer">${escapeHtml(name)}</a>`
     : `<span>${escapeHtml(name)}</span>`;
+  const steamLinkHtml = safeAppid
+    ? `<a class="latest-wishlist-steam-link" href="https://store.steampowered.com/app/${escapeHtml(safeAppid)}/" target="_blank" rel="noopener noreferrer">Abrir en Steam</a>`
+    : '';
   return `
     <li class="latest-wishlist-item"${safeAppid ? ` data-latest-wishlist-hygiene-item="${escapeHtml(safeAppid)}"` : ''}>
       <div class="latest-wishlist-item-main">
         <strong>${nameHtml}</strong>
         ${signals.length ? `<span class="latest-wishlist-item-signals">${signals.map(signal => `<em>${escapeHtml(signal)}</em>`).join('')}</span>` : ''}
-        <span class="latest-wishlist-item-reasons">${escapeHtml((reasons.length ? reasons : ['revisar manualmente antes de limpiar']).join(' · '))}</span>
+        <span class="latest-wishlist-item-reasons">${escapeHtml((visibleReasons.length ? visibleReasons : ['revisar manualmente antes de limpiar']).join(' · '))}</span>
+        ${steamLinkHtml}
       </div>
       <span class="latest-wishlist-item-badge">Solo revisión</span>
     </li>

@@ -968,6 +968,24 @@ class WishlistHygieneTests(unittest.TestCase):
         self.assertEqual(hygiene["summary"]["review_items_count"], 3)
         self.assertEqual(hygiene["summary"]["signal_counts"], {"invalid_appid": 3})
 
+    def test_build_wishlist_hygiene_signals_labels_appid_only_and_uses_local_names(self) -> None:
+        hygiene = build_wishlist_hygiene_signals(
+            [{"appid": "460930"}, {"appid": "20"}, {"appid": "30"}],
+            owned={"460930": {}, "20": "Owned Local"},
+            library_games=[{"appid": "30", "name": "Library Local"}],
+        )
+
+        by_appid = {item["appid"]: item for item in hygiene["items"]}
+
+        self.assertEqual(by_appid["460930"]["name"], "AppID 460930")
+        self.assertTrue(by_appid["460930"]["missing_local_name"])
+        self.assertIn("No tenemos nombre local para este AppID", by_appid["460930"]["reasons"][0])
+        self.assertIn("ya está en tu biblioteca", by_appid["460930"]["reasons"])
+        self.assertEqual(by_appid["20"]["name"], "Owned Local")
+        self.assertNotIn("missing_local_name", by_appid["20"])
+        self.assertEqual(by_appid["30"]["name"], "Library Local")
+        self.assertIn("aparece en biblioteca local", by_appid["30"]["reasons"])
+
     def test_build_wishlist_hygiene_signals_marks_high_confidence_external_owned(self) -> None:
         hygiene = build_wishlist_hygiene_signals(
             [{"appid": "1145360", "name": "Hades"}],
@@ -5220,9 +5238,10 @@ class StopApiContractTests(unittest.TestCase):
         self.assertIn("## 🧹 Revisar wishlist", md)
         self.assertIn("Sugerencias locales **advisory-only**", md)
         self.assertIn("no borra, no auto-excluye juegos y no cambia el score", md)
-        self.assertIn("[App 20](https://store.steampowered.com/app/20/)", md)
+        self.assertIn("[Owned Local](https://store.steampowered.com/app/20/)", md)
         self.assertIn("Ya está en biblioteca", md)
         self.assertIn("Solo revisión", md)
+        self.assertIn("[Abrir en Steam](https://store.steampowered.com/app/20/)", md)
 
     def test_generate_html_renders_wishlist_hygiene_escaped_section(self) -> None:
         html = generate_html(
@@ -5254,8 +5273,52 @@ class StopApiContractTests(unittest.TestCase):
         self.assertIn("no borra ni auto-excluye juegos", html)
         self.assertIn("Owned &lt;Game&gt; &amp; Co", html)
         self.assertIn("ya &lt;owned&gt; &amp; local", html)
+        self.assertIn("Abrir en Steam", html)
         self.assertIn("Solo revisión", html)
         self.assertNotIn("Owned <Game> & Co", html)
+
+    def test_generate_reports_explain_appid_only_wishlist_hygiene_items(self) -> None:
+        hygiene = {
+            "items": [
+                {
+                    "appid": "460930",
+                    "signals": ["owned"],
+                    "reasons": ["ya está en tu biblioteca"],
+                    "action": "review",
+                    "advisory_only": True,
+                }
+            ],
+            "summary": {"total_wishlist_items": 1, "review_items_count": 1, "advisory_only": True},
+        }
+        md = generate_md(
+            deals=[],
+            backlog_on_sale=[],
+            have_on_sale=[],
+            vanity="gaben",
+            owned={},
+            wishlist_appids=["460930"],
+            min_discount=50,
+            genres=[],
+            wishlist_hygiene=hygiene,
+        )
+        html = generate_html(
+            deals=[],
+            backlog_on_sale=[],
+            have_on_sale=[],
+            vanity="gaben",
+            owned={},
+            wishlist_appids=["460930"],
+            min_discount=50,
+            genres=[],
+            wishlist_hygiene=hygiene,
+        )
+
+        self.assertIn("AppID 460930", md)
+        self.assertIn("No tenemos nombre local para este AppID", md)
+        self.assertIn("[Abrir en Steam](https://store.steampowered.com/app/460930/)", md)
+        self.assertIn("AppID 460930", html)
+        self.assertIn("No tenemos nombre local para este AppID", html)
+        self.assertIn("Abrir en Steam", html)
 
     def test_generate_reports_hide_empty_wishlist_hygiene(self) -> None:
         empty_hygiene = {"source_signals": [], "items": [], "summary": {"advisory_only": True}}
