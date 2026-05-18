@@ -3536,6 +3536,26 @@ function renderLatestSelectionReviewPanel(report) {
   `;
 }
 
+function renderLatestSelectionReviewTools(report) {
+  const panel = renderLatestSelectionReviewPanel(report);
+  if (!panel) return '';
+  return `
+    <section class="latest-selection-tools" data-latest-selection-tools aria-label="Herramienta Evalúa mi selección">
+      <div class="latest-selection-tools-head">
+        <div>
+          <div class="latest-selection-tools-eyebrow">Herramienta local</div>
+          <div class="latest-selection-tools-title">Evalúa mi selección</div>
+          <div class="latest-selection-tools-copy">Separado del resumen para comparar picks sin llenar el desplegable de acciones. Usa el último JSON local y no cambia tu wishlist.</div>
+        </div>
+        <div class="latest-selection-tools-tabs" role="toolbar" aria-label="Herramientas de recomendaciones">
+          <button type="button" class="latest-selection-tools-tab is-active" aria-current="true">Evalúa mi selección</button>
+        </div>
+      </div>
+      ${panel}
+    </section>
+  `;
+}
+
 function latestSelectionRecordsFromText(text) {
   const seen = new Set();
   const records = [];
@@ -3849,7 +3869,6 @@ function renderLatestReportDetails(report, files = null) {
     renderLatestPersonalizedRecommendations(report, files),
     renderLatestGiftIdeas(report),
     renderLatestWishlistHygiene(report),
-    renderLatestSelectionReviewPanel(report),
     renderLatestShareTopPicks(report),
     renderLatestBudgetPanel(report),
   ].filter(Boolean).join('');
@@ -3858,7 +3877,7 @@ function renderLatestReportDetails(report, files = null) {
     <details class="latest-report-details">
       <summary>
         <span>Acciones y recomendaciones del último reporte</span>
-        <span class="latest-report-details-hint">HTML, Share, JSON, carpeta, alertas, wishlist, regalos y selección</span>
+        <span class="latest-report-details-hint">HTML, Share, JSON, carpeta, alertas, wishlist, regalos y presupuesto</span>
       </summary>
       <div class="latest-report-details-body">${body}</div>
     </details>
@@ -4234,6 +4253,7 @@ function renderLatestReportCard(report, files = null) {
     </div>
     ${renderLatestCacheCoverage(activeReport)}
     ${renderLatestReportDetails(activeReport, files)}
+    ${renderLatestSelectionReviewTools(activeReport)}
   `;
   el.classList.remove('hidden');
   bindLatestReportQuickActions();

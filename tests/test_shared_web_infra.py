@@ -316,7 +316,7 @@ class PublicErrorRedactionTests(unittest.TestCase):
     def test_redact_sensitive_text_still_redacts_paths_near_metrics(self) -> None:
         raw = (
             "Cache 12 /34 listo; ruta /cache/private.txt; "
-            "ruta simple /cache; otra ruta /123/private; home /home/adolfo/private.txt"
+            "ruta simple /cache; otra ruta /123/private; home /home/example-user/private.txt"
         )
 
         redacted = redact_sensitive_text(raw)
@@ -325,7 +325,7 @@ class PublicErrorRedactionTests(unittest.TestCase):
         self.assertNotIn("/cache/private.txt", redacted)
         self.assertNotIn("ruta simple /cache", redacted)
         self.assertNotIn("/123/private", redacted)
-        self.assertNotIn("/home/adolfo", redacted)
+        self.assertNotIn("/home/example-user", redacted)
         self.assertIn("[ruta]", redacted)
 
     def test_safe_public_error_payload_sanitizes_exception_detail(self) -> None:

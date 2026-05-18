@@ -74,7 +74,7 @@ class WebAssetsTests(unittest.TestCase):
         self.assertIn("renderLatestReportDetails", app_js)
         self.assertIn('<details class="latest-report-details">', app_js)
         self.assertIn("Acciones y recomendaciones del último reporte", app_js)
-        self.assertIn("HTML, Share, JSON, carpeta, alertas, wishlist, regalos y selección", app_js)
+        self.assertIn("HTML, Share, JSON, carpeta, alertas, wishlist, regalos y presupuesto", app_js)
         self.assertIn("renderLatestSmartAlertDigest", app_js)
         self.assertIn("data-latest-smart-alert-digest", app_js)
         self.assertIn("No envía Telegram/Discord ni activa notificaciones por juego", app_js)
@@ -523,7 +523,7 @@ class WebAssetsTests(unittest.TestCase):
         self.assertIn(".warm-cache-background-banner-warn", app_css)
         self.assertIn(".warm-cache-background-refresh", app_css)
 
-    def test_latest_report_renders_selection_review_ui_inside_details(self) -> None:
+    def test_latest_report_renders_selection_review_ui_as_standalone_tool(self) -> None:
         app_js = (ROOT / "web" / "steam_deals" / "app.js").read_text(
             encoding="utf-8"
         )
@@ -532,8 +532,10 @@ class WebAssetsTests(unittest.TestCase):
         )
 
         self.assertIn("function renderLatestSelectionReviewPanel", app_js)
+        self.assertIn("function renderLatestSelectionReviewTools", app_js)
         self.assertIn("buildLatestSelectionCandidates(report)", app_js)
         self.assertIn("data-latest-selection-review", app_js)
+        self.assertIn("data-latest-selection-tools", app_js)
         self.assertIn("data-selection-candidate", app_js)
         self.assertIn("data-selection-input", app_js)
         self.assertIn("data-selection-evaluate", app_js)
@@ -541,13 +543,21 @@ class WebAssetsTests(unittest.TestCase):
         self.assertIn("function latestSelectionSignalLabel", app_js)
         self.assertIn("latest-selection-result-signals", app_js)
         self.assertIn("Señales:", app_js)
-        self.assertIn("renderLatestSelectionReviewPanel(report)", app_js)
+        details_start = app_js.index("function renderLatestReportDetails")
+        details_end = app_js.index("function latestCacheStateItems", details_start)
+        details_block = app_js[details_start:details_end]
+        self.assertNotIn("renderLatestSelectionReviewPanel(report)", details_block)
+        self.assertIn("renderLatestSelectionReviewTools(activeReport)", app_js)
         self.assertIn("bindLatestSelectionReviewActions()", app_js)
         self.assertIn("Evalúa mi selección", app_js)
+        self.assertIn("Separado del resumen", app_js)
+        self.assertIn("Herramientas de recomendaciones", app_js)
         self.assertIn("No abre carrito ni compra nada", app_js)
         self.assertIn("conservar", app_js)
         self.assertIn("dudar", app_js)
         self.assertIn("quitar", app_js)
+        self.assertIn(".latest-selection-tools", app_css)
+        self.assertIn(".latest-selection-tools-tabs", app_css)
         self.assertIn(".latest-selection-section", app_css)
         self.assertIn(".latest-selection-candidates", app_css)
         self.assertIn(".latest-selection-result-list", app_css)
