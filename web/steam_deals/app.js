@@ -3964,6 +3964,110 @@ function renderLatestReportDetails(report, files = null) {
   `;
 }
 
+function renderLatestHistoryContinueCard(hasCacheCoverage) {
+  const cacheCopy = hasCacheCoverage
+    ? 'Si hay pendientes, Continuar warm-cache usa la misma caché y mantiene --no-cache apagado.'
+    : 'No hay pendientes warm-cache visibles en este JSON local; usa el histórico para comparar corridas anteriores.';
+  return `
+    <div class="latest-report-history-card" data-latest-report-history-continue>
+      <div class="latest-report-history-card-copy">
+        <strong>Histórico y continuidad</strong>
+        <span>Compara ejecuciones anteriores o continúa una cola warm-cache solo cuando el reporte indique cobertura parcial.</span>
+        <small>${escapeHtml(cacheCopy)}</small>
+      </div>
+      <a class="file-link latest-report-history-link" href="#history-card">Ir al histórico</a>
+    </div>
+  `;
+}
+
+function latestReportIntentToolbarItem(intent, index) {
+  return `
+    <a class="latest-report-intent-tab${index === 0 ? ' is-active' : ''}" href="#latest-report-intent-${escapeHtml(intent.key)}" data-latest-report-intent-tab="${escapeHtml(intent.key)}">
+      <strong>${escapeHtml(intent.label)}</strong>
+      <span>${escapeHtml(intent.hint)}</span>
+    </a>
+  `;
+}
+
+function renderLatestReportIntentSection(intent) {
+  const titleId = `latest-report-intent-title-${intent.key}`;
+  return `
+    <section class="latest-report-intent-section" id="latest-report-intent-${escapeHtml(intent.key)}" data-latest-report-intent-section="${escapeHtml(intent.key)}" aria-labelledby="${escapeHtml(titleId)}">
+      <div class="latest-report-intent-section-head">
+        <div>
+          <div class="latest-report-intent-eyebrow">${escapeHtml(intent.eyebrow)}</div>
+          <h3 class="latest-report-intent-title" id="${escapeHtml(titleId)}">${escapeHtml(intent.label)}</h3>
+          <div class="latest-report-intent-copy">${escapeHtml(intent.copy)}</div>
+        </div>
+      </div>
+      <div class="latest-report-intent-body">${intent.body}</div>
+    </section>
+  `;
+}
+
+function latestReportIntents(report, meta = {}, summary = {}, files = null) {
+  const cacheCoverage = renderLatestCacheCoverage(report);
+  const intents = [
+    {
+      key: 'review',
+      label: 'Revisar reporte',
+      hint: 'HTML, Share y JSON',
+      eyebrow: 'Vista recomendada',
+      copy: 'Empieza por el resumen rápido y abre el HTML interactivo; Share, JSON y carpeta quedan como acciones técnicas.',
+      body: [
+        renderLatestReportQuickSummary(meta, summary, files),
+        renderLatestReportActionsPanel(files),
+      ].filter(Boolean).join(''),
+    },
+    {
+      key: 'recommendations',
+      label: 'Recomendaciones',
+      hint: 'Picks y señales',
+      eyebrow: 'Decidir qué revisar',
+      copy: 'Agrupa promo activa, alertas dry-run, colecciones, recomendaciones personales, regalos, wishlist hygiene y picks compartibles.',
+      body: renderLatestRecommendationsPanel(report, files),
+    },
+    {
+      key: 'tools',
+      label: 'Herramientas',
+      hint: 'Presupuesto y simuladores',
+      eyebrow: 'Simulación local',
+      copy: 'Herramientas locales para probar presupuesto o evaluar una selección; no abren carrito ni cambian tu wishlist.',
+      body: [
+        renderLatestReportToolsPanel(report),
+        renderLatestSelectionReviewTools(report),
+      ].filter(Boolean).join(''),
+    },
+    {
+      key: 'history',
+      label: 'Histórico/continuar',
+      hint: 'Comparar y warm-cache',
+      eyebrow: 'Seguimiento',
+      copy: 'Usa el histórico para comparar corridas y continúa warm-cache solo con cobertura parcial, siempre con la misma caché.',
+      body: [
+        cacheCoverage,
+        renderLatestHistoryContinueCard(Boolean(cacheCoverage)),
+      ].filter(Boolean).join(''),
+    },
+  ];
+  return intents.filter(intent => intent.body);
+}
+
+function renderLatestReportIntentWrapper(report, meta = {}, summary = {}, files = null) {
+  const intents = latestReportIntents(report, meta, summary, files);
+  if (!intents.length) return '';
+  return `
+    <section class="latest-report-intent-wrapper" data-latest-report-intent-wrapper aria-label="Secciones del último reporte por intención">
+      <nav class="latest-report-intent-toolbar" data-latest-report-intent-toolbar aria-label="Navegar secciones del último reporte">
+        ${intents.map(latestReportIntentToolbarItem).join('')}
+      </nav>
+      <div class="latest-report-intent-sections">
+        ${intents.map(renderLatestReportIntentSection).join('')}
+      </div>
+    </section>
+  `;
+}
+
 function latestReportSummarySentence(summary) {
   const source = summary && typeof summary === 'object' ? summary : {};
   const deals = Number(source.deals_count || 0) || 0;
@@ -4376,10 +4480,7 @@ function renderLatestReportCard(report, files = null) {
   const meta = activeReport && typeof activeReport === 'object' ? (activeReport.meta || {}) : {};
   const summary = activeReport && typeof activeReport === 'object' ? (activeReport.summary || {}) : {};
   el.innerHTML = `
-    ${renderLatestReportQuickSummary(meta, summary, files)}
-    ${renderLatestCacheCoverage(activeReport)}
-    ${renderLatestReportDetails(activeReport, files)}
-    ${renderLatestSelectionReviewTools(activeReport)}
+    ${renderLatestReportIntentWrapper(activeReport, meta, summary, files)}
   `;
   el.classList.remove('hidden');
   bindLatestReportQuickActions();
