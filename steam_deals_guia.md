@@ -83,7 +83,7 @@ Se exporta manualmente desde la web de HLTB: **Mi perfil → Exportar CSV**.
 En Web/Desktop se puede pegar una ruta local al CSV. En Windows, las rutas con espacios deben conservarse completas, por ejemplo:
 
 ```text
-C:/Users/Bryan Grijalva/Downloads/HLTB_Games_2026-05-15.csv
+C:/Users/Jane Doe/Downloads/HLTB_Games_2026-05-15.csv
 ```
 
 En la UI web no hace falta envolver la ruta en comillas; en CLI sí conviene usar comillas si la ruta tiene espacios. El preflight trata la ruta como dato local sensible: confirma si existe o no, pero sin filtrar la ruta completa en mensajes públicos/logs.
@@ -214,7 +214,7 @@ La sección "Quitar de la Wishlist" agrupa todo lo que deberías remover:
   "key": "TU_API_KEY",
   "vanity": "gaben",
   "hltb": null,
-  "output_dir": "/home/usuario/Documents/Deals",
+  "output_dir": "/home/example-user/SteamTools/output",
   "discount": 50,
   "genres": [],
   "family_json": null
