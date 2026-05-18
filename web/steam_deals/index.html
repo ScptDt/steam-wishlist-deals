@@ -126,19 +126,26 @@
   <div class="step" id="wiz-step-3">
     <div class="step-card">
       <span class="step-num">Paso 4 de 4</span>
-      <h2>&#9989; Listo!</h2>
-      <p>Tu configuración:</p>
-      <div class="wiz-summary-box">
-        <div class="wiz-summary-row"><strong>Perfil:</strong> <span id="wiz-summary-vanity" class="wiz-summary-accent"></span></div>
-        <div class="wiz-summary-row"><strong>Clave de Steam API:</strong> <span id="wiz-summary-key" class="wiz-summary-muted"></span></div>
-        <div><strong>Clave de ITAD:</strong> <span id="wiz-summary-itad" class="wiz-summary-muted"></span></div>
+      <h2>Listo para volver a la pantalla principal</h2>
+      <p class="wiz-next-copy">El asistente no inicia una corrida automática: guarda estos datos y te deja en la Web UI compartida con desktop.</p>
+      <div class="wiz-next-actions" aria-label="Siguientes acciones después del asistente">
+        <div class="wiz-next-action"><strong>1. Revisa filtros rápidos</strong><span>Rápido, completo o ahorro quedan disponibles antes de ejecutar.</span></div>
+        <div class="wiz-next-action"><strong>2. Pulsa Generar reportes</strong><span>Es el CTA principal para crear el HTML, JSON, Markdown y CSV.</span></div>
+        <div class="wiz-next-action"><strong>3. Abre el último reporte si existe</strong><span>El botón Abrir último reporte sigue visible para volver a resultados previos.</span></div>
       </div>
-      <p>Puedes cambiar esto cuando quieras desde el formulario principal.</p>
-      <div class="tip">&#128161; La configuración se guarda automáticamente. No tendrás que hacer esto de nuevo.</div>
+      <details class="wiz-summary-panel">
+        <summary>Ver configuración que se guardará</summary>
+        <div class="wiz-summary-box">
+          <div class="wiz-summary-row"><strong>Perfil:</strong> <span id="wiz-summary-vanity" class="wiz-summary-accent"></span></div>
+          <div class="wiz-summary-row"><strong>Clave de Steam API:</strong> <span id="wiz-summary-key" class="wiz-summary-muted"></span></div>
+          <div><strong>Clave de ITAD:</strong> <span id="wiz-summary-itad" class="wiz-summary-muted"></span></div>
+        </div>
+      </details>
+      <div class="tip">Puedes volver a configurar la cuenta desde Abrir asistente o ajustar los campos principales antes de ejecutar.</div>
     </div>
     <div class="nav">
       <button class="btn btn-secondary" onclick="wizPrev()">&#8592; Atrás</button>
-      <button class="btn btn-primary" onclick="wizFinish()">&#128640; Empezar</button>
+      <button class="btn btn-primary" onclick="wizFinish()">Guardar y ver pantalla principal</button>
     </div>
   </div>
 </div>

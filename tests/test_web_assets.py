@@ -683,6 +683,30 @@ class WebAssetsTests(unittest.TestCase):
             app_js,
         )
 
+    def test_wizard_finish_points_to_primary_next_actions(self) -> None:
+        index_html = (ROOT / "web" / "steam_deals" / "index.html").read_text(
+            encoding="utf-8"
+        )
+        app_css = (ROOT / "web" / "steam_deals" / "app.css").read_text(
+            encoding="utf-8"
+        )
+
+        wizard_start = index_html.index('id="wiz-step-3"')
+        wizard_end = index_html.index('</div>\n</div>\n\n<div class="header">', wizard_start)
+        wizard_markup = index_html[wizard_start:wizard_end]
+
+        self.assertIn("Listo para volver a la pantalla principal", wizard_markup)
+        self.assertIn("El asistente no inicia una corrida automática", wizard_markup)
+        self.assertIn("Revisa filtros rápidos", wizard_markup)
+        self.assertIn("Pulsa Generar reportes", wizard_markup)
+        self.assertIn("Abre el último reporte si existe", wizard_markup)
+        self.assertIn("Ver configuración que se guardará", wizard_markup)
+        self.assertIn("Guardar y ver pantalla principal", wizard_markup)
+        self.assertIn('class="wiz-summary-panel"', wizard_markup)
+        self.assertIn('id="wiz-summary-vanity"', wizard_markup)
+        self.assertIn(".wiz-next-actions", app_css)
+        self.assertIn(".wiz-summary-panel", app_css)
+
     def test_payday2_dashboard_has_themed_branding_hooks(self) -> None:
         index_html = (ROOT / "web" / "payday2" / "index.html").read_text(
             encoding="utf-8"

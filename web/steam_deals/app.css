@@ -335,6 +335,56 @@ a:hover { text-decoration: underline; }
   font-size: 0.85rem;
 }
 
+.wiz-next-copy {
+  color: #b8c9d4 !important;
+  opacity: 1 !important;
+}
+
+.wiz-next-actions {
+  display: grid;
+  gap: 0.55rem;
+  margin: 0.8rem 0;
+}
+
+.wiz-next-action {
+  padding: 0.65rem 0.75rem;
+  border-radius: 8px;
+  border: 1px solid rgba(102, 192, 244, 0.18);
+  background: rgba(42, 71, 94, 0.32);
+}
+
+.wiz-next-action strong,
+.wiz-next-action span {
+  display: block;
+}
+
+.wiz-next-action strong {
+  color: var(--text);
+  font-size: 0.84rem;
+  margin-bottom: 0.16rem;
+}
+
+.wiz-next-action span {
+  color: var(--text2);
+  font-size: 0.76rem;
+  line-height: 1.4;
+}
+
+.wiz-summary-panel {
+  margin: 0.75rem 0;
+  border: 1px solid rgba(255,255,255,0.08);
+  border-radius: 8px;
+  background: rgba(12, 20, 30, 0.2);
+}
+
+.wiz-summary-panel summary {
+  padding: 0.65rem 0.75rem;
+  color: var(--accent);
+  cursor: pointer;
+  font-size: 0.82rem;
+  font-weight: 700;
+}
+
 .wiz-summary-box {
   background: var(--bg);
   border-radius: 6px;
