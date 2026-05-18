@@ -4003,6 +4003,10 @@ function latestReportIntentKeyFromHash(hash = window.location.hash) {
   }
 }
 
+function isLatestReportIntentHash(hash = window.location.hash) {
+  return String(hash || '').startsWith('#latest-report-intent-');
+}
+
 function syncLatestReportIntentActiveState(requestedKey = '') {
   const card = latestReportCardEl();
   const wrapper = card ? card.querySelector('[data-latest-report-intent-wrapper]') : null;
@@ -4053,7 +4057,9 @@ function bindLatestReportIntentToolbarActions() {
   });
   if (!latestReportIntentHashListenerBound) {
     latestReportIntentHashListenerBound = true;
-    window.addEventListener('hashchange', () => syncLatestReportIntentActiveState());
+    window.addEventListener('hashchange', () => {
+      if (isLatestReportIntentHash()) syncLatestReportIntentActiveState();
+    });
   }
   syncLatestReportIntentActiveState();
 }
