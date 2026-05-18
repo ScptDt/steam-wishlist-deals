@@ -56,6 +56,30 @@ WINDOWS_ABSOLUTE_PATH_RE = re.compile(r"\b[A-Za-z]:\\[^\s)\]}\"']+")
 POSIX_ABSOLUTE_PATH_RE = re.compile(
     r"(?<![:/\w])/(?:[^\s)\]}\"']+)"
 )
+SAFE_PUBLIC_METRIC_PATH_FRAGMENTS = frozenset(
+    {
+        "cache",
+        "caché",
+        "cooldown",
+        "deals",
+        "deferred",
+        "fallback",
+        "historial",
+        "history",
+        "juegos",
+        "ofertas",
+        "pendientes",
+        "prices",
+        "precios",
+        "processed",
+        "procesados",
+        "progress",
+        "progreso",
+        "reviews",
+        "reseñas",
+        "total",
+    }
+)
 
 
 class LocalWebHandlerProtocol(Protocol):
@@ -320,6 +344,32 @@ def _known_sensitive_values(extra_values: Iterable[Any] = ()) -> list[str]:
     return sorted(set(values), key=len, reverse=True)
 
 
+def _previous_metric_word(source: str, start: int) -> str:
+    before = source[:start].rstrip()
+    match = re.search(r"([A-Za-zÁÉÍÓÚÜÑáéíóúüñ]+)$", before)
+    return match.group(1).lower() if match else ""
+
+
+def _is_safe_public_metric_path_fragment(value: str, source: str, start: int) -> bool:
+    fragment = value[1:] if value.startswith("/") else value
+    if not fragment or "/" in fragment or "\\" in fragment:
+        return False
+    normalized = fragment.strip(".,;:").lower()
+    previous_text = source[:start].rstrip()
+    previous_char = previous_text[-1:] if previous_text else ""
+    previous_word = _previous_metric_word(source, start)
+    if re.fullmatch(r"\d[\d.,]*%?", normalized):
+        return bool(previous_char and (previous_char.isdigit() or previous_word in SAFE_PUBLIC_METRIC_PATH_FRAGMENTS))
+    return normalized in SAFE_PUBLIC_METRIC_PATH_FRAGMENTS and previous_word in SAFE_PUBLIC_METRIC_PATH_FRAGMENTS
+
+
+def _redact_posix_absolute_path_match(match: re.Match[str]) -> str:
+    value = match.group(0)
+    if _is_safe_public_metric_path_fragment(value, match.string, match.start()):
+        return value
+    return PATH_REDACTION_MARKER
+
+
 def redact_sensitive_text(text: Any, *, extra_values: Iterable[Any] = ()) -> str:
     redacted = str(text or "")
     for value in _known_sensitive_values(extra_values):
@@ -333,7 +383,7 @@ def redact_sensitive_text(text: Any, *, extra_values: Iterable[Any] = ()) -> str
         redacted,
     )
     redacted = WINDOWS_ABSOLUTE_PATH_RE.sub(PATH_REDACTION_MARKER, redacted)
-    redacted = POSIX_ABSOLUTE_PATH_RE.sub(PATH_REDACTION_MARKER, redacted)
+    redacted = POSIX_ABSOLUTE_PATH_RE.sub(_redact_posix_absolute_path_match, redacted)
     redacted = redacted.replace("_MEIPASS", PATH_REDACTION_MARKER)
     redacted = re.sub(r"Traceback(?: \(most recent call last\))?:?", TRACEBACK_REDACTION_MARKER, redacted, flags=re.IGNORECASE)
     return redacted

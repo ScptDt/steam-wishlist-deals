@@ -298,6 +298,36 @@ class PublicErrorRedactionTests(unittest.TestCase):
         self.assertIn("[ruta]", redacted)
         self.assertIn("[redactado]", redacted)
 
+    def test_redact_sensitive_text_preserves_safe_progress_metrics(self) -> None:
+        raw = (
+            "Progreso 7 /10 juegos (70%); deals /reviews /cache: 12 /34 /56; "
+            "historial/cache 8/10; mejor precio local 4/5"
+        )
+
+        redacted = redact_sensitive_text(raw)
+
+        self.assertIn("7 /10 juegos", redacted)
+        self.assertIn("70%", redacted)
+        self.assertIn("deals /reviews /cache: 12 /34 /56", redacted)
+        self.assertIn("historial/cache 8/10", redacted)
+        self.assertIn("mejor precio local 4/5", redacted)
+        self.assertNotIn("[ruta]", redacted)
+
+    def test_redact_sensitive_text_still_redacts_paths_near_metrics(self) -> None:
+        raw = (
+            "Cache 12 /34 listo; ruta /cache/private.txt; "
+            "ruta simple /cache; otra ruta /123/private; home /home/adolfo/private.txt"
+        )
+
+        redacted = redact_sensitive_text(raw)
+
+        self.assertIn("12 /34 listo", redacted)
+        self.assertNotIn("/cache/private.txt", redacted)
+        self.assertNotIn("ruta simple /cache", redacted)
+        self.assertNotIn("/123/private", redacted)
+        self.assertNotIn("/home/adolfo", redacted)
+        self.assertIn("[ruta]", redacted)
+
     def test_safe_public_error_payload_sanitizes_exception_detail(self) -> None:
         payload = safe_public_error_payload(
             "boom",
