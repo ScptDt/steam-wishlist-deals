@@ -1635,8 +1635,10 @@ details .details-body .field:last-child {
 }
 .latest-wishlist-section {
   margin-top: 0.95rem;
-  padding-top: 0.95rem;
-  border-top: 1px solid rgba(255,255,255,0.06);
+  padding: 0.95rem;
+  border-radius: 12px;
+  border: 1px solid rgba(102, 192, 244, 0.18);
+  background: linear-gradient(180deg, rgba(42, 71, 94, 0.22), rgba(22, 32, 45, 0.86));
 }
 .latest-wishlist-head {
   display: flex;
@@ -1644,13 +1646,36 @@ details .details-body .field:last-child {
   align-items: flex-start;
   justify-content: space-between;
   gap: 0.65rem;
-  margin-bottom: 0.55rem;
+  margin-bottom: 0.75rem;
+}
+.latest-wishlist-heading-copy {
+  min-width: 0;
+}
+.latest-wishlist-eyebrow {
+  color: var(--accent);
+  font-size: 0.66rem;
+  font-weight: 800;
+  letter-spacing: 0.08em;
+  text-transform: uppercase;
+  margin-bottom: 0.18rem;
+}
+.latest-wishlist-title-row {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 0.45rem;
 }
 .latest-wishlist-title {
   color: var(--text);
-  font-size: 0.88rem;
+  font-size: 0.95rem;
   font-weight: 700;
-  margin-bottom: 0.22rem;
+}
+.latest-wishlist-count {
+  color: var(--text);
+  font-size: 0.8rem;
+  font-weight: 700;
+  line-height: 1.35;
+  margin-top: 0.2rem;
 }
 .latest-wishlist-subtitle,
 .latest-wishlist-more {
@@ -1677,35 +1702,67 @@ details .details-body .field:last-child {
   gap: 0.55rem;
 }
 .latest-wishlist-item {
-  display: flex;
-  align-items: flex-start;
-  justify-content: space-between;
-  gap: 0.55rem;
+  display: grid;
+  grid-template-columns: auto minmax(0, 1fr);
+  align-items: stretch;
+  gap: 0.65rem;
   padding: 0.72rem 0.8rem;
-  border-radius: 8px;
+  border-radius: 10px;
   border: 1px solid rgba(102, 192, 244, 0.2);
-  background: var(--bg);
+  background: rgba(27, 40, 56, 0.74);
+}
+.latest-wishlist-item-placeholder {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  width: 2.35rem;
+  min-height: 2.35rem;
+  align-self: stretch;
+  border-radius: 10px;
+  border: 1px dashed rgba(102, 192, 244, 0.35);
+  background: rgba(102, 192, 244, 0.08);
+  color: var(--accent);
+  font-size: 0.68rem;
+  font-weight: 800;
+  letter-spacing: 0.06em;
 }
 .latest-wishlist-item-main {
   min-width: 0;
+  display: flex;
+  flex-direction: column;
+  gap: 0.28rem;
 }
-.latest-wishlist-item-main strong,
-.latest-wishlist-item-main a {
+.latest-wishlist-item-heading {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: flex-start;
+  justify-content: space-between;
+  gap: 0.45rem;
+}
+.latest-wishlist-item-name,
+.latest-wishlist-item-name a {
   color: var(--text);
   font-size: 0.79rem;
   text-decoration: none;
+  line-height: 1.35;
 }
-.latest-wishlist-item-main a:hover {
+.latest-wishlist-item-name a:hover,
+.latest-wishlist-steam-link:hover {
   color: var(--accent);
 }
 .latest-wishlist-item-main span {
   display: block;
 }
+.latest-wishlist-item-meta {
+  color: var(--text2);
+  font-size: 0.68rem;
+  line-height: 1.25;
+}
 .latest-wishlist-item-signals {
   display: flex !important;
   flex-wrap: wrap;
   gap: 0.28rem;
-  margin-top: 0.25rem;
+  margin-top: 0.12rem;
 }
 .latest-wishlist-item-signals em {
   padding: 0.12rem 0.38rem;
@@ -1715,14 +1772,48 @@ details .details-body .field:last-child {
   font-size: 0.68rem;
   font-style: normal;
 }
+.latest-wishlist-item-reason-label {
+  color: var(--accent);
+  font-size: 0.66rem;
+  font-weight: 800;
+  letter-spacing: 0.06em;
+  text-transform: uppercase;
+}
 .latest-wishlist-item-reasons {
-  margin-top: 0.25rem;
   color: var(--text2);
   font-size: 0.71rem;
   line-height: 1.35;
 }
 .latest-wishlist-item-badge {
   flex: 0 0 auto;
+}
+.latest-wishlist-item-actions {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 0.35rem;
+  margin-top: 0.12rem;
+}
+.latest-wishlist-steam-link {
+  display: inline-flex;
+  align-items: center;
+  min-height: 32px;
+  padding: 0.32rem 0.55rem;
+  border-radius: 8px;
+  border: 1px solid rgba(102, 192, 244, 0.28);
+  background: rgba(102, 192, 244, 0.1);
+  color: var(--accent);
+  font-size: 0.72rem;
+  font-weight: 700;
+  text-decoration: none;
+}
+.latest-wishlist-steam-link:focus-visible {
+  outline: 2px solid var(--accent);
+  outline-offset: 2px;
+}
+.latest-wishlist-steam-note {
+  color: var(--text2);
+  font-size: 0.7rem;
+  line-height: 1.35;
 }
 .latest-wishlist-more {
   margin-top: 0.55rem;

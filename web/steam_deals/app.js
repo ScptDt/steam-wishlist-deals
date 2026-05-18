@@ -3398,6 +3398,27 @@ function latestWishlistHygieneSignalLabel(signal) {
   return labels[key] || key.replace(/_/g, ' ');
 }
 
+function latestWishlistHygieneCounts(payload, items) {
+  const summary = payload && typeof payload === 'object' && payload.summary && typeof payload.summary === 'object'
+    ? payload.summary
+    : {};
+  const reviewItems = latestCoverageCount(summary.review_items_count) || (Array.isArray(items) ? items.length : 0);
+  const totalWishlistItems = latestCoverageCount(summary.total_wishlist_items);
+  return { reviewItems, totalWishlistItems };
+}
+
+function latestWishlistHygieneCountLabel(payload, items) {
+  const { reviewItems, totalWishlistItems } = latestWishlistHygieneCounts(payload, items);
+  const formattedReviewItems = formatLatestCoverageCount(reviewItems);
+  const baseCopy = reviewItems === 1
+    ? `${formattedReviewItems} sugerencia para revisar`
+    : `${formattedReviewItems} sugerencias para revisar`;
+  if (totalWishlistItems > 0) {
+    return `${baseCopy} de ${formatLatestCoverageCount(totalWishlistItems)} juegos en wishlist`;
+  }
+  return `${baseCopy} en la wishlist`;
+}
+
 function renderLatestWishlistHygieneItem(item) {
   const source = item && typeof item === 'object' ? item : {};
   const appid = String(source.appid || source.steam_appid || '').trim();
@@ -3422,15 +3443,24 @@ function renderLatestWishlistHygieneItem(item) {
   const steamLinkHtml = safeAppid
     ? `<a class="latest-wishlist-steam-link" href="https://store.steampowered.com/app/${escapeHtml(safeAppid)}/" target="_blank" rel="noopener noreferrer">Abrir en Steam</a>`
     : '';
+  const appidMeta = safeAppid ? `AppID ${safeAppid}` : 'Sin AppID numérico seguro';
+  const placeholderText = safeAppid ? 'ID' : 'REV';
   return `
     <li class="latest-wishlist-item"${safeAppid ? ` data-latest-wishlist-hygiene-item="${escapeHtml(safeAppid)}"` : ''}>
+      <div class="latest-wishlist-item-placeholder" aria-hidden="true">${escapeHtml(placeholderText)}</div>
       <div class="latest-wishlist-item-main">
-        <strong>${nameHtml}</strong>
+        <div class="latest-wishlist-item-heading">
+          <strong class="latest-wishlist-item-name">${nameHtml}</strong>
+          <span class="latest-wishlist-item-badge">Solo revisión</span>
+        </div>
+        <span class="latest-wishlist-item-meta">${escapeHtml(appidMeta)}</span>
         ${signals.length ? `<span class="latest-wishlist-item-signals">${signals.map(signal => `<em>${escapeHtml(signal)}</em>`).join('')}</span>` : ''}
+        <span class="latest-wishlist-item-reason-label">Razón para revisar</span>
         <span class="latest-wishlist-item-reasons">${escapeHtml((visibleReasons.length ? visibleReasons : ['revisar manualmente antes de limpiar']).join(' · '))}</span>
-        ${steamLinkHtml}
+        <div class="latest-wishlist-item-actions">
+          ${steamLinkHtml || '<span class="latest-wishlist-steam-note">Sin link Steam seguro</span>'}
+        </div>
       </div>
-      <span class="latest-wishlist-item-badge">Solo revisión</span>
     </li>
   `;
 }
@@ -3443,19 +3473,27 @@ function renderLatestWishlistHygiene(report) {
   if (!items.length) return '';
   const selectedItems = items.slice(0, 3);
   const hiddenCount = Math.max(0, items.length - selectedItems.length);
+  const countLabel = latestWishlistHygieneCountLabel(payload, items);
+  const visibleCopy = hiddenCount
+    ? `Mostramos ${formatLatestCoverageCount(selectedItems.length)} aquí; ${formatLatestCoverageCount(hiddenCount)} más en el JSON completo.`
+    : `Mostramos ${formatLatestCoverageCount(selectedItems.length)} aquí; el JSON completo mantiene el contexto.`;
   return `
     <div class="latest-wishlist-section" data-latest-wishlist-hygiene>
       <div class="latest-wishlist-head">
-        <div>
-          <div class="latest-wishlist-title">Revisar wishlist</div>
-          <div class="latest-wishlist-subtitle">Sugerencias locales advisory-only: No borra ni auto-excluye juegos, y no cambia el score.</div>
+        <div class="latest-wishlist-heading-copy">
+          <div class="latest-wishlist-eyebrow">Higiene local</div>
+          <div class="latest-wishlist-title-row">
+            <div class="latest-wishlist-title">Revisar wishlist</div>
+            <span class="latest-wishlist-badge">Solo revisión</span>
+          </div>
+          <div class="latest-wishlist-count">${escapeHtml(countLabel)}</div>
+          <div class="latest-wishlist-subtitle">Advisory-only: No borra ni auto-excluye juegos, y no cambia el score.</div>
         </div>
-        <span class="latest-wishlist-badge">Solo revisión</span>
       </div>
       <ol class="latest-wishlist-list">
         ${selectedItems.map(renderLatestWishlistHygieneItem).join('')}
       </ol>
-      ${hiddenCount ? `<div class="latest-wishlist-more">${escapeHtml(hiddenCount)} más en el JSON completo</div>` : ''}
+      <div class="latest-wishlist-more">${escapeHtml(visibleCopy)}</div>
     </div>
   `;
 }
