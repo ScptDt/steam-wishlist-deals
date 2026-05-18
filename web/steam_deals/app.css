@@ -954,9 +954,13 @@ details .details-body .field:last-child {
 }
 .latest-report-intent-tab:hover,
 .latest-report-intent-tab:focus-visible,
-.latest-report-intent-tab.is-active {
+.latest-report-intent-tab.is-active,
+.latest-report-intent-tab[aria-selected="true"] {
   border-color: rgba(102, 192, 244, 0.42);
   background: rgba(42, 71, 94, 0.34);
+}
+.latest-report-intent-tab[aria-selected="true"] {
+  box-shadow: inset 0 0 0 1px rgba(102, 192, 244, 0.24);
 }
 .latest-report-intent-tab:focus-visible {
   outline: 2px solid var(--accent);
@@ -980,6 +984,13 @@ details .details-body .field:last-child {
   border-radius: 12px;
   border: 1px solid rgba(102, 192, 244, 0.16);
   background: rgba(12, 20, 30, 0.2);
+}
+.latest-report-intent-section[hidden] {
+  display: none;
+}
+.latest-report-intent-section.is-active {
+  border-color: rgba(102, 192, 244, 0.26);
+  background: rgba(12, 20, 30, 0.28);
 }
 .latest-report-intent-section-head {
   display: flex;

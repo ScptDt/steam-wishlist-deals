@@ -3981,18 +3981,89 @@ function renderLatestHistoryContinueCard(hasCacheCoverage) {
 }
 
 function latestReportIntentToolbarItem(intent, index) {
+  const isActive = index === 0;
+  const panelId = `latest-report-intent-${intent.key}`;
+  const tabId = `latest-report-intent-tab-${intent.key}`;
   return `
-    <a class="latest-report-intent-tab${index === 0 ? ' is-active' : ''}" href="#latest-report-intent-${escapeHtml(intent.key)}" data-latest-report-intent-tab="${escapeHtml(intent.key)}">
+    <a class="latest-report-intent-tab${isActive ? ' is-active' : ''}" href="#${escapeHtml(panelId)}" id="${escapeHtml(tabId)}" role="tab" aria-selected="${isActive ? 'true' : 'false'}" aria-controls="${escapeHtml(panelId)}" data-latest-report-intent-tab="${escapeHtml(intent.key)}"${isActive ? ' aria-current="true"' : ''}>
       <strong>${escapeHtml(intent.label)}</strong>
       <span>${escapeHtml(intent.hint)}</span>
     </a>
   `;
 }
 
-function renderLatestReportIntentSection(intent) {
+function latestReportIntentKeyFromHash(hash = window.location.hash) {
+  const value = String(hash || '');
+  const prefix = '#latest-report-intent-';
+  if (!value.startsWith(prefix)) return '';
+  try {
+    return decodeURIComponent(value.slice(prefix.length));
+  } catch (e) {
+    return value.slice(prefix.length);
+  }
+}
+
+function syncLatestReportIntentActiveState(requestedKey = '') {
+  const card = latestReportCardEl();
+  const wrapper = card ? card.querySelector('[data-latest-report-intent-wrapper]') : null;
+  if (!wrapper) return;
+  const tabs = Array.from(wrapper.querySelectorAll('[data-latest-report-intent-tab]'));
+  const panels = Array.from(wrapper.querySelectorAll('[data-latest-report-intent-section]'));
+  if (!tabs.length) return;
+  const keys = tabs.map(tab => tab.dataset.latestReportIntentTab || '').filter(Boolean);
+  const key = requestedKey || latestReportIntentKeyFromHash();
+  const activeKey = keys.includes(key) ? key : keys[0];
+  tabs.forEach((tab) => {
+    const isActive = tab.dataset.latestReportIntentTab === activeKey;
+    tab.classList.toggle('is-active', isActive);
+    if (isActive) {
+      tab.setAttribute('aria-current', 'true');
+      tab.setAttribute('aria-selected', 'true');
+    } else {
+      tab.removeAttribute('aria-current');
+      tab.setAttribute('aria-selected', 'false');
+    }
+  });
+  panels.forEach((panel) => {
+    const isActive = panel.dataset.latestReportIntentSection === activeKey;
+    panel.classList.toggle('is-active', isActive);
+    panel.hidden = !isActive;
+    panel.setAttribute('aria-hidden', isActive ? 'false' : 'true');
+  });
+}
+
+let latestReportIntentHashListenerBound = false;
+
+function bindLatestReportIntentToolbarActions() {
+  const card = latestReportCardEl();
+  const wrapper = card ? card.querySelector('[data-latest-report-intent-wrapper]') : null;
+  if (!wrapper) return;
+  wrapper.querySelectorAll('[data-latest-report-intent-tab]').forEach((tab) => {
+    tab.addEventListener('click', (event) => {
+      event.preventDefault();
+      const key = tab.dataset.latestReportIntentTab || '';
+      syncLatestReportIntentActiveState(key);
+      const hash = `#latest-report-intent-${encodeURIComponent(key)}`;
+      if (window.history && typeof window.history.replaceState === 'function') {
+        window.history.replaceState(null, '', hash);
+      } else {
+        window.location.hash = hash;
+      }
+    });
+  });
+  if (!latestReportIntentHashListenerBound) {
+    latestReportIntentHashListenerBound = true;
+    window.addEventListener('hashchange', () => syncLatestReportIntentActiveState());
+  }
+  syncLatestReportIntentActiveState();
+}
+
+function renderLatestReportIntentSection(intent, index) {
+  const isActive = index === 0;
   const titleId = `latest-report-intent-title-${intent.key}`;
+  const tabId = `latest-report-intent-tab-${intent.key}`;
   return `
-    <section class="latest-report-intent-section" id="latest-report-intent-${escapeHtml(intent.key)}" data-latest-report-intent-section="${escapeHtml(intent.key)}" aria-labelledby="${escapeHtml(titleId)}">
+    <section class="latest-report-intent-section${isActive ? ' is-active' : ''}" id="latest-report-intent-${escapeHtml(intent.key)}" data-latest-report-intent-section="${escapeHtml(intent.key)}" role="tabpanel" tabindex="0" aria-labelledby="${escapeHtml(tabId)}" aria-hidden="${isActive ? 'false' : 'true'}"${isActive ? '' : ' hidden'}>
       <div class="latest-report-intent-section-head">
         <div>
           <div class="latest-report-intent-eyebrow">${escapeHtml(intent.eyebrow)}</div>
@@ -4483,6 +4554,7 @@ function renderLatestReportCard(report, files = null) {
     ${renderLatestReportIntentWrapper(activeReport, meta, summary, files)}
   `;
   el.classList.remove('hidden');
+  bindLatestReportIntentToolbarActions();
   bindLatestReportQuickActions();
   bindLatestSelectionReviewActions();
   bindLatestShareActions();
