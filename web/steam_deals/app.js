@@ -3898,9 +3898,22 @@ function renderLatestReportActions(files = null) {
   `;
 }
 
-function renderLatestReportDetails(report, files = null) {
+function renderLatestReportActionsPanel(files = null) {
+  const body = renderLatestReportActions(files);
+  if (!body) return '';
+  return `
+    <details class="latest-report-details latest-report-actions-panel">
+      <summary>
+        <span>Acciones del reporte</span>
+        <span class="latest-report-details-hint">HTML interactivo, Share, JSON técnico y carpeta</span>
+      </summary>
+      <div class="latest-report-details-body">${body}</div>
+    </details>
+  `;
+}
+
+function renderLatestRecommendationsPanel(report, files = null) {
   const body = [
-    renderLatestReportActions(files),
     renderLatestPromoContext(report),
     renderLatestSmartAlertDigest(report),
     renderLatestRecommendedCollections(report),
@@ -3908,17 +3921,105 @@ function renderLatestReportDetails(report, files = null) {
     renderLatestGiftIdeas(report),
     renderLatestWishlistHygiene(report),
     renderLatestShareTopPicks(report),
+  ].filter(Boolean).join('');
+  if (!body) return '';
+  return `
+    <details class="latest-report-details latest-report-recommendations-panel">
+      <summary>
+        <span>Recomendaciones y señales</span>
+        <span class="latest-report-details-hint">Picks, colecciones, alertas, regalos y wishlist hygiene</span>
+      </summary>
+      <div class="latest-report-details-body">${body}</div>
+    </details>
+  `;
+}
+
+function renderLatestReportToolsPanel(report) {
+  const body = [
     renderLatestBudgetPanel(report),
   ].filter(Boolean).join('');
   if (!body) return '';
   return `
-    <details class="latest-report-details">
+    <details class="latest-report-details latest-report-tools-panel">
       <summary>
-        <span>Acciones y recomendaciones del último reporte</span>
-        <span class="latest-report-details-hint">HTML, Share, JSON, carpeta, alertas, wishlist, regalos y presupuesto</span>
+        <span>Herramientas del reporte</span>
+        <span class="latest-report-details-hint">Presupuesto y simuladores locales</span>
       </summary>
       <div class="latest-report-details-body">${body}</div>
     </details>
+  `;
+}
+
+function renderLatestReportDetails(report, files = null) {
+  const panels = [
+    renderLatestReportActionsPanel(files),
+    renderLatestRecommendationsPanel(report, files),
+    renderLatestReportToolsPanel(report),
+  ].filter(Boolean).join('');
+  if (!panels) return '';
+  return `
+    <div class="latest-report-sections" data-latest-report-sections>
+      ${panels}
+    </div>
+  `;
+}
+
+function latestReportSummarySentence(summary) {
+  const source = summary && typeof summary === 'object' ? summary : {};
+  const deals = Number(source.deals_count || 0) || 0;
+  const topPicks = Number(source.top_picks_count || 0) || 0;
+  const alerts = Number(source.watchlist_alerts_count || 0) || 0;
+  const gifts = Number(source.gift_ideas_count || 0) || 0;
+  const parts = [`${deals} oferta(s)`, `${topPicks} top pick(s)`];
+  if (alerts > 0) parts.push(`${alerts} alerta(s)`);
+  if (gifts > 0) parts.push(`${gifts} idea(s) de regalo`);
+  return `Resultado rápido: ${parts.join(' · ')}. Abre el HTML interactivo para revisar tablas, rankings y detalle completo.`;
+}
+
+function renderLatestPrimaryReportAction(files = null) {
+  const htmlName = findLatestPrimaryHtmlReport(files);
+  if (htmlName) {
+    return `<a class="file-link latest-report-primary-action" href="${generatedFileHref(htmlName)}" target="_blank" rel="noopener noreferrer">Abrir reporte interactivo</a>`;
+  }
+  return `<a class="file-link latest-report-primary-action" href="${latestReportUrl()}" target="_blank" rel="noopener noreferrer">Abrir JSON técnico</a>`;
+}
+
+function renderLatestReportQuickSummary(meta = {}, summary = {}, files = null) {
+  const safeMeta = meta && typeof meta === 'object' ? meta : {};
+  const safeSummary = summary && typeof summary === 'object' ? summary : {};
+  const subtitleParts = [];
+  if (safeMeta.profile) subtitleParts.push(`Perfil: ${escapeHtml(safeMeta.profile)}`);
+  subtitleParts.push(escapeHtml(formatLatestReportTimestamp(safeMeta.generated_at)));
+  const saleBadge = safeMeta.sale_name ? `<span class="latest-report-badge">${escapeHtml(safeMeta.sale_name)}</span>` : '';
+  const stats = [
+    ['Ofertas', safeSummary.deals_count ?? 0],
+    ['Top picks', safeSummary.top_picks_count ?? 0],
+    ['Alerts', safeSummary.watchlist_alerts_count ?? 0],
+    ['Regalos', safeSummary.gift_ideas_count ?? 0],
+  ];
+  return `
+    <section class="latest-report-quick-summary" data-latest-report-quick-summary>
+      <div class="latest-report-head">
+        <div>
+          <div class="latest-report-eyebrow">Resumen rápido</div>
+          <div class="latest-report-title">Última ejecución</div>
+          <div class="latest-report-subtitle">${subtitleParts.join(' · ')}</div>
+        </div>
+        ${saleBadge}
+      </div>
+      <div class="latest-report-quick-copy">${escapeHtml(latestReportSummarySentence(safeSummary))}</div>
+      <div class="latest-report-quick-actions">
+        ${renderLatestPrimaryReportAction(files)}
+      </div>
+      <div class="latest-report-stats" aria-label="Métricas principales del último reporte">
+        ${stats.map(([label, value]) => `
+          <div class="latest-report-stat">
+            <div class="latest-report-stat-label">${escapeHtml(label)}</div>
+            <div class="latest-report-stat-value">${escapeHtml(value)}</div>
+          </div>
+        `).join('')}
+      </div>
+    </section>
   `;
 }
 
@@ -4135,6 +4236,12 @@ function renderLatestCacheCoverage(report) {
   const blockProgress = renderLatestWarmCacheBlockProgress(coverage);
   const finalStates = renderLatestFinalCacheStates(coverage);
   const noPriceClassification = renderLatestNoPriceClassification(coverage);
+  const technicalDetails = [
+    blockProgress,
+    renderLatestCacheStateSummary(coverage),
+    finalStates,
+    noPriceClassification,
+  ].filter(Boolean).join('');
   if (!hasDeferred && !blockProgress && !finalStates && !noPriceClassification) return '';
   const processed = latestCoverageCount(coverage.processed_count);
   const total = latestCoverageCount(coverage.refresh_candidate_count) || processed + deferred;
@@ -4148,10 +4255,15 @@ function renderLatestCacheCoverage(report) {
       <div class="latest-cache-coverage-title">${isPartial ? 'Caché parcial' : 'Cola resumible terminada'}</div>
       <div class="latest-cache-coverage-main">${escapeHtml(coverageLabel)} juegos revisados</div>
       <div class="latest-cache-coverage-copy">${hasDeferred ? `Quedan ${escapeHtml(formatLatestCoverageCount(deferred))} pendientes por confirmar. Las ofertas mostradas pueden no incluir juegos aún no verificados.${resumeCopy}` : 'Sin pendientes por presupuesto; eso no implica cobertura perfecta si quedan fallos/cooldown o juegos sin precio confirmado.'}</div>
-      ${blockProgress}
-      ${renderLatestCacheStateSummary(coverage)}
-      ${finalStates}
-      ${noPriceClassification}
+      ${technicalDetails ? `
+        <details class="latest-cache-details">
+          <summary>
+            <span>Ver detalles de caché</span>
+            <span class="latest-cache-details-hint">Estados, bloques y juegos sin precio</span>
+          </summary>
+          <div class="latest-cache-details-body">${technicalDetails}</div>
+        </details>
+      ` : ''}
       ${hasDeferred ? `
         <div class="latest-cache-coverage-actions">
           <button type="button" class="file-link file-link-button latest-cache-coverage-action" data-latest-action="continue-warm-cache">Continuar warm-cache</button>
@@ -4263,32 +4375,8 @@ function renderLatestReportCard(report, files = null) {
   if (!el) return;
   const meta = activeReport && typeof activeReport === 'object' ? (activeReport.meta || {}) : {};
   const summary = activeReport && typeof activeReport === 'object' ? (activeReport.summary || {}) : {};
-  const subtitleParts = [];
-  if (meta.profile) subtitleParts.push(`Perfil: ${escapeHtml(meta.profile)}`);
-  subtitleParts.push(escapeHtml(formatLatestReportTimestamp(meta.generated_at)));
-  const saleBadge = meta.sale_name ? `<span class="latest-report-badge">${escapeHtml(meta.sale_name)}</span>` : '';
-  const stats = [
-    ['Ofertas', summary.deals_count ?? 0],
-    ['Top picks', summary.top_picks_count ?? 0],
-    ['Alerts', summary.watchlist_alerts_count ?? 0],
-    ['Regalos', summary.gift_ideas_count ?? 0],
-  ];
   el.innerHTML = `
-    <div class="latest-report-head">
-      <div>
-        <div class="latest-report-title">Resumen de tu última ejecución</div>
-        <div class="latest-report-subtitle">${subtitleParts.join(' · ')}</div>
-      </div>
-      ${saleBadge}
-    </div>
-    <div class="latest-report-stats">
-      ${stats.map(([label, value]) => `
-        <div class="latest-report-stat">
-          <div class="latest-report-stat-label">${escapeHtml(label)}</div>
-          <div class="latest-report-stat-value">${escapeHtml(value)}</div>
-        </div>
-      `).join('')}
-    </div>
+    ${renderLatestReportQuickSummary(meta, summary, files)}
     ${renderLatestCacheCoverage(activeReport)}
     ${renderLatestReportDetails(activeReport, files)}
     ${renderLatestSelectionReviewTools(activeReport)}

@@ -834,13 +834,44 @@ details .details-body .field:last-child {
   margin-top: 0.75rem; padding: 1rem; border-radius: 10px;
   border: 1px solid var(--card-border); background: linear-gradient(180deg, var(--bg2), var(--card));
 }
+.latest-report-quick-summary {
+  padding: 0.9rem;
+  border-radius: 12px;
+  border: 1px solid rgba(102, 192, 244, 0.18);
+  background: rgba(42, 71, 94, 0.18);
+}
 .latest-report-head { display: flex; flex-wrap: wrap; gap: 0.75rem; align-items: flex-start; justify-content: space-between; margin-bottom: 0.85rem; }
+.latest-report-eyebrow {
+  color: var(--accent);
+  font-size: 0.68rem;
+  font-weight: 800;
+  letter-spacing: 0.08em;
+  text-transform: uppercase;
+  margin-bottom: 0.14rem;
+}
 .latest-report-title { font-size: 1rem; font-weight: 700; color: var(--text); }
 .latest-report-subtitle { margin-top: 0.2rem; color: var(--text2); font-size: 0.82rem; }
 .latest-report-badge {
   display: inline-flex; align-items: center; padding: 0.28rem 0.6rem; border-radius: 999px;
   background: rgba(255,255,255,0.05); border: 1px solid var(--card-border); color: var(--accent);
   font-size: 0.75rem; font-weight: 600;
+}
+.latest-report-quick-copy {
+  color: var(--text2);
+  font-size: 0.82rem;
+  line-height: 1.45;
+  margin-bottom: 0.65rem;
+}
+.latest-report-quick-actions {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 0.45rem;
+  margin-bottom: 0.75rem;
+}
+.latest-report-primary-action {
+  min-height: 40px;
+  align-items: center;
+  font-weight: 700;
 }
 .latest-report-stats { display: grid; grid-template-columns: repeat(auto-fit, minmax(120px, 1fr)); gap: 0.6rem; }
 .latest-report-stat {
@@ -926,6 +957,32 @@ details .details-body .field:last-child {
   color: var(--text2);
   font-size: 0.78rem;
   line-height: 1.45;
+}
+.latest-cache-details {
+  margin-top: 0.6rem;
+  border-color: rgba(240, 178, 50, 0.22);
+  background: rgba(12, 20, 30, 0.18);
+}
+.latest-cache-details summary {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  justify-content: space-between;
+  gap: 0.35rem 0.6rem;
+  color: var(--text);
+  font-size: 0.78rem;
+  font-weight: 700;
+}
+.latest-cache-details-hint {
+  color: var(--text2);
+  font-size: 0.72rem;
+  font-weight: 500;
+}
+.latest-cache-details-body {
+  padding: 0.65rem;
+}
+.latest-cache-details-body > :first-child {
+  margin-top: 0;
 }
 .latest-cache-state-summary {
   margin-top: 0.5rem;
@@ -1112,8 +1169,13 @@ details .details-body .field:last-child {
   border-color: rgba(240, 178, 50, 0.45);
   color: var(--yellow);
 }
-.latest-report-details {
+.latest-report-sections {
+  display: grid;
+  gap: 0.65rem;
   margin-top: 0.75rem;
+}
+.latest-report-details {
+  margin-top: 0;
   margin-bottom: 0;
   border-color: rgba(102, 192, 244, 0.18);
   background: rgba(12, 20, 30, 0.18);
