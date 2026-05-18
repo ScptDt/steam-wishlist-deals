@@ -4076,6 +4076,19 @@ function renderLatestReportIntentSection(intent, index) {
   `;
 }
 
+function renderLatestReportIntentIntro() {
+  return `
+    <div class="latest-report-intent-intro" data-latest-report-intent-intro>
+      <div>
+        <div class="latest-report-intent-intro-eyebrow">Selector del último reporte</div>
+        <div class="latest-report-intent-intro-title">Elige qué quieres revisar</div>
+        <div class="latest-report-intent-intro-copy">Cambia de vista sin recalcular nada: todo usa el último JSON local y mantiene intactas tus recomendaciones, caché y wishlist.</div>
+      </div>
+      <span class="latest-report-intent-intro-badge">Sin cambios de datos</span>
+    </div>
+  `;
+}
+
 function latestReportIntents(report, meta = {}, summary = {}, files = null) {
   const cacheCoverage = renderLatestCacheCoverage(report);
   const intents = [
@@ -4129,6 +4142,7 @@ function renderLatestReportIntentWrapper(report, meta = {}, summary = {}, files 
   if (!intents.length) return '';
   return `
     <section class="latest-report-intent-wrapper" data-latest-report-intent-wrapper aria-label="Secciones del último reporte por intención">
+      ${renderLatestReportIntentIntro()}
       <nav class="latest-report-intent-toolbar" data-latest-report-intent-toolbar aria-label="Navegar secciones del último reporte">
         ${intents.map(latestReportIntentToolbarItem).join('')}
       </nav>
