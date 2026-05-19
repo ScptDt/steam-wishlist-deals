@@ -2946,6 +2946,7 @@ def generate_md(
     include_frontmatter: bool = False,
     active_promo_context: dict | None = None,
     smart_alert_digest: dict | None = None,
+    free_weekend_now: dict | None = None,
 ) -> str:
     if _generate_md_renderer is None:
         raise RuntimeError("Markdown renderer module is not available")
@@ -3013,6 +3014,7 @@ def generate_md(
         include_frontmatter=include_frontmatter,
         active_promo_context=active_promo_context,
         smart_alert_digest=smart_alert_digest,
+        free_weekend_now=free_weekend_now,
         group_by_tier=group_by_tier,
         filter_by_genres=filter_by_genres,
         group_deals_by_tag=group_deals_by_tag,
@@ -3069,6 +3071,7 @@ def generate_html(
     profile_display_name: str | None = None,
     active_promo_context: dict | None = None,
     smart_alert_digest: dict | None = None,
+    free_weekend_now: dict | None = None,
     recommended_collections: list[dict] | None = None,
     personalized_recommendations: dict | None = None,
     wishlist_hygiene=None,
@@ -3140,6 +3143,7 @@ def generate_html(
             profile_display_name=profile_display_name,
             active_promo_context=active_promo_context,
             smart_alert_digest=smart_alert_digest,
+            free_weekend_now=free_weekend_now,
             group_by_tier=group_by_tier,
             group_deals_by_tag=group_deals_by_tag,
         )
@@ -3179,6 +3183,7 @@ def generate_html(
         profile_display_name=profile_display_name,
         active_promo_context=active_promo_context,
         smart_alert_digest=smart_alert_digest,
+        free_weekend_now=free_weekend_now,
         group_by_tier=group_by_tier,
         group_deals_by_tag=group_deals_by_tag,
     )
@@ -4202,6 +4207,7 @@ def main():
         include_frontmatter=bool(FILTERS.get("md_frontmatter")),
         active_promo_context=active_promo_context,
         smart_alert_digest=smart_alert_digest,
+        free_weekend_now=free_weekend_now,
     )
 
     # Generar HTML interactivo
@@ -4239,6 +4245,7 @@ def main():
         profile_display_name=profile_display_name,
         active_promo_context=active_promo_context,
         smart_alert_digest=smart_alert_digest,
+        free_weekend_now=free_weekend_now,
         **family_renderer_kwargs,
     )
 

@@ -83,6 +83,12 @@ _WISHLIST_HYGIENE_SIGNAL_LABELS = {
     "invalid_appid": "AppID inválido",
 }
 
+_FREE_WEEKEND_CONFIDENCE_LABELS = {
+    "high": "Alta",
+    "medium": "Media",
+    "low": "Baja",
+}
+
 
 def _promo_category_label(category: str) -> str:
     return _PROMO_CATEGORY_LABELS.get(str(category or ""), str(category or "Otra promo"))
@@ -317,6 +323,104 @@ def _build_promo_context_lines(active_promo_context: dict | None) -> list[str]:
     decision_hint = str(active_promo_context.get("decision_hint") or "").strip()
     if decision_hint:
         lines.append(f"> Lectura sugerida: {_md_esc(decision_hint)}")
+    return lines
+
+
+def _free_weekend_confidence_label(confidence: str) -> str:
+    key = str(confidence or "").strip().lower()
+    return _FREE_WEEKEND_CONFIDENCE_LABELS.get(key, key.title() if key else "Sin dato")
+
+
+def _free_weekend_items(payload: dict | None, *, limit: int = 8) -> tuple[list[dict], int, int]:
+    if not isinstance(payload, dict):
+        return [], 0, 0
+    items = [item for item in payload.get("items", []) if isinstance(item, dict)]
+    summary = payload.get("summary")
+    total = len(items)
+    if isinstance(summary, dict):
+        try:
+            total = max(total, int(summary.get("count") or 0))
+        except (TypeError, ValueError):
+            total = len(items)
+    return items[:limit], total, max(0, total - min(len(items), limit))
+
+
+def _free_weekend_item_label(item: dict) -> str:
+    appid = str(item.get("appid") or item.get("steam_appid") or "").strip()
+    fallback = f"AppID {appid}" if appid else "Candidato sin título"
+    title = str(item.get("title") or item.get("name") or fallback).strip()
+    return _link(title, appid) if appid.isdigit() else _md_esc(title)
+
+
+def _free_weekend_item_status(item: dict) -> str:
+    confidence = _free_weekend_confidence_label(str(item.get("confidence") or ""))
+    valid_until = str(item.get("valid_until") or "").strip()
+    validity = f"Vigente hasta {valid_until}" if valid_until else "Sin vigencia estructurada"
+    return _md_esc(f"Confianza {confidence} · {validity}")
+
+
+def _free_weekend_item_sources(item: dict) -> str:
+    sources = item.get("sources") if isinstance(item, dict) else []
+    compact = [str(source or "").strip() for source in sources if str(source or "").strip()]
+    observed_at = str(item.get("observed_at") or "").strip()
+    parts = []
+    if compact:
+        parts.append(f"Fuentes: {', '.join(compact[:4])}")
+    if observed_at:
+        parts.append(f"Observado: {observed_at}")
+    return _md_esc(" · ".join(parts) or "Sin fuentes compactas")
+
+
+def _free_weekend_item_reason(item: dict) -> str:
+    reason = str(item.get("reason") or "").strip()
+    if reason:
+        return _md_esc(reason)
+    signals = item.get("signals") if isinstance(item.get("signals"), dict) else {}
+    signal_parts = []
+    if signals.get("discount_percent") is not None:
+        signal_parts.append(f"descuento {signals.get('discount_percent')}%")
+    if signals.get("final_price") is not None:
+        signal_parts.append(f"precio final {signals.get('final_price')}")
+    matched_text = str(signals.get("matched_text") or "").strip()
+    if matched_text:
+        signal_parts.append(f"texto: {matched_text}")
+    return _md_esc(" · ".join(signal_parts) or "Revisar disponibilidad en Steam")
+
+
+def _build_free_weekend_now_lines(payload: dict | None) -> list[str]:
+    items, total_items, hidden_count = _free_weekend_items(payload)
+    source_policy = ""
+    if isinstance(payload, dict):
+        source_policy = str(payload.get("source_policy") or "").strip()
+    lines = [
+        "## 🎮 Free Weekend ahora",
+        "",
+    ]
+    if not items:
+        lines += [
+            "> Sin candidatos locales de Free Weekend en el JSON actual.",
+            "> Este bloque no hace fetch live ni cambia score/cache; si falta vigencia o confianza, no asume disponibilidad.",
+            "",
+            "---",
+            "",
+        ]
+        return lines
+
+    policy_hint = f" Política: `{_md_esc(source_policy)}`." if source_policy else ""
+    lines += [
+        f"> **{total_items:,} candidato(s)** detectados por señales locales/cacheadas.{policy_hint}",
+        "> Revisa confianza y vigencia antes de asumir que sigue disponible; este bloque no cambia score, ranking ni caché de precios.",
+        "",
+        "| Juego | Estado | Fuentes | Motivo |",
+        "|-------|--------|---------|--------|",
+    ]
+    for item in items:
+        lines.append(
+            f"| {_free_weekend_item_label(item)} | {_free_weekend_item_status(item)} | {_free_weekend_item_sources(item)} | {_free_weekend_item_reason(item)} |"
+        )
+    if hidden_count:
+        lines += ["", f"> {hidden_count:,} más en el payload completo."]
+    lines += ["", "---", ""]
     return lines
 
 
@@ -634,6 +738,7 @@ def generate_md(
     include_frontmatter: bool = False,
     active_promo_context: dict | None = None,
     smart_alert_digest: dict | None = None,
+    free_weekend_now: dict | None = None,
     *,
     group_by_tier,
     filter_by_genres,
@@ -774,6 +879,7 @@ def generate_md(
 
     lines += _build_recommended_collection_lines(recommended_collections)
     lines += _build_personalized_recommendation_lines(personalized_recommendations)
+    lines += _build_free_weekend_now_lines(free_weekend_now)
     lines += _build_wishlist_hygiene_lines(wishlist_hygiene)
     lines += _build_smart_alert_digest_lines(smart_alert_digest)
 

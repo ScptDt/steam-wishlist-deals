@@ -99,7 +99,7 @@ El contrato futuro puede exponerse como `free_weekend_now` en JSON, pero este sl
 
 1. [x] Parser/clasificador fixture-only para `featuredcategories` + `appdetails` con tests determinísticos (`app/steam_deals_free_weekend.py`, `tests/test_free_weekend_parser.py`).
 2. [x] Contrato JSON `free_weekend_now` en el output del generator, sin UI todavía (`renderers/json_renderer.py`, `tests.test_generator_logic`).
-3. [ ] Secciones Web/HTML/Markdown `Free Weekend ahora` con copy de confianza/vigencia.
+3. [x] Secciones Web/HTML/Markdown `Free Weekend ahora` con copy de confianza/vigencia (`renderers/markdown_renderer.py`, `renderers/html_renderer.py`, `web/steam_deals/app.js`).
 4. [ ] Señales cruzadas (`en tu wishlist`, `ya en biblioteca`, `similar a tus gustos`) sin recalibrar score.
 5. [ ] Fetch live opt-in con TTL/cache, solo después de que fixtures y contrato estén estables.
 

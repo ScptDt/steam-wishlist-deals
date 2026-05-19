@@ -8249,6 +8249,60 @@ class RankTopPicksTests(unittest.TestCase):
         self.assertIn("Promos simultáneas: Se destaca Steam Farming Fest", md)
         self.assertIn("Lectura sugerida: Fest temático", md)
 
+    def test_generate_md_surfaces_free_weekend_now_section(self) -> None:
+        md = generate_md(
+            deals=[],
+            backlog_on_sale=[],
+            have_on_sale=[],
+            vanity="gaben",
+            owned={},
+            wishlist_appids=[],
+            min_discount=50,
+            genres=[],
+            free_weekend_now={
+                "generated_at": "2026-05-19T00:00:00Z",
+                "source_policy": "fixture_or_cached_store_signals_v1",
+                "summary": {"count": 1, "confidence_counts": {"high": 1}},
+                "items": [
+                    {
+                        "appid": "1001",
+                        "title": "Weekend Candidate",
+                        "observed_at": "2026-05-19T00:00:00Z",
+                        "valid_until": "2026-05-20T17:00:00Z",
+                        "sources": ["featuredcategories", "appdetails"],
+                        "confidence": "high",
+                        "reason": "Store signals show Free Weekend with structured expiry.",
+                        "signals": {"discount_percent": 100, "final_price": 0},
+                    }
+                ],
+            },
+        )
+
+        self.assertIn("## 🎮 Free Weekend ahora", md)
+        self.assertIn("**1 candidato(s)** detectados por señales locales/cacheadas", md)
+        self.assertIn("Política: `fixture_or_cached_store_signals_v1`", md)
+        self.assertIn("[Weekend Candidate](https://store.steampowered.com/app/1001/)", md)
+        self.assertIn("Confianza Alta · Vigente hasta 2026-05-20T17:00:00Z", md)
+        self.assertIn("Fuentes: featuredcategories, appdetails", md)
+        self.assertIn("no cambia score, ranking ni caché de precios", md)
+
+    def test_generate_md_shows_free_weekend_now_empty_state_for_invalid_payload(self) -> None:
+        md = generate_md(
+            deals=[],
+            backlog_on_sale=[],
+            have_on_sale=[],
+            vanity="gaben",
+            owned={},
+            wishlist_appids=[],
+            min_discount=50,
+            genres=[],
+            free_weekend_now=[],
+        )
+
+        self.assertIn("## 🎮 Free Weekend ahora", md)
+        self.assertIn("Sin candidatos locales de Free Weekend en el JSON actual", md)
+        self.assertIn("no hace fetch live ni cambia score/cache", md)
+
     def test_generate_md_can_include_obsidian_notion_frontmatter(self) -> None:
         md = generate_md(
             deals=[],
@@ -8775,6 +8829,62 @@ class RankTopPicksTests(unittest.TestCase):
         self.assertIn("También activas: Weeklong Deals", html)
         self.assertIn("Promos simultáneas: Se destaca Steam Farming Fest", html)
         self.assertIn("Lectura sugerida: Fest temático", html)
+
+    def test_generate_html_surfaces_free_weekend_now_section(self) -> None:
+        html = generate_html(
+            deals=[],
+            backlog_on_sale=[],
+            have_on_sale=[],
+            vanity="gaben",
+            owned={},
+            wishlist_appids=[],
+            min_discount=50,
+            genres=[],
+            free_weekend_now={
+                "generated_at": "2026-05-19T00:00:00Z",
+                "source_policy": "fixture_or_cached_store_signals_v1",
+                "summary": {"count": 1, "confidence_counts": {"medium": 1}},
+                "items": [
+                    {
+                        "appid": "1001",
+                        "title": "Weekend <Candidate>",
+                        "observed_at": "2026-05-19T00:00:00Z",
+                        "valid_until": "2026-05-20T17:00:00Z",
+                        "sources": ["featuredcategories", "appdetails"],
+                        "confidence": "medium",
+                        "reason": "Store signals show <Free Weekend> with structured expiry.",
+                    }
+                ],
+            },
+        )
+
+        self.assertIn("data-free-weekend-now-section", html)
+        self.assertIn("Free Weekend ahora", html)
+        self.assertIn("Solo señales locales", html)
+        self.assertIn('data-free-weekend-appid="1001"', html)
+        self.assertIn("Weekend &lt;Candidate&gt;", html)
+        self.assertIn("Confianza Media · Vigente hasta 2026-05-20T17:00:00Z", html)
+        self.assertIn("featuredcategories, appdetails", html)
+        self.assertIn("Store signals show &lt;Free Weekend&gt;", html)
+        self.assertNotIn("Weekend <Candidate>", html)
+        self.assertIn("no cambia score, ranking ni caché de precios", html)
+
+    def test_generate_html_shows_free_weekend_now_empty_state_for_invalid_payload(self) -> None:
+        html = generate_html(
+            deals=[],
+            backlog_on_sale=[],
+            have_on_sale=[],
+            vanity="gaben",
+            owned={},
+            wishlist_appids=[],
+            min_discount=50,
+            genres=[],
+            free_weekend_now=[],
+        )
+
+        self.assertIn("data-free-weekend-now-section", html)
+        self.assertIn("Sin candidatos locales de Free Weekend en el JSON actual", html)
+        self.assertIn("no hace fetch live ni cambia score/cache", html)
 
     def test_generate_share_html_labels_top_pick_score_and_metacritic(self) -> None:
         html = generate_share_html(

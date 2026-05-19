@@ -476,6 +476,35 @@ class WebAssetsTests(unittest.TestCase):
         self.assertIn(".latest-promo-extra", app_css)
         self.assertIn(".latest-promo-hint", app_css)
 
+    def test_latest_report_surfaces_free_weekend_now_inside_details(self) -> None:
+        app_js = (ROOT / "web" / "steam_deals" / "app.js").read_text(
+            encoding="utf-8"
+        )
+        app_css = (ROOT / "web" / "steam_deals" / "app.css").read_text(
+            encoding="utf-8"
+        )
+
+        self.assertIn("function renderLatestFreeWeekendNow", app_js)
+        self.assertIn("function latestFreeWeekendPayload", app_js)
+        self.assertIn("function latestFreeWeekendConfidenceLabel", app_js)
+        self.assertIn("LATEST_FREE_WEEKEND_CONFIDENCE_LABELS", app_js)
+        self.assertIn("report.free_weekend_now", app_js)
+        self.assertIn("data-latest-free-weekend-now", app_js)
+        self.assertIn("data-latest-free-weekend-appid", app_js)
+        self.assertIn("Free Weekend ahora", app_js)
+        self.assertIn("Solo señales locales", app_js)
+        self.assertIn("Revisa confianza y vigencia", app_js)
+        self.assertIn("no cambia score, ranking ni caché de precios", app_js)
+        self.assertIn("no hace fetch live, no recalcula score ni invalida caché", app_js)
+        self.assertIn("Sin candidatos locales de Free Weekend en el JSON actual", app_js)
+        self.assertIn("renderLatestFreeWeekendNow(report)", app_js)
+        self.assertIn("renderLatestReportIntentWrapper(activeReport, meta, summary, files)", app_js)
+        self.assertIn(".latest-free-weekend-section", app_css)
+        self.assertIn(".latest-free-weekend-list", app_css)
+        self.assertIn(".latest-free-weekend-item", app_css)
+        self.assertIn(".latest-free-weekend-empty", app_css)
+        self.assertIn(".latest-free-weekend-badge", app_css)
+
     def test_latest_report_surfaces_partial_cache_coverage(self) -> None:
         app_js = (ROOT / "web" / "steam_deals" / "app.js").read_text(
             encoding="utf-8"

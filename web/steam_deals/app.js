@@ -2670,6 +2670,12 @@ const LATEST_PROMO_CATEGORY_PRIORITY = Object.freeze({
 
 const LATEST_PROMO_PRIMARY_TYPES = Object.freeze([1, 11]);
 
+const LATEST_FREE_WEEKEND_CONFIDENCE_LABELS = Object.freeze({
+  high: 'Alta',
+  medium: 'Media',
+  low: 'Baja',
+});
+
 function latestPromoCategoryLabel(category) {
   const key = String(category || '').trim();
   return LATEST_PROMO_CATEGORY_LABELS[key] || key || 'Otra promo';
@@ -2775,6 +2781,112 @@ function renderLatestPromoContext(report) {
       ${primaryHtml}
       ${extrasHtml}
       ${hintsHtml}
+    </div>
+  `;
+}
+
+function latestFreeWeekendPayload(report) {
+  const payload = report && typeof report === 'object' ? report.free_weekend_now : null;
+  return payload && typeof payload === 'object' && !Array.isArray(payload) ? payload : null;
+}
+
+function latestFreeWeekendItems(payload) {
+  return Array.isArray(payload && payload.items)
+    ? payload.items.filter(item => item && typeof item === 'object')
+    : [];
+}
+
+function latestFreeWeekendCount(payload, items) {
+  const summary = payload && typeof payload.summary === 'object' ? payload.summary : {};
+  const summaryCount = latestCoverageCount(summary.count);
+  return Math.max(summaryCount, Array.isArray(items) ? items.length : 0);
+}
+
+function latestFreeWeekendConfidenceLabel(confidence) {
+  const key = String(confidence || '').trim().toLowerCase();
+  return LATEST_FREE_WEEKEND_CONFIDENCE_LABELS[key] || (key ? key.charAt(0).toUpperCase() + key.slice(1) : 'Sin dato');
+}
+
+function latestFreeWeekendTitle(source) {
+  const appid = String(source.appid || source.steam_appid || '').trim();
+  const safeAppid = /^\d+$/.test(appid) ? appid : '';
+  const name = String(source.title || source.name || (appid ? `AppID ${appid}` : 'Candidato sin título')).trim();
+  const nameHtml = safeAppid
+    ? `<a href="https://store.steampowered.com/app/${escapeHtml(safeAppid)}/" target="_blank" rel="noopener noreferrer">${escapeHtml(name)}</a>`
+    : `<span>${escapeHtml(name)}</span>`;
+  return {appid, safeAppid, nameHtml};
+}
+
+function latestFreeWeekendMeta(source) {
+  const parts = [`Confianza ${latestFreeWeekendConfidenceLabel(source.confidence)}`];
+  const validUntil = String(source.valid_until || '').trim();
+  parts.push(validUntil ? `Vigente hasta ${validUntil}` : 'Sin vigencia estructurada');
+  const observedAt = String(source.observed_at || '').trim();
+  if (observedAt) parts.push(`Observado ${observedAt}`);
+  return parts.join(' · ');
+}
+
+function latestFreeWeekendReason(source) {
+  const reason = String(source.reason || '').trim();
+  if (reason) return reason;
+  const signals = source.signals && typeof source.signals === 'object' ? source.signals : {};
+  const parts = [];
+  if (signals.discount_percent !== null && signals.discount_percent !== undefined) parts.push(`descuento ${signals.discount_percent}%`);
+  if (signals.final_price !== null && signals.final_price !== undefined) parts.push(`precio final ${signals.final_price}`);
+  const matchedText = String(signals.matched_text || '').trim();
+  if (matchedText) parts.push(`texto: ${matchedText}`);
+  return parts.join(' · ') || 'Revisar disponibilidad en Steam';
+}
+
+function latestFreeWeekendSources(source) {
+  const sources = Array.isArray(source.sources)
+    ? source.sources.map(item => String(item || '').trim()).filter(Boolean).slice(0, 4)
+    : [];
+  return sources.join(', ') || 'Sin fuentes compactas';
+}
+
+function renderLatestFreeWeekendItem(item) {
+  const source = item && typeof item === 'object' ? item : {};
+  const title = latestFreeWeekendTitle(source);
+  return `
+    <li class="latest-free-weekend-item"${title.safeAppid ? ` data-latest-free-weekend-appid="${escapeHtml(title.safeAppid)}"` : ''}>
+      <div class="latest-free-weekend-item-main">
+        <strong>${title.nameHtml}</strong>
+        <span class="latest-free-weekend-meta">${escapeHtml(latestFreeWeekendMeta(source))}</span>
+        <span class="latest-free-weekend-reason">${escapeHtml(latestFreeWeekendReason(source))}</span>
+      </div>
+      <span class="latest-free-weekend-sources">${escapeHtml(latestFreeWeekendSources(source))}</span>
+    </li>
+  `;
+}
+
+function renderLatestFreeWeekendNow(report) {
+  const payload = latestFreeWeekendPayload(report);
+  const items = latestFreeWeekendItems(payload);
+  const totalCount = latestFreeWeekendCount(payload, items);
+  const selectedItems = items.slice(0, 3);
+  const hiddenCount = Math.max(0, totalCount - selectedItems.length);
+  const sourcePolicy = String((payload && payload.source_policy) || '').trim();
+  const policyHtml = sourcePolicy
+    ? `<span class="latest-free-weekend-policy">Política: ${escapeHtml(sourcePolicy)}</span>`
+    : '';
+  const bodyHtml = selectedItems.length
+    ? `<ol class="latest-free-weekend-list">${selectedItems.map(renderLatestFreeWeekendItem).join('')}</ol>${hiddenCount ? `<div class="latest-free-weekend-more">${escapeHtml(formatLatestCoverageCount(hiddenCount))} más en el JSON completo</div>` : ''}`
+    : '<div class="latest-free-weekend-empty">Sin candidatos locales de Free Weekend en el JSON actual. Este bloque usa solo el último JSON local: no hace fetch live, no recalcula score ni invalida caché.</div>';
+  const countCopy = totalCount > 0
+    ? `${formatLatestCoverageCount(totalCount)} candidato(s) con señales locales/cacheadas`
+    : 'Sin candidatos locales con señales suficientes';
+  return `
+    <div class="latest-free-weekend-section" data-latest-free-weekend-now>
+      <div class="latest-free-weekend-head">
+        <div>
+          <div class="latest-free-weekend-title">Free Weekend ahora</div>
+          <div class="latest-free-weekend-subtitle">${escapeHtml(countCopy)}. Revisa confianza y vigencia antes de asumir disponibilidad; no cambia score, ranking ni caché de precios.</div>
+        </div>
+        <span class="latest-free-weekend-badge">Solo señales locales</span>
+      </div>
+      ${policyHtml}
+      ${bodyHtml}
     </div>
   `;
 }
@@ -3915,6 +4027,7 @@ function renderLatestReportActionsPanel(files = null) {
 function renderLatestRecommendationsPanel(report, files = null) {
   const body = [
     renderLatestPromoContext(report),
+    renderLatestFreeWeekendNow(report),
     renderLatestSmartAlertDigest(report),
     renderLatestRecommendedCollections(report),
     renderLatestPersonalizedRecommendations(report, files),

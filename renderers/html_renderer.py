@@ -137,6 +137,12 @@ _WISHLIST_HYGIENE_SIGNAL_LABELS = {
     "invalid_appid": "AppID inválido",
 }
 
+_FREE_WEEKEND_CONFIDENCE_LABELS = {
+    "high": "Alta",
+    "medium": "Media",
+    "low": "Baja",
+}
+
 _TOP_PICK_RECOMMENDATION_FILTERS = (
     "Comprar ahora",
     "Muy buena oferta",
@@ -217,6 +223,110 @@ def _build_promo_context_html(active_promo_context: dict | None) -> str:
     {simultaneous_html}
     {decision_html}
   </div>"""
+
+
+def _free_weekend_confidence_label(confidence: str) -> str:
+    key = str(confidence or "").strip().lower()
+    return _FREE_WEEKEND_CONFIDENCE_LABELS.get(key, key.title() if key else "Sin dato")
+
+
+def _free_weekend_items(payload: dict | None, *, limit: int = 8) -> tuple[list[dict], int, int]:
+    if not isinstance(payload, dict):
+        return [], 0, 0
+    items = [item for item in payload.get("items", []) if isinstance(item, dict)]
+    summary = payload.get("summary")
+    total = len(items)
+    if isinstance(summary, dict):
+        try:
+            total = max(total, int(summary.get("count") or 0))
+        except (TypeError, ValueError):
+            total = len(items)
+    return items[:limit], total, max(0, total - min(len(items), limit))
+
+
+def _html_free_weekend_title(item: dict) -> str:
+    appid = str(item.get("appid") or item.get("steam_appid") or "").strip()
+    fallback = f"AppID {appid}" if appid else "Candidato sin título"
+    title = str(item.get("title") or item.get("name") or fallback).strip()
+    return _html_link(title, appid) if appid.isdigit() else _html_esc(title)
+
+
+def _html_free_weekend_meta(item: dict) -> str:
+    confidence = _free_weekend_confidence_label(str(item.get("confidence") or ""))
+    valid_until = str(item.get("valid_until") or "").strip()
+    observed_at = str(item.get("observed_at") or "").strip()
+    validity = f"Vigente hasta {valid_until}" if valid_until else "Sin vigencia estructurada"
+    parts = [f"Confianza {confidence}", validity]
+    if observed_at:
+        parts.append(f"Observado {observed_at}")
+    return _html_esc(" · ".join(parts))
+
+
+def _html_free_weekend_sources(item: dict) -> str:
+    sources = item.get("sources") if isinstance(item, dict) else []
+    compact = [str(source or "").strip() for source in sources if str(source or "").strip()]
+    return _html_esc(", ".join(compact[:4]) or "Sin fuentes compactas")
+
+
+def _html_free_weekend_reason(item: dict) -> str:
+    reason = str(item.get("reason") or "").strip()
+    if reason:
+        return _html_esc(reason)
+    signals = item.get("signals") if isinstance(item.get("signals"), dict) else {}
+    signal_parts = []
+    if signals.get("discount_percent") is not None:
+        signal_parts.append(f"descuento {signals.get('discount_percent')}%")
+    if signals.get("final_price") is not None:
+        signal_parts.append(f"precio final {signals.get('final_price')}")
+    matched_text = str(signals.get("matched_text") or "").strip()
+    if matched_text:
+        signal_parts.append(f"texto: {matched_text}")
+    return _html_esc(" · ".join(signal_parts) or "Revisar disponibilidad en Steam")
+
+
+def _html_free_weekend_item(item: dict) -> str:
+    appid = str(item.get("appid") or item.get("steam_appid") or "").strip()
+    data_attr = f' data-free-weekend-appid="{_html_esc(appid)}"' if appid.isdigit() else ""
+    return f'''<li class="free-weekend-item"{data_attr}>
+  <div class="free-weekend-item-main">
+    <strong>{_html_free_weekend_title(item)}</strong>
+    <div class="free-weekend-item-meta">{_html_free_weekend_meta(item)}</div>
+    <div class="free-weekend-item-reason">{_html_free_weekend_reason(item)}</div>
+  </div>
+  <span class="free-weekend-item-sources">{_html_free_weekend_sources(item)}</span>
+</li>'''
+
+
+def _html_free_weekend_now(payload: dict | None) -> str:
+    items, total_items, hidden_count = _free_weekend_items(payload)
+    source_policy = str(payload.get("source_policy") or "").strip() if isinstance(payload, dict) else ""
+    policy_html = (
+        f'<span class="free-weekend-policy">Política: {_html_esc(source_policy)}</span>'
+        if source_policy
+        else ""
+    )
+    if not items:
+        body_html = '''<div class="free-weekend-empty">Sin candidatos locales de Free Weekend en el JSON actual. Este bloque no hace fetch live ni cambia score/cache; si falta vigencia o confianza, no asume disponibilidad.</div>'''
+    else:
+        more_html = (
+            f'<div class="free-weekend-more">{hidden_count:,} más en el payload completo</div>'
+            if hidden_count
+            else ""
+        )
+        body_html = f'''<ol class="free-weekend-list">{"".join(_html_free_weekend_item(item) for item in items)}</ol>
+  {more_html}'''
+    count_text = f"{total_items:,} candidato(s)" if total_items else "Sin candidatos locales"
+    return f'''<section class="free-weekend-now" data-free-weekend-now-section>
+  <div class="free-weekend-head">
+    <div>
+      <h2>Free Weekend ahora</h2>
+      <p class="section-desc"><strong>{_html_esc(count_text)}</strong> desde señales locales/cacheadas. Revisa confianza y vigencia antes de asumir disponibilidad; no cambia score, ranking ni caché de precios.</p>
+    </div>
+    <span class="free-weekend-head-badge">Solo señales locales</span>
+  </div>
+  {policy_html}
+  {body_html}
+</section>'''
 
 
 def _html_top_pick_filter_controls() -> str:
@@ -1293,6 +1403,21 @@ a.pick-card:hover { border-color: var(--accent-blue); transform: translateY(-2px
 .wishlist-hygiene-reasons, .wishlist-hygiene-more { color: var(--text-secondary); font-size: .75rem; line-height: 1.4; }
 .wishlist-hygiene-more { margin-top: .6rem; }
 @media (max-width: 767px) { .wishlist-hygiene-head, .wishlist-hygiene-item { flex-direction: column; } .wishlist-hygiene-head-badge, .wishlist-hygiene-badge { align-self: flex-start; } }
+.free-weekend-now { margin: 0 0 1.5rem; padding: 1rem; border: 1px solid rgba(108,198,68,.28); border-radius: 10px; background: linear-gradient(135deg, rgba(108,198,68,.08), rgba(12,20,30,.25)); }
+.free-weekend-head { display: flex; justify-content: space-between; gap: 1rem; align-items: flex-start; }
+.free-weekend-now h2 { font-size: 1.2rem; margin-bottom: .3rem; }
+.free-weekend-head-badge { white-space: nowrap; border: 1px solid rgba(108,198,68,.4); border-radius: 999px; color: var(--accent-green); background: rgba(12,20,30,.32); padding: .16rem .55rem; font-size: .74rem; font-weight: 700; }
+.free-weekend-policy, .free-weekend-empty, .free-weekend-more { color: var(--text-secondary); font-size: .75rem; line-height: 1.4; }
+.free-weekend-policy { display: block; margin: -.35rem 0 .7rem; }
+.free-weekend-list { list-style: none; display: grid; grid-template-columns: repeat(auto-fit, minmax(260px, 1fr)); gap: .7rem; }
+.free-weekend-item { display: flex; justify-content: space-between; gap: .75rem; background: var(--bg-card); border: 1px solid rgba(108,198,68,.22); border-radius: 8px; padding: .75rem; }
+.free-weekend-item-main { min-width: 0; }
+.free-weekend-item-main strong { display: block; font-size: .86rem; line-height: 1.3; margin-bottom: .35rem; }
+.free-weekend-item-meta { color: var(--accent-green); font-size: .74rem; line-height: 1.4; margin-bottom: .25rem; }
+.free-weekend-item-reason, .free-weekend-item-sources { color: var(--text-secondary); font-size: .74rem; line-height: 1.4; }
+.free-weekend-item-sources { flex: 0 0 8.5rem; text-align: right; }
+.free-weekend-more { margin-top: .6rem; }
+@media (max-width: 767px) { .free-weekend-head, .free-weekend-item { flex-direction: column; } .free-weekend-head-badge { align-self: flex-start; } .free-weekend-item-sources { flex-basis: auto; text-align: left; } }
 .smart-alert-digest { margin: 0 0 1.5rem; padding: 1rem; border: 1px solid rgba(102,192,244,.26); border-radius: 10px; background: linear-gradient(135deg, rgba(102,192,244,.08), rgba(12,20,30,.25)); }
 .smart-alert-digest-head { display: flex; justify-content: space-between; gap: 1rem; align-items: flex-start; }
 .smart-alert-digest h2 { font-size: 1.2rem; margin-bottom: .3rem; }
@@ -1952,6 +2077,7 @@ def generate_html(
     profile_display_name: str | None = None,
     active_promo_context: dict | None = None,
     smart_alert_digest: dict | None = None,
+    free_weekend_now: dict | None = None,
     *,
     group_by_tier,
     group_deals_by_tag,
@@ -2121,6 +2247,7 @@ def generate_html(
 
     parts.append(_html_recommended_collections(recommended_collections))
     parts.append(_html_personalized_recommendations(personalized_recommendations))
+    parts.append(_html_free_weekend_now(free_weekend_now))
     parts.append(_html_wishlist_hygiene(wishlist_hygiene))
     parts.append(_html_smart_alert_digest(smart_alert_digest))
 
