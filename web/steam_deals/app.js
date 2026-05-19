@@ -4142,6 +4142,38 @@ function isLatestReportIntentHash(hash = window.location.hash) {
   return String(hash || '').startsWith('#latest-report-intent-');
 }
 
+function setLatestReportIntentHash(key) {
+  const hash = `#latest-report-intent-${encodeURIComponent(key)}`;
+  if (window.history && typeof window.history.replaceState === 'function') {
+    window.history.replaceState(null, '', hash);
+  } else {
+    window.location.hash = hash;
+  }
+}
+
+function activateLatestReportIntentTab(tab, options = {}) {
+  if (!tab) return;
+  const key = tab.dataset.latestReportIntentTab || '';
+  if (!key) return;
+  syncLatestReportIntentActiveState(key);
+  setLatestReportIntentHash(key);
+  if (options.focus && typeof tab.focus === 'function') tab.focus();
+}
+
+function handleLatestReportIntentTabKeydown(event, tabs, index) {
+  const key = event.key;
+  const count = tabs.length;
+  if (!count) return;
+  let nextIndex = -1;
+  if (key === 'ArrowRight' || key === 'ArrowDown') nextIndex = (index + 1) % count;
+  if (key === 'ArrowLeft' || key === 'ArrowUp') nextIndex = (index - 1 + count) % count;
+  if (key === 'Home') nextIndex = 0;
+  if (key === 'End') nextIndex = count - 1;
+  if (nextIndex < 0) return;
+  event.preventDefault();
+  activateLatestReportIntentTab(tabs[nextIndex], { focus: true });
+}
+
 function syncLatestReportIntentActiveState(requestedKey = '') {
   const card = latestReportCardEl();
   const wrapper = card ? card.querySelector('[data-latest-report-intent-wrapper]') : null;
@@ -4177,17 +4209,14 @@ function bindLatestReportIntentToolbarActions() {
   const card = latestReportCardEl();
   const wrapper = card ? card.querySelector('[data-latest-report-intent-wrapper]') : null;
   if (!wrapper) return;
-  wrapper.querySelectorAll('[data-latest-report-intent-tab]').forEach((tab) => {
+  const tabs = Array.from(wrapper.querySelectorAll('[data-latest-report-intent-tab]'));
+  tabs.forEach((tab, index) => {
     tab.addEventListener('click', (event) => {
       event.preventDefault();
-      const key = tab.dataset.latestReportIntentTab || '';
-      syncLatestReportIntentActiveState(key);
-      const hash = `#latest-report-intent-${encodeURIComponent(key)}`;
-      if (window.history && typeof window.history.replaceState === 'function') {
-        window.history.replaceState(null, '', hash);
-      } else {
-        window.location.hash = hash;
-      }
+      activateLatestReportIntentTab(tab);
+    });
+    tab.addEventListener('keydown', (event) => {
+      handleLatestReportIntentTabKeydown(event, tabs, index);
     });
   });
   if (!latestReportIntentHashListenerBound) {
@@ -4223,7 +4252,7 @@ function renderLatestReportIntentIntro() {
       <div>
         <div class="latest-report-intent-intro-eyebrow">Selector del último reporte</div>
         <div class="latest-report-intent-intro-title">Elige qué quieres revisar</div>
-        <div class="latest-report-intent-intro-copy">Cambia de vista sin recalcular nada: todo usa el último JSON local y mantiene intactas tus recomendaciones, caché y wishlist.</div>
+        <div class="latest-report-intent-intro-copy" id="latest-report-intent-help">Cambia de vista sin recalcular nada: todo usa el último JSON local y mantiene intactas tus recomendaciones, caché y wishlist. Atajo: usa ←/→, Home o End para moverte entre vistas.</div>
       </div>
       <span class="latest-report-intent-intro-badge">Sin cambios de datos</span>
     </div>
@@ -4284,7 +4313,7 @@ function renderLatestReportIntentWrapper(report, meta = {}, summary = {}, files 
   return `
     <section class="latest-report-intent-wrapper" data-latest-report-intent-wrapper aria-label="Secciones del último reporte por intención">
       ${renderLatestReportIntentIntro()}
-      <nav class="latest-report-intent-toolbar" data-latest-report-intent-toolbar aria-label="Navegar secciones del último reporte">
+      <nav class="latest-report-intent-toolbar" data-latest-report-intent-toolbar role="tablist" aria-label="Navegar secciones del último reporte" aria-describedby="latest-report-intent-help">
         ${intents.map(latestReportIntentToolbarItem).join('')}
       </nav>
       <div class="latest-report-intent-sections">

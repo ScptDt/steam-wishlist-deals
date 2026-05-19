@@ -1002,6 +1002,20 @@ details .details-body .field:last-child {
 .latest-report-intent-tab[aria-selected="true"] {
   box-shadow: inset 0 0 0 1px rgba(102, 192, 244, 0.24);
 }
+.latest-report-intent-tab[aria-selected="true"] strong::after {
+  content: "Activa";
+  display: inline-flex;
+  align-items: center;
+  margin-left: 0.42rem;
+  padding: 0.08rem 0.34rem;
+  border-radius: 999px;
+  background: rgba(102, 192, 244, 0.14);
+  color: var(--accent);
+  font-size: 0.56rem;
+  font-weight: 800;
+  letter-spacing: 0.04em;
+  text-transform: uppercase;
+}
 .latest-report-intent-tab:focus-visible {
   outline: 2px solid var(--accent);
   outline-offset: 2px;
