@@ -8093,6 +8093,53 @@ class RankTopPicksTests(unittest.TestCase):
         self.assertIn("reviews muy positivas", md)
         self.assertIn("Score = recomendación compuesta para priorizar qué revisar primero.", md)
 
+    def test_generate_md_renders_advisory_offer_highlights(self) -> None:
+        md = generate_md(
+            deals=[
+                {
+                    "appid": "b",
+                    "name": "Bravo",
+                    "discount": 82,
+                    "price_final": "$10",
+                    "price_original": "$50",
+                    "price_raw": 1000,
+                    "release_year": date.today().year,
+                    "categories": [2],
+                }
+            ],
+            backlog_on_sale=[],
+            have_on_sale=[],
+            vanity="gaben",
+            owned={},
+            wishlist_appids=["a", "b"],
+            min_discount=50,
+            genres=[],
+            top_picks=[
+                {
+                    "appid": "a",
+                    "name": "Alpha | Beta",
+                    "discount": 90,
+                    "price_final": "$10",
+                    "score": 95.4,
+                    "review": {"pct": 92, "desc": "Very Positive", "total": 100},
+                    "deck": 3,
+                    "priority": 5,
+                    "release_year": date.today().year,
+                    "linux_native": False,
+                    "metacritic_score": 90,
+                    "categories": [2],
+                    "recommendation": "Comprar ahora",
+                    "score_reasons": ["reviews muy positivas"],
+                }
+            ],
+            historical_lows={"b": {"price": 10.25, "date": "2026-05-19"}},
+        )
+
+        self.assertIn("**Nota:** Muy buena oferta (Comprar ahora)", md)
+        self.assertIn("**Nota:** Cerca de mínimo histórico (precio cerca del mínimo conocido)", md)
+        self.assertIn("Alpha \\| Beta", md)
+        self.assertIn("|  | -82% | $10 | $50", md)
+
     def test_generate_md_renders_recommended_collections(self) -> None:
         md = generate_md(
             deals=[],

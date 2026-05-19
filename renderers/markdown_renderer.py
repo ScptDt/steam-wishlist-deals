@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 from datetime import date
+import re
 
 from .common import markdown_escape
 from .social_rows import (
@@ -119,6 +120,132 @@ def _safe_float(value) -> float | None:
         return float(value)
     except (TypeError, ValueError):
         return None
+
+
+def _price_from_sources(*sources: dict | None) -> float:
+    for source in sources:
+        if not isinstance(source, dict):
+            continue
+        raw_cents = source.get("price_raw")
+        if raw_cents not in (None, ""):
+            try:
+                return float(raw_cents) / 100
+            except (TypeError, ValueError):
+                pass
+        price_text = str(source.get("price_final") or "")
+        match = re.search(r"[\d,.]+", price_text.replace(",", ""))
+        if match:
+            return float(match.group())
+    return 0.0
+
+
+def _offer_reasons(item: dict, source_deal: dict | None = None) -> list[str]:
+    reasons: list[str] = []
+    for source in (item, source_deal or {}):
+        raw_reasons = source.get("score_reasons") if isinstance(source, dict) else []
+        if not isinstance(raw_reasons, list):
+            continue
+        for reason in raw_reasons:
+            text = str(reason or "").strip()
+            if text and text not in reasons:
+                reasons.append(text)
+    return reasons
+
+
+def _offer_discount(item: dict, source_deal: dict | None = None) -> int:
+    for source in (item, source_deal or {}):
+        if not isinstance(source, dict):
+            continue
+        try:
+            return int(source.get("discount") or 0)
+        except (TypeError, ValueError):
+            continue
+    return 0
+
+
+def _offer_near_historical_low(
+    item: dict,
+    *,
+    min_hist: dict | None = None,
+    source_deal: dict | None = None,
+) -> bool:
+    if not isinstance(min_hist, dict):
+        return False
+    low_price = _safe_float(min_hist.get("price")) or 0
+    current_price = _price_from_sources(item, source_deal)
+    return low_price > 0 and current_price > 0 and current_price <= low_price * 1.05
+
+
+def _offer_has_active_promo_signal(
+    *,
+    reasons: list[str],
+    discount: int,
+    active_promo_context: dict | None,
+) -> bool:
+    if any("promo" in reason.lower() for reason in reasons):
+        return True
+    if not isinstance(active_promo_context, dict) or discount < 75:
+        return False
+    categories = [str(category or "") for category in active_promo_context.get("categories", [])]
+    return any(
+        category in {"major_sale", "fest", "next_fest", "publisher_sale", "themed"}
+        for category in categories
+    )
+
+
+def _offer_highlight_label(
+    item: dict,
+    *,
+    min_hist: dict | None = None,
+    source_deal: dict | None = None,
+    active_promo_context: dict | None = None,
+) -> tuple[str, str] | None:
+    recommendation = str(item.get("recommendation") or "").strip()
+    recommendation_lower = recommendation.lower()
+    reasons = _offer_reasons(item, source_deal)
+    reasons_lower = " · ".join(reasons).lower()
+    discount = _offer_discount(item, source_deal)
+    near_min = _offer_near_historical_low(item, min_hist=min_hist, source_deal=source_deal)
+
+    if "esper" in recommendation_lower:
+        return "Esperar mejor oferta", "señal conservadora"
+    if "solo si" in recommendation_lower:
+        return "Solo si ya estaba en tu radar", "señal conservadora"
+    if "comprar" in recommendation_lower or "muy buena" in recommendation_lower:
+        return "Muy buena oferta", recommendation or "señal del Top Pick"
+    if near_min or "mínimo" in reasons_lower or "minimo" in reasons_lower:
+        return "Cerca de mínimo histórico", "precio cerca del mínimo conocido"
+    if _offer_has_active_promo_signal(
+        reasons=reasons,
+        discount=discount,
+        active_promo_context=active_promo_context,
+    ):
+        return "Promo destacada", "contexto de promo activa"
+    if discount >= 85:
+        return "Muy buena oferta", "descuento fuerte"
+    if "vale la pena" in recommendation_lower or discount >= 70:
+        return "Buena para revisar hoy", recommendation or "descuento alto"
+    return None
+
+
+def _offer_highlight_note(
+    item: dict,
+    *,
+    min_hist: dict | None = None,
+    source_deal: dict | None = None,
+    active_promo_context: dict | None = None,
+) -> str:
+    highlight = _offer_highlight_label(
+        item,
+        min_hist=min_hist,
+        source_deal=source_deal,
+        active_promo_context=active_promo_context,
+    )
+    if not highlight:
+        return ""
+    label, reason = highlight
+    detail = f" ({_md_esc(reason)})" if reason else ""
+    return f"<br>**Nota:** {_md_esc(label)}{detail}"
 
 
 def _wishlist_hygiene_game_label(item: dict) -> str:
@@ -878,7 +1005,10 @@ def generate_md(
             mc_str = str(mc) if mc else "—"
             mp_str = multiplayer_badges(tp.get("categories", [])) or "—"
             prio = _prio_badge(tp.get("priority", 0))
-            name_col = f"{_link(tp['name'], tp['appid'])}{prio}"
+            name_col = (
+                f"{_link(tp['name'], tp['appid'])}{prio}"
+                f"{_offer_highlight_note(tp, min_hist=historical_lows.get(tp['appid']), active_promo_context=active_promo_context)}"
+            )
             yr = tp.get("release_year") or "—"
             lines.append(
                 f"| {idx} | {tp['score']} | -{tp['discount']}% | {tp['price_final']} | {yr} | {rev_str} | {mc_str} | {dk_str} | {mp_str} | {name_col} |"
@@ -1402,7 +1532,10 @@ def generate_md(
                 markers.append("🆕")
             new_marker = " ".join(markers)
             prio = _prio_badge(priorities.get(d["appid"], 0))
-            name_col = f"{_link(d['name'], d['appid'])}{prio}"
+            name_col = (
+                f"{_link(d['name'], d['appid'])}{prio}"
+                f"{_offer_highlight_note(d, min_hist=historical_lows.get(d['appid']), active_promo_context=active_promo_context)}"
+            )
 
             rev = reviews.get(d["appid"])
             rev_str = f"{rev['desc']} ({rev['pct']}%)" if rev else "—"
