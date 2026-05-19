@@ -32,6 +32,19 @@ def _smart_alert_digest_total(digest: dict | None) -> int:
         return 0
 
 
+def _free_weekend_now_total(payload: dict | None) -> int:
+    if not isinstance(payload, dict):
+        return 0
+    summary = payload.get("summary")
+    if isinstance(summary, dict):
+        try:
+            return max(0, int(summary.get("count") or 0))
+        except (TypeError, ValueError):
+            return 0
+    items = payload.get("items")
+    return len(items) if isinstance(items, list) else 0
+
+
 def generate_json(
     deals: list[dict],
     backlog_on_sale: list[dict],
@@ -70,6 +83,7 @@ def generate_json(
     profile_display_name: str | None = None,
     active_promo_context: dict | None = None,
     smart_alert_digest: dict | None = None,
+    free_weekend_now: dict | None = None,
 ) -> str:
     previous_appids = previous_appids or set()
     family_appids = family_appids or set()
@@ -92,6 +106,7 @@ def generate_json(
     personalized_recommendations = personalized_recommendations or {"items": []}
     wishlist_hygiene = wishlist_hygiene or {"items": [], "summary": {}}
     smart_alert_digest = smart_alert_digest if isinstance(smart_alert_digest, dict) else None
+    free_weekend_now = free_weekend_now if isinstance(free_weekend_now, dict) else None
 
     payload = {
         "meta": {
@@ -122,6 +137,7 @@ def generate_json(
             "smart_alerts_count": _smart_alert_digest_total(smart_alert_digest),
             "gift_ideas_count": len(gift_ideas),
             "wishlist_hygiene_count": len(wishlist_hygiene.get("items", [])),
+            "free_weekend_now_count": _free_weekend_now_total(free_weekend_now),
         },
         "comparison": _json_safe(comparison),
         "top_picks": _json_safe(top_picks),
@@ -153,4 +169,6 @@ def generate_json(
         payload["meta"]["active_promo_context"] = _json_safe(active_promo_context)
     if smart_alert_digest:
         payload["smart_alert_digest"] = _json_safe(smart_alert_digest)
+    if free_weekend_now:
+        payload["free_weekend_now"] = _json_safe(free_weekend_now)
     return json.dumps(payload, ensure_ascii=False, indent=2)

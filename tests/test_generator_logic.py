@@ -4722,6 +4722,64 @@ class RunOutputTests(unittest.TestCase):
         self.assertEqual(result["json"], Path("/tmp/out/Steam Deals 2026-04-14.json"))
         self.assertEqual(result["csv"], Path("/tmp/out/Steam Deals 2026-04-14.csv"))
 
+    def test_generate_json_serializes_free_weekend_now_contract(self) -> None:
+        free_weekend_now = {
+            "generated_at": "2026-05-19T00:00:00Z",
+            "source_policy": "fixture_or_cached_store_signals_v1",
+            "summary": {"count": 1, "confidence_counts": {"medium": 1}},
+            "items": [
+                {
+                    "appid": "1001",
+                    "title": "Weekend Candidate",
+                    "observed_at": "2026-05-19T00:00:00Z",
+                    "valid_until": "2026-05-20T17:00:00Z",
+                    "sources": ["featuredcategories", "appdetails"],
+                    "confidence": "medium",
+                    "reason": "fixture-only contract",
+                    "signals": {"discount_percent": 100, "final_price": 0},
+                }
+            ],
+        }
+
+        payload = generate_json(
+            deals=[],
+            backlog_on_sale=[],
+            have_on_sale=[],
+            vanity="gaben",
+            owned={},
+            wishlist_appids=[],
+            min_discount=50,
+            genres=[],
+            free_weekend_now=free_weekend_now,
+        )
+
+        data = json.loads(payload)
+
+        self.assertEqual(data["summary"]["free_weekend_now_count"], 1)
+        self.assertEqual(
+            data["free_weekend_now"]["source_policy"],
+            "fixture_or_cached_store_signals_v1",
+        )
+        self.assertEqual(data["free_weekend_now"]["items"][0]["appid"], "1001")
+
+    def test_generate_json_omits_invalid_free_weekend_now_contract(self) -> None:
+        payload = generate_json(
+            deals=[],
+            backlog_on_sale=[],
+            have_on_sale=[],
+            vanity="gaben",
+            owned={},
+            wishlist_appids=[],
+            min_discount=50,
+            genres=[],
+            free_weekend_now=[],
+        )
+
+        data = json.loads(payload)
+
+        self.assertEqual(data["summary"]["free_weekend_now_count"], 0)
+        self.assertNotIn("free_weekend_now", data)
+
 
 class StopApiContractTests(unittest.TestCase):
     def test_build_stop_response_returns_status_and_message(self) -> None:

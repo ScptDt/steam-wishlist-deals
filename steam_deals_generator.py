@@ -3350,6 +3350,7 @@ def generate_json(
     profile_display_name: str | None = None,
     active_promo_context: dict | None = None,
     smart_alert_digest: dict | None = None,
+    free_weekend_now: dict | None = None,
 ) -> str:
     if _generate_json_renderer is None:
         raise RuntimeError("JSON renderer module is not available")
@@ -3418,6 +3419,7 @@ def generate_json(
         profile_display_name=profile_display_name,
         active_promo_context=active_promo_context,
         smart_alert_digest=smart_alert_digest,
+        free_weekend_now=free_weekend_now,
     )
 
 
@@ -4157,6 +4159,7 @@ def main():
         hltb_records=hltb_hours,
         external_matches=wishlist_external_matches,
     )
+    free_weekend_now = None
 
     # Generar MD
     step("Generando Markdown...")
@@ -4296,6 +4299,7 @@ def main():
         profile_display_name=profile_display_name,
         active_promo_context=active_promo_context,
         smart_alert_digest=smart_alert_digest,
+        free_weekend_now=free_weekend_now,
         **family_renderer_kwargs,
     )
 
