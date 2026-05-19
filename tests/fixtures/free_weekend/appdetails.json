@@ -1,0 +1,92 @@
+{
+  "1001": {
+    "success": true,
+    "data": {
+      "name": "Weekend Trial Candidate",
+      "type": "game",
+      "is_free": false,
+      "price_overview": {
+        "discount_percent": 100,
+        "final": 0,
+        "initial": 1999,
+        "discount_expiration": 1767571200
+      },
+      "packages": [5001]
+    }
+  },
+  "1002": {
+    "success": true,
+    "data": {
+      "name": "Co-op Game",
+      "type": "game",
+      "is_free": false,
+      "short_description": "Play the full game during the Free Weekend.",
+      "price_overview": {
+        "discount_percent": 100,
+        "final": 0,
+        "initial": 2999,
+        "discount_expiration": 1767571200
+      },
+      "package_groups": [
+        {
+          "subs": [
+            {"packageid": 5002}
+          ]
+        }
+      ]
+    }
+  },
+  "1003": {
+    "success": true,
+    "data": {
+      "name": "Always Free Arena",
+      "type": "game",
+      "is_free": true
+    }
+  },
+  "1004": {
+    "success": true,
+    "data": {
+      "name": "Expired Free Weekend",
+      "type": "game",
+      "is_free": false,
+      "short_description": "Free Weekend has ended.",
+      "price_overview": {
+        "discount_percent": 100,
+        "final": 0,
+        "initial": 2499,
+        "discount_expiration": 1767225600
+      }
+    }
+  },
+  "1005": {
+    "success": true,
+    "data": {
+      "name": "Free to Keep Giveaway Game",
+      "type": "game",
+      "is_free": false,
+      "short_description": "Free to keep if claimed during the promotion.",
+      "price_overview": {
+        "discount_percent": 100,
+        "final": 0,
+        "initial": 1599,
+        "discount_expiration": 1767571200
+      }
+    }
+  },
+  "1006": {
+    "success": true,
+    "data": {
+      "name": "Sample Demo",
+      "type": "demo",
+      "is_free": true,
+      "short_description": "A demo build, not a full-game free weekend.",
+      "price_overview": {
+        "discount_percent": 100,
+        "final": 0,
+        "initial": 999,
+        "discount_expiration": 1767571200
+      }
+    }
+  }
+}

@@ -1,0 +1,60 @@
+{
+  "specials": {
+    "items": [
+      {
+        "id": 1001,
+        "name": "Weekend Trial Candidate",
+        "discount_percent": 100,
+        "final_price": 0,
+        "original_price": 1999,
+        "discount_expiration": 1767571200
+      },
+      {
+        "id": 1002,
+        "name": "Free Weekend - Co-op Game",
+        "discount_percent": 100,
+        "final_price": 0,
+        "original_price": 2999,
+        "discount_expiration": 1767571200
+      },
+      {
+        "id": 1003,
+        "name": "Always Free Arena",
+        "discount_percent": 100,
+        "final_price": 0,
+        "original_price": 0,
+        "discount_expiration": 1767571200
+      },
+      {
+        "id": 1004,
+        "name": "Expired Free Weekend",
+        "discount_percent": 100,
+        "final_price": 0,
+        "original_price": 2499,
+        "discount_expiration": 1767225600
+      },
+      {
+        "id": 1005,
+        "name": "Free to Keep Giveaway Game",
+        "discount_percent": 100,
+        "final_price": 0,
+        "original_price": 1599,
+        "discount_expiration": 1767571200
+      },
+      {
+        "id": 1006,
+        "name": "Sample Demo",
+        "discount_percent": 100,
+        "final_price": 0,
+        "original_price": 999,
+        "discount_expiration": 1767571200
+      },
+      {
+        "name": "Malformed Store Item",
+        "discount_percent": 100,
+        "final_price": 0,
+        "discount_expiration": 1767571200
+      }
+    ]
+  }
+}
