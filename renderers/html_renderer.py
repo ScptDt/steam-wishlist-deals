@@ -404,6 +404,33 @@ def _html_free_weekend_sources(item: dict) -> str:
     return _html_esc(", ".join(compact[:4]) or "Sin fuentes compactas")
 
 
+def _free_weekend_cross_reasons(item: dict) -> list[str]:
+    raw_reasons = item.get("cross_reasons") if isinstance(item, dict) else []
+    if isinstance(raw_reasons, list):
+        reasons = [str(reason or "").strip() for reason in raw_reasons if str(reason or "").strip()]
+        if reasons:
+            return reasons[:4]
+    reasons: list[str] = []
+    cross_signals = item.get("cross_signals") if isinstance(item.get("cross_signals"), dict) else {}
+    if cross_signals.get("in_wishlist") is True:
+        reasons.append("en tu wishlist")
+    owned_or_family = str(cross_signals.get("owned_or_family") or "").strip()
+    if owned_or_family == "owned":
+        reasons.append("ya en biblioteca")
+    elif owned_or_family == "family":
+        reasons.append("disponible en biblioteca familiar")
+    if cross_signals.get("similar_to_profile") is True:
+        reasons.append("similar a tus gustos")
+    return reasons[:4]
+
+
+def _html_free_weekend_cross(item: dict) -> str:
+    reasons = _free_weekend_cross_reasons(item)
+    if not reasons:
+        return ""
+    return f'''<div class="free-weekend-item-cross">{"".join(f'<span>{_html_esc(reason)}</span>' for reason in reasons)}</div>'''
+
+
 def _html_free_weekend_reason(item: dict) -> str:
     reason = str(item.get("reason") or "").strip()
     if reason:
@@ -428,6 +455,7 @@ def _html_free_weekend_item(item: dict) -> str:
     <strong>{_html_free_weekend_title(item)}</strong>
     <div class="free-weekend-item-meta">{_html_free_weekend_meta(item)}</div>
     <div class="free-weekend-item-reason">{_html_free_weekend_reason(item)}</div>
+    {_html_free_weekend_cross(item)}
   </div>
   <span class="free-weekend-item-sources">{_html_free_weekend_sources(item)}</span>
 </li>'''
@@ -1554,6 +1582,8 @@ a.pick-card:hover { border-color: var(--accent-blue); transform: translateY(-2px
 .free-weekend-item-main strong { display: block; font-size: .86rem; line-height: 1.3; margin-bottom: .35rem; }
 .free-weekend-item-meta { color: var(--accent-green); font-size: .74rem; line-height: 1.4; margin-bottom: .25rem; }
 .free-weekend-item-reason, .free-weekend-item-sources { color: var(--text-secondary); font-size: .74rem; line-height: 1.4; }
+.free-weekend-item-cross { display: flex; flex-wrap: wrap; gap: .25rem; margin-top: .4rem; }
+.free-weekend-item-cross span { border: 1px solid rgba(108,198,68,.32); border-radius: 999px; color: var(--accent-green); background: rgba(12,20,30,.3); padding: .1rem .45rem; font-size: .7rem; font-weight: 700; }
 .free-weekend-item-sources { flex: 0 0 8.5rem; text-align: right; }
 .free-weekend-more { margin-top: .6rem; }
 @media (max-width: 767px) { .free-weekend-head, .free-weekend-item { flex-direction: column; } .free-weekend-head-badge { align-self: flex-start; } .free-weekend-item-sources { flex-basis: auto; text-align: left; } }

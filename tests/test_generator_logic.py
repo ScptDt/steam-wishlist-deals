@@ -4780,6 +4780,68 @@ class RunOutputTests(unittest.TestCase):
         self.assertEqual(data["summary"]["free_weekend_now_count"], 0)
         self.assertNotIn("free_weekend_now", data)
 
+    def test_generate_json_enriches_free_weekend_now_cross_signals(self) -> None:
+        payload = generate_json(
+            deals=[],
+            backlog_on_sale=[],
+            have_on_sale=[],
+            vanity="gaben",
+            owned={"1001": "Weekend Candidate"},
+            wishlist_appids=["1001"],
+            min_discount=50,
+            genres=[],
+            preference_relations={"1001": ["similar a Hades"]},
+            free_weekend_now={
+                "generated_at": "2026-05-19T00:00:00Z",
+                "source_policy": "fixture_or_cached_store_signals_v1",
+                "summary": {"count": 1, "confidence_counts": {"medium": 1}},
+                "items": [{"appid": "1001", "title": "Weekend Candidate"}],
+            },
+        )
+
+        data = json.loads(payload)
+        item = data["free_weekend_now"]["items"][0]
+
+        self.assertEqual(
+            item["cross_signals"],
+            {"in_wishlist": True, "owned_or_family": "owned", "similar_to_profile": True},
+        )
+        self.assertEqual(
+            item["cross_reasons"],
+            ["en tu wishlist", "ya en biblioteca", "similar a tus gustos: similar a Hades"],
+        )
+
+    def test_generate_json_free_weekend_cross_signals_preserve_candidate_order_and_scores(self) -> None:
+        payload = generate_json(
+            deals=[],
+            backlog_on_sale=[],
+            have_on_sale=[],
+            vanity="gaben",
+            owned={"20": "Second"},
+            wishlist_appids=["10"],
+            min_discount=50,
+            genres=[],
+            free_weekend_now={
+                "generated_at": "2026-05-19T00:00:00Z",
+                "source_policy": "fixture_or_cached_store_signals_v1",
+                "summary": {"count": 2, "confidence_counts": {"medium": 2}},
+                "items": [
+                    {"appid": "20", "title": "Second", "score": 40, "rank": 2},
+                    {"appid": "10", "title": "First", "score": 90, "rank": 1},
+                ],
+            },
+        )
+
+        data = json.loads(payload)
+        items = data["free_weekend_now"]["items"]
+
+        self.assertEqual([item["appid"] for item in items], ["20", "10"])
+        self.assertEqual([item["score"] for item in items], [40, 90])
+        self.assertEqual([item["rank"] for item in items], [2, 1])
+        self.assertEqual(data["summary"]["free_weekend_now_count"], 2)
+        self.assertNotIn("price_cache", data["free_weekend_now"])
+        self.assertNotIn("top_picks", data["free_weekend_now"])
+
 
 class StopApiContractTests(unittest.TestCase):
     def test_build_stop_response_returns_status_and_message(self) -> None:
@@ -8273,6 +8335,7 @@ class RankTopPicksTests(unittest.TestCase):
                         "confidence": "high",
                         "reason": "Store signals show Free Weekend with structured expiry.",
                         "signals": {"discount_percent": 100, "final_price": 0},
+                        "cross_reasons": ["en tu wishlist", "similar a tus gustos: Co-op"],
                     }
                 ],
             },
@@ -8284,6 +8347,7 @@ class RankTopPicksTests(unittest.TestCase):
         self.assertIn("[Weekend Candidate](https://store.steampowered.com/app/1001/)", md)
         self.assertIn("Confianza Alta · Vigente hasta 2026-05-20T17:00:00Z", md)
         self.assertIn("Fuentes: featuredcategories, appdetails", md)
+        self.assertIn("Señales: en tu wishlist; similar a tus gustos: Co-op", md)
         self.assertIn("no cambia score, ranking ni caché de precios", md)
 
     def test_generate_md_shows_free_weekend_now_empty_state_for_invalid_payload(self) -> None:
@@ -8912,6 +8976,7 @@ class RankTopPicksTests(unittest.TestCase):
                         "sources": ["featuredcategories", "appdetails"],
                         "confidence": "medium",
                         "reason": "Store signals show <Free Weekend> with structured expiry.",
+                        "cross_reasons": ["en tu wishlist", "ya en biblioteca"],
                     }
                 ],
             },
@@ -8925,6 +8990,9 @@ class RankTopPicksTests(unittest.TestCase):
         self.assertIn("Confianza Media · Vigente hasta 2026-05-20T17:00:00Z", html)
         self.assertIn("featuredcategories, appdetails", html)
         self.assertIn("Store signals show &lt;Free Weekend&gt;", html)
+        self.assertIn("free-weekend-item-cross", html)
+        self.assertIn("en tu wishlist", html)
+        self.assertIn("ya en biblioteca", html)
         self.assertNotIn("Weekend <Candidate>", html)
         self.assertIn("no cambia score, ranking ni caché de precios", html)
 
