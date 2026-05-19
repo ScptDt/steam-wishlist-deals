@@ -399,10 +399,26 @@ Build unificado:
 python build_desktop.py
 ```
 
-Wrappers disponibles:
+El build usa PyInstaller desde `build_desktop.py` como fuente de verdad, instala `requirements-desktop.txt` con `constraints/desktop.txt` salvo que uses `--skip-install`, y deja artefactos locales en `dist/`. No versionar `dist/`, `build/` ni `*.spec`.
+
+### Generar binario/app por plataforma
+
+| Plataforma | Comandos base | Artefacto esperado | Ejecutar |
+|---|---|---|---|
+| Linux | `python3 -m venv .venv`<br>`source .venv/bin/activate`<br>`python -m pip install -r requirements-desktop.txt -c constraints/desktop.txt`<br>`python build_desktop.py` | `dist/SteamToolsDesktop` | `./dist/SteamToolsDesktop` |
+| Windows | `py -3 -m venv .venv`<br>`.\.venv\Scripts\Activate.ps1`<br>`python -m pip install -r requirements-desktop.txt -c constraints/desktop.txt`<br>`python .\build_desktop.py` | `dist\SteamToolsDesktop.exe` | `.\dist\SteamToolsDesktop.exe` |
+| macOS | `python3 -m venv .venv`<br>`source .venv/bin/activate`<br>`python -m pip install -r requirements-desktop.txt -c constraints/desktop.txt`<br>`python build_desktop.py` | `dist/SteamToolsDesktop.app` | `open dist/SteamToolsDesktop.app` |
+
+Atajos/wrappers disponibles:
 
 - Windows: `powershell -ExecutionPolicy Bypass -File .\build_desktop.ps1`
 - Linux/macOS: `./build_desktop.sh`
+
+Opciones útiles:
+
+- `python build_desktop.py --skip-install`: rebuild rápido si ya instalaste deps.
+- `python build_desktop.py --onedir`: genera modo directorio en vez de binario single-file.
+- Fallback forzado: Linux/macOS `STEAM_TOOLS_FORCE_WEB_FALLBACK=1 ./dist/SteamToolsDesktop` (en macOS usar `dist/SteamToolsDesktop.app/Contents/MacOS/SteamToolsDesktop`); Windows `$env:STEAM_TOOLS_FORCE_WEB_FALLBACK = "1"` y luego `.\dist\SteamToolsDesktop.exe`.
 
 Si `pywebview` o el backend nativo no arrancan, el launcher abre automáticamente la misma Web UI en el navegador por defecto y muestra un aviso visible de fallback.
 
