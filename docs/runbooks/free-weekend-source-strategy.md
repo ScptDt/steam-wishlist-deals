@@ -14,10 +14,16 @@ No hay un feed público oficial y estable que liste todos los Free Weekends glob
 |---|---|---|---|
 | Steamworks Free Weekends docs | Semántica y copy de producto | Define que Free Weekend es acceso temporal al juego base vía paquete temporal; ventana típica jueves-lunes | No lista eventos actuales ni appids |
 | `IStoreService/GetAppList` | Universo de apps y cambios para cache | `appid`, nombre, `last_modified`, `price_change_number` | No detecta Free Weekend por sí solo; requiere key/API oficial |
-| `featuredcategories` Store JSON | Descubrimiento acotado de candidatos en especiales/curados | `id`, nombre, precio/descuento, posible `discount_expiration` | No exhaustivo; no documentado como feed Free Weekend |
-| `appdetails` Store JSON | Enriquecimiento por appid | `is_free`, `price_overview`, paquetes/grupos, metadata | Endpoint público semi-estable; no garantiza campo Free Weekend |
-| `packagedetails` Store JSON | Corroborar paquetes cuando `appdetails` los expone | contenido/precio del paquete | No sirve como descubrimiento global |
+| `featuredcategories` Store JSON | Descubrimiento acotado de candidatos en especiales/curados | `id`, nombre, precio/descuento, posible `discount_expiration` | No exhaustivo; Storefront no documentado/estable como feed Free Weekend |
+| `appdetails` Store JSON | Enriquecimiento por appid | `is_free`, `price_overview`, paquetes/grupos, metadata | Storefront no documentado/estable; no garantiza campo Free Weekend |
+| `packagedetails` Store JSON | Corroborar paquetes cuando `appdetails` los expone | contenido/precio del paquete | Storefront no documentado/estable; no sirve como descubrimiento global |
 | Store search / news | Señal opcional/corroboración | Texto `Free Weekend`, `100%`, appid/título, fechas si aparecen | Más frágil o no estructurado; no usar como única fuente |
+
+Referencias consultadas para esta decisión:
+
+- Steamworks Free Weekends: https://partner.steamgames.com/doc/marketing/discounts/freeweekends
+- `ISteamApps::BIsSubscribedFromFreeWeekend`: https://partner.steamgames.com/doc/api/ISteamApps#BIsSubscribedFromFreeWeekend
+- `IStoreService/GetAppList`: https://partner.steamgames.com/doc/webapi/IStoreService#GetAppList
 
 ## Modelo local propuesto
 
