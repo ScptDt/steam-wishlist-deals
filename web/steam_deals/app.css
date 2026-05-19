@@ -1590,6 +1590,22 @@ details .details-body .field:last-child {
   display: block;
   margin-top: 0.18rem;
 }
+.latest-free-weekend-cross {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 0.25rem;
+  margin-top: 0.38rem;
+}
+.latest-free-weekend-cross em {
+  border-radius: 999px;
+  border: 1px solid rgba(108, 198, 68, 0.3);
+  background: rgba(108, 198, 68, 0.08);
+  color: var(--green);
+  padding: 0.08rem 0.42rem;
+  font-size: 0.68rem;
+  font-style: normal;
+  font-weight: 700;
+}
 .latest-free-weekend-sources {
   flex: 0 0 7.5rem;
   text-align: right;

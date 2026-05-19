@@ -54,7 +54,8 @@ El contrato futuro puede exponerse como `free_weekend_now` en JSON, pero este sl
           "in_wishlist": false,
           "owned_or_family": null,
           "similar_to_profile": null
-        }
+        },
+        "cross_reasons": []
       }
     ]
   }
@@ -70,7 +71,7 @@ El contrato futuro puede exponerse como `free_weekend_now` en JSON, pero este sl
 - `confidence`: `high`, `medium` o `low`.
 - `reason`: copy técnico corto para debugging/reportes.
 - `signals`: datos crudos reducidos necesarios para explicar la clasificación.
-- `cross_signals`: reservado para slices posteriores; no cambia score ni ranking.
+- `cross_signals`/`cross_reasons`: señales locales advisory (`en tu wishlist`, `ya en biblioteca`/familia, `similar a tus gustos`); no cambian score ni ranking y deben preservarse si el payload ya las trae.
 
 ## Reglas de confianza
 
@@ -100,7 +101,7 @@ El contrato futuro puede exponerse como `free_weekend_now` en JSON, pero este sl
 1. [x] Parser/clasificador fixture-only para `featuredcategories` + `appdetails` con tests determinísticos (`app/steam_deals_free_weekend.py`, `tests/test_free_weekend_parser.py`).
 2. [x] Contrato JSON `free_weekend_now` en el output del generator, sin UI todavía (`renderers/json_renderer.py`, `tests.test_generator_logic`).
 3. [x] Secciones Web/HTML/Markdown `Free Weekend ahora` con copy de confianza/vigencia (`renderers/markdown_renderer.py`, `renderers/html_renderer.py`, `web/steam_deals/app.js`).
-4. [ ] Señales cruzadas (`en tu wishlist`, `ya en biblioteca`, `similar a tus gustos`) sin recalibrar score.
+4. [x] Señales cruzadas (`en tu wishlist`, `ya en biblioteca`, `similar a tus gustos`) sin recalibrar score (`app/steam_deals_free_weekend.py` + renderers/Web existentes).
 5. [ ] Fetch live opt-in con TTL/cache, solo después de que fixtures y contrato estén estables.
 
 ## No hacer

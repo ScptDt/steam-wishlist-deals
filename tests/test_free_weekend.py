@@ -3,7 +3,10 @@ from __future__ import annotations
 import unittest
 from datetime import datetime, timezone
 
-from steam_deals_free_weekend import build_free_weekend_candidates
+from steam_deals_free_weekend import (
+    build_free_weekend_candidates,
+    enrich_free_weekend_cross_signals,
+)
 
 
 OBSERVED_AT = datetime(2026, 5, 19, 12, 0, tzinfo=timezone.utc)
@@ -146,6 +149,113 @@ class FreeWeekendCandidateTests(unittest.TestCase):
         self.assertEqual(len(payload["items"]), 1)
         self.assertEqual(payload["items"][0]["appid"], "80")
         self.assertEqual(payload["items"][0]["signals"]["discount_percent"], 100)
+
+    def test_enrich_free_weekend_cross_signals_adds_advisory_local_context(self) -> None:
+        payload = {
+            "generated_at": "2026-05-19T12:00:00Z",
+            "source_policy": "fixture_or_cached_store_signals_v1",
+            "summary": {"count": 2, "confidence_counts": {"medium": 2}},
+            "items": [
+                {"appid": "10", "title": "Wishlist Owned Candidate"},
+                {"appid": "20", "title": "Family Taste Candidate"},
+            ],
+        }
+
+        enriched = enrich_free_weekend_cross_signals(
+            payload,
+            wishlist_appids=["10"],
+            owned={"10": "Wishlist Owned Candidate"},
+            family_appids={"20"},
+            personalized_recommendations={
+                "items": [
+                    {
+                        "appid": "20",
+                        "name": "Family Taste Candidate",
+                        "affinity_score": 28.0,
+                        "reasons": ["coincide con tu biblioteca: Co-op"],
+                    }
+                ]
+            },
+        )
+
+        by_appid = {item["appid"]: item for item in enriched["items"]}
+        self.assertEqual(payload["items"][0].get("cross_reasons"), None)
+        self.assertEqual(
+            by_appid["10"]["cross_signals"],
+            {"in_wishlist": True, "owned_or_family": "owned", "similar_to_profile": False},
+        )
+        self.assertEqual(by_appid["10"]["cross_reasons"], ["en tu wishlist", "ya en biblioteca"])
+        self.assertEqual(
+            by_appid["20"]["cross_signals"],
+            {"in_wishlist": False, "owned_or_family": "family", "similar_to_profile": True},
+        )
+        self.assertIn("disponible en biblioteca familiar", by_appid["20"]["cross_reasons"])
+        self.assertIn("similar a tus gustos: coincide con tu biblioteca: Co-op", by_appid["20"]["cross_reasons"])
+
+    def test_enrich_free_weekend_cross_signals_preserves_existing_payload_reasons(self) -> None:
+        payload = {
+            "generated_at": "2026-05-19T12:00:00Z",
+            "source_policy": "fixture_or_cached_store_signals_v1",
+            "summary": {"count": 1, "confidence_counts": {"high": 1}},
+            "items": [
+                {
+                    "appid": "10",
+                    "title": "Existing Cross Signal Candidate",
+                    "cross_signals": {
+                        "in_wishlist": True,
+                        "owned_or_family": None,
+                        "similar_to_profile": True,
+                    },
+                    "cross_reasons": ["en tu wishlist", "similar a tus gustos: Co-op"],
+                }
+            ],
+        }
+
+        enriched = enrich_free_weekend_cross_signals(payload)
+        item = enriched["items"][0]
+
+        self.assertEqual(
+            item["cross_signals"],
+            {"in_wishlist": True, "owned_or_family": None, "similar_to_profile": True},
+        )
+        self.assertEqual(item["cross_reasons"], ["en tu wishlist", "similar a tus gustos: Co-op"])
+
+    def test_enrich_free_weekend_cross_signals_is_advisory_and_preserves_order(self) -> None:
+        payload = {
+            "generated_at": "2026-05-19T12:00:00Z",
+            "source_policy": "fixture_or_cached_store_signals_v1",
+            "summary": {"count": 3, "confidence_counts": {"medium": 3}},
+            "items": [
+                {"appid": "30", "title": "Third", "score": 10, "rank": 3},
+                {"appid": "10", "title": "First", "score": 90, "rank": 1},
+                {"appid": "20", "title": "Second", "score": 50, "rank": 2},
+            ],
+        }
+
+        enriched = enrich_free_weekend_cross_signals(
+            payload,
+            wishlist_appids=["10", "20"],
+            owned={"20": "Second"},
+            preference_relations={"30": ["perfil local: estrategia"]},
+        )
+
+        self.assertEqual([item["appid"] for item in enriched["items"]], ["30", "10", "20"])
+        self.assertEqual([item.get("score") for item in enriched["items"]], [10, 90, 50])
+        self.assertEqual([item.get("rank") for item in enriched["items"]], [3, 1, 2])
+        self.assertEqual(enriched["summary"], payload["summary"])
+        self.assertEqual(payload["items"][0].get("cross_signals"), None)
+        self.assertEqual(
+            enriched["items"][0]["cross_reasons"],
+            ["similar a tus gustos: perfil local: estrategia"],
+        )
+
+    def test_enrich_free_weekend_cross_signals_handles_invalid_payloads_without_noise(self) -> None:
+        self.assertIsNone(enrich_free_weekend_cross_signals(None, wishlist_appids=["10"]))
+        self.assertEqual(enrich_free_weekend_cross_signals([], wishlist_appids=["10"]), [])
+        self.assertEqual(
+            enrich_free_weekend_cross_signals({"items": [None, "bad"]}, wishlist_appids=["10"]),
+            {"items": []},
+        )
 
 
 if __name__ == "__main__":

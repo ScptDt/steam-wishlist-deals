@@ -371,10 +371,30 @@ def _free_weekend_item_sources(item: dict) -> str:
     return _md_esc(" · ".join(parts) or "Sin fuentes compactas")
 
 
+def _free_weekend_cross_reasons(item: dict) -> list[str]:
+    raw_reasons = item.get("cross_reasons") if isinstance(item, dict) else []
+    reasons = [str(reason or "").strip() for reason in raw_reasons if str(reason or "").strip()] if isinstance(raw_reasons, list) else []
+    if reasons:
+        return reasons[:4]
+    cross_signals = item.get("cross_signals") if isinstance(item.get("cross_signals"), dict) else {}
+    if cross_signals.get("in_wishlist") is True:
+        reasons.append("en tu wishlist")
+    owned_or_family = str(cross_signals.get("owned_or_family") or "").strip()
+    if owned_or_family == "owned":
+        reasons.append("ya en biblioteca")
+    elif owned_or_family == "family":
+        reasons.append("disponible en biblioteca familiar")
+    if cross_signals.get("similar_to_profile") is True:
+        reasons.append("similar a tus gustos")
+    return reasons[:4]
+
+
 def _free_weekend_item_reason(item: dict) -> str:
     reason = str(item.get("reason") or "").strip()
+    cross_reasons = _free_weekend_cross_reasons(item)
+    cross_text = f" · Señales: {'; '.join(cross_reasons)}" if cross_reasons else ""
     if reason:
-        return _md_esc(reason)
+        return _md_esc(f"{reason}{cross_text}")
     signals = item.get("signals") if isinstance(item.get("signals"), dict) else {}
     signal_parts = []
     if signals.get("discount_percent") is not None:
@@ -384,7 +404,8 @@ def _free_weekend_item_reason(item: dict) -> str:
     matched_text = str(signals.get("matched_text") or "").strip()
     if matched_text:
         signal_parts.append(f"texto: {matched_text}")
-    return _md_esc(" · ".join(signal_parts) or "Revisar disponibilidad en Steam")
+    base = " · ".join(signal_parts) or "Revisar disponibilidad en Steam"
+    return _md_esc(f"{base}{cross_text}")
 
 
 def _build_free_weekend_now_lines(payload: dict | None) -> list[str]:

@@ -13,6 +13,12 @@ FREE_TO_KEEP_TEXT_RE = re.compile(
 DEMO_PLAYTEST_TEXT_RE = re.compile(r"\b(?:demo|playtest|prologue)\b", re.IGNORECASE)
 CONFIDENCE_RANK = {"high": 0, "medium": 1, "low": 2}
 SOURCE_POLICY = "fixture_or_cached_store_signals_v1"
+CROSS_SIGNAL_REASONS = {
+    "in_wishlist": "en tu wishlist",
+    "owned": "ya en biblioteca",
+    "family": "disponible en biblioteca familiar",
+    "taste_match": "similar a tus gustos",
+}
 
 
 def _compact_text(value: Any, *, limit: int = 160) -> str:
@@ -57,6 +63,88 @@ def _iso_datetime(value: Any) -> str:
 def _normalized_appid(value: Any) -> str:
     number = _numeric(value)
     return str(number) if number is not None and number > 0 else ""
+
+
+def _collection_appid(value: Any) -> str:
+    if isinstance(value, dict):
+        for key in ("appid", "steam_appid", "id", "app_id"):
+            appid = _normalized_appid(value.get(key))
+            if appid:
+                return appid
+        return ""
+    return _normalized_appid(value)
+
+
+def _normalize_appid_set(values: Any) -> set[str]:
+    if values is None:
+        return set()
+    if isinstance(values, dict):
+        return {_collection_appid(key) for key in values.keys() if _collection_appid(key)}
+    if isinstance(values, (list, set, tuple)):
+        return {_collection_appid(value) for value in values if _collection_appid(value)}
+    appid = _collection_appid(values)
+    return {appid} if appid else set()
+
+
+def _payload_items(value: Any) -> list[dict[str, Any]]:
+    if isinstance(value, dict):
+        raw_items = value.get("items")
+    else:
+        raw_items = value
+    if not isinstance(raw_items, list):
+        return []
+    return [item for item in raw_items if isinstance(item, dict)]
+
+
+def _preference_reasons_for_appid(appid: str, preference_relations: Any) -> list[str]:
+    if not isinstance(preference_relations, dict):
+        return []
+    raw = preference_relations.get(appid) or preference_relations.get(str(appid))
+    if isinstance(raw, str):
+        text = _compact_text(raw, limit=120)
+        return [text] if text else []
+    if isinstance(raw, list):
+        return [_compact_text(reason, limit=120) for reason in raw if _compact_text(reason, limit=120)]
+    return []
+
+
+def _personalized_reason_for_appid(appid: str, personalized_recommendations: Any) -> str:
+    for item in _payload_items(personalized_recommendations):
+        if _collection_appid(item) != appid:
+            continue
+        reasons = item.get("reasons") if isinstance(item.get("reasons"), list) else []
+        for reason in reasons:
+            text = _compact_text(reason, limit=120)
+            if text and text != "score base del reporte":
+                return text
+        affinity = item.get("affinity_score")
+        if affinity not in (None, ""):
+            return f"afinidad positiva {affinity}"
+    return ""
+
+
+def _taste_match_reason(
+    appid: str,
+    *,
+    personalized_recommendations: Any = None,
+    liked_appids: Any = None,
+    preference_relations: Any = None,
+) -> str:
+    preference_reasons = _preference_reasons_for_appid(appid, preference_relations)
+    if preference_reasons:
+        return preference_reasons[0]
+    personalized_reason = _personalized_reason_for_appid(appid, personalized_recommendations)
+    if personalized_reason:
+        return personalized_reason
+    if appid in _normalize_appid_set(liked_appids):
+        return CROSS_SIGNAL_REASONS["taste_match"]
+    return ""
+
+
+def _append_unique(values: list[str], value: str) -> None:
+    text = _compact_text(value, limit=140)
+    if text and text not in values:
+        values.append(text)
 
 
 def _extract_appdetails_info(appdetails: dict[str, Any] | None) -> tuple[dict[str, Any] | None, bool]:
@@ -216,6 +304,108 @@ def _summary(items: list[dict[str, Any]]) -> dict[str, Any]:
     return {"count": len(items), "confidence_counts": confidence_counts}
 
 
+def enrich_free_weekend_candidate_cross_signals(
+    candidate: dict[str, Any],
+    *,
+    wishlist_appids: Any = None,
+    owned: Any = None,
+    family_appids: Any = None,
+    personalized_recommendations: Any = None,
+    liked_appids: Any = None,
+    preference_relations: Any = None,
+) -> dict[str, Any]:
+    """Add advisory local cross-signals to a Free Weekend candidate."""
+    if not isinstance(candidate, dict):
+        return {}
+    appid = _collection_appid(candidate)
+    existing_cross_signals = candidate.get("cross_signals") if isinstance(candidate.get("cross_signals"), dict) else {}
+    existing_reasons = candidate.get("cross_reasons") if isinstance(candidate.get("cross_reasons"), list) else []
+    wishlist_set = _normalize_appid_set(wishlist_appids)
+    owned_set = _normalize_appid_set(owned)
+    family_set = _normalize_appid_set(family_appids)
+
+    owned_or_family = None
+    if appid and appid in owned_set:
+        owned_or_family = "owned"
+    elif appid and appid in family_set:
+        owned_or_family = "family"
+
+    existing_owned_or_family = str(existing_cross_signals.get("owned_or_family") or "").strip()
+    if owned_or_family == "owned" or existing_owned_or_family == "owned":
+        owned_or_family = "owned"
+    elif owned_or_family == "family" or existing_owned_or_family == "family":
+        owned_or_family = "family"
+    else:
+        owned_or_family = None
+
+    taste_reason = _taste_match_reason(
+        appid,
+        personalized_recommendations=personalized_recommendations,
+        liked_appids=liked_appids,
+        preference_relations=preference_relations,
+    ) if appid else ""
+
+    cross_signals = {
+        "in_wishlist": bool(existing_cross_signals.get("in_wishlist") is True or (appid and appid in wishlist_set)),
+        "owned_or_family": owned_or_family,
+        "similar_to_profile": bool(existing_cross_signals.get("similar_to_profile") is True or taste_reason),
+    }
+    cross_reasons: list[str] = []
+    for reason in existing_reasons:
+        _append_unique(cross_reasons, str(reason or ""))
+    if cross_signals["in_wishlist"]:
+        _append_unique(cross_reasons, CROSS_SIGNAL_REASONS["in_wishlist"])
+    if owned_or_family == "owned":
+        _append_unique(cross_reasons, CROSS_SIGNAL_REASONS["owned"])
+    elif owned_or_family == "family":
+        _append_unique(cross_reasons, CROSS_SIGNAL_REASONS["family"])
+    if taste_reason:
+        label = CROSS_SIGNAL_REASONS["taste_match"]
+        reason = taste_reason if taste_reason == label else f"{label}: {taste_reason}"
+        _append_unique(cross_reasons, reason)
+    elif cross_signals["similar_to_profile"] and not any(
+        reason.startswith(CROSS_SIGNAL_REASONS["taste_match"])
+        for reason in cross_reasons
+    ):
+        _append_unique(cross_reasons, CROSS_SIGNAL_REASONS["taste_match"])
+
+    enriched = dict(candidate)
+    enriched["cross_signals"] = cross_signals
+    enriched["cross_reasons"] = cross_reasons
+    return enriched
+
+
+def enrich_free_weekend_cross_signals(
+    payload: dict[str, Any] | None,
+    *,
+    wishlist_appids: Any = None,
+    owned: Any = None,
+    family_appids: Any = None,
+    personalized_recommendations: Any = None,
+    liked_appids: Any = None,
+    preference_relations: Any = None,
+) -> dict[str, Any] | None:
+    """Return a Free Weekend payload enriched with advisory local cross-signals."""
+    if not isinstance(payload, dict):
+        return payload
+    items = [item for item in payload.get("items", []) if isinstance(item, dict)]
+    return {
+        **payload,
+        "items": [
+            enrich_free_weekend_candidate_cross_signals(
+                item,
+                wishlist_appids=wishlist_appids,
+                owned=owned,
+                family_appids=family_appids,
+                personalized_recommendations=personalized_recommendations,
+                liked_appids=liked_appids,
+                preference_relations=preference_relations,
+            )
+            for item in items
+        ],
+    }
+
+
 def extract_featured_category_items(payload: dict[str, Any] | list[Any] | None) -> list[dict[str, Any]]:
     """Return Store featured-category item dicts from cached JSON payloads."""
     items: list[dict[str, Any]] = []
@@ -340,6 +530,12 @@ def build_free_weekend_candidates(
     observed_at: Any,
     current_timestamp: int | float | None = None,
     now: Any = None,
+    wishlist_appids: Any = None,
+    owned: Any = None,
+    family_appids: Any = None,
+    personalized_recommendations: Any = None,
+    liked_appids: Any = None,
+    preference_relations: Any = None,
 ) -> dict[str, Any]:
     """Build a cacheable Free Weekend payload from local Store JSON data."""
     items = build_free_weekend_candidate_items(
@@ -349,9 +545,30 @@ def build_free_weekend_candidates(
         current_timestamp=current_timestamp,
         now=now,
     )
-    return {
+    payload = {
         "generated_at": _iso_datetime(observed_at),
         "source_policy": SOURCE_POLICY,
         "items": items,
         "summary": _summary(items),
     }
+    if any(
+        context is not None
+        for context in (
+            wishlist_appids,
+            owned,
+            family_appids,
+            personalized_recommendations,
+            liked_appids,
+            preference_relations,
+        )
+    ):
+        return enrich_free_weekend_cross_signals(
+            payload,
+            wishlist_appids=wishlist_appids,
+            owned=owned,
+            family_appids=family_appids,
+            personalized_recommendations=personalized_recommendations,
+            liked_appids=liked_appids,
+            preference_relations=preference_relations,
+        )
+    return payload

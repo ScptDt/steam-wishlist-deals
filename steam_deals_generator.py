@@ -165,6 +165,14 @@ except Exception:
 
 
 try:
+    from steam_deals_free_weekend import (
+        enrich_free_weekend_cross_signals as _enrich_free_weekend_cross_signals_impl,
+    )
+except Exception:
+    _enrich_free_weekend_cross_signals_impl = None
+
+
+try:
     from steam_deals_history import (
         analyze_trends as _analyze_trends_impl,
         compute_deal_comparison as _compute_deal_comparison_impl,
@@ -686,6 +694,13 @@ def load_wishlist_external_matches(json_path: Path | str | None) -> list[dict]:
     if _load_wishlist_external_matches_impl is None:
         raise RuntimeError("Wishlist hygiene module is not available")
     return _load_wishlist_external_matches_impl(json_path)
+
+
+def enrich_free_weekend_cross_signals(payload, **kwargs):
+    """Add advisory-only local cross-signals to a Free Weekend payload."""
+    if _enrich_free_weekend_cross_signals_impl is None or not isinstance(payload, dict):
+        return payload
+    return _enrich_free_weekend_cross_signals_impl(payload, **kwargs)
 
 
 def load_family_games(json_path: Path) -> set[str]:
@@ -2977,6 +2992,15 @@ def generate_md(
             library_games=library_games if library_games is not None else have_on_sale,
             hltb_records=hltb_hours,
         )
+    free_weekend_now = enrich_free_weekend_cross_signals(
+        free_weekend_now,
+        wishlist_appids=wishlist_appids,
+        owned=owned,
+        family_appids=family_appids,
+        personalized_recommendations=personalized_recommendations,
+        liked_appids=liked_appids,
+        preference_relations=preference_relations,
+    )
     return _generate_md_renderer(
         deals,
         backlog_on_sale,
@@ -3108,6 +3132,15 @@ def generate_html(
             library_games=library_games if library_games is not None else have_on_sale,
             hltb_records=hltb_hours,
         )
+    free_weekend_now = enrich_free_weekend_cross_signals(
+        free_weekend_now,
+        wishlist_appids=wishlist_appids,
+        owned=owned,
+        family_appids=family_appids,
+        personalized_recommendations=personalized_recommendations,
+        liked_appids=liked_appids,
+        preference_relations=preference_relations,
+    )
     if _generate_html_renderer is not None:
         return _generate_html_renderer(
             deals,
@@ -3386,6 +3419,15 @@ def generate_json(
             library_games=library_games if library_games is not None else have_on_sale,
             hltb_records=hltb_hours,
         )
+    free_weekend_now = enrich_free_weekend_cross_signals(
+        free_weekend_now,
+        wishlist_appids=wishlist_appids,
+        owned=owned,
+        family_appids=family_appids,
+        personalized_recommendations=personalized_recommendations,
+        liked_appids=liked_appids,
+        preference_relations=preference_relations,
+    )
     return _generate_json_renderer(
         deals,
         backlog_on_sale,

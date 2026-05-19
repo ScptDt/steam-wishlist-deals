@@ -225,6 +225,142 @@ def _build_promo_context_html(active_promo_context: dict | None) -> str:
   </div>"""
 
 
+def _offer_reasons(item: dict, source_deal: dict | None = None) -> list[str]:
+    reasons: list[str] = []
+    for source in (item, source_deal or {}):
+        raw_reasons = source.get("score_reasons") if isinstance(source, dict) else []
+        if not isinstance(raw_reasons, list):
+            continue
+        for reason in raw_reasons:
+            text = str(reason or "").strip()
+            if text and text not in reasons:
+                reasons.append(text)
+    return reasons
+
+
+def _offer_discount(item: dict, source_deal: dict | None = None) -> int:
+    for source in (item, source_deal or {}):
+        if not isinstance(source, dict):
+            continue
+        raw_discount = source.get("discount")
+        if raw_discount in (None, ""):
+            continue
+        try:
+            return int(raw_discount)
+        except (TypeError, ValueError):
+            continue
+    return 0
+
+
+def _offer_current_price(item: dict, source_deal: dict | None = None) -> float:
+    for source in (item, source_deal or {}):
+        if not isinstance(source, dict):
+            continue
+        price = str(source.get("price_final") or "")
+        if price:
+            return _html_price_raw(price)
+    return 0.0
+
+
+def _offer_near_historical_low(
+    item: dict,
+    *,
+    min_hist: dict | None = None,
+    source_deal: dict | None = None,
+) -> bool:
+    if not isinstance(min_hist, dict):
+        return False
+    try:
+        low_price = float(min_hist.get("price") or 0)
+    except (TypeError, ValueError):
+        return False
+    current_price = _offer_current_price(item, source_deal)
+    return low_price > 0 and current_price > 0 and current_price <= low_price * 1.05
+
+
+def _offer_has_active_promo_signal(
+    *,
+    reasons: list[str],
+    discount: int,
+    active_promo_context: dict | None,
+) -> bool:
+    if any("promo" in reason.lower() for reason in reasons):
+        return True
+    if not isinstance(active_promo_context, dict) or discount < 75:
+        return False
+    categories = [
+        str(category or "") for category in active_promo_context.get("categories", [])
+    ]
+    return any(
+        category in {"major_sale", "fest", "next_fest", "publisher_sale", "themed"}
+        for category in categories
+    )
+
+
+def _offer_highlight_label(
+    item: dict,
+    *,
+    min_hist: dict | None = None,
+    source_deal: dict | None = None,
+    active_promo_context: dict | None = None,
+) -> tuple[str, str] | None:
+    recommendation = str(item.get("recommendation") or "").strip()
+    recommendation_lower = recommendation.lower()
+    reasons = _offer_reasons(item, source_deal)
+    reasons_lower = " · ".join(reasons).lower()
+    discount = _offer_discount(item, source_deal)
+    near_min = _offer_near_historical_low(item, min_hist=min_hist, source_deal=source_deal)
+
+    if "esper" in recommendation_lower:
+        return "Esperar mejor oferta", "señal conservadora"
+    if "solo si" in recommendation_lower:
+        return "Solo si ya estaba en tu radar", "señal conservadora"
+    if "comprar" in recommendation_lower or "muy buena" in recommendation_lower:
+        return "Muy buena oferta", recommendation or "señal del Top Pick"
+    if near_min or "mínimo" in reasons_lower or "minimo" in reasons_lower:
+        return "Cerca de mínimo histórico", "precio cerca del mínimo conocido"
+    if _offer_has_active_promo_signal(
+        reasons=reasons,
+        discount=discount,
+        active_promo_context=active_promo_context,
+    ):
+        return "Promo destacada", "contexto de promo activa"
+    if discount >= 85:
+        return "Muy buena oferta", "descuento fuerte"
+    if "vale la pena" in recommendation_lower or discount >= 70:
+        return "Buena para revisar hoy", recommendation or "descuento alto"
+    return None
+
+
+def _html_offer_highlight(
+    item: dict,
+    *,
+    min_hist: dict | None = None,
+    source_deal: dict | None = None,
+    active_promo_context: dict | None = None,
+) -> str:
+    highlight = _offer_highlight_label(
+        item,
+        min_hist=min_hist,
+        source_deal=source_deal,
+        active_promo_context=active_promo_context,
+    )
+    if not highlight:
+        return ""
+    label, reason = highlight
+    reason_html = (
+        f'<span class="offer-highlight-reason">{_html_esc(reason)}</span>'
+        if reason
+        else ""
+    )
+    return (
+        '<div class="offer-highlight" data-offer-highlight>'
+        f'<span class="offer-highlight-label">{_html_esc(label)}</span>'
+        f'{reason_html}'
+        '</div>'
+    )
+
+
 def _free_weekend_confidence_label(confidence: str) -> str:
     key = str(confidence or "").strip().lower()
     return _FREE_WEEKEND_CONFIDENCE_LABELS.get(key, key.title() if key else "Sin dato")
@@ -1263,6 +1399,9 @@ a.pick-card:hover { border-color: var(--accent-blue); transform: translateY(-2px
 .pick-meta { font-size: .75rem; color: var(--text-secondary); margin-top: .3rem; }
 .pick-recommendation { margin-top: .45rem; font-size: .72rem; font-weight: 700; color: var(--accent-green); text-transform: uppercase; letter-spacing: .03em; }
 .pick-why { margin-top: .25rem; font-size: .73rem; color: var(--text-secondary); line-height: 1.35; }
+.offer-highlight { display: flex; flex-wrap: wrap; align-items: center; gap: .3rem; margin-top: .4rem; font-size: .72rem; line-height: 1.35; }
+.offer-highlight-label { border: 1px solid rgba(108,198,68,.4); border-radius: 999px; color: var(--accent-green); background: rgba(108,198,68,.08); padding: .08rem .45rem; font-weight: 800; letter-spacing: .02em; }
+.offer-highlight-reason { color: var(--text-secondary); }
 .filter-panel { background: var(--bg-secondary); border-radius: 8px; padding: .8rem 1.2rem; margin-bottom: 1.5rem; }
 .filter-panel summary { cursor: pointer; font-weight: bold; font-size: 1rem; }
 .filter-grid { display: grid; grid-template-columns: repeat(3, 1fr); gap: .8rem; margin-top: .8rem; }
@@ -2210,6 +2349,12 @@ def generate_html(
             recommendation = _html_esc(tp.get("recommendation", ""))
             recommendation_filter = _html_esc(tp.get("recommendation") or "Sin recomendación")
             why_text = _html_esc(" · ".join(tp.get("score_reasons", [])))
+            highlight_html = _html_offer_highlight(
+                tp,
+                min_hist=min_hist,
+                source_deal=source_deal,
+                active_promo_context=active_promo_context,
+            )
             why_html = (
                 f'<div class="pick-recommendation">{recommendation}</div><div class="pick-why">{why_text}</div>'
                 if recommendation or why_text
@@ -2232,6 +2377,7 @@ def generate_html(
       <div class="pick-name">{_html_esc(tp["name"])}{prio_html}</div>
       <div class="pick-details"><span class="pick-discount">-{display_discount}%</span><span class="pick-price">{_html_esc(display_price)}</span></div>
       <div class="pick-meta">{rev_html} &middot; {mc_html} &middot; {dk_html} &middot; {mp_html}</div>
+      {highlight_html}
       {why_html}
     </div>
   </a>
@@ -2464,6 +2610,11 @@ def generate_html(
             )
             min_hist = historical_lows.get(appid)
             min_hist_str = f"${min_hist['price']:.0f}" if min_hist else ""
+            highlight_html = _html_offer_highlight(
+                d,
+                min_hist=min_hist,
+                active_promo_context=active_promo_context,
+            )
             share_payload = _build_share_payload(
                 name=d["name"],
                 appid=appid,
@@ -2475,7 +2626,7 @@ def generate_html(
             name_html = (
                 f'<div class="game-cell">'
                 f'<img class="game-thumb" src="{capsule_img}" alt="" loading="lazy" onerror="this.style.display=\'none\'">'
-                f"<span{desc_attr}>{_html_link(d['name'], appid)}{_html_prio_badge(prio)}</span>"
+                f"<span{desc_attr}>{_html_link(d['name'], appid)}{_html_prio_badge(prio)}{highlight_html}</span>"
                 f'{_html_share_button(share_payload, style="margin-left:.4rem;position:relative;top:-1px")}'
                 f"</div>"
             )

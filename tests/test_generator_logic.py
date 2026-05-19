@@ -8389,6 +8389,65 @@ class RankTopPicksTests(unittest.TestCase):
         self.assertIn("data-top-pick-filter-count", html)
         self.assertIn("No hay Top Picks con esa recomendación.", html)
 
+    def test_generate_html_renders_advisory_offer_highlights(self) -> None:
+        html = generate_html(
+            deals=[
+                {
+                    "appid": "a",
+                    "name": "Alpha",
+                    "discount": 90,
+                    "price_final": "$10",
+                    "price_original": "$100",
+                },
+                {
+                    "appid": "b",
+                    "name": "Beta",
+                    "discount": 60,
+                    "price_final": "$10",
+                    "price_original": "$25",
+                },
+                {
+                    "appid": "c",
+                    "name": "Gamma",
+                    "discount": 80,
+                    "price_final": "$20",
+                    "price_original": "$100",
+                },
+            ],
+            backlog_on_sale=[],
+            have_on_sale=[],
+            vanity="gaben",
+            owned={},
+            wishlist_appids=["a", "b", "c"],
+            min_discount=50,
+            genres=[],
+            top_picks=[
+                {
+                    "appid": "a",
+                    "name": "Alpha",
+                    "discount": 90,
+                    "price_final": "$10",
+                    "score": 95.4,
+                    "recommendation": "Comprar ahora",
+                    "score_reasons": ["reviews muy positivas"],
+                }
+            ],
+            historical_lows={"b": {"price": 10.0, "date": "2026-05-01"}},
+            active_promo_context={
+                "primary": {"title": "Steam Fest", "category": "fest"},
+                "categories": ["fest"],
+            },
+        )
+
+        self.assertIn('data-offer-highlight', html)
+        self.assertIn("Muy buena oferta", html)
+        self.assertIn("Cerca de mínimo histórico", html)
+        self.assertIn("Promo destacada", html)
+        self.assertIn("contexto de promo activa", html)
+        self.assertIn("Alpha", html)
+        self.assertIn("Beta", html)
+        self.assertIn("Gamma", html)
+
     def test_generate_html_renders_recommended_collections(self) -> None:
         html = generate_html(
             deals=[],

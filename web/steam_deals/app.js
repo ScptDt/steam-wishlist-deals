@@ -2845,6 +2845,27 @@ function latestFreeWeekendSources(source) {
   return sources.join(', ') || 'Sin fuentes compactas';
 }
 
+function latestFreeWeekendCrossReasons(source) {
+  const directReasons = Array.isArray(source.cross_reasons)
+    ? source.cross_reasons.map(reason => String(reason || '').trim()).filter(Boolean).slice(0, 4)
+    : [];
+  if (directReasons.length) return directReasons;
+  const crossSignals = source.cross_signals && typeof source.cross_signals === 'object' ? source.cross_signals : {};
+  const reasons = [];
+  if (crossSignals.in_wishlist === true) reasons.push('en tu wishlist');
+  const ownedOrFamily = String(crossSignals.owned_or_family || '').trim();
+  if (ownedOrFamily === 'owned') reasons.push('ya en biblioteca');
+  if (ownedOrFamily === 'family') reasons.push('disponible en biblioteca familiar');
+  if (crossSignals.similar_to_profile === true) reasons.push('similar a tus gustos');
+  return reasons.slice(0, 4);
+}
+
+function renderLatestFreeWeekendCross(source) {
+  const reasons = latestFreeWeekendCrossReasons(source);
+  if (!reasons.length) return '';
+  return `<span class="latest-free-weekend-cross">${reasons.map(reason => `<em>${escapeHtml(reason)}</em>`).join('')}</span>`;
+}
+
 function renderLatestFreeWeekendItem(item) {
   const source = item && typeof item === 'object' ? item : {};
   const title = latestFreeWeekendTitle(source);
@@ -2854,6 +2875,7 @@ function renderLatestFreeWeekendItem(item) {
         <strong>${title.nameHtml}</strong>
         <span class="latest-free-weekend-meta">${escapeHtml(latestFreeWeekendMeta(source))}</span>
         <span class="latest-free-weekend-reason">${escapeHtml(latestFreeWeekendReason(source))}</span>
+        ${renderLatestFreeWeekendCross(source)}
       </div>
       <span class="latest-free-weekend-sources">${escapeHtml(latestFreeWeekendSources(source))}</span>
     </li>
