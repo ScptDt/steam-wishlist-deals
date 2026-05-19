@@ -2642,6 +2642,114 @@ function buildShareGamePayload(game, report = null) {
   };
 }
 
+function latestOfferAppid(item) {
+  const source = item && typeof item === 'object' ? item : {};
+  return String(source.appid || source.steam_appid || '').trim();
+}
+
+function latestReportDealForAppid(report, appid) {
+  const key = String(appid || '').trim();
+  if (!key) return {};
+  const deals = Array.isArray(report && report.deals) ? report.deals : [];
+  return deals.find((deal) => latestOfferAppid(deal) === key) || {};
+}
+
+function latestOfferScoreReasons(item, sourceDeal = null) {
+  const reasons = [];
+  [item, sourceDeal || {}].forEach((source) => {
+    if (!source || typeof source !== 'object' || !Array.isArray(source.score_reasons)) return;
+    source.score_reasons.forEach((reason) => {
+      const text = String(reason || '').trim();
+      if (text && !reasons.includes(text)) reasons.push(text);
+    });
+  });
+  return reasons;
+}
+
+function latestOfferDiscount(item, sourceDeal = null) {
+  for (const source of [item, sourceDeal || {}]) {
+    if (!source || typeof source !== 'object') continue;
+    const rawDiscount = source.discount;
+    if (rawDiscount === null || rawDiscount === undefined || rawDiscount === '') continue;
+    const discount = Number.parseInt(rawDiscount, 10);
+    if (Number.isFinite(discount)) return discount;
+  }
+  return 0;
+}
+
+function latestOfferCurrentPrice(item, sourceDeal = null) {
+  for (const source of [item, sourceDeal || {}]) {
+    if (!source || typeof source !== 'object') continue;
+    const price = parseShareMoney(source.price_final ?? source.price);
+    if (price !== null) return price;
+  }
+  return null;
+}
+
+function latestOfferHistoricalLow(report, item, sourceDeal = null) {
+  const appid = latestOfferAppid(item) || latestOfferAppid(sourceDeal);
+  const lows = report && typeof report.historical_lows === 'object' ? report.historical_lows : {};
+  return appid && lows ? (lows[appid] || null) : null;
+}
+
+function latestOfferNearHistoricalLow(item, minHist = null, sourceDeal = null) {
+  if (!minHist || typeof minHist !== 'object') return false;
+  const lowPrice = parseShareMoney(minHist.price ?? minHist.price_final ?? minHist.value);
+  const currentPrice = latestOfferCurrentPrice(item, sourceDeal);
+  return lowPrice !== null && currentPrice !== null && lowPrice > 0 && currentPrice > 0 && currentPrice <= lowPrice * 1.05;
+}
+
+function latestOfferHasActivePromoSignal(reasons, discount, activePromoContext = null) {
+  if ((Array.isArray(reasons) ? reasons : []).some(reason => String(reason || '').toLowerCase().includes('promo'))) return true;
+  if (!activePromoContext || typeof activePromoContext !== 'object' || discount < 75) return false;
+  const categories = Array.isArray(activePromoContext.categories) ? activePromoContext.categories : [];
+  return categories.some(category => ['major_sale', 'fest', 'next_fest', 'publisher_sale', 'themed'].includes(String(category || '').trim()));
+}
+
+function latestOfferHighlight(item, report = null) {
+  const source = item && typeof item === 'object' ? item : {};
+  const fallbackDeal = latestReportDealForAppid(report, latestOfferAppid(source));
+  const recommendation = String(source.recommendation || fallbackDeal.recommendation || '').trim();
+  const recommendationLower = recommendation.toLowerCase();
+  const reasons = latestOfferScoreReasons(source, fallbackDeal);
+  const reasonsLower = reasons.join(' · ').toLowerCase();
+  const discount = latestOfferDiscount(source, fallbackDeal);
+  const meta = report && typeof report === 'object' ? (report.meta || {}) : {};
+  const activePromoContext = meta && typeof meta.active_promo_context === 'object' ? meta.active_promo_context : null;
+  const nearMin = latestOfferNearHistoricalLow(source, latestOfferHistoricalLow(report, source, fallbackDeal), fallbackDeal);
+
+  if (recommendationLower.includes('esper')) return { label: 'Esperar mejor oferta', reason: 'señal conservadora' };
+  if (recommendationLower.includes('solo si')) return { label: 'Solo si ya estaba en tu radar', reason: 'señal conservadora' };
+  if (recommendationLower.includes('comprar') || recommendationLower.includes('muy buena')) {
+    return { label: 'Muy buena oferta', reason: recommendation || 'señal del Top Pick' };
+  }
+  if (nearMin || reasonsLower.includes('mínimo') || reasonsLower.includes('minimo')) {
+    return { label: 'Cerca de mínimo histórico', reason: 'precio cerca del mínimo conocido' };
+  }
+  if (latestOfferHasActivePromoSignal(reasons, discount, activePromoContext)) {
+    return { label: 'Promo destacada', reason: 'contexto de promo activa' };
+  }
+  if (discount >= 85) return { label: 'Muy buena oferta', reason: 'descuento fuerte' };
+  if (recommendationLower.includes('vale la pena') || discount >= 70) {
+    return { label: 'Buena para revisar hoy', reason: recommendation || 'descuento alto' };
+  }
+  return null;
+}
+
+function renderLatestOfferHighlight(item, report = null) {
+  const highlight = latestOfferHighlight(item, report);
+  if (!highlight) return '';
+  const reasonHtml = highlight.reason
+    ? `<span class="latest-offer-highlight-reason">${escapeHtml(highlight.reason)}</span>`
+    : '';
+  return `
+    <div class="latest-offer-highlight" data-latest-offer-highlight>
+      <span class="latest-offer-highlight-label">${escapeHtml(highlight.label)}</span>
+      ${reasonHtml}
+    </div>
+  `;
+}
+
 let latestBudgetUiState = null;
 
 const LATEST_PROMO_CATEGORY_LABELS = Object.freeze({
@@ -3132,6 +3240,7 @@ function getActiveBudgetPreview() {
   }
 
   return {
+    report: latestBudgetUiState.report,
     budget,
     variant,
     selected,
@@ -3206,6 +3315,7 @@ function renderLatestBudgetReplacementOptions(pick, preview) {
 
 function renderLatestBudgetSelection(preview) {
   const selected = Array.isArray(preview && preview.selected) ? preview.selected : [];
+  const report = preview && preview.report;
   if (!selected.length) {
     return `<div class="latest-budget-empty">${escapeHtml((preview && preview.emptyMessage) || 'No hubo juegos que entraran en el presupuesto de este run.')}</div>`;
   }
@@ -3230,6 +3340,7 @@ function renderLatestBudgetSelection(preview) {
             <div class="latest-budget-pick-meta">${escapeHtml(pick.price_final || '—')} · Score ${escapeHtml(pick.score || '—')} · -${escapeHtml(pick.discount || 0)}%</div>
             <div class="latest-budget-pick-recommendation">${escapeHtml(pick.recommendation || 'Selección del modo presupuesto')}</div>
             ${reasons}
+            ${renderLatestOfferHighlight(pick, report)}
             <div class="latest-budget-pick-actions">
               <button type="button" class="btn btn-ghost latest-budget-inline-btn" data-share-budget-pick="${escapeHtml(pick.appid || '')}">Compartir</button>
             </div>
@@ -3247,6 +3358,7 @@ function renderLatestShareTopPicks(report) {
   const cards = topPicks.map((pick) => {
     const shareGame = buildShareGamePayload(pick, report);
     if (!shareGame) return '';
+    const highlightHtml = renderLatestOfferHighlight(pick, report);
     const minHistText = shareGame.displayMinHist
       ? `Mín. histórico: ${shareGame.displayMinHist}`
       : 'Sin mínimo histórico en este reporte';
@@ -3255,6 +3367,7 @@ function renderLatestShareTopPicks(report) {
         <div class="latest-share-card-title">${escapeHtml(shareGame.name)}</div>
         <div class="latest-share-card-price">${escapeHtml(shareGame.displayPrice)}${shareGame.discount ? ` · -${escapeHtml(shareGame.discount)}%` : ''}</div>
         <div class="latest-share-card-meta">${escapeHtml(minHistText)}</div>
+        ${highlightHtml}
         <div class="latest-share-card-actions">
           <button type="button" class="btn btn-ghost latest-share-trigger" data-share-top-pick="${escapeHtml(shareGame.appid)}">Compartir</button>
           <a class="file-link latest-share-open-link" href="${escapeHtml(shareGame.steamUrl)}" target="_blank" rel="noopener noreferrer">Abrir en Steam</a>
@@ -3351,7 +3464,7 @@ function renderLatestRecommendedCollections(report) {
   `;
 }
 
-function renderLatestPersonalizedRecommendationItem(item, index) {
+function renderLatestPersonalizedRecommendationItem(item, index, report = null) {
   const source = item && typeof item === 'object' ? item : {};
   const appid = String(source.appid || source.steam_appid || '').trim();
   const safeAppid = /^\d+$/.test(appid) ? appid : '';
@@ -3376,6 +3489,7 @@ function renderLatestPersonalizedRecommendationItem(item, index) {
         <strong>${nameHtml}</strong>
         ${meta.length ? `<span class="latest-personalized-item-meta">${escapeHtml(meta.join(' · '))}</span>` : ''}
         <span class="latest-personalized-item-reasons">${escapeHtml((reasons.length ? reasons : ['score base del reporte']).join(' · '))}</span>
+        ${renderLatestOfferHighlight(source, report)}
       </div>
     </li>
   `;
@@ -3448,7 +3562,7 @@ function renderLatestPersonalizedRecommendations(report, files = null) {
       </div>
       ${renderLatestPersonalizedProfile(payload.profile || {})}
       <ol class="latest-personalized-list">
-        ${selectedItems.map((item, index) => renderLatestPersonalizedRecommendationItem(item, index + 1)).join('')}
+        ${selectedItems.map((item, index) => renderLatestPersonalizedRecommendationItem(item, index + 1, report)).join('')}
       </ol>
       <div class="latest-personalized-footer">
         ${htmlLink}

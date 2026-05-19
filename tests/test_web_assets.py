@@ -382,6 +382,36 @@ class WebAssetsTests(unittest.TestCase):
         self.assertIn(".latest-personalized-item", app_css)
         self.assertIn(".latest-personalized-footer", app_css)
 
+    def test_latest_report_renders_advisory_offer_highlights(self) -> None:
+        app_js = (ROOT / "web" / "steam_deals" / "app.js").read_text(
+            encoding="utf-8"
+        )
+        app_css = (ROOT / "web" / "steam_deals" / "app.css").read_text(
+            encoding="utf-8"
+        )
+
+        self.assertIn("function latestOfferHighlight", app_js)
+        self.assertIn("function renderLatestOfferHighlight", app_js)
+        self.assertIn("function latestOfferScoreReasons", app_js)
+        self.assertIn("function latestOfferHistoricalLow", app_js)
+        self.assertIn("function latestOfferNearHistoricalLow", app_js)
+        self.assertIn("function latestOfferHasActivePromoSignal", app_js)
+        self.assertIn("data-latest-offer-highlight", app_js)
+        self.assertIn("score_reasons", app_js)
+        self.assertIn("historical_lows", app_js)
+        self.assertIn("meta.active_promo_context", app_js)
+        self.assertIn("renderLatestOfferHighlight(pick, report)", app_js)
+        self.assertIn("renderLatestOfferHighlight(source, report)", app_js)
+        self.assertIn("Muy buena oferta", app_js)
+        self.assertIn("Cerca de mínimo histórico", app_js)
+        self.assertIn("Promo destacada", app_js)
+        self.assertIn("Buena para revisar hoy", app_js)
+        self.assertIn("Esperar mejor oferta", app_js)
+        self.assertIn("Solo si ya estaba en tu radar", app_js)
+        self.assertIn(".latest-offer-highlight", app_css)
+        self.assertIn(".latest-offer-highlight-label", app_css)
+        self.assertIn(".latest-offer-highlight-reason", app_css)
+
     def test_latest_report_renders_gift_ideas_inside_details(self) -> None:
         app_js = (ROOT / "web" / "steam_deals" / "app.js").read_text(
             encoding="utf-8"
