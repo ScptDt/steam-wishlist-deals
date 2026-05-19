@@ -2,6 +2,8 @@ from __future__ import annotations
 
 from datetime import date
 
+from app.steam_deals_tags import canonical_steam_tag_key, normalize_steam_tag_terms
+
 
 SCORE_WEIGHTS = {
     "discount": 0.22,
@@ -415,12 +417,11 @@ def _style_terms(item: dict) -> list[str]:
                     terms.append(str(value.get("description") or value.get("name") or "").strip())
                 else:
                     terms.append(str(value).strip())
-    return [term for term in terms if term]
+    return normalize_steam_tag_terms(term for term in terms if term)
 
 
 def _style_term_key(term: str) -> str:
-    normalized = str(term or "").strip().lower().replace("-", " ").replace("_", " ")
-    return " ".join(normalized.split())
+    return canonical_steam_tag_key(term)
 
 
 def _canonical_style_term_key(term: str) -> str:

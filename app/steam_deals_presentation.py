@@ -1,5 +1,7 @@
 from __future__ import annotations
 
+from app.steam_deals_tags import canonical_steam_tag_key, normalize_steam_tag_weights
+
 
 DECK_LABELS = {3: "✅ Verified", 2: "🟡 Playable", 1: "❌ Unsupported"}
 
@@ -63,8 +65,9 @@ def get_top_tags(tags_data: dict, appid: str, n: int = 3) -> list[str]:
     app_tags = entry.get("tags", entry) if isinstance(entry, dict) else {}
     if not app_tags or not isinstance(app_tags, dict):
         return []
+    app_tags = normalize_steam_tag_weights(app_tags)
     sorted_tags = sorted(app_tags.items(), key=lambda item: -item[1])
-    return [tag for tag, _ in sorted_tags if tag.lower() not in GENERIC_TAGS][:n]
+    return [tag for tag, _ in sorted_tags if canonical_steam_tag_key(tag) not in GENERIC_TAGS][:n]
 
 
 def group_deals_by_tag(deals: list[dict], tags_data: dict, min_count: int = 3, *, get_top_tags_fn=get_top_tags) -> list[tuple[str, list[dict]]]:

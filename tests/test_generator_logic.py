@@ -332,6 +332,22 @@ class RecommendedCollectionsTests(unittest.TestCase):
         self.assertIn("Story Rich", by_id["story_rich"]["items"][0]["reason"])
         self.assertIn("Singleplayer", by_id["singleplayer"]["items"][0]["reason"])
 
+    def test_build_recommended_collections_normalizes_steam_tag_aliases(self) -> None:
+        collections = build_recommended_collections(
+            [
+                {"appid": "1", "name": "Old Alias", "score": 84, "discount": 30, "tags": ["Clicker"]},
+                {"appid": "2", "name": "New Alias", "score": 82, "discount": 25, "tags": ["Incremental"]},
+                {"appid": "3", "name": "Removed Tag", "score": 80, "discount": 20, "tags": ["NSFW"]},
+            ],
+            max_items_per_collection=3,
+        )
+        by_id = {collection["id"]: collection for collection in collections}
+
+        genre_style = by_id["genre_style"]
+        self.assertIn("Incremental", genre_style["items"][0]["reason"])
+        self.assertNotIn("Clicker", genre_style["items"][0]["reason"])
+        self.assertEqual([item["appid"] for item in genre_style["items"]], ["1", "2"])
+
     def test_build_recommended_collections_prefers_cross_collection_diversity(self) -> None:
         deals = [
             {
@@ -2344,6 +2360,27 @@ class PresentationHelpersTests(unittest.TestCase):
         self.assertEqual(
             [name for name, games in grouped if games], ["90%+", "80–89%", "50–59%"]
         )
+
+    def test_get_top_tags_normalizes_current_steam_tag_taxonomy(self) -> None:
+        tags_data = {
+            "10": {
+                "tags": {
+                    "Clicker": 100,
+                    "Incremental": 80,
+                    "NSFW": 95,
+                    "Action": 90,
+                    "Conversation": 70,
+                    "Jet": 60,
+                    "Unforgiving": 50,
+                }
+            }
+        }
+
+        top_tags = module_get_top_tags(tags_data, "10", n=5)
+
+        self.assertEqual(top_tags, ["Incremental", "Dialogue Heavy", "Flight", "Difficult"])
+        self.assertNotIn("Clicker", top_tags)
+        self.assertNotIn("NSFW", top_tags)
 
     def test_players_multiplayer_and_achievements_badges_keep_format(self) -> None:
         players = module_players_badge({"players": {"owners": "200,000 .. 500,000"}})
