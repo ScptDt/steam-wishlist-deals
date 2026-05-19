@@ -2,7 +2,11 @@ from __future__ import annotations
 
 import re
 from datetime import datetime, timezone
+from pathlib import Path
 from typing import Any
+
+from shared.cache_utils import load_timestamped_cache, save_timestamped_cache
+from shared.io_utils import http_get_json
 
 
 FREE_WEEKEND_TEXT_RE = re.compile(r"\bfree\s+weekend\b", re.IGNORECASE)
@@ -13,6 +17,15 @@ FREE_TO_KEEP_TEXT_RE = re.compile(
 DEMO_PLAYTEST_TEXT_RE = re.compile(r"\b(?:demo|playtest|prologue)\b", re.IGNORECASE)
 CONFIDENCE_RANK = {"high": 0, "medium": 1, "low": 2}
 SOURCE_POLICY = "fixture_or_cached_store_signals_v1"
+FREE_WEEKEND_CACHE_PAYLOAD_KEY = "free_weekend_now"
+FREE_WEEKEND_CACHE_TTL_HOURS = 12
+FEATURED_CATEGORIES_URL = "https://store.steampowered.com/api/featuredcategories"
+APPDETAILS_URL = (
+    "https://store.steampowered.com/api/appdetails"
+    "?appids={appids}&filters=basic,price_overview,packages,package_groups"
+)
+STORE_JSON_HEADERS = {"User-Agent": "Mozilla/5.0"}
+APPDETAILS_BATCH_SIZE = 50
 CROSS_SIGNAL_REASONS = {
     "in_wishlist": "en tu wishlist",
     "owned": "ya en biblioteca",
@@ -50,6 +63,34 @@ def _timestamp(value: Any) -> float | None:
         return value.timestamp()
     number = _numeric(value)
     return float(number) if number is not None else None
+
+
+def _timestamp_from_iso(value: Any) -> float | None:
+    if not isinstance(value, str) or not value.strip():
+        return _timestamp(value)
+    raw = value.strip()
+    if raw.endswith("Z"):
+        raw = f"{raw[:-1]}+00:00"
+    try:
+        parsed = datetime.fromisoformat(raw)
+    except ValueError:
+        return _timestamp(value)
+    if parsed.tzinfo is None:
+        parsed = parsed.replace(tzinfo=timezone.utc)
+    return parsed.timestamp()
+
+
+def _reference_timestamp(
+    *,
+    current_timestamp: int | float | None = None,
+    now: Any = None,
+) -> float:
+    if current_timestamp is not None:
+        return float(current_timestamp)
+    timestamp = _timestamp(now)
+    if timestamp is not None:
+        return float(timestamp)
+    return datetime.now(timezone.utc).timestamp()
 
 
 def _iso_datetime(value: Any) -> str:
@@ -302,6 +343,42 @@ def _summary(items: list[dict[str, Any]]) -> dict[str, Any]:
         confidence = str(item.get("confidence") or "unknown")
         confidence_counts[confidence] = confidence_counts.get(confidence, 0) + 1
     return {"count": len(items), "confidence_counts": confidence_counts}
+
+
+def _candidate_is_current(item: dict[str, Any], reference_timestamp: float) -> bool:
+    if not isinstance(item, dict):
+        return False
+    if not _collection_appid(item) or not _compact_text(item.get("title"), limit=120):
+        return False
+    valid_until = _timestamp_from_iso(item.get("valid_until"))
+    return valid_until is not None and valid_until > reference_timestamp
+
+
+def filter_current_free_weekend_payload(
+    payload: dict[str, Any] | None,
+    *,
+    current_timestamp: int | float | None = None,
+    now: Any = None,
+) -> dict[str, Any] | None:
+    """Return only non-expired Free Weekend candidates from a cached/live payload."""
+    if not isinstance(payload, dict):
+        return None
+    reference_timestamp = _reference_timestamp(
+        current_timestamp=current_timestamp,
+        now=now,
+    )
+    items = [
+        dict(item)
+        for item in payload.get("items", [])
+        if isinstance(item, dict) and _candidate_is_current(item, reference_timestamp)
+    ]
+    return {
+        **payload,
+        "generated_at": payload.get("generated_at") or _iso_datetime(now or datetime.now(timezone.utc)),
+        "source_policy": payload.get("source_policy") or SOURCE_POLICY,
+        "items": items,
+        "summary": _summary(items),
+    }
 
 
 def enrich_free_weekend_candidate_cross_signals(
@@ -572,3 +649,147 @@ def build_free_weekend_candidates(
             preference_relations=preference_relations,
         )
     return payload
+
+
+def load_free_weekend_candidate_cache(
+    cache_file: Path,
+    *,
+    ttl_hours: int | float = FREE_WEEKEND_CACHE_TTL_HOURS,
+    current_timestamp: int | float | None = None,
+    now: Any = None,
+    load_cache_fn=load_timestamped_cache,
+) -> dict[str, Any] | None:
+    """Load a fresh, current Free Weekend payload from the dedicated cache."""
+    payload, age_hours = load_cache_fn(
+        cache_file,
+        FREE_WEEKEND_CACHE_PAYLOAD_KEY,
+        default={},
+    )
+    if age_hours > float(ttl_hours):
+        return None
+    return filter_current_free_weekend_payload(
+        payload,
+        current_timestamp=current_timestamp,
+        now=now,
+    )
+
+
+def save_free_weekend_candidate_cache(
+    cache_file: Path,
+    payload: dict[str, Any],
+    *,
+    save_cache_fn=save_timestamped_cache,
+) -> None:
+    """Persist Free Weekend candidates without touching the price cache."""
+    if not isinstance(payload, dict):
+        return
+    save_cache_fn(
+        cache_file,
+        FREE_WEEKEND_CACHE_PAYLOAD_KEY,
+        payload,
+        ensure_ascii=False,
+        indent=2,
+    )
+
+
+def _fetch_json(fetch_json, url: str) -> Any:
+    return fetch_json(url, headers=STORE_JSON_HEADERS, timeout=15)
+
+
+def _chunked(values: list[str], size: int) -> list[list[str]]:
+    return [values[index : index + size] for index in range(0, len(values), size)]
+
+
+def _featured_appids(featured_categories_payload: dict[str, Any] | list[Any] | None) -> list[str]:
+    appids = {
+        _featured_item_appid(item)
+        for item in extract_featured_category_items(featured_categories_payload)
+    }
+    return sorted((appid for appid in appids if appid), key=lambda value: int(value))
+
+
+def fetch_free_weekend_store_payloads(
+    *,
+    fetch_json=http_get_json,
+) -> tuple[dict[str, Any] | list[Any] | None, dict[str, Any]]:
+    """Fetch Store JSON used to build opt-in Free Weekend candidates."""
+    featured_categories_payload = _fetch_json(fetch_json, FEATURED_CATEGORIES_URL)
+    appdetails_payload: dict[str, Any] = {}
+    for appid_batch in _chunked(
+        _featured_appids(featured_categories_payload),
+        APPDETAILS_BATCH_SIZE,
+    ):
+        if not appid_batch:
+            continue
+        url = APPDETAILS_URL.format(appids=",".join(appid_batch))
+        batch_payload = _fetch_json(fetch_json, url)
+        if isinstance(batch_payload, dict):
+            appdetails_payload.update(
+                {
+                    str(appid): entry
+                    for appid, entry in batch_payload.items()
+                    if isinstance(entry, dict)
+                }
+            )
+    return featured_categories_payload, appdetails_payload
+
+
+def build_live_free_weekend_candidates(
+    *,
+    fetch_json=http_get_json,
+    observed_at: Any = None,
+    current_timestamp: int | float | None = None,
+    now: Any = None,
+) -> dict[str, Any]:
+    """Build Free Weekend candidates from opt-in live Store JSON fetches."""
+    observed = observed_at or now or datetime.now(timezone.utc)
+    reference_timestamp = current_timestamp if current_timestamp is not None else _timestamp(observed)
+    featured_categories_payload, appdetails_payload = fetch_free_weekend_store_payloads(
+        fetch_json=fetch_json,
+    )
+    return build_free_weekend_candidates(
+        featured_categories_payload,
+        appdetails_payload,
+        observed_at=observed,
+        current_timestamp=reference_timestamp,
+    )
+
+
+def resolve_free_weekend_now_payload(
+    cache_file: Path,
+    *,
+    live_enabled: bool = False,
+    ttl_hours: int | float = FREE_WEEKEND_CACHE_TTL_HOURS,
+    fetch_json=http_get_json,
+    current_timestamp: int | float | None = None,
+    now: Any = None,
+) -> dict[str, Any] | None:
+    """Resolve optional `free_weekend_now` from fresh cache or opt-in live fetch."""
+    cached_payload = load_free_weekend_candidate_cache(
+        cache_file,
+        ttl_hours=ttl_hours,
+        current_timestamp=current_timestamp,
+        now=now,
+    )
+    if cached_payload is not None:
+        return cached_payload
+    if not live_enabled:
+        return None
+
+    try:
+        live_payload = build_live_free_weekend_candidates(
+            fetch_json=fetch_json,
+            current_timestamp=current_timestamp,
+            now=now,
+        )
+    except Exception:
+        return None
+
+    current_payload = filter_current_free_weekend_payload(
+        live_payload,
+        current_timestamp=current_timestamp,
+        now=now,
+    )
+    if current_payload is not None:
+        save_free_weekend_candidate_cache(cache_file, current_payload)
+    return current_payload

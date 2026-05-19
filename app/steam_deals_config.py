@@ -52,6 +52,11 @@ def build_parser() -> argparse.ArgumentParser:
         "--no-cache", action="store_true", help="Re-fetch aunque haya caché válida"
     )
     parser.add_argument(
+        "--free-weekend-live",
+        action="store_true",
+        help="Opt-in: consultar Store JSON para Free Weekend con caché separado",
+    )
+    parser.add_argument(
         "--warm-cache",
         action="store_true",
         help="Precalienta caché de precios y sale sin generar reportes",
@@ -330,6 +335,7 @@ def _build_filters(args, cfg: dict, *, environ=None) -> dict:
         "new_only": args.new_only,
         "csv": args.csv,
         "warm_cache": args.warm_cache,
+        "free_weekend_live": bool(args.free_weekend_live or cfg.get("free_weekend_live")),
         "wishlist_external_matches_json": Path(args.wishlist_external_matches_json).expanduser()
         if args.wishlist_external_matches_json
         else None,

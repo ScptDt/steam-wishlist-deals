@@ -186,6 +186,7 @@ from steam_deals_generator import (
     is_same_game,
     load_previous_deal_appids,
     parse_hltb,
+    resolve_free_weekend_now,
     resolve_price_fetch_tuning,
     run_price_cache_stage,
     run_warm_cache_mode,
@@ -1365,6 +1366,7 @@ class ConfigTests(unittest.TestCase):
                 "16",
                 "--md-frontmatter",
                 "--warm-cache",
+                "--free-weekend-live",
                 "--wishlist-external-matches-json",
                 "/tmp/wishlist_matches.json",
                 "--alert-rise-pct",
@@ -1385,6 +1387,7 @@ class ConfigTests(unittest.TestCase):
         self.assertEqual(result[11]["max_workers"], 16)
         self.assertEqual(result[11]["md_frontmatter"], True)
         self.assertEqual(result[11]["warm_cache"], True)
+        self.assertEqual(result[11]["free_weekend_live"], True)
         self.assertEqual(result[11]["wishlist_external_matches_json"], Path("/tmp/wishlist_matches.json"))
         self.assertEqual(result[11]["alert_rise_pct"], 12.5)
         self.assertEqual(result[11]["alert_global_margin_pct"], 3.0)
@@ -4841,6 +4844,35 @@ class RunOutputTests(unittest.TestCase):
         self.assertEqual(data["summary"]["free_weekend_now_count"], 2)
         self.assertNotIn("price_cache", data["free_weekend_now"])
         self.assertNotIn("top_picks", data["free_weekend_now"])
+
+    def test_resolve_free_weekend_now_uses_dedicated_cache_without_fetch(self) -> None:
+        cached_payload = {
+            "saved_at": datetime.now().isoformat(),
+            "free_weekend_now": {
+                "generated_at": "2026-05-19T00:00:00Z",
+                "source_policy": "fixture_or_cached_store_signals_v1",
+                "items": [
+                    {
+                        "appid": "1001",
+                        "title": "Cached Weekend Candidate",
+                        "valid_until": "2030-01-01T00:00:00Z",
+                    }
+                ],
+            },
+        }
+
+        with TemporaryDirectory() as temp_dir:
+            cache_path = Path(temp_dir) / "free_weekend_candidates.json"
+            cache_path.write_text(json.dumps(cached_payload), encoding="utf-8")
+            payload = resolve_free_weekend_now(
+                cache_file=cache_path,
+                live_enabled=False,
+                now=datetime(2026, 5, 19),
+                fetch_json=lambda *_args, **_kwargs: self.fail("cache hit should not fetch"),
+            )
+
+        self.assertEqual(payload["items"][0]["appid"], "1001")
+        self.assertEqual(cache_path.name, "free_weekend_candidates.json")
 
 
 class StopApiContractTests(unittest.TestCase):

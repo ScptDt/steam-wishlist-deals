@@ -174,6 +174,14 @@ class GeneratedFilesServingTests(unittest.TestCase):
         self.assertIn("--warm-cache", warm_cmd)
         self.assertNotIn("--no-cache", warm_cmd)
 
+    def test_build_command_passes_free_weekend_live_only_when_requested(self) -> None:
+        default_cmd = build_command({"vanity": "gaben"}, {})
+        opt_in_cmd = build_command({"vanity": "gaben"}, {"free_weekend_live": True})
+
+        self.assertNotIn("--free-weekend-live", default_cmd)
+        self.assertIn("--free-weekend-live", opt_in_cmd)
+        self.assertEqual(opt_in_cmd.count("--free-weekend-live"), 1)
+
     def test_build_command_passes_wishlist_external_matches_json(self) -> None:
         cmd = build_command(
             {

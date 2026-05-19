@@ -166,10 +166,14 @@ except Exception:
 
 try:
     from steam_deals_free_weekend import (
+        FREE_WEEKEND_CACHE_TTL_HOURS as _FREE_WEEKEND_CACHE_TTL_HOURS_IMPL,
         enrich_free_weekend_cross_signals as _enrich_free_weekend_cross_signals_impl,
+        resolve_free_weekend_now_payload as _resolve_free_weekend_now_payload_impl,
     )
 except Exception:
+    _FREE_WEEKEND_CACHE_TTL_HOURS_IMPL = 12
     _enrich_free_weekend_cross_signals_impl = None
+    _resolve_free_weekend_now_payload_impl = None
 
 
 try:
@@ -701,6 +705,27 @@ def enrich_free_weekend_cross_signals(payload, **kwargs):
     if _enrich_free_weekend_cross_signals_impl is None or not isinstance(payload, dict):
         return payload
     return _enrich_free_weekend_cross_signals_impl(payload, **kwargs)
+
+
+def resolve_free_weekend_now(
+    *,
+    live_enabled: bool = False,
+    cache_file: Path | None = None,
+    fetch_json=http_get_json,
+    current_timestamp: int | float | None = None,
+    now=None,
+):
+    """Resolve optional Free Weekend payload without coupling to the price cache."""
+    if _resolve_free_weekend_now_payload_impl is None:
+        return None
+    return _resolve_free_weekend_now_payload_impl(
+        cache_file or FREE_WEEKEND_CACHE_FILE,
+        live_enabled=live_enabled,
+        ttl_hours=FREE_WEEKEND_CACHE_TTL_HOURS,
+        fetch_json=fetch_json,
+        current_timestamp=current_timestamp,
+        now=now,
+    )
 
 
 def load_family_games(json_path: Path) -> set[str]:
@@ -1314,6 +1339,8 @@ else:
         frozen=getattr(sys, "frozen", False),
     )
 CACHE_FILE = CACHE_DIR / "prices_cache.json"
+FREE_WEEKEND_CACHE_FILE = CACHE_DIR / "free_weekend_candidates.json"
+FREE_WEEKEND_CACHE_TTL_HOURS = _FREE_WEEKEND_CACHE_TTL_HOURS_IMPL
 CACHE_MAX_HOURS = 24
 PRICE_BATCH_HALVING_LIMIT = 3
 PRICE_HTTP_400_DIAGNOSTIC_SAMPLE_LIMIT = 0
@@ -4206,7 +4233,9 @@ def main():
         hltb_records=hltb_hours,
         external_matches=wishlist_external_matches,
     )
-    free_weekend_now = None
+    free_weekend_now = resolve_free_weekend_now(
+        live_enabled=bool(FILTERS.get("free_weekend_live")),
+    )
 
     # Generar MD
     step("Generando Markdown...")

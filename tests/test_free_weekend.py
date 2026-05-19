@@ -1,11 +1,17 @@
 from __future__ import annotations
 
+import json
 import unittest
 from datetime import datetime, timezone
+from pathlib import Path
+from tempfile import TemporaryDirectory
 
 from steam_deals_free_weekend import (
     build_free_weekend_candidates,
     enrich_free_weekend_cross_signals,
+    filter_current_free_weekend_payload,
+    resolve_free_weekend_now_payload,
+    save_free_weekend_candidate_cache,
 )
 
 
@@ -256,6 +262,95 @@ class FreeWeekendCandidateTests(unittest.TestCase):
             enrich_free_weekend_cross_signals({"items": [None, "bad"]}, wishlist_appids=["10"]),
             {"items": []},
         )
+
+    def test_filter_current_free_weekend_payload_removes_expired_candidates(self) -> None:
+        payload = {
+            "generated_at": "2026-05-19T12:00:00Z",
+            "source_policy": "fixture_or_cached_store_signals_v1",
+            "items": [
+                {"appid": "10", "title": "Expired", "valid_until": "2020-01-01T00:00:00Z"},
+                {"appid": "20", "title": "Current", "valid_until": "2030-01-01T00:00:00Z"},
+            ],
+        }
+
+        filtered = filter_current_free_weekend_payload(payload, now=OBSERVED_AT)
+
+        self.assertEqual([item["appid"] for item in filtered["items"]], ["20"])
+        self.assertEqual(filtered["summary"], {"count": 1, "confidence_counts": {"unknown": 1}})
+
+    def test_resolve_free_weekend_now_payload_uses_fresh_cache_without_fetch(self) -> None:
+        payload = build_free_weekend_candidates(
+            {"specials": {"items": [featured_item(90, "Cached Candidate")]}},
+            dict([appdetails_entry(90, "Cached Candidate")]),
+            observed_at=OBSERVED_AT,
+            now=OBSERVED_AT,
+        )
+
+        with TemporaryDirectory() as temp_dir:
+            cache_path = Path(temp_dir) / "free_weekend_candidates.json"
+            save_free_weekend_candidate_cache(cache_path, payload)
+
+            resolved = resolve_free_weekend_now_payload(
+                cache_path,
+                live_enabled=True,
+                now=OBSERVED_AT,
+                fetch_json=lambda *_args, **_kwargs: self.fail("fresh cache should not fetch"),
+            )
+
+        self.assertEqual(resolved["items"][0]["appid"], "90")
+
+    def test_resolve_free_weekend_now_payload_ignores_stale_cache_without_opt_in(self) -> None:
+        stale_cache = {
+            "saved_at": "2000-01-01T00:00:00",
+            "free_weekend_now": {
+                "generated_at": "2000-01-01T00:00:00Z",
+                "source_policy": "fixture_or_cached_store_signals_v1",
+                "items": [
+                    {"appid": "10", "title": "Stale", "valid_until": "2030-01-01T00:00:00Z"}
+                ],
+            },
+        }
+
+        with TemporaryDirectory() as temp_dir:
+            cache_path = Path(temp_dir) / "free_weekend_candidates.json"
+            cache_path.write_text(json.dumps(stale_cache), encoding="utf-8")
+            resolved = resolve_free_weekend_now_payload(
+                cache_path,
+                live_enabled=False,
+                now=OBSERVED_AT,
+                fetch_json=lambda *_args, **_kwargs: self.fail("non opt-in should not fetch"),
+            )
+
+        self.assertIsNone(resolved)
+
+    def test_resolve_free_weekend_now_payload_live_opt_in_fetches_and_saves_cache(self) -> None:
+        appid, details = appdetails_entry(100, "Live Candidate")
+        calls = []
+
+        def fake_fetch(url, **_kwargs):
+            calls.append(url)
+            if "featuredcategories" in url:
+                return {"specials": {"items": [featured_item(100, "Live Candidate")]}}
+            if "appdetails" in url:
+                return {appid: details}
+            self.fail(f"unexpected url: {url}")
+
+        with TemporaryDirectory() as temp_dir:
+            cache_path = Path(temp_dir) / "free_weekend_candidates.json"
+            resolved = resolve_free_weekend_now_payload(
+                cache_path,
+                live_enabled=True,
+                now=OBSERVED_AT,
+                fetch_json=fake_fetch,
+            )
+            cached = json.loads(cache_path.read_text(encoding="utf-8"))
+
+        self.assertEqual(len(calls), 2)
+        self.assertTrue(any("featuredcategories" in url for url in calls))
+        self.assertTrue(any("appdetails" in url and "appids=100" in url for url in calls))
+        self.assertEqual(resolved["items"][0]["appid"], "100")
+        self.assertIn("free_weekend_now", cached)
+        self.assertNotIn("prices_cache", cached)
 
 
 if __name__ == "__main__":

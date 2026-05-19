@@ -499,11 +499,12 @@ class WebAssetsTests(unittest.TestCase):
         self.assertIn("ya en biblioteca", app_js)
         self.assertIn("similar a tus gustos", app_js)
         self.assertIn("Free Weekend ahora", app_js)
-        self.assertIn("Solo señales locales", app_js)
+        self.assertIn("Señales locales/cache", app_js)
         self.assertIn("Revisa confianza y vigencia", app_js)
         self.assertIn("no cambia score, ranking ni caché de precios", app_js)
-        self.assertIn("no hace fetch live, no recalcula score ni invalida caché", app_js)
-        self.assertIn("Sin candidatos locales de Free Weekend en el JSON actual", app_js)
+        self.assertIn("Activa el opt-in Free Weekend al generar", app_js)
+        self.assertIn("no recalcula score ni invalida caché de precios", app_js)
+        self.assertIn("Sin candidatos locales/cacheados de Free Weekend en el JSON actual", app_js)
         self.assertIn("renderLatestFreeWeekendNow(report)", app_js)
         self.assertIn("renderLatestReportIntentWrapper(activeReport, meta, summary, files)", app_js)
         self.assertIn(".latest-free-weekend-section", app_css)
@@ -512,6 +513,19 @@ class WebAssetsTests(unittest.TestCase):
         self.assertIn(".latest-free-weekend-cross", app_css)
         self.assertIn(".latest-free-weekend-empty", app_css)
         self.assertIn(".latest-free-weekend-badge", app_css)
+
+    def test_advanced_filters_include_free_weekend_live_opt_in(self) -> None:
+        index_html = (ROOT / "web" / "steam_deals" / "index.html").read_text(
+            encoding="utf-8"
+        )
+        app_js = (ROOT / "web" / "steam_deals" / "app.js").read_text(
+            encoding="utf-8"
+        )
+
+        self.assertIn('id="free_weekend_live"', index_html)
+        self.assertIn("Buscar Free Weekend ahora (opt-in)", index_html)
+        self.assertIn("consulta señales Store JSON y usa cache separado", index_html)
+        self.assertIn("'free_weekend_live'", app_js)
 
     def test_latest_report_surfaces_partial_cache_coverage(self) -> None:
         app_js = (ROOT / "web" / "steam_deals" / "app.js").read_text(

@@ -796,6 +796,8 @@ def build_command(config: dict, filters: dict) -> list[str]:
         cmd.append("--warm-cache")
     if filters.get("no_cache") and not warm_cache:
         cmd.append("--no-cache")
+    if filters.get("free_weekend_live"):
+        cmd.append("--free-weekend-live")
     if filters.get("max_price"):
         cmd += ["--max-price", str(filters["max_price"])]
     if filters.get("deck_only"):

@@ -102,7 +102,7 @@ El contrato futuro puede exponerse como `free_weekend_now` en JSON, pero este sl
 2. [x] Contrato JSON `free_weekend_now` en el output del generator, sin UI todavía (`renderers/json_renderer.py`, `tests.test_generator_logic`).
 3. [x] Secciones Web/HTML/Markdown `Free Weekend ahora` con copy de confianza/vigencia (`renderers/markdown_renderer.py`, `renderers/html_renderer.py`, `web/steam_deals/app.js`).
 4. [x] Señales cruzadas (`en tu wishlist`, `ya en biblioteca`, `similar a tus gustos`) sin recalibrar score (`app/steam_deals_free_weekend.py` + renderers/Web existentes).
-5. [ ] Fetch live opt-in con TTL/cache, solo después de que fixtures y contrato estén estables.
+5. [x] Fetch live opt-in con TTL/cache dedicado, validado offline con fake fetch/cache y sin red real.
 
 ## No hacer
 
@@ -110,9 +110,10 @@ El contrato futuro puede exponerse como `free_weekend_now` en JSON, pero este sl
 - No hardcodear listas largas de appids/eventos.
 - No prometer “gratis ahora” si falta vigencia o confianza.
 - No mezclar con score, ranking, Top Picks o invalidación de cache de precios.
-- No usar red real, `BG00G`, builds ni reportes generados como validación de este slice docs-only.
+- No usar red real, `BG00G`, builds ni reportes generados como validación automática; el live real requiere aprobación explícita.
 
-## Validación mínima para este slice
+## Validación mínima para cambios de este track
 
-- Revisión documental contra `PENDIENTES.md`, `BITACORA.md`, `docs/runbooks/README.md` y `performance-warm-cache.md`.
+- Revisión documental contra `PENDIENTES.md`, `BITACORA.md`, `docs/runbooks/README.md` y `performance-warm-cache.md` si cambia el estado operativo.
+- Tests offline con fixtures/fake fetch/cache/time si cambia parser, resolver, TTL/cache o wiring opt-in.
 - `git diff --check`.

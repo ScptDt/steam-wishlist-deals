@@ -260,7 +260,7 @@ function validatePd2FormBeforeRun() {
 // ── Config fields (saveable) ──
 const CONFIG_FIELDS = ['vanity','key','hltb','output','discount','genres','family_json','wishlist_external_matches_json','itad_key','compare','telegram_token','telegram_chat','discord_webhook'];
 const FILTER_FIELDS = ['max_price','min_reviews','min_review_count','max_hours','top','sort','budget','max_workers'];
-const CHECK_FIELDS  = ['deck_only','deck_verified','new_only','csv','no_cache'];
+const CHECK_FIELDS  = ['deck_only','deck_verified','new_only','csv','no_cache','free_weekend_live'];
 const GENRE_SUGGESTIONS = [
   'action', 'adventure', 'indie', 'rpg', 'strategy', 'simulation', 'casual', 'sports',
   'racing', 'puzzle', 'platformer', 'metroidvania', 'roguelike', 'roguelite', 'soulslike',
@@ -2894,7 +2894,7 @@ function renderLatestFreeWeekendNow(report) {
     : '';
   const bodyHtml = selectedItems.length
     ? `<ol class="latest-free-weekend-list">${selectedItems.map(renderLatestFreeWeekendItem).join('')}</ol>${hiddenCount ? `<div class="latest-free-weekend-more">${escapeHtml(formatLatestCoverageCount(hiddenCount))} más en el JSON completo</div>` : ''}`
-    : '<div class="latest-free-weekend-empty">Sin candidatos locales de Free Weekend en el JSON actual. Este bloque usa solo el último JSON local: no hace fetch live, no recalcula score ni invalida caché.</div>';
+    : '<div class="latest-free-weekend-empty">Sin candidatos locales/cacheados de Free Weekend en el JSON actual. Activa el opt-in Free Weekend al generar para consultar Store JSON; no recalcula score ni invalida caché de precios.</div>';
   const countCopy = totalCount > 0
     ? `${formatLatestCoverageCount(totalCount)} candidato(s) con señales locales/cacheadas`
     : 'Sin candidatos locales con señales suficientes';
@@ -2905,7 +2905,7 @@ function renderLatestFreeWeekendNow(report) {
           <div class="latest-free-weekend-title">Free Weekend ahora</div>
           <div class="latest-free-weekend-subtitle">${escapeHtml(countCopy)}. Revisa confianza y vigencia antes de asumir disponibilidad; no cambia score, ranking ni caché de precios.</div>
         </div>
-        <span class="latest-free-weekend-badge">Solo señales locales</span>
+        <span class="latest-free-weekend-badge">Señales locales/cache</span>
       </div>
       ${policyHtml}
       ${bodyHtml}
