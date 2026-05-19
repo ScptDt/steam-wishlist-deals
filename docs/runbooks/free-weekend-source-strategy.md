@@ -116,4 +116,5 @@ El contrato futuro puede exponerse como `free_weekend_now` en JSON, pero este sl
 
 - Revisión documental contra `PENDIENTES.md`, `BITACORA.md`, `docs/runbooks/README.md` y `performance-warm-cache.md` si cambia el estado operativo.
 - Tests offline con fixtures/fake fetch/cache/time si cambia parser, resolver, TTL/cache o wiring opt-in.
+- Smoke live real solo con aprobación explícita, cache/log/output aislados y sin `--no-cache`; `appdetails` debe consultarse por appid o con fallback conservador si Store rechaza batches multi-appid.
 - `git diff --check`.

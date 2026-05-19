@@ -25,7 +25,7 @@ APPDETAILS_URL = (
     "?appids={appids}&filters=basic,price_overview,packages,package_groups"
 )
 STORE_JSON_HEADERS = {"User-Agent": "Mozilla/5.0"}
-APPDETAILS_BATCH_SIZE = 50
+APPDETAILS_BATCH_SIZE = 1
 CROSS_SIGNAL_REASONS = {
     "in_wishlist": "en tu wishlist",
     "owned": "ya en biblioteca",
@@ -708,6 +708,21 @@ def _featured_appids(featured_categories_payload: dict[str, Any] | list[Any] | N
     return sorted((appid for appid in appids if appid), key=lambda value: int(value))
 
 
+def _merge_appdetails_payload(
+    target: dict[str, Any],
+    payload: Any,
+) -> None:
+    if not isinstance(payload, dict):
+        return
+    target.update(
+        {
+            str(appid): entry
+            for appid, entry in payload.items()
+            if isinstance(entry, dict)
+        }
+    )
+
+
 def fetch_free_weekend_store_payloads(
     *,
     fetch_json=http_get_json,
@@ -722,15 +737,10 @@ def fetch_free_weekend_store_payloads(
         if not appid_batch:
             continue
         url = APPDETAILS_URL.format(appids=",".join(appid_batch))
-        batch_payload = _fetch_json(fetch_json, url)
-        if isinstance(batch_payload, dict):
-            appdetails_payload.update(
-                {
-                    str(appid): entry
-                    for appid, entry in batch_payload.items()
-                    if isinstance(entry, dict)
-                }
-            )
+        try:
+            _merge_appdetails_payload(appdetails_payload, _fetch_json(fetch_json, url))
+        except Exception:
+            continue
     return featured_categories_payload, appdetails_payload
 
 

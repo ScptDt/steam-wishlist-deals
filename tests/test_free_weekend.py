@@ -10,6 +10,7 @@ from steam_deals_free_weekend import (
     build_free_weekend_candidates,
     enrich_free_weekend_cross_signals,
     filter_current_free_weekend_payload,
+    fetch_free_weekend_store_payloads,
     resolve_free_weekend_now_payload,
     save_free_weekend_candidate_cache,
 )
@@ -351,6 +352,62 @@ class FreeWeekendCandidateTests(unittest.TestCase):
         self.assertEqual(resolved["items"][0]["appid"], "100")
         self.assertIn("free_weekend_now", cached)
         self.assertNotIn("prices_cache", cached)
+
+    def test_fetch_free_weekend_store_payloads_fetches_appdetails_one_appid_at_a_time(self) -> None:
+        details_by_appid = dict(
+            [
+                appdetails_entry(101, "First Candidate"),
+                appdetails_entry(102, "Second Candidate"),
+            ]
+        )
+        calls = []
+
+        def fake_fetch(url, **_kwargs):
+            calls.append(url)
+            if "featuredcategories" in url:
+                return {
+                    "specials": {
+                        "items": [
+                            featured_item(101, "First Candidate"),
+                            featured_item(102, "Second Candidate"),
+                        ]
+                    }
+                }
+            if "appids=101" in url:
+                return {"101": details_by_appid["101"]}
+            if "appids=102" in url:
+                return {"102": details_by_appid["102"]}
+            self.fail(f"unexpected url: {url}")
+
+        _featured, appdetails = fetch_free_weekend_store_payloads(fetch_json=fake_fetch)
+
+        appdetails_calls = [url for url in calls if "appdetails" in url]
+        self.assertEqual(len(appdetails_calls), 2)
+        self.assertTrue(all("," not in url.split("appids=", 1)[1].split("&", 1)[0] for url in appdetails_calls))
+        self.assertEqual(set(appdetails), {"101", "102"})
+
+    def test_fetch_free_weekend_store_payloads_skips_failed_appdetails_without_aborting(self) -> None:
+        appid, details = appdetails_entry(202, "Surviving Candidate")
+
+        def fake_fetch(url, **_kwargs):
+            if "featuredcategories" in url:
+                return {
+                    "specials": {
+                        "items": [
+                            featured_item(201, "Failing Candidate"),
+                            featured_item(202, "Surviving Candidate"),
+                        ]
+                    }
+                }
+            if "appids=201" in url:
+                raise RuntimeError("HTTP 400")
+            if "appids=202" in url:
+                return {appid: details}
+            self.fail(f"unexpected url: {url}")
+
+        _featured, appdetails = fetch_free_weekend_store_payloads(fetch_json=fake_fetch)
+
+        self.assertEqual(set(appdetails), {"202"})
 
 
 if __name__ == "__main__":
