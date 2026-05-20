@@ -956,6 +956,285 @@ def _html_personalized_recommendations(payload: dict | None) -> str:
 </section>'''
 
 
+def _selection_review_appid(item: dict) -> str:
+    if not isinstance(item, dict):
+        return ""
+    appid = str(item.get("appid") or item.get("steam_appid") or "").strip()
+    return appid if appid.isdigit() else ""
+
+
+def _selection_review_appid_set(values) -> list[str]:
+    if isinstance(values, dict):
+        raw_values = values.keys()
+    else:
+        raw_values = values or []
+    appids = {
+        str(value).strip()
+        for value in raw_values
+        if str(value).strip().isdigit()
+    }
+    return sorted(appids, key=lambda value: int(value))
+
+
+def _selection_review_texts(values) -> list[str]:
+    if not isinstance(values, list):
+        return []
+    texts: list[str] = []
+    seen: set[str] = set()
+    for value in values:
+        text = str(value or "").strip()
+        key = text.casefold()
+        if text and key not in seen:
+            seen.add(key)
+            texts.append(text)
+    return texts
+
+
+def _selection_review_number(value) -> float | None:
+    if value in (None, "") or isinstance(value, bool):
+        return None
+    try:
+        number = float(value)
+    except (TypeError, ValueError):
+        return None
+    return number
+
+
+def _selection_review_format_number(value) -> str:
+    number = _selection_review_number(value)
+    if number is None:
+        return ""
+    if abs(number - round(number)) < 0.05:
+        return str(int(round(number)))
+    return f"{number:.1f}"
+
+
+def _selection_review_item_payload(item: dict, source_label: str) -> dict | None:
+    appid = _selection_review_appid(item)
+    if not appid:
+        return None
+    payload: dict[str, object] = {
+        "appid": appid,
+        "name": str(item.get("name") or item.get("steam_name") or f"App {appid}"),
+        "source_labels": [source_label] if source_label else [],
+    }
+    for key in ("score", "base_score", "personalized_score", "affinity_score"):
+        number = _selection_review_number(item.get(key))
+        if number is not None:
+            payload[key] = round(number, 1)
+    discount = _selection_review_number(item.get("discount"))
+    if discount is not None:
+        payload["discount"] = int(discount)
+    price_final = str(item.get("price_final") or item.get("price") or "").strip()
+    if price_final:
+        payload["price_final"] = price_final
+    reasons = _selection_review_texts(item.get("reasons"))
+    reasons.extend(_selection_review_texts(item.get("score_reasons")))
+    payload["reasons"] = _selection_review_texts(reasons)
+    return payload
+
+
+def _selection_review_collection_reason(collection: dict, item: dict) -> str:
+    label = str(collection.get("label") or collection.get("title") or collection.get("id") or "").strip()
+    reason = str(item.get("reason") or "").strip()
+    if label and reason:
+        return f"{label}: {reason}"
+    if label:
+        return f"aparece en {label}"
+    return reason
+
+
+def _merge_selection_review_context(
+    contexts: dict[str, dict],
+    item: dict,
+    source_label: str,
+    *,
+    collection_reason: str = "",
+) -> None:
+    payload = _selection_review_item_payload(item, source_label)
+    if not payload:
+        return
+    appid = str(payload["appid"])
+    current = dict(contexts.get(appid, {}))
+    for key, value in payload.items():
+        if key in {"reasons", "source_labels"}:
+            current[key] = _selection_review_texts([*(current.get(key) or []), *(value or [])])
+        elif value not in (None, "", []):
+            current[key] = value
+    if collection_reason:
+        current["collection_reasons"] = _selection_review_texts(
+            [*(current.get("collection_reasons") or []), collection_reason]
+        )
+    contexts[appid] = current
+
+
+def _selection_review_context_items(
+    deals: list[dict],
+    top_picks: list[dict],
+    recommended_collections: list[dict],
+    personalized_recommendations: dict | None,
+) -> dict[str, dict]:
+    contexts: dict[str, dict] = {}
+    for deal in deals or []:
+        _merge_selection_review_context(contexts, deal, "Oferta")
+    seen_collection_item_keys: set[str] = set()
+    for collection in recommended_collections or []:
+        if not isinstance(collection, dict):
+            continue
+        items = collection.get("items") if isinstance(collection.get("items"), list) else []
+        for item in (entry for entry in items if isinstance(entry, dict)):
+            item_key = _recommended_collection_item_key(item)
+            if item_key and item_key in seen_collection_item_keys:
+                continue
+            if item_key:
+                seen_collection_item_keys.add(item_key)
+            _merge_selection_review_context(
+                contexts,
+                item,
+                "Colección",
+                collection_reason=_selection_review_collection_reason(collection, item),
+            )
+    for pick in top_picks or []:
+        _merge_selection_review_context(contexts, pick, "Top Picks")
+    for item in _shuffle_personalized_items(personalized_recommendations):
+        _merge_selection_review_context(contexts, item, "Personalizado")
+    return contexts
+
+
+def _selection_review_candidate_meta(item: dict) -> str:
+    meta = []
+    personalized_score = _selection_review_format_number(item.get("personalized_score"))
+    if personalized_score:
+        meta.append(f"Personal {personalized_score}")
+    base_score = _selection_review_format_number(item.get("score") if item.get("score") is not None else item.get("base_score"))
+    if base_score:
+        meta.append(f"Score {base_score}")
+    affinity = _selection_review_format_number(item.get("affinity_score"))
+    if affinity:
+        meta.append(f"Afinidad +{affinity}")
+    discount = _selection_review_number(item.get("discount"))
+    if discount and discount > 0:
+        meta.append(f"-{int(discount)}%")
+    price_final = str(item.get("price_final") or "").strip()
+    if price_final:
+        meta.append(price_final)
+    return " · ".join(meta)
+
+
+def _selection_review_candidate_list(
+    contexts: dict[str, dict],
+    deals: list[dict],
+    top_picks: list[dict],
+    personalized_recommendations: dict | None,
+    *,
+    limit: int = 8,
+) -> list[dict]:
+    candidates: list[dict] = []
+    seen: set[str] = set()
+
+    def add_candidates(items: list[dict], source_label: str, item_limit: int) -> None:
+        for item in (entry for entry in items[:item_limit] if isinstance(entry, dict)):
+            appid = _selection_review_appid(item)
+            if not appid or appid in seen:
+                continue
+            context = contexts.get(appid, item)
+            candidates.append(
+                {
+                    "appid": appid,
+                    "name": str(context.get("name") or item.get("name") or f"App {appid}"),
+                    "source_label": source_label,
+                    "meta": _selection_review_candidate_meta(context),
+                }
+            )
+            seen.add(appid)
+            if len(candidates) >= limit:
+                return
+
+    add_candidates(_shuffle_personalized_items(personalized_recommendations), "Personalizado", 4)
+    if len(candidates) < limit:
+        add_candidates(top_picks or [], "Top Picks", 6)
+    if len(candidates) < limit:
+        add_candidates(deals or [], "Ofertas", limit)
+    return candidates[:limit]
+
+
+def _selection_review_payload(
+    deals: list[dict],
+    top_picks: list[dict],
+    recommended_collections: list[dict],
+    personalized_recommendations: dict | None,
+    owned,
+    family_appids,
+) -> dict[str, object]:
+    contexts = _selection_review_context_items(
+        deals,
+        top_picks,
+        recommended_collections,
+        personalized_recommendations,
+    )
+    return {
+        "items": list(contexts.values()),
+        "owned_appids": _selection_review_appid_set(owned),
+        "family_appids": _selection_review_appid_set(family_appids),
+        "candidates": _selection_review_candidate_list(
+            contexts,
+            deals,
+            top_picks,
+            personalized_recommendations,
+        ),
+    }
+
+
+def _html_selection_review(
+    deals: list[dict],
+    top_picks: list[dict],
+    recommended_collections: list[dict],
+    personalized_recommendations: dict | None,
+    owned,
+    family_appids,
+) -> str:
+    payload = _selection_review_payload(
+        deals,
+        top_picks,
+        recommended_collections,
+        personalized_recommendations,
+        owned,
+        family_appids,
+    )
+    candidates = [item for item in payload.get("candidates", []) if isinstance(item, dict)]
+    if candidates:
+        candidates_html = '<div class="selection-review-candidates">' + "".join(
+            f'''<label class="selection-review-candidate">
+      <input type="checkbox" data-selection-candidate="{_html_esc(str(candidate.get("appid") or ""))}" data-selection-name="{_html_esc(str(candidate.get("name") or ""))}">
+      <span>
+        <strong>{_html_esc(str(candidate.get("name") or "Juego"))}</strong>
+        <small>{_html_esc(" · ".join(part for part in (str(candidate.get("source_label") or ""), str(candidate.get("meta") or "")) if part))}</small>
+      </span>
+    </label>'''
+            for candidate in candidates
+        ) + "</div>"
+    else:
+        candidates_html = '<div class="selection-review-empty">No hay candidatos marcables; pega AppIDs o URLs de Steam.</div>'
+    return f'''<section class="selection-review" data-selection-review data-selection-review-context="{_share_payload_attr(payload)}">
+  <div class="selection-review-head">
+    <div>
+      <h2>Evalúa mi selección</h2>
+      <p class="section-desc">Simulación local/offline: marca juegos del reporte o pega AppIDs/URLs para recibir Conservar, Dudar o Quitar.</p>
+      <p class="selection-review-policy">Sin red y sin API: usa únicamente datos ya embebidos en este HTML; no abre checkout/carrito, no compra nada y no modifica tu wishlist.</p>
+    </div>
+    <span class="selection-review-badge">Solo simulación</span>
+  </div>
+  {candidates_html}
+  <label class="selection-review-input-label" for="selection-review-input">AppIDs o URLs de Steam</label>
+  <textarea id="selection-review-input" class="selection-review-input" rows="3" data-selection-input placeholder="Pega AppIDs o URLs de Steam, uno por línea"></textarea>
+  <div class="selection-review-actions">
+    <button type="button" class="btn-reset selection-review-evaluate" data-selection-evaluate>Evaluar selección</button>
+    <span class="selection-review-status" data-selection-status>Listo para evaluar con datos del reporte.</span>
+  </div>
+  <div class="selection-review-results" data-selection-results></div>
+</section>'''
+
+
 def _html_wishlist_hygiene_name(item: dict) -> str:
     appid = str(item.get("appid") or item.get("steam_appid") or "").strip()
     fallback_name = f"AppID {appid}" if appid else "Entrada sin appid"
@@ -1557,6 +1836,37 @@ a.pick-card:hover { border-color: var(--accent-blue); transform: translateY(-2px
 .personalized-item-meta span:first-child { color: var(--accent-green); font-weight: 700; }
 .personalized-item-main ul { margin-left: 1rem; color: var(--text-secondary); font-size: .75rem; line-height: 1.35; }
 @media (max-width: 767px) { .personalized-item-card { grid-template-columns: 1fr; } }
+.selection-review { margin: 0 0 1.5rem; padding: 1rem; border: 1px solid rgba(102,192,244,.28); border-radius: 10px; background: linear-gradient(135deg, rgba(102,192,244,.08), rgba(12,20,30,.25)); }
+.selection-review-head { display: flex; justify-content: space-between; gap: 1rem; align-items: flex-start; }
+.selection-review h2 { font-size: 1.2rem; margin-bottom: .3rem; }
+.selection-review-policy, .selection-review-empty, .selection-review-status { color: var(--text-secondary); font-size: .75rem; line-height: 1.4; }
+.selection-review-policy { margin: -.35rem 0 .7rem; }
+.selection-review-badge { white-space: nowrap; border: 1px solid rgba(102,192,244,.4); border-radius: 999px; color: var(--accent-blue); background: rgba(12,20,30,.32); padding: .16rem .55rem; font-size: .74rem; font-weight: 700; }
+.selection-review-candidates { display: grid; grid-template-columns: repeat(auto-fit, minmax(230px, 1fr)); gap: .55rem; margin-bottom: .75rem; }
+.selection-review-candidate { display: flex; gap: .5rem; align-items: flex-start; background: var(--bg-card); border: 1px solid rgba(102,192,244,.2); border-radius: 8px; padding: .65rem; cursor: pointer; }
+.selection-review-candidate input { margin-top: .18rem; }
+.selection-review-candidate strong, .selection-review-candidate small { display: block; }
+.selection-review-candidate strong { font-size: .82rem; line-height: 1.3; }
+.selection-review-candidate small { margin-top: .18rem; color: var(--text-secondary); font-size: .72rem; line-height: 1.35; }
+.selection-review-input-label { display: block; margin: .25rem 0 .25rem; color: var(--text-secondary); font-size: .76rem; }
+.selection-review-input { width: 100%; min-height: 5rem; resize: vertical; background: var(--bg-primary); color: var(--text-primary); border: 1px solid var(--border); border-radius: 6px; padding: .55rem .65rem; font: inherit; font-size: .82rem; }
+.selection-review-input:focus-visible, .selection-review-evaluate:focus-visible { outline: 2px solid var(--accent-blue); outline-offset: 2px; }
+.selection-review-actions { display: flex; flex-wrap: wrap; align-items: center; gap: .6rem; margin: .65rem 0; }
+.selection-review-summary { display: flex; flex-wrap: wrap; gap: .35rem; margin: .35rem 0 .65rem; }
+.selection-review-summary span { border: 1px solid rgba(102,192,244,.28); border-radius: 999px; color: var(--accent-blue); background: rgba(12,20,30,.32); padding: .14rem .5rem; font-size: .73rem; font-weight: 700; }
+.selection-review-result-list { display: grid; grid-template-columns: repeat(auto-fit, minmax(250px, 1fr)); gap: .6rem; }
+.selection-review-result { display: flex; gap: .65rem; align-items: flex-start; background: var(--bg-card); border: 1px solid var(--border); border-radius: 8px; padding: .72rem; }
+.selection-review-result-conservar { border-color: rgba(108,198,68,.38); }
+.selection-review-result-dudar { border-color: rgba(240,178,50,.38); }
+.selection-review-result-quitar { border-color: rgba(199,50,46,.4); }
+.selection-review-result-badge { flex: 0 0 auto; border-radius: 999px; padding: .12rem .45rem; font-size: .7rem; font-weight: 800; color: #000; background: var(--accent-yellow); }
+.selection-review-result-conservar .selection-review-result-badge { background: var(--accent-green); }
+.selection-review-result-quitar .selection-review-result-badge { background: var(--accent-red); color: #fff; }
+.selection-review-result-main { min-width: 0; }
+.selection-review-result-main strong, .selection-review-result-main span { display: block; }
+.selection-review-result-main strong { font-size: .84rem; line-height: 1.3; margin-bottom: .2rem; }
+.selection-review-result-meta, .selection-review-result-signals, .selection-review-result-reasons { color: var(--text-secondary); font-size: .74rem; line-height: 1.35; }
+@media (max-width: 767px) { .selection-review-head, .selection-review-result { flex-direction: column; } .selection-review-badge { align-self: flex-start; } }
 .wishlist-hygiene { margin: 0 0 1.5rem; padding: 1rem; border: 1px solid rgba(240,178,50,.28); border-radius: 10px; background: linear-gradient(135deg, rgba(240,178,50,.08), rgba(12,20,30,.25)); }
 .wishlist-hygiene-head { display: flex; justify-content: space-between; gap: 1rem; align-items: flex-start; }
 .wishlist-hygiene h2 { font-size: 1.2rem; margin-bottom: .3rem; }
@@ -1799,10 +2109,270 @@ function bindShuffleOneGame() {
     applyShuffleCandidate(section, candidates[0], 0, candidates.length);
   });
 }
+function escapeSelectionHtml(value) {
+  return String(value ?? '')
+    .replace(/&/g, '&amp;')
+    .replace(/</g, '&lt;')
+    .replace(/>/g, '&gt;')
+    .replace(/"/g, '&quot;')
+    .replace(/'/g, '&#39;');
+}
+function selectionReviewNumber(value, fallback = 0) {
+  if (value == null || value === '') return fallback;
+  const number = Number(value);
+  return Number.isFinite(number) ? number : fallback;
+}
+function selectionReviewTexts(values) {
+  const seen = new Set();
+  const result = [];
+  (Array.isArray(values) ? values : []).forEach((value) => {
+    const text = String(value || '').trim();
+    const key = text.toLowerCase();
+    if (text && !seen.has(key)) {
+      seen.add(key);
+      result.push(text);
+    }
+  });
+  return result;
+}
+function parseSelectionReviewContext(section) {
+  try {
+    const payload = JSON.parse(section.dataset.selectionReviewContext || '{}');
+    return payload && typeof payload === 'object' ? payload : {};
+  } catch (error) {
+    return {};
+  }
+}
+function selectionReviewContextByAppid(context) {
+  const byAppid = {};
+  (Array.isArray(context.items) ? context.items : []).forEach((item) => {
+    const appid = String(item && (item.appid || item.steam_appid) || '').trim();
+    if (/^\\d+$/.test(appid)) byAppid[appid] = item;
+  });
+  return byAppid;
+}
+function selectionReviewRecordsFromText(text) {
+  const seen = new Set();
+  const records = [];
+  String(text || '').split(/\\n+/).forEach((line) => {
+    const match = String(line).match(/(?:store\\.steampowered\\.com\\/app\\/|\\bapp\\/)?(\\d{1,12})(?!\\d)/i);
+    const appid = match ? match[1] : '';
+    if (!appid || seen.has(appid)) return;
+    seen.add(appid);
+    records.push({appid});
+  });
+  return records;
+}
+function selectionReviewRecordsFromPanel(panel) {
+  const seen = new Set();
+  const records = [];
+  panel.querySelectorAll('[data-selection-candidate]:checked').forEach((input) => {
+    const appid = input.dataset.selectionCandidate || '';
+    if (!/^\\d+$/.test(appid) || seen.has(appid)) return;
+    seen.add(appid);
+    records.push({appid, name: input.dataset.selectionName || ''});
+  });
+  selectionReviewRecordsFromText(panel.querySelector('[data-selection-input]')?.value || '').forEach((record) => {
+    if (!record.appid || seen.has(record.appid)) return;
+    seen.add(record.appid);
+    records.push(record);
+  });
+  return records.slice(0, 50);
+}
+function selectionReviewHasScore(item) {
+  return item && (item.base_score != null || item.score != null);
+}
+function selectionReviewBaseScore(item) {
+  if (!item) return 50;
+  if (item.base_score != null) return selectionReviewNumber(item.base_score, 50);
+  if (item.score != null) return selectionReviewNumber(item.score, 50);
+  return 50;
+}
+function selectionReviewDecision(appid, item, ownedSet, familySet) {
+  if (!appid || ownedSet.has(appid) || familySet.has(appid)) return 'quitar';
+  const baseScore = selectionReviewBaseScore(item);
+  const affinityScore = selectionReviewNumber(item && item.affinity_score, 0);
+  if (item && item.personalized_score != null && selectionReviewNumber(item.personalized_score, 0) >= 85) return 'conservar';
+  if (affinityScore >= 24 || baseScore >= 85) return 'conservar';
+  if (baseScore < 45 && affinityScore <= 0) return 'quitar';
+  return 'dudar';
+}
+function selectionReviewReasons(appid, item, decision, ownedSet, familySet) {
+  const reasons = [];
+  if (!appid) reasons.push('entrada sin appid válido');
+  if (ownedSet.has(appid)) reasons.push('ya está en tu biblioteca');
+  if (familySet.has(appid)) reasons.push('ya disponible en biblioteca familiar');
+  selectionReviewTexts(item && item.reasons).forEach((reason) => {
+    if (reason !== 'score base del reporte') reasons.push(reason);
+  });
+  const affinityScore = selectionReviewNumber(item && item.affinity_score, 0);
+  if (item && item.personalized_score != null && selectionReviewNumber(item.personalized_score, 0) >= 80) {
+    reasons.push(`score personal alto: ${selectionReviewNumber(item.personalized_score, 0).toFixed(1)}`);
+  } else if (affinityScore > 0) {
+    reasons.push(`afinidad positiva: ${affinityScore.toFixed(1)}`);
+  }
+  const baseScore = selectionReviewBaseScore(item);
+  if (baseScore >= 80) reasons.push(`score del reporte fuerte: ${baseScore.toFixed(1)}`);
+  const discount = selectionReviewNumber(item && item.discount, 0);
+  if (discount >= 70) reasons.push(`descuento fuerte: ${Math.round(discount)}%`);
+  selectionReviewTexts(item && item.collection_reasons).forEach((reason) => reasons.push(reason));
+  if (!reasons.length) {
+    const fallback = {
+      conservar: 'señales positivas del reporte',
+      dudar: 'no hay señales suficientes para priorizarlo',
+      quitar: 'score bajo y sin afinidad visible',
+    };
+    reasons.push(fallback[decision] || fallback.dudar);
+  }
+  return selectionReviewTexts(reasons).slice(0, 2);
+}
+function selectionReviewSignals(appid, item, ownedSet, familySet) {
+  const signals = [];
+  if (!appid) signals.push('invalid_appid');
+  if (ownedSet.has(appid)) signals.push('owned');
+  if (familySet.has(appid)) signals.push('family');
+  if (item && item.personalized_score != null) signals.push('personalized_score');
+  if (item && item.affinity_score != null) signals.push('affinity');
+  if (selectionReviewHasScore(item)) signals.push('report_score');
+  if (item && item.discount != null) signals.push('discount');
+  if (item && item.price_final) signals.push('price');
+  if (item && Array.isArray(item.reasons) && item.reasons.length) signals.push('reasons');
+  if (item && Array.isArray(item.collection_reasons) && item.collection_reasons.length) signals.push('recommended_collection');
+  return selectionReviewTexts(signals).length ? selectionReviewTexts(signals) : ['selection_only'];
+}
+function buildLocalSelectionReview(records, context) {
+  const byAppid = selectionReviewContextByAppid(context || {});
+  const ownedSet = new Set(Array.isArray(context.owned_appids) ? context.owned_appids.map(String) : []);
+  const familySet = new Set(Array.isArray(context.family_appids) ? context.family_appids.map(String) : []);
+  const seen = new Set();
+  let duplicateCount = 0;
+  const items = [];
+  (Array.isArray(records) ? records : []).forEach((record) => {
+    const appid = String(record && record.appid || '').trim();
+    if (appid && seen.has(appid)) {
+      duplicateCount += 1;
+      return;
+    }
+    if (appid) seen.add(appid);
+    const source = {...(byAppid[appid] || {}), ...(record || {})};
+    const decision = selectionReviewDecision(appid, source, ownedSet, familySet);
+    items.push({
+      appid,
+      name: source.name || source.steam_name || (appid ? `App ${appid}` : 'Entrada inválida'),
+      decision,
+      base_score: selectionReviewHasScore(source) ? Number(selectionReviewBaseScore(source).toFixed(1)) : null,
+      affinity_score: source.affinity_score != null ? Number(selectionReviewNumber(source.affinity_score, 0).toFixed(1)) : null,
+      personalized_score: source.personalized_score != null ? Number(selectionReviewNumber(source.personalized_score, 0).toFixed(1)) : null,
+      discount: source.discount != null ? Math.round(selectionReviewNumber(source.discount, 0)) : null,
+      price_final: source.price_final || source.price || '',
+      signals: selectionReviewSignals(appid, source, ownedSet, familySet),
+      reasons: selectionReviewReasons(appid, source, decision, ownedSet, familySet),
+    });
+  });
+  const summary = {total_items: items.length, duplicate_count: duplicateCount, conservar: 0, dudar: 0, quitar: 0};
+  items.forEach((item) => { summary[item.decision] = (summary[item.decision] || 0) + 1; });
+  return {items, summary, source_signals: ['selection', 'score', 'personalized_recommendations', 'recommended_collections', 'owned_family']};
+}
+function selectionReviewSignalLabel(signal) {
+  const labels = {
+    invalid_appid: 'Entrada inválida',
+    owned: 'Ya lo tienes',
+    family: 'Biblioteca familiar',
+    personalized_score: 'Score personal',
+    affinity: 'Afinidad',
+    report_score: 'Score reporte',
+    discount: 'Descuento',
+    price: 'Precio',
+    reasons: 'Razones',
+    recommended_collection: 'Colección recomendada',
+    selection_only: 'Solo selección',
+  };
+  const key = String(signal || '').trim();
+  return labels[key] || key.replace(/_/g, ' ');
+}
+function renderSelectionReviewItem(item) {
+  const source = item && typeof item === 'object' ? item : {};
+  const decision = ['conservar', 'dudar', 'quitar'].includes(source.decision) ? source.decision : 'dudar';
+  const labels = {conservar: 'Conservar', dudar: 'Dudar', quitar: 'Quitar'};
+  const appid = String(source.appid || '').trim();
+  const safeAppid = /^\\d+$/.test(appid) ? appid : '';
+  const name = source.name || (appid ? `App ${appid}` : 'Entrada inválida');
+  const reasons = Array.isArray(source.reasons) && source.reasons.length ? source.reasons.slice(0, 2).join(' · ') : 'Sin razones disponibles';
+  const meta = [];
+  if (Number.isFinite(Number(source.personalized_score))) meta.push(`Personal ${source.personalized_score}`);
+  if (Number.isFinite(Number(source.base_score))) meta.push(`Score ${source.base_score}`);
+  if (Number.isFinite(Number(source.affinity_score))) meta.push(`Afinidad +${source.affinity_score}`);
+  if (Number.isFinite(Number(source.discount))) meta.push(`-${source.discount}%`);
+  if (source.price_final) meta.push(source.price_final);
+  const signals = Array.isArray(source.signals) ? source.signals.map(selectionReviewSignalLabel).filter(Boolean).slice(0, 4) : [];
+  const nameHtml = safeAppid
+    ? `<a href="https://store.steampowered.com/app/${escapeSelectionHtml(safeAppid)}/" target="_blank">${escapeSelectionHtml(name)}</a>`
+    : `<span>${escapeSelectionHtml(name)}</span>`;
+  return `
+    <article class="selection-review-result selection-review-result-${escapeSelectionHtml(decision)}" data-selection-decision="${escapeSelectionHtml(decision)}">
+      <div class="selection-review-result-badge">${escapeSelectionHtml(labels[decision])}</div>
+      <div class="selection-review-result-main">
+        <strong>${nameHtml}</strong>
+        ${meta.length ? `<span class="selection-review-result-meta">${escapeSelectionHtml(meta.join(' · '))}</span>` : ''}
+        ${signals.length ? `<span class="selection-review-result-signals">Señales: ${escapeSelectionHtml(signals.join(' · '))}</span>` : ''}
+        <span class="selection-review-result-reasons">${escapeSelectionHtml(reasons)}</span>
+      </div>
+    </article>
+  `;
+}
+function renderSelectionReviewResults(panel, review) {
+  const resultsEl = panel.querySelector('[data-selection-results]');
+  if (!resultsEl) return;
+  const items = Array.isArray(review && review.items) ? review.items : [];
+  if (!items.length) {
+    resultsEl.innerHTML = '<div class="selection-review-empty">No hubo juegos válidos para evaluar.</div>';
+    return;
+  }
+  const summary = review.summary || {};
+  const duplicateCopy = summary.duplicate_count ? `<span>Duplicados omitidos: ${escapeSelectionHtml(summary.duplicate_count)}</span>` : '';
+  resultsEl.innerHTML = `
+    <div class="selection-review-summary">
+      <span>Conservar: ${escapeSelectionHtml(summary.conservar || 0)}</span>
+      <span>Dudar: ${escapeSelectionHtml(summary.dudar || 0)}</span>
+      <span>Quitar: ${escapeSelectionHtml(summary.quitar || 0)}</span>
+      ${duplicateCopy}
+    </div>
+    <div class="selection-review-result-list">${items.map(renderSelectionReviewItem).join('')}</div>
+  `;
+}
+function evaluateSelectionReview(panel, button) {
+  const statusEl = panel.querySelector('[data-selection-status]');
+  const records = selectionReviewRecordsFromPanel(panel);
+  if (!records.length) {
+    if (statusEl) statusEl.textContent = 'Marca al menos un juego o pega un AppID/URL.';
+    return;
+  }
+  const originalLabel = button ? button.textContent : '';
+  if (button) {
+    button.disabled = true;
+    button.textContent = 'Evaluando...';
+  }
+  const review = buildLocalSelectionReview(records, parseSelectionReviewContext(panel));
+  renderSelectionReviewResults(panel, review);
+  if (statusEl) statusEl.textContent = `Evaluación local lista: ${review.summary.total_items} item(s).`;
+  if (button) {
+    button.disabled = false;
+    button.textContent = originalLabel || 'Evaluar selección';
+  }
+}
+function bindSelectionReviewActions() {
+  document.querySelectorAll('[data-selection-review]').forEach((panel) => {
+    if (panel.dataset.boundSelectionReview === '1') return;
+    panel.dataset.boundSelectionReview = '1';
+    const button = panel.querySelector('[data-selection-evaluate]');
+    if (button) button.addEventListener('click', () => evaluateSelectionReview(panel, button));
+  });
+}
 document.addEventListener('DOMContentLoaded', () => {
   applyFilters();
   bindTopPickRecommendationFilters();
   bindShuffleOneGame();
+  bindSelectionReviewActions();
   bindShareModalInteractions();
   bindBudgetHtmlInteractions();
 });
@@ -2254,10 +2824,8 @@ def generate_html(
     del (
         backlog_on_sale,
         have_on_sale,
-        owned,
         genres,
         hltb_used,
-        family_appids,
         local_trends,
     )
 
@@ -2423,6 +2991,16 @@ def generate_html(
 
     parts.append(_html_recommended_collections(recommended_collections))
     parts.append(_html_personalized_recommendations(personalized_recommendations))
+    parts.append(
+        _html_selection_review(
+            deals,
+            top_picks,
+            recommended_collections,
+            personalized_recommendations,
+            owned,
+            family_appids,
+        )
+    )
     parts.append(_html_free_weekend_now(free_weekend_now))
     parts.append(_html_wishlist_hygiene(wishlist_hygiene))
     parts.append(_html_smart_alert_digest(smart_alert_digest))

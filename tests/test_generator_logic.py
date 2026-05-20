@@ -8824,11 +8824,14 @@ class RankTopPicksTests(unittest.TestCase):
             ],
         )
 
+        collections_section = html.split(
+            '<section class="recommended-collections"', 1
+        )[1].split("</section>", 1)[0]
         self.assertIn('data-recommended-collection="first"', html)
         self.assertIn('data-recommended-collection="second"', html)
         self.assertNotIn('data-recommended-collection="only_duplicates"', html)
-        self.assertEqual(html.count("también deck"), 0)
-        self.assertEqual(html.count("score alto"), 1)
+        self.assertEqual(collections_section.count("también deck"), 0)
+        self.assertEqual(collections_section.count("score alto"), 1)
         self.assertIn("Charlie", html)
         self.assertIn('class="collection-item-thumb"', html)
         self.assertIn("steam/apps/10/capsule_231x87.jpg", html)
@@ -8914,6 +8917,91 @@ class RankTopPicksTests(unittest.TestCase):
         self.assertIn("encaja con tu actividad reciente: Action", html)
         self.assertIn("similar a Hades", html)
         self.assertIn("steam/apps/10/capsule_231x87.jpg", html)
+
+    def test_generate_html_renders_local_selection_review_tool(self) -> None:
+        html = generate_html(
+            deals=[
+                {
+                    "appid": "10",
+                    "name": "Deep Action",
+                    "discount": 80,
+                    "price_final": "$99",
+                    "price_original": "$499",
+                    "score": 86.5,
+                    "categories": [2],
+                },
+                {
+                    "appid": "20",
+                    "name": "Quiet Puzzle",
+                    "discount": 60,
+                    "price_final": "$40",
+                    "price_original": "$100",
+                    "score": 50.0,
+                    "categories": [2],
+                },
+            ],
+            backlog_on_sale=[],
+            have_on_sale=[],
+            vanity="gaben",
+            owned={"30": "Owned Game"},
+            family_appids={"40"},
+            wishlist_appids=["10", "20"],
+            min_discount=50,
+            genres=[],
+            top_picks=[
+                {
+                    "appid": "10",
+                    "name": "Deep Action",
+                    "discount": 80,
+                    "price_final": "$99",
+                    "score": 90.0,
+                    "recommendation": "Comprar ahora",
+                    "score_reasons": ["reviews muy positivas"],
+                }
+            ],
+            recommended_collections=[
+                {
+                    "id": "local",
+                    "title": "Colección local",
+                    "items": [
+                        {
+                            "appid": "20",
+                            "name": "Quiet Puzzle",
+                            "reason": "encaja con sesión corta",
+                        }
+                    ],
+                }
+            ],
+            personalized_recommendations={
+                "items": [
+                    {
+                        "appid": "10",
+                        "name": "Deep Action",
+                        "personalized_score": 94.0,
+                        "affinity_score": 28.0,
+                        "discount": 80,
+                        "price_final": "$99",
+                        "reasons": ["encaja con tu actividad reciente: Action"],
+                    }
+                ]
+            },
+        )
+
+        self.assertIn("data-selection-review", html)
+        self.assertIn("data-selection-review-context", html)
+        self.assertIn("Evalúa mi selección", html)
+        self.assertIn("Simulación local/offline", html)
+        self.assertIn("Sin red y sin API", html)
+        self.assertIn("no abre checkout/carrito", html)
+        self.assertIn("no compra nada", html)
+        self.assertIn("no modifica tu wishlist", html)
+        self.assertIn('data-selection-candidate="10"', html)
+        self.assertIn("Personalizado · Personal 94 · Score 90 · Afinidad +28", html)
+        self.assertIn("Colección local: encaja con sesión corta", html)
+        self.assertIn("selectionReviewRecordsFromText", html)
+        self.assertIn("buildLocalSelectionReview", html)
+        self.assertIn("bindSelectionReviewActions", html)
+        self.assertNotIn("/api/selection-review", html)
 
     def test_generate_html_omits_personalized_recommendations_when_empty(self) -> None:
         html = generate_html(
