@@ -958,6 +958,281 @@ def build_personalized_recommendations(
     }
 
 
+TASTE_PRIORITY_CATEGORIES = (
+    "compra_inmediata",
+    "espera_oferta",
+    "riesgo_abandono",
+    "reemplaza_varios",
+    "no_comprar_aun",
+)
+
+TASTE_CORE_LOOP_CLUSTERS = (
+    {
+        "id": "survival_crafting",
+        "label": "Survival/crafting",
+        "terms": ("Survival Crafting", "Open World Survival Craft", "Base Building", "Crafting", "Survival"),
+    },
+    {
+        "id": "roguelite_action",
+        "label": "Roguelite/action",
+        "terms": ("Action Roguelike", "Roguelike", "Rogue-lite", "Bullet Hell", "Hack and Slash"),
+    },
+    {
+        "id": "strategy_management",
+        "label": "Strategy/management",
+        "terms": ("Strategy", "Management", "City Builder", "Colony Sim", "Automation"),
+    },
+)
+
+
+def _clamp_score(value: float, *, low: float = 0.0, high: float = 100.0) -> float:
+    return max(low, min(high, value))
+
+
+def _taste_profile(personalized_recommendations) -> dict:
+    if isinstance(personalized_recommendations, dict) and isinstance(personalized_recommendations.get("profile"), dict):
+        return personalized_recommendations["profile"]
+    return {}
+
+
+def _taste_library_distribution(profile: dict) -> list[dict]:
+    library_summary = profile.get("library_summary") if isinstance(profile, dict) else {}
+    distribution = library_summary.get("genre_distribution") if isinstance(library_summary, dict) else []
+    return [item for item in distribution if isinstance(item, dict)]
+
+
+def _taste_cluster_keys(cluster: dict) -> set[str]:
+    return {_canonical_style_term_key(term) for term in cluster.get("terms", ()) if term}
+
+
+def _taste_clusters_for_terms(terms: list[str]) -> list[dict]:
+    term_keys = {_canonical_style_term_key(term) for term in terms if term}
+    matches = [
+        {"id": str(cluster["id"]), "label": str(cluster["label"])}
+        for cluster in TASTE_CORE_LOOP_CLUSTERS
+        if term_keys & _taste_cluster_keys(cluster)
+    ]
+    return sorted(matches, key=lambda item: item["id"])
+
+
+def _taste_candidate_clusters(candidate: dict) -> list[dict]:
+    return _taste_clusters_for_terms(_style_terms(candidate))
+
+
+def _taste_library_cluster_distribution(profile: dict) -> list[dict]:
+    clusters: dict[str, dict] = {}
+    for item in _taste_library_distribution(profile):
+        share = _safe_number(item.get("share"))
+        for cluster in _taste_clusters_for_terms([str(item.get("term") or "")]):
+            current = clusters.get(cluster["id"], {**cluster, "share": 0.0})
+            clusters[cluster["id"]] = {**current, "share": max(current["share"], share)}
+    return sorted(clusters.values(), key=lambda item: (-item["share"], item["label"].lower()))
+
+
+def _taste_personal_affinity(candidate: dict) -> float:
+    affinity = _safe_number(candidate.get("affinity_score"))
+    personalized = candidate.get("personalized_score")
+    base = _selection_base_score(candidate)
+    personalized_lift = max(0.0, _safe_number(personalized) - base) if personalized is not None else 0.0
+    return round(_clamp_score(max(affinity * 1.5, personalized_lift * 1.5)), 1)
+
+
+def _taste_value(candidate: dict) -> float:
+    discount = _safe_number(candidate.get("discount"))
+    base_score = _selection_base_score(candidate)
+    return round(_clamp_score(discount + max(0.0, base_score - 70.0) * 0.5), 1)
+
+
+def _taste_term_redundancy(candidate: dict, profile: dict) -> float:
+    candidate_terms = {_canonical_style_term_key(term) for term in _style_terms(candidate)}
+    if not candidate_terms:
+        return 0.0
+    scores = []
+    for item in _taste_library_distribution(profile):
+        term = str(item.get("term") or "")
+        if _canonical_style_term_key(term) in candidate_terms:
+            scores.append(_safe_number(item.get("share")) * 100)
+    return round(_clamp_score(max(scores) if scores else 0.0), 1)
+
+
+def _taste_cluster_redundancy(candidate: dict, profile: dict) -> float:
+    candidate_cluster_ids = {cluster["id"] for cluster in _taste_candidate_clusters(candidate)}
+    if not candidate_cluster_ids:
+        return 0.0
+    scores = [
+        _safe_number(cluster.get("share")) * 100
+        for cluster in _taste_library_cluster_distribution(profile)
+        if cluster.get("id") in candidate_cluster_ids
+    ]
+    return round(_clamp_score(max(scores) if scores else 0.0), 1)
+
+
+def _taste_redundancy(candidate: dict, profile: dict) -> float:
+    return max(_taste_term_redundancy(candidate, profile), _taste_cluster_redundancy(candidate, profile))
+
+
+def _taste_waiting_penalty(candidate: dict) -> float:
+    discount = _safe_number(candidate.get("discount"))
+    reasons = " · ".join(str(reason) for reason in candidate.get("reasons") or []).lower()
+    if "mínimo" in reasons or "minimo" in reasons or "nunca baja" in reasons:
+        return 0.0
+    if discount < 20:
+        return 70.0
+    if discount < 50:
+        return 45.0
+    if discount < 70:
+        return 15.0
+    return 0.0
+
+
+def _taste_abandon_risk(candidate: dict, personal_affinity: float, redundancy: float) -> float:
+    risk = 0.0
+    if personal_affinity < 20:
+        risk += 30
+    if _selection_base_score(candidate) < 55:
+        risk += 25
+    if redundancy >= 70 and personal_affinity < 55:
+        risk += 20
+    hltb_hours = max(_safe_number(candidate.get("hltb_hours")), _safe_number(candidate.get("hours")))
+    if hltb_hours >= 80 and personal_affinity < 45:
+        risk += 20
+    return round(_clamp_score(risk), 1)
+
+
+def _taste_factors(candidate: dict, profile: dict) -> dict[str, float]:
+    personal_affinity = _taste_personal_affinity(candidate)
+    value = _taste_value(candidate)
+    redundancy = _taste_redundancy(candidate, profile)
+    return {
+        "personal_affinity": personal_affinity,
+        "value": value,
+        "redundancy": redundancy,
+        "cluster_redundancy": _taste_cluster_redundancy(candidate, profile),
+        "abandon_risk": _taste_abandon_risk(candidate, personal_affinity, redundancy),
+        "waiting_penalty": _taste_waiting_penalty(candidate),
+    }
+
+
+def _taste_priority_score(candidate: dict, factors: dict[str, float]) -> float:
+    base = _selection_base_score(candidate)
+    score = (
+        base * 0.45
+        + factors["personal_affinity"] * 0.35
+        + factors["value"] * 0.20
+        - factors["redundancy"] * 0.20
+        - factors["abandon_risk"] * 0.20
+        - factors["waiting_penalty"] * 0.15
+    )
+    return round(_clamp_score(score), 1)
+
+
+def _taste_category(score: float, factors: dict[str, float]) -> str:
+    if score < 35:
+        return "no_comprar_aun"
+    if factors["abandon_risk"] >= 55 and score < 65:
+        return "riesgo_abandono"
+    if factors["redundancy"] >= 65 and score >= 45:
+        return "reemplaza_varios"
+    if factors["waiting_penalty"] >= 45 or factors["value"] < 40:
+        return "espera_oferta"
+    if score >= 70 and factors["personal_affinity"] >= 35:
+        return "compra_inmediata"
+    return "espera_oferta"
+
+
+def _taste_reasons(candidate: dict, category: str, factors: dict[str, float]) -> list[str]:
+    reasons: list[str] = []
+    reasons.extend(str(reason) for reason in candidate.get("reasons") or [] if reason != "score base del reporte")
+    if category == "compra_inmediata":
+        if factors["personal_affinity"] >= 35:
+            reasons.append("alta afinidad con tus gustos locales")
+        if factors["value"] >= 60:
+            reasons.append("valor/descuento sólido para revisar hoy")
+    elif category == "espera_oferta":
+        reasons.append("conviene esperar mejor oferta antes de priorizarlo")
+    elif category == "riesgo_abandono":
+        reasons.append("pocas señales de afinidad local para sostenerlo")
+    elif category == "reemplaza_varios":
+        reasons.append("se solapa con géneros ya fuertes en tu biblioteca")
+    else:
+        reasons.append("score/afinidad bajos frente a otras opciones")
+    return _dedupe_texts(reasons)[:4]
+
+
+def _taste_priority_item(appid: str, candidate: dict, profile: dict) -> dict:
+    factors = _taste_factors(candidate, profile)
+    score = _taste_priority_score(candidate, factors)
+    category = _taste_category(score, factors)
+    return {
+        "appid": appid,
+        "name": candidate.get("name") or candidate.get("steam_name") or f"App {appid}",
+        "taste_priority": score,
+        "category": category,
+        "factors": factors,
+        "clusters": _taste_candidate_clusters(candidate),
+        "reasons": _taste_reasons(candidate, category, factors),
+    }
+
+
+def build_taste_priority_contract(
+    deals: list[dict] | None,
+    top_picks: list[dict] | None = None,
+    *,
+    personalized_recommendations=None,
+    activity_games=None,
+    library_games=None,
+    owned=None,
+    family_appids=None,
+    liked_appids=None,
+    preference_relations=None,
+    recommended_collections=None,
+    hltb_hours=None,
+    max_items: int = 10,
+) -> dict:
+    """Build a local fixture-only taste-priority contract without changing report scoring."""
+    if personalized_recommendations is None:
+        personalized_recommendations = build_personalized_recommendations(
+            deals or [],
+            top_picks=top_picks,
+            activity_games=activity_games,
+            library_games=library_games,
+            owned=owned,
+            family_appids=family_appids,
+            liked_appids=liked_appids,
+            preference_relations=preference_relations,
+            hltb_hours=hltb_hours,
+            max_items=max(0, int(_safe_number(max_items, 10))) or 10,
+        )
+    profile = _taste_profile(personalized_recommendations)
+    context_by_appid = _selection_context_by_appid(
+        deals or [],
+        top_picks,
+        personalized_recommendations,
+        recommended_collections,
+    )
+    items = [
+        _taste_priority_item(appid, candidate, profile)
+        for appid, candidate in context_by_appid.items()
+        if appid
+    ]
+    items.sort(key=lambda item: (-item["taste_priority"], item["category"], item["name"], item["appid"]))
+    return {
+        "source_signals": [
+            "personalized_recommendations",
+            "activity",
+            "library",
+            "preferences",
+            "value",
+            "redundancy_stub",
+            "core_loop_clusters_stub",
+        ],
+        "categories": list(TASTE_PRIORITY_CATEGORIES),
+        "cluster_distribution": _taste_library_cluster_distribution(profile),
+        "items": items[:max(0, int(_safe_number(max_items, 10)))],
+        "profile": profile,
+    }
+
+
 def _selection_records(selection) -> list[dict]:
     if not selection:
         return []

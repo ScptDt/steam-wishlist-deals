@@ -34,6 +34,9 @@ from steam_deals_alerts import (
     build_smart_alert_counts as module_build_smart_alert_counts,
     build_smart_alert_digest as module_build_smart_alert_digest,
 )
+from steam_deals_recommendations import (
+    build_taste_priority_contract as module_build_taste_priority_contract,
+)
 from steam_deals_cache_policy import (
     build_cache_state_summary as module_build_cache_state_summary,
     clear_cache_files as module_clear_cache_files,
@@ -817,6 +820,128 @@ class PersonalizedRecommendationsTests(unittest.TestCase):
 
         self.assertEqual(recommendations["items"], [])
         self.assertEqual(recommendations["profile"]["excluded_appids_count"], 0)
+
+    def test_build_taste_priority_contract_categorizes_local_signals(self) -> None:
+        contract = module_build_taste_priority_contract(
+            deals=[
+                {"appid": "10", "name": "Deep Action", "score": 90, "discount": 90, "genres": ["Action"]},
+                {"appid": "20", "name": "Full Price Maybe", "score": 80, "discount": 10, "genres": ["Puzzle"]},
+                {"appid": "30", "name": "Survival Duplicate", "score": 78, "discount": 75, "genres": ["Survival Crafting"]},
+                {"appid": "40", "name": "Long Unknown", "score": 35, "discount": 5, "hltb_hours": 100},
+            ],
+            personalized_recommendations={
+                "items": [
+                    {
+                        "appid": "10",
+                        "name": "Deep Action",
+                        "base_score": 90,
+                        "affinity_score": 48,
+                        "personalized_score": 100,
+                        "reasons": ["similar a Hades"],
+                    },
+                    {
+                        "appid": "20",
+                        "name": "Full Price Maybe",
+                        "base_score": 80,
+                        "affinity_score": 20,
+                        "personalized_score": 88,
+                        "reasons": ["coincide con tu biblioteca: Puzzle"],
+                    },
+                    {
+                        "appid": "30",
+                        "name": "Survival Duplicate",
+                        "base_score": 78,
+                        "affinity_score": 30,
+                        "personalized_score": 95,
+                        "reasons": ["coincide con tu biblioteca: Survival Crafting"],
+                    },
+                    {"appid": "40", "name": "Long Unknown", "base_score": 35, "affinity_score": 0, "personalized_score": 35},
+                ],
+                "profile": {
+                    "library_summary": {
+                        "genre_distribution": [
+                            {"term": "Survival Crafting", "games_count": 8, "share": 0.8},
+                            {"term": "Action", "games_count": 1, "share": 0.1},
+                        ]
+                    }
+                },
+            },
+            max_items=4,
+        )
+
+        by_appid = {item["appid"]: item for item in contract["items"]}
+
+        self.assertEqual(contract["categories"][0], "compra_inmediata")
+        self.assertEqual(by_appid["10"]["category"], "compra_inmediata")
+        self.assertEqual(by_appid["20"]["category"], "espera_oferta")
+        self.assertEqual(by_appid["30"]["category"], "reemplaza_varios")
+        self.assertEqual(by_appid["40"]["category"], "no_comprar_aun")
+        self.assertGreater(by_appid["10"]["taste_priority"], by_appid["20"]["taste_priority"])
+        self.assertGreater(by_appid["30"]["factors"]["redundancy"], 70)
+        self.assertIn("alta afinidad", " ".join(by_appid["10"]["reasons"]))
+
+    def test_build_taste_priority_contract_can_build_from_existing_personalized_signals(self) -> None:
+        contract = module_build_taste_priority_contract(
+            deals=[{"appid": "10", "name": "Action Deal", "score": 70, "discount": 60, "genres": ["Action"]}],
+            activity_games=[{"appid": "90", "name": "Hades", "genres": ["Action"], "playtime_2weeks": 120}],
+            library_games=[{"appid": "91", "name": "Dead Cells", "genres": ["Action"]}],
+            liked_appids={"10"},
+        )
+
+        item = contract["items"][0]
+
+        self.assertEqual(item["appid"], "10")
+        self.assertIn(item["category"], contract["categories"])
+        self.assertGreater(item["factors"]["personal_affinity"], 30)
+        self.assertIn("activity", contract["source_signals"])
+        self.assertIn("activity_terms", contract["profile"])
+
+    def test_build_taste_priority_contract_detects_core_loop_cluster_redundancy(self) -> None:
+        contract = module_build_taste_priority_contract(
+            deals=[{"appid": "50", "name": "Base Camp", "score": 82, "discount": 80, "tags": ["Base Building"]}],
+            personalized_recommendations={
+                "items": [
+                    {
+                        "appid": "50",
+                        "name": "Base Camp",
+                        "base_score": 82,
+                        "affinity_score": 40,
+                        "personalized_score": 95,
+                        "reasons": ["coincide con tu biblioteca: Base Building"],
+                        "tags": ["Base Building"],
+                    }
+                ],
+                "profile": {
+                    "library_summary": {
+                        "genre_distribution": [
+                            {"term": "Survival Crafting", "games_count": 7, "share": 0.7},
+                        ]
+                    }
+                },
+            },
+        )
+
+        item = contract["items"][0]
+
+        self.assertEqual(item["category"], "reemplaza_varios")
+        self.assertGreaterEqual(item["factors"]["cluster_redundancy"], 70)
+        self.assertGreaterEqual(item["factors"]["redundancy"], 70)
+        self.assertEqual(item["clusters"][0]["id"], "survival_crafting")
+        self.assertEqual(contract["cluster_distribution"][0]["id"], "survival_crafting")
+        self.assertIn("core_loop_clusters_stub", contract["source_signals"])
+
+    def test_build_taste_priority_contract_handles_empty_and_malformed_sources(self) -> None:
+        contract = module_build_taste_priority_contract(
+            None,
+            None,
+            personalized_recommendations={"items": [None, "bad", {"name": "No AppID"}], "profile": {}},
+        )
+
+        self.assertEqual(contract["items"], [])
+        self.assertEqual(
+            contract["categories"],
+            ["compra_inmediata", "espera_oferta", "riesgo_abandono", "reemplaza_varios", "no_comprar_aun"],
+        )
 
 
 class SelectionReviewTests(unittest.TestCase):

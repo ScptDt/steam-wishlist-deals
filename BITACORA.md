@@ -1,6 +1,6 @@
 # Bitácora Operativa
 
-Ultima actualizacion: 2026-05-19
+Ultima actualizacion: 2026-05-20
 
 ## Proposito
 
@@ -79,6 +79,8 @@ La nota de inicio puede omitirse en `BITACORA.md` para cambios triviales que no 
 | 2026-04-16 | macOS | validado en CI (parcial) | Workflow `Desktop Cross-Platform Validation` OK en `macos-latest` (run `24487556896`): install deps, build desktop, `py_compile`, check fallback local y artifact `dist-macos-latest` publicado. Falta validacion manual en host macOS para apertura de `.app`, quarantine/codesign/notarizacion segun distribucion. | Ejecutar checklist manual macOS (apertura local, quarantine, codesign) y registrar incidencias/workarounds. |
 
 ## Bitacora
+
+- 2026-05-20: Cierre QW recomendaciones avanzadas / contrato local `taste_priority` + clusters. Autor/ejecutor: AudPen. Resultado: `build_taste_priority_contract` queda como helper puro fixture-only para inventariar/priorizar gustos sin conectarse al JSON final ni renderers: calcula `taste_priority`, factores locales (`personal_affinity`, `value`, `redundancy`, `cluster_redundancy`, `abandon_risk`, `waiting_penalty`), categorías visibles (`compra_inmediata`, `espera_oferta`, `riesgo_abandono`, `reemplaza_varios`, `no_comprar_aun`), clusters por item y `cluster_distribution` desde tags/core loop determinísticos. Reutiliza señales existentes de recomendaciones personalizadas, actividad/biblioteca/preferencias y valor/descuento. Evidencia: `.venv/bin/python -m py_compile app/steam_deals_recommendations.py steam_deals_recommendations.py tests/test_generator_logic.py`, `.venv/bin/python -m unittest tests.test_generator_logic.PersonalizedRecommendationsTests` (14 OK) y `git diff --check` OK. Incidencias: ninguna. Siguiente seguimiento: no exponer este contrato en JSON/UI/renderers sin diseño y aprobación; sin red real, `BG00G`, builds, reportes generados ni recalibrar score/ranking/defaults.
 
 - 2026-05-19: Cierre QW highlights/notas breves en Web UI `Último reporte`. Autor/ejecutor: AudPen. Resultado: la Web UI del último reporte consume solo el JSON local y muestra chips advisory en picks compartibles, recomendaciones personalizadas y picks de presupuesto, reutilizando señales existentes (`recommendation`, `score_reasons`, histórico local, descuento y promo activa) sin tocar backend, payload, score/ranking ni caché. Evidencia: commit `f6f923e`, `.venv/bin/python -m py_compile tests/test_web_assets.py`, `.venv/bin/python -m unittest tests.test_web_assets` (48 OK; warning benigno Steam 403/fallback público conocido) y `git diff --check` OK. Incidencias: ninguna. Siguiente seguimiento: ninguno salvo fricción visual concreta con fixture local; sin red real, `BG00G`, builds, smokes manuales ni reportes generados.
 
