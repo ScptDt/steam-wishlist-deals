@@ -928,6 +928,20 @@ class WebAssetsTests(unittest.TestCase):
         self.assertIn(".refresh-mode-help", app_css)
         self.assertIn(".btn-refresh-secondary", app_css)
 
+    def test_payday2_bundle_undo_explains_manual_mark_scope(self) -> None:
+        app_js = (ROOT / "web" / "payday2" / "app.js").read_text(
+            encoding="utf-8"
+        )
+        app_css = (ROOT / "web" / "payday2" / "app.css").read_text(
+            encoding="utf-8"
+        )
+
+        self.assertIn("Solo desmarca DLCs de este bundle; conserva marcados manuales ajenos.", app_js)
+        self.assertIn("Deshacer bundle", app_js)
+        self.assertIn("aria-label=\"Deshacer bundle", app_js)
+        self.assertIn("bcard-note", app_js)
+        self.assertIn(".bcard .bcard-note", app_css)
+
     def test_payday2_force_refresh_adds_no_cache_without_secret_argv(self) -> None:
         cmd, proc_env = payday2_web.build_refresh_command_and_env(
             {"vanity": "wolf", "key": "SECRET-KEY"},

@@ -269,6 +269,7 @@ tr.owned-row td { text-decoration: line-through; }
 .bcard .bcard-info { flex: 1; }
 .bcard .bcard-name { font-weight: 600; font-size: .9rem; }
 .bcard .bcard-meta { font-size: .72rem; color: var(--text2); margin-top: .15rem; }
+.bcard .bcard-note { font-size: .7rem; color: var(--text2); margin-top: .25rem; line-height: 1.35; }
 .bcard .bcard-btn { background: var(--accent); color: #1b2838; border: none; padding: .4rem .8rem; border-radius: 4px; font-weight: 600; font-size: .8rem; cursor: pointer; white-space: nowrap; }
 .bcard .bcard-btn:hover { opacity: .85; }
 .bcard .bcard-btn.done { background: var(--green); cursor: default; }

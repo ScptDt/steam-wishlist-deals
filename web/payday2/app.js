@@ -304,22 +304,24 @@ function renderBundles() {
   const grid = $('bundles-grid');
   if (!DATA.bundles || !DATA.bundles.length) { card.style.display = 'none'; return; }
   card.style.display = 'block';
+  const undoHint = 'Solo desmarca DLCs de este bundle; conserva marcados manuales ajenos.';
   grid.innerHTML = DATA.bundles.map(b => {
     const ownedInBundle = b.dlcAppids.filter(id => DATA.owned.some(o => o.id === id)).length;
     const allOwned = ownedInBundle === b.count;
     let btns = '';
     if (allOwned) {
       btns = '<button class="bcard-btn done" disabled>&#9989; Marcado</button>' +
-        '<button class="bcard-btn" style="background:var(--red);margin-left:.3rem" onclick="unmarkBundle(\'' + b.id + '\')">Deshacer</button>';
+        '<button class="bcard-btn" style="background:var(--red);margin-left:.3rem" title="' + esc(undoHint) + '" aria-label="Deshacer bundle. ' + esc(undoHint) + '" onclick="unmarkBundle(\'' + b.id + '\')">Deshacer bundle</button>';
     } else if (ownedInBundle > 0) {
       btns = '<button class="bcard-btn" onclick="markBundle(\'' + b.id + '\')">Marcar restantes</button>' +
-        '<button class="bcard-btn" style="background:var(--red);margin-left:.3rem" onclick="unmarkBundle(\'' + b.id + '\')">Deshacer</button>';
+        '<button class="bcard-btn" style="background:var(--red);margin-left:.3rem" title="' + esc(undoHint) + '" aria-label="Deshacer bundle. ' + esc(undoHint) + '" onclick="unmarkBundle(\'' + b.id + '\')">Deshacer bundle</button>';
     } else {
       btns = '<button class="bcard-btn" onclick="markBundle(\'' + b.id + '\')">Tengo este bundle</button>';
     }
     return '<div class="bcard">' +
       '<div class="bcard-info"><div class="bcard-name">' + esc(b.name) + '</div>' +
-      '<div class="bcard-meta">' + b.count + ' DLCs &middot; ' + ownedInBundle + ' marcados</div></div>' +
+      '<div class="bcard-meta">' + b.count + ' DLCs &middot; ' + ownedInBundle + ' marcados</div>' +
+      (ownedInBundle > 0 ? '<div class="bcard-note">' + esc(undoHint) + '</div>' : '') + '</div>' +
       '<div style="display:flex;flex-wrap:wrap">' + btns + '</div></div>';
   }).join('');
 }
