@@ -620,12 +620,17 @@ const btnCopyLog = $('btn-copy-log');
 const btnDownloadLog = $('btn-download-log');
 const progressBar = $('progress-bar');
 const progressText = $('progress-text');
+const progressContainer = progressBar ? progressBar.closest('.progress-container') : null;
 const fileLinks = $('file-links');
 let abortCtrl = null;
 let shownErrorHints = new Set();
 let latestHistoryRuns = [];
 let latestFilteredRuns = [];
 let executionLogEntries = [];
+let runStatusHeartbeatTimer = null;
+let runStatusHeartbeatOptions = null;
+let runStatusHeartbeatStartedAt = 0;
+let runStatusHeartbeatLastActivityAt = 0;
 let historyPage = 1;
 let latestHistoryComparisonPayload = null;
 let selectedHistoryAppid = '';
@@ -1646,6 +1651,53 @@ function buildUpdatedCacheReportFilters() {
   return filters;
 }
 
+function formatRunHeartbeatSeconds(ms) {
+  return Math.max(0, Math.floor(Number(ms || 0) / 1000)) + 's';
+}
+
+function stopRunStatusHeartbeat() {
+  if (runStatusHeartbeatTimer) window.clearInterval(runStatusHeartbeatTimer);
+  runStatusHeartbeatTimer = null;
+  runStatusHeartbeatOptions = null;
+  if (progressContainer) progressContainer.classList.remove('progress-container-indeterminate');
+}
+
+function markRunStatusHeartbeatActivity() {
+  if (runStatusHeartbeatOptions) runStatusHeartbeatLastActivityAt = Date.now();
+}
+
+function updateRunStatusHeartbeat() {
+  if (!runStatusHeartbeatOptions) return;
+  const options = runStatusHeartbeatOptions;
+  const now = Date.now();
+  const elapsed = formatRunHeartbeatSeconds(now - runStatusHeartbeatStartedAt);
+  const quietFor = formatRunHeartbeatSeconds(now - runStatusHeartbeatLastActivityAt);
+  const quietAfterMs = Number(options.quietAfterMs || 8000);
+  const isQuiet = now - runStatusHeartbeatLastActivityAt >= quietAfterMs;
+  const label = isQuiet
+    ? `${options.quietLabel || options.label} · log sin novedades hace ${quietFor}`
+    : `${options.label} · activo ${elapsed}`;
+  if (progressText) progressText.textContent = label;
+  if (options.bannerTitle) {
+    const detail = isQuiet
+      ? `${options.quietDetail || 'Sigue trabajando aunque el log no avance.'} Tiempo activo: ${elapsed}.`
+      : `${options.detail || 'Esperando progreso del proceso.'} Tiempo activo: ${elapsed}.`;
+    setWarmCacheBackgroundBanner('progress', options.bannerTitle, options.bannerMessage || label, detail);
+  }
+}
+
+function startRunStatusHeartbeat(options = {}) {
+  stopRunStatusHeartbeat();
+  runStatusHeartbeatStartedAt = Date.now();
+  runStatusHeartbeatLastActivityAt = runStatusHeartbeatStartedAt;
+  runStatusHeartbeatOptions = Object.assign({label: 'Ejecución en curso'}, options);
+  if (progressContainer && options.indeterminateProgress !== false) {
+    progressContainer.classList.add('progress-container-indeterminate');
+  }
+  updateRunStatusHeartbeat();
+  runStatusHeartbeatTimer = window.setInterval(updateRunStatusHeartbeat, 2500);
+}
+
 function warmCacheBackgroundBannerEl() {
   let el = $('warm-cache-background-banner');
   if (el) return el;
@@ -1757,7 +1809,7 @@ async function generateReportFromUpdatedCache(btn) {
     'progress',
     'Generando reporte con caché actualizada',
     'Ejecutando Steam Deals normal para regenerar HTML/JSON con la caché ya precalentada.',
-    'Se usa la misma caché, sin --warm-cache y sin --no-cache.'
+    'No continúa warm-cache: solo usa la misma caché, sin --warm-cache y sin --no-cache.'
   );
   const completed = await runSteamDealsUI({
     filters: buildUpdatedCacheReportFilters(),
@@ -1765,6 +1817,15 @@ async function generateReportFromUpdatedCache(btn) {
     introLine: 'Generando reporte normal con la caché actualizada (sin --warm-cache y sin --no-cache).',
     conflictMessage: 'Ya hay una ejecucion en curso. Espera a que termine antes de generar el reporte actualizado.',
     triggerButton: btn,
+    heartbeat: {
+      label: 'Generando reporte con caché actualizada',
+      quietLabel: 'Sigue trabajando',
+      bannerTitle: 'Generando reporte con caché actualizada',
+      bannerMessage: 'HTML/JSON se están regenerando con la caché disponible; puede tardar aunque el log no avance.',
+      detail: 'No está cacheando más juegos; está armando el reporte con la cobertura actual.',
+      quietDetail: 'No está paralizado necesariamente: el generador puede pasar varios segundos sin escribir nuevas líneas.',
+      quietAfterMs: 7000,
+    },
     preserveOutputFiles: false,
     preserveLatestReportOnDone: false,
   });
@@ -1842,6 +1903,7 @@ async function runSteamDealsUI(options = {}) {
   shownErrorHints = new Set();
   resetExecutionLog();
   if (options.introLine) appendLine(options.introLine, 'step');
+  if (options.heartbeat) startRunStatusHeartbeat(options.heartbeat);
   progressBar.style.width = '0%';
   progressText.textContent = startLabel;
   if (options.preserveOutputFiles !== true) {
@@ -1899,6 +1961,7 @@ async function runSteamDealsUI(options = {}) {
     }
     return false;
   } finally {
+    stopRunStatusHeartbeat();
     btnRun.disabled = false;
     if (triggerButton && triggerButton !== btnRun) triggerButton.disabled = false;
     resetStopUiState();
@@ -2318,6 +2381,7 @@ if (btnRunPd2) btnRunPd2.addEventListener('click', async () => {
 });
 
 function handleEvent(ev, options = {}) {
+  markRunStatusHeartbeatActivity();
   if (ev.type === 'line') {
     appendLine(ev.text, ev.cls || 'normal');
   }
@@ -4603,6 +4667,14 @@ function latestFinalFailureActionItems(coverage) {
   })).filter((item) => item.action && item.label && item.count > 0);
 }
 
+function latestFinalFailureActionHint(item) {
+  const action = String((item && item.action) || '').trim();
+  if (action === 'wait_cooldown') return 'Espera antes de reintentar';
+  if (action === 'retry_failed_eligible') return 'Retry seguro con warm-cache';
+  if (action === 'review_no_price') return 'Solo revisión manual';
+  return item && item.canRetry ? 'Retry seguro con warm-cache' : 'Acción advisory';
+}
+
 function renderLatestFinalCacheStates(coverage) {
   const items = latestFinalCacheStateItems(coverage);
   if (!items.length) return '';
@@ -4628,11 +4700,12 @@ function renderLatestFinalFailureActions(coverage) {
   return `
     <div class="latest-cache-final-actions" data-latest-cache-final-actions>
       <div class="latest-cache-final-actions-title">Acciones para fallidos finales</div>
-      <div class="latest-cache-final-actions-copy">Solo acciones conservadoras: no borra juegos, no excluye de la wishlist, no cambia ranking y no usa --no-cache.</div>
+      <div class="latest-cache-final-actions-copy">Cierre seguro de warm-cache: separa qué esperar, qué reintentar con la misma caché y qué revisar manualmente. No borra juegos, no excluye de la wishlist, no cambia ranking y no usa --no-cache.</div>
       <ul class="latest-cache-final-actions-list">
         ${items.map((item) => `
           <li data-final-failure-action="${escapeHtml(item.action)}">
             <strong>${escapeHtml(item.label)}: ${escapeHtml(formatLatestCoverageCount(item.count))}</strong>
+            <em>${escapeHtml(latestFinalFailureActionHint(item))}</em>
             <span>${escapeHtml(item.detail)}</span>
           </li>
         `).join('')}
@@ -4755,6 +4828,9 @@ function renderLatestCacheCoverage(report) {
   const hasRetryableFinalFailures = finalFailureActionItems.some((item) => item.canRetry);
   const showWarmCacheAction = hasDeferred || hasRetryableFinalFailures;
   const warmCacheActionLabel = hasDeferred ? 'Continuar warm-cache' : 'Reintentar fallidos elegibles';
+  const warmCacheActionHint = hasDeferred
+    ? ''
+    : '<div class="latest-cache-coverage-action-hint">Reintenta solo fallidos elegibles con la caché actual; sin --no-cache y sin eliminar juegos.</div>';
   const processed = latestCoverageCount(coverage.processed_count);
   const total = latestCoverageCount(coverage.refresh_candidate_count) || processed + deferred;
   const coverageLabel = String(coverage.coverage_label || '').trim() || `${formatLatestCoverageCount(processed)}/${formatLatestCoverageCount(total)}`;
@@ -4780,6 +4856,7 @@ function renderLatestCacheCoverage(report) {
         <div class="latest-cache-coverage-actions">
           <button type="button" class="file-link file-link-button latest-cache-coverage-action" data-latest-action="continue-warm-cache">${escapeHtml(warmCacheActionLabel)}</button>
         </div>
+        ${warmCacheActionHint}
         <div class="latest-cache-continue-status hidden" data-latest-cache-continue-status role="status" aria-live="polite"></div>
       ` : ''}
     </div>

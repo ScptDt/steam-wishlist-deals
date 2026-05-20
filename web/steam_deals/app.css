@@ -780,6 +780,16 @@ details .details-body .field:last-child {
   height: 100%; background: linear-gradient(90deg, var(--accent), #4b9cd3);
   border-radius: 8px; transition: width 0.4s ease; width: 0%;
 }
+.progress-container-indeterminate .progress-bar {
+  width: 45% !important;
+  animation: steam-progress-indeterminate 1.6s ease-in-out infinite;
+  transform: translateX(-120%);
+}
+@keyframes steam-progress-indeterminate {
+  0% { transform: translateX(-120%); opacity: 0.55; }
+  50% { transform: translateX(70%); opacity: 1; }
+  100% { transform: translateX(230%); opacity: 0.55; }
+}
 .progress-text {
   position: absolute; top: 0; left: 0; right: 0; bottom: 0;
   display: flex; align-items: center; justify-content: center;
@@ -1141,6 +1151,16 @@ details .details-body .field:last-child {
 .warm-cache-background-banner-progress .warm-cache-background-copy strong {
   color: var(--yellow);
 }
+.warm-cache-background-banner-progress .warm-cache-background-copy strong::after {
+  content: '…';
+  display: inline-block;
+  min-width: 1.2em;
+  animation: warm-cache-status-pulse 1.4s ease-in-out infinite;
+}
+@keyframes warm-cache-status-pulse {
+  0%, 100% { opacity: 0.35; transform: translateX(0); }
+  50% { opacity: 1; transform: translateX(2px); }
+}
 .warm-cache-background-banner-ok {
   border-color: rgba(108, 198, 68, 0.32);
   background: rgba(108, 198, 68, 0.08);
@@ -1329,11 +1349,19 @@ details .details-body .field:last-child {
   font-size: 0.74rem;
 }
 .latest-cache-final-actions-list strong,
+.latest-cache-final-actions-list em,
 .latest-cache-final-actions-list span {
   display: block;
 }
 .latest-cache-final-actions-list strong {
   color: var(--yellow);
+}
+.latest-cache-final-actions-list em {
+  margin-top: 0.12rem;
+  color: var(--text);
+  font-size: 0.72rem;
+  font-style: normal;
+  font-weight: 700;
 }
 .latest-cache-final-actions-list span {
   margin-top: 0.12rem;
@@ -1414,6 +1442,12 @@ details .details-body .field:last-child {
   background: var(--yellow);
   border-color: var(--yellow);
   color: var(--bg);
+}
+.latest-cache-coverage-action-hint {
+  margin-top: 0.35rem;
+  color: var(--text2);
+  font-size: 0.73rem;
+  line-height: 1.35;
 }
 .latest-cache-coverage-action.is-running {
   opacity: 0.86;
