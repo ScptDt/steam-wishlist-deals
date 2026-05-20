@@ -230,11 +230,12 @@ class WebAssetsTests(unittest.TestCase):
             encoding="utf-8"
         )
 
-        self.assertIn("Export de HowLongToBeat (CSV)", index_html)
-        self.assertIn("HLTB_Games_2026-05-15.csv", index_html)
+        self.assertIn("CSV de HowLongToBeat", index_html)
+        self.assertIn("C:/Users/TuUsuario/Downloads/HLTB_Games_2026-05-15.csv", index_html)
+        self.assertNotIn("Bryan Grijalva", index_html)
         self.assertIn("En Web/Desktop no uses comillas", index_html)
-        self.assertIn("rutas Windows con espacios", index_html)
-        self.assertIn("se conservan como un solo argumento", index_html)
+        self.assertIn("rutas de Windows con espacios", index_html)
+        self.assertIn("se envían como un solo argumento", index_html)
         self.assertIn("[ruta]", index_html)
         self.assertIn('id="hltb-autodetect-suggestion"', index_html)
         self.assertIn("hltb_autodetect", app_js)
