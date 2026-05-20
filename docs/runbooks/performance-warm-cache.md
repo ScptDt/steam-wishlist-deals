@@ -13,6 +13,15 @@ Medir si el cache caliente realmente reduce fetches lentos y fallback individual
 - No subir `--max-workers` por encima del default solo para “probar suerte”.
 - No cerrar el Track Performance con una sola corrida si hubo fallos externos/rate limits.
 
+## Rate limits: Web API vs Store `appdetails`
+
+No mezcles límites oficiales de la Steam Web API con el comportamiento práctico del Store JSON:
+
+- `api.steampowered.com` / Web API oficial: Steam documenta un límite general de `100,000` llamadas por día por API key. Ese número sirve como referencia para endpoints oficiales con key, pero no describe ráfagas ni endpoints Store.
+- `store.steampowered.com/api/appdetails`: es el endpoint Store usado para precios/metadatos y puede devolver `HTTP 400`/`HTTP 429` bajo patrones de batch o refresh grandes. Sus límites prácticos no están documentados públicamente como el cupo diario de Web API, así que trátalos como throttling externo/IP/endpoint y no como “sin oferta” o “juego no disponible”.
+- El comportamiento actual del fetch de precios usa backoff interno ante `429` durante el batch (`30s`, `60s`, hasta `120s`) y, si un appid queda con `http_429`, guarda `_next_retry_after` con el cooldown local (`2h` por defecto). Hoy no se interpreta un header `Retry-After`; si eso cambia, debe cubrirse con fixture offline antes de otro benchmark real.
+- Si aparece rate-limit en logs, conserva la caché, espera cooldown y continúa con warm-cache normal. No fuerces `--no-cache`, no bajes más el batch global y no repitas `BG00G` salvo benchmark aprobado.
+
 ## Comandos base
 
 Usa `gaben` solo como ejemplo público; reemplázalo por tu vanity real, URL completa o Steam ID.
