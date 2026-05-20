@@ -4589,6 +4589,20 @@ function latestFinalCacheStateItems(coverage) {
   })).filter((item) => item.state && item.label);
 }
 
+function latestFinalFailureActionItems(coverage) {
+  const rawItems = Array.isArray(coverage && coverage.final_failure_actions)
+    ? coverage.final_failure_actions
+    : [];
+  return rawItems.map((item) => ({
+    action: String((item && item.action) || '').trim(),
+    label: String((item && item.label) || '').trim(),
+    count: latestCoverageCount(item && item.count),
+    detail: String((item && item.detail) || '').trim(),
+    canRetry: item && item.can_retry === true,
+    destructive: item && item.destructive === true,
+  })).filter((item) => item.action && item.label && item.count > 0);
+}
+
 function renderLatestFinalCacheStates(coverage) {
   const items = latestFinalCacheStateItems(coverage);
   if (!items.length) return '';
@@ -4604,6 +4618,25 @@ function renderLatestFinalCacheStates(coverage) {
           return `<strong data-final-cache-state="${escapeHtml(item.state)}">${escapeHtml(item.label)}${escapeHtml(countCopy)}</strong>`;
         }).join('')}
       </div>
+    </div>
+  `;
+}
+
+function renderLatestFinalFailureActions(coverage) {
+  const items = latestFinalFailureActionItems(coverage);
+  if (!items.length) return '';
+  return `
+    <div class="latest-cache-final-actions" data-latest-cache-final-actions>
+      <div class="latest-cache-final-actions-title">Acciones para fallidos finales</div>
+      <div class="latest-cache-final-actions-copy">Solo acciones conservadoras: no borra juegos, no excluye de la wishlist, no cambia ranking y no usa --no-cache.</div>
+      <ul class="latest-cache-final-actions-list">
+        ${items.map((item) => `
+          <li data-final-failure-action="${escapeHtml(item.action)}">
+            <strong>${escapeHtml(item.label)}: ${escapeHtml(formatLatestCoverageCount(item.count))}</strong>
+            <span>${escapeHtml(item.detail)}</span>
+          </li>
+        `).join('')}
+      </ul>
     </div>
   `;
 }
@@ -4708,14 +4741,20 @@ function renderLatestCacheCoverage(report) {
   const hasDeferred = isPartial && deferred > 0;
   const blockProgress = renderLatestWarmCacheBlockProgress(coverage);
   const finalStates = renderLatestFinalCacheStates(coverage);
+  const finalFailureActionItems = latestFinalFailureActionItems(coverage);
+  const finalFailureActions = renderLatestFinalFailureActions(coverage);
   const noPriceClassification = renderLatestNoPriceClassification(coverage);
   const technicalDetails = [
     blockProgress,
     renderLatestCacheStateSummary(coverage),
     finalStates,
+    finalFailureActions,
     noPriceClassification,
   ].filter(Boolean).join('');
-  if (!hasDeferred && !blockProgress && !finalStates && !noPriceClassification) return '';
+  if (!hasDeferred && !blockProgress && !finalStates && !finalFailureActions && !noPriceClassification) return '';
+  const hasRetryableFinalFailures = finalFailureActionItems.some((item) => item.canRetry);
+  const showWarmCacheAction = hasDeferred || hasRetryableFinalFailures;
+  const warmCacheActionLabel = hasDeferred ? 'Continuar warm-cache' : 'Reintentar fallidos elegibles';
   const processed = latestCoverageCount(coverage.processed_count);
   const total = latestCoverageCount(coverage.refresh_candidate_count) || processed + deferred;
   const coverageLabel = String(coverage.coverage_label || '').trim() || `${formatLatestCoverageCount(processed)}/${formatLatestCoverageCount(total)}`;
@@ -4737,9 +4776,9 @@ function renderLatestCacheCoverage(report) {
           <div class="latest-cache-details-body">${technicalDetails}</div>
         </details>
       ` : ''}
-      ${hasDeferred ? `
+      ${showWarmCacheAction ? `
         <div class="latest-cache-coverage-actions">
-          <button type="button" class="file-link file-link-button latest-cache-coverage-action" data-latest-action="continue-warm-cache">Continuar warm-cache</button>
+          <button type="button" class="file-link file-link-button latest-cache-coverage-action" data-latest-action="continue-warm-cache">${escapeHtml(warmCacheActionLabel)}</button>
         </div>
         <div class="latest-cache-continue-status hidden" data-latest-cache-continue-status role="status" aria-live="polite"></div>
       ` : ''}

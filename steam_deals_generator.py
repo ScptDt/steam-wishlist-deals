@@ -3519,6 +3519,66 @@ FINAL_CACHE_STATE_LABELS = {
 }
 
 
+def _final_failure_action(
+    action: str,
+    label: str,
+    count: int,
+    detail: str,
+    *,
+    can_retry: bool = False,
+) -> dict | None:
+    safe_count = _safe_non_negative_int(count)
+    if safe_count <= 0:
+        return None
+    return {
+        "action": action,
+        "label": label,
+        "count": safe_count,
+        "detail": detail,
+        "can_retry": can_retry,
+        "destructive": False,
+    }
+
+
+def _build_final_failure_actions(
+    *,
+    is_partial: bool,
+    state_counts: dict,
+    no_price_counts: dict,
+) -> list[dict]:
+    if is_partial:
+        return []
+    cooldown_count = _safe_non_negative_int(state_counts.get("cooldown"))
+    retryable_count = _safe_non_negative_int(state_counts.get("failed_no_data"))
+    no_price_review_count = sum(
+        _safe_non_negative_int(count)
+        for category, count in no_price_counts.items()
+        if str(category) != "temporary_unconfirmed"
+    )
+    actions = [
+        _final_failure_action(
+            "wait_cooldown",
+            "Esperar cooldown",
+            cooldown_count,
+            "Fallos temporales todavía no confirmados: espera el cooldown antes de reintentar con --warm-cache, sin --no-cache.",
+        ),
+        _final_failure_action(
+            "retry_failed_eligible",
+            "Reintentar fallidos elegibles",
+            retryable_count,
+            "Reintenta solo con la misma caché y una corrida normal --warm-cache; no borra, no excluye y no cambia ranking.",
+            can_retry=True,
+        ),
+        _final_failure_action(
+            "review_no_price",
+            "Revisar sin precio confirmado",
+            no_price_review_count,
+            "Revisión manual/advisory: puede ser próximo lanzamiento, gratis/sin precio normal o disponibilidad a revisar; no asumir retirado.",
+        ),
+    ]
+    return [action for action in actions if action]
+
+
 def _build_final_cache_state_summary(
     *,
     is_partial: bool,
@@ -3719,6 +3779,13 @@ def build_price_cache_coverage(price_stage: dict | None) -> dict | None:
         state_counts=compact_state_counts,
         no_price_counts=compact_no_price_counts,
     )
+    final_failure_actions = _build_final_failure_actions(
+        is_partial=is_partial,
+        state_counts=compact_state_counts,
+        no_price_counts=compact_no_price_counts,
+    )
+    if final_failure_actions:
+        coverage["final_failure_actions"] = final_failure_actions
     coverage["coverage_label"] = (
         f"{_format_count_label(processed_count)}/{_format_count_label(candidate_total)}"
         if candidate_total
@@ -3738,6 +3805,8 @@ def build_price_cache_coverage(price_stage: dict | None) -> dict | None:
             "Sin pendientes por presupuesto; fallos/cooldown y juegos sin precio "
             "confirmado se muestran aparte."
         )
+        if final_failure_actions:
+            coverage["detail"] += " Revisa acciones sugeridas para los fallidos finales."
     return coverage
 
 

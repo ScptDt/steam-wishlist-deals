@@ -538,6 +538,26 @@ def _format_fallback_cooldown_action(summary: WarmCacheLogSummary) -> str:
     )
 
 
+def _has_final_failure_closeout(summary: WarmCacheLogSummary) -> bool:
+    has_finished_queue = summary.processed_count > 0 and summary.deferred_by_time_budget <= 0
+    has_failures = summary.deferred_failure_count > 0 or summary.individual_fallback_failed_count > 0
+    return has_finished_queue and has_failures
+
+
+def _format_final_failure_closeout_action(summary: WarmCacheLogSummary) -> str:
+    failure_parts = []
+    if summary.deferred_failure_count:
+        failure_parts.append(f"{summary.deferred_failure_count:,} en cooldown")
+    if summary.individual_fallback_failed_count:
+        failure_parts.append(f"{summary.individual_fallback_failed_count:,} sin oferta/datos")
+    failures = " y ".join(failure_parts) or "fallidos sin confirmar"
+    return (
+        f"Cierre de fallidos: la cola resumible quedó sin deferred, pero quedan {failures}; "
+        "reintenta solo los elegibles con la misma caché y `--warm-cache` cuando venza el cooldown. "
+        "No uses `--no-cache`, no borres juegos y no los excluyas automáticamente."
+    )
+
+
 def _refresh_budget_candidate_total(summary: WarmCacheLogSummary) -> int | None:
     if summary.refresh_candidates > 0:
         return summary.refresh_candidates
@@ -681,6 +701,7 @@ def analyze_warm_cache_recommendations(
         latest.individual_fallback_count >= HIGH_FALLBACK_THRESHOLD
         and _fallback_failed_ratio(latest) >= HIGH_FAILED_FALLBACK_RATIO
     )
+    has_final_failure_closeout = _has_final_failure_closeout(latest)
 
     if has_negative_lower_batch and previous is not None:
         recommendations.append(
@@ -733,7 +754,15 @@ def analyze_warm_cache_recommendations(
             )
         )
 
-    if has_fallback_no_data_cooldown:
+    if has_final_failure_closeout:
+        recommendations.append(
+            WarmCacheRecommendation(
+                "final-failures-closeout",
+                "warn",
+                _format_final_failure_closeout_action(latest),
+            )
+        )
+    elif has_fallback_no_data_cooldown:
         recommendations.append(
             WarmCacheRecommendation(
                 "fallback-no-data-cooldown",

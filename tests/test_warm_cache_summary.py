@@ -493,6 +493,35 @@ class WarmCacheSummaryTests(unittest.TestCase):
         self.assertIn("13/20", action)
         self.assertIn("2h", action)
 
+    def test_analyze_warm_cache_recommends_closeout_for_finished_queue_failures(self) -> None:
+        recommendations = analyze_warm_cache_recommendations(
+            [
+                WarmCacheLogSummary(processed_count=80, deferred_by_time_budget=20),
+                WarmCacheLogSummary(
+                    processed_count=100,
+                    deferred_by_time_budget=0,
+                    deferred_failure_count=3,
+                    individual_fallback_count=20,
+                    individual_fallback_failed_count=5,
+                ),
+            ]
+        )
+
+        action = next(
+            recommendation.action
+            for recommendation in recommendations
+            if recommendation.code == "final-failures-closeout"
+        )
+
+        self.assertIn("cola resumible quedó sin deferred", action)
+        self.assertIn("3 en cooldown", action)
+        self.assertIn("5 sin oferta/datos", action)
+        self.assertIn("misma caché", action)
+        self.assertIn("`--warm-cache`", action)
+        self.assertIn("No uses `--no-cache`", action)
+        self.assertIn("no borres juegos", action)
+        self.assertIn("no los excluyas automáticamente", action)
+
     def test_analyze_warm_cache_avoids_generic_fallback_when_cooldown_is_specific(self) -> None:
         recommendations = analyze_warm_cache_recommendations(
             [

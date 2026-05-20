@@ -1296,6 +1296,50 @@ details .details-body .field:last-child {
   font-size: 0.72rem;
   font-weight: 700;
 }
+.latest-cache-final-actions {
+  margin-top: 0.6rem;
+  padding: 0.65rem 0.7rem;
+  border-radius: 8px;
+  border: 1px solid rgba(240, 178, 50, 0.22);
+  background: rgba(240, 178, 50, 0.08);
+}
+.latest-cache-final-actions-title {
+  color: var(--yellow);
+  font-size: 0.78rem;
+  font-weight: 700;
+}
+.latest-cache-final-actions-copy {
+  margin-top: 0.25rem;
+  color: var(--text2);
+  font-size: 0.74rem;
+  line-height: 1.45;
+}
+.latest-cache-final-actions-list {
+  margin: 0.5rem 0 0;
+  padding: 0;
+  display: grid;
+  gap: 0.35rem;
+  list-style: none;
+}
+.latest-cache-final-actions-list li {
+  padding: 0.45rem 0.5rem;
+  border-radius: 7px;
+  background: rgba(255,255,255,0.04);
+  color: var(--text);
+  font-size: 0.74rem;
+}
+.latest-cache-final-actions-list strong,
+.latest-cache-final-actions-list span {
+  display: block;
+}
+.latest-cache-final-actions-list strong {
+  color: var(--yellow);
+}
+.latest-cache-final-actions-list span {
+  margin-top: 0.12rem;
+  color: var(--text2);
+  line-height: 1.35;
+}
 .latest-cache-no-price {
   margin-top: 0.6rem;
   padding: 0.65rem 0.7rem;
