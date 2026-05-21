@@ -72,6 +72,7 @@ La implementación debe mantener gates conservadores: una oferta externa empieza
     "region_unknown",
     "low_confidence",
     "checkout_like_url",
+    "unsafe_url_scheme",
     "ownership_not_proven"
   ]
 }
@@ -84,6 +85,7 @@ Reglas de gating:
 - `low_confidence` → no destacar.
 - `drm_unknown` o `region_unknown` → máximo “requiere revisión”, no “mejor oferta”.
 - `checkout_like_url` → rechazar link.
+- `unsafe_url_scheme` → rechazar link; solo `http`/`https` podrán ser linkeables en fases visibles.
 - `ownership_not_proven` → no alimentar `wishlist_hygiene` como owned.
 
 ### Riesgos, mitigaciones y tests esperados
@@ -94,7 +96,7 @@ Reglas de gating:
 | Mostrar keyshops grises sin contexto | Ocultos por defecto y opt-in futuro | `store_type=marketplace_keyshop` agrega flag y no destaca | Keyshop queda hidden/no-highlight |
 | DRM/región incorrecta | Campos visibles y flags de incertidumbre | `drm/region=unknown` agrega flag y baja elegibilidad | Oferta unknown queda “requiere revisión” |
 | Romper ranking por precio externo | Sección/contrato separado | Normalizador no toca `score`, `top_picks` ni defaults | Tests confirman ranking intacto/ausencia de side effects |
-| Checkout encubierto | Copy y URL allowlist conservadora | URLs con `cart`, `checkout`, `add-to-cart` se rechazan | Link checkout-like queda removido o invalidado |
+| Checkout encubierto | Copy y URL allowlist conservadora | URLs con `cart`, `checkout`, `add-to-cart` o scheme no `http/https` se rechazan | Link checkout-like/unsafe queda removido o invalidado |
 | Mezclar tiendas oficiales con marketplaces | Taxonomía obligatoria | UI futura agrupa por `store_type` y keyshops no compiten | Marketplace no cuenta como “mejor precio oficial” |
 
 ## Taxonomía de tiendas
@@ -308,6 +310,7 @@ El primer slice no renderiza links, pero debe marcar o bloquear URLs riesgosas:
 
 - `link_allowed=false` si la URL contiene segmentos o query obvios de `cart`, `checkout`, `add-to-cart`, `payment`, `purchase`.
 - `checkout_like_url` en `risk_flags` cuando se bloquee.
+- `link_allowed=false` y `unsafe_url_scheme` si la URL no usa `http`/`https`.
 - No intentar resolver redirects ni hacer requests de red.
 
 ### Tests mínimos del primer slice
@@ -317,11 +320,13 @@ El primer slice no renderiza links, pero debe marcar o bloquear URLs riesgosas:
 3. G2A/Eneba/Kinguin/CDKeys → `hidden`, `marketplace_keyshop`, no eligible.
 4. Store desconocida → `hidden`, `unknown_store`.
 5. URL checkout-like → `link_allowed=false`, `checkout_like_url`, no eligible.
-6. `confidence=low` → `hidden`, `low_confidence`.
-7. Precio inválido o currency faltante → `hidden` con risk flag correspondiente.
-8. Dedupe conserva el precio válido más bajo para la misma oferta.
-9. Payload vacío devuelve items vacíos + summary segura.
-10. No aparece ningún campo `external_matches`, `wishlist_hygiene`, `score`, `top_picks` ni mutation de ranking en el output.
+6. URL con scheme inseguro (`javascript:`, `data:`) → `link_allowed=false`, `unsafe_url_scheme`, no eligible.
+7. `confidence=low` → `hidden`, `low_confidence`.
+8. Precio `0` con currency válida cuenta como precio válido.
+9. Precio inválido o currency faltante → `hidden` con risk flag correspondiente.
+10. Dedupe conserva el precio válido más bajo para la misma oferta.
+11. Payload vacío devuelve items vacíos + summary segura.
+12. No aparece ningún campo `external_matches`, `wishlist_hygiene`, `score`, `top_picks` ni mutation de ranking en el output.
 
 ## Fases recomendadas
 

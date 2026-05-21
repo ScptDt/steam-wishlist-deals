@@ -38,6 +38,7 @@ from steam_deals_alerts import (
 from steam_deals_recommendations import (
     build_taste_priority_contract as module_build_taste_priority_contract,
 )
+from steam_deals_external_offers import normalize_external_offers
 from steam_deals_cache_policy import (
     build_cache_state_summary as module_build_cache_state_summary,
     clear_cache_files as module_clear_cache_files,
@@ -1064,6 +1065,259 @@ class SelectionReviewTests(unittest.TestCase):
         self.assertEqual(item["decision"], "conservar")
         self.assertGreater(item["affinity_score"], 24)
         self.assertIn("encaja con tu actividad reciente", " ".join(item["reasons"]))
+
+
+class ExternalOffersTests(unittest.TestCase):
+    def test_normalize_external_offers_gates_authorized_official_and_marketplace(self) -> None:
+        offers = normalize_external_offers(
+            [
+                {
+                    "appid": "1145360",
+                    "name": "Hades",
+                    "store": "Fanatical",
+                    "price": "8.99",
+                    "currency": "usd",
+                    "discount": "65%",
+                    "url": "https://example.invalid/deal/hades",
+                    "drm": "steam",
+                    "region": "global",
+                    "source": "fixture",
+                    "confidence": "high",
+                    "observed_at": "2026-05-21",
+                },
+                {
+                    "steam_appid": "20",
+                    "title": "GOG Region Review",
+                    "storefront": "GOG",
+                    "final_price": 4.99,
+                    "currency_code": "EUR",
+                    "drm": "gog",
+                    "region": "unknown",
+                    "confidence": "high",
+                },
+                {
+                    "appid": "30",
+                    "name": "Grey Market Key",
+                    "shop": "G2A",
+                    "amount": 2.5,
+                    "currency": "USD",
+                    "drm": "steam",
+                    "region": "global",
+                    "confidence": "high",
+                },
+            ]
+        )
+
+        by_appid = {item["appid"]: item for item in offers["items"]}
+
+        self.assertEqual([item["appid"] for item in offers["items"]], ["1145360", "20", "30"])
+        self.assertEqual(by_appid["1145360"]["store_type"], "authorized_key_reseller")
+        self.assertEqual(by_appid["1145360"]["visibility"], "highlight")
+        self.assertTrue(by_appid["1145360"]["eligible_for_best_external_price"])
+        self.assertEqual(by_appid["1145360"]["risk_flags"], ["ownership_not_proven"])
+        self.assertEqual(by_appid["1145360"]["discount_pct"], 65)
+        self.assertEqual(by_appid["20"]["store_type"], "official_store")
+        self.assertEqual(by_appid["20"]["visibility"], "review")
+        self.assertFalse(by_appid["20"]["eligible_for_best_external_price"])
+        self.assertIn("region_unknown", by_appid["20"]["risk_flags"])
+        self.assertEqual(by_appid["30"]["store_type"], "marketplace_keyshop")
+        self.assertEqual(by_appid["30"]["visibility"], "hidden")
+        self.assertIn("marketplace_keyshop", by_appid["30"]["risk_flags"])
+        self.assertEqual(
+            offers["summary"],
+            {
+                "items_count": 3,
+                "highlight_count": 1,
+                "review_count": 1,
+                "hidden_count": 1,
+                "official_or_authorized_count": 2,
+                "marketplace_count": 1,
+                "best_external_price_count": 1,
+                "risk_counts": {
+                    "ownership_not_proven": 3,
+                    "region_unknown": 1,
+                    "marketplace_keyshop": 1,
+                },
+                "advisory_only": True,
+                "ranking_impact": "none",
+            },
+        )
+
+    def test_normalize_external_offers_blocks_risky_and_malformed_offers(self) -> None:
+        offers = normalize_external_offers(
+            [
+                {
+                    "appid": "40",
+                    "name": "Unknown Store",
+                    "store": "Mystery Shop",
+                    "price": 1,
+                    "currency": "USD",
+                    "drm": "steam",
+                    "region": "global",
+                    "confidence": "high",
+                },
+                {
+                    "appid": "50",
+                    "name": "Checkout Link",
+                    "store": "Humble Store",
+                    "price": 3,
+                    "currency": "USD",
+                    "url": "https://humble.example/cart?add-to-cart=50",
+                    "drm": "steam",
+                    "region": "global",
+                    "confidence": "high",
+                },
+                {
+                    "appid": "60",
+                    "name": "Low Confidence",
+                    "store": "Epic Games Store",
+                    "price": 4,
+                    "currency": "USD",
+                    "drm": "epic",
+                    "region": "global",
+                    "confidence": "low",
+                },
+                {
+                    "appid": "70",
+                    "name": "Invalid Price",
+                    "store": "Fanatical",
+                    "price": "not a price",
+                    "drm": "steam",
+                    "region": "global",
+                    "confidence": "high",
+                },
+                {
+                    "appid": "75",
+                    "name": "Unsafe Scheme",
+                    "store": "GOG",
+                    "price": 3,
+                    "currency": "USD",
+                    "url": "javascript:alert(1)",
+                    "drm": "gog",
+                    "region": "global",
+                    "confidence": "high",
+                },
+            ]
+        )
+
+        by_name = {item["name"]: item for item in offers["items"]}
+
+        self.assertEqual(offers["summary"]["hidden_count"], 5)
+        self.assertEqual(offers["summary"]["best_external_price_count"], 0)
+        self.assertIn("unknown_store", by_name["Unknown Store"]["risk_flags"])
+        self.assertEqual(by_name["Checkout Link"]["url"], "")
+        self.assertFalse(by_name["Checkout Link"]["link_allowed"])
+        self.assertIn("checkout_like_url", by_name["Checkout Link"]["risk_flags"])
+        self.assertIn("low_confidence", by_name["Low Confidence"]["risk_flags"])
+        self.assertIn("invalid_price", by_name["Invalid Price"]["risk_flags"])
+        self.assertIn("currency_missing", by_name["Invalid Price"]["risk_flags"])
+        self.assertEqual(by_name["Unsafe Scheme"]["url"], "")
+        self.assertFalse(by_name["Unsafe Scheme"]["link_allowed"])
+        self.assertIn("unsafe_url_scheme", by_name["Unsafe Scheme"]["risk_flags"])
+
+    def test_normalize_external_offers_accepts_zero_price_as_valid_offer(self) -> None:
+        offers = normalize_external_offers(
+            [
+                {
+                    "appid": "90",
+                    "name": "Free Weekend Promo",
+                    "store": "GOG",
+                    "price": 0,
+                    "currency": "USD",
+                    "url": "https://gog.example/game/free-weekend-promo",
+                    "drm": "gog",
+                    "region": "global",
+                    "confidence": "high",
+                }
+            ]
+        )
+
+        item = offers["items"][0]
+
+        self.assertEqual(item["price"], 0.0)
+        self.assertEqual(item["visibility"], "highlight")
+        self.assertTrue(item["eligible_for_best_external_price"])
+        self.assertNotIn("invalid_price", item["risk_flags"])
+
+    def test_normalize_external_offers_accepts_shapes_and_dedupes_lowest_price(self) -> None:
+        base_offer = {
+            "appid": "10",
+            "name": "Duplicate Deal",
+            "store": "Fanatical",
+            "currency": "USD",
+            "url": "https://example.invalid/deal/duplicate",
+            "drm": "steam",
+            "region": "global",
+            "confidence": "high",
+        }
+        payload = {
+            "external_offers": [
+                {**base_offer, "price": 12.99},
+                {**base_offer, "price": 7.99},
+                {**base_offer, "appid": "11", "name": "Other Deal", "price": 9.99},
+            ]
+        }
+
+        offers = normalize_external_offers(payload)
+
+        by_appid = {item["appid"]: item for item in offers["items"]}
+        self.assertEqual(len(offers["items"]), 2)
+        self.assertEqual(by_appid["10"]["price"], 7.99)
+        self.assertEqual(by_appid["11"]["price"], 9.99)
+        for shape in (
+            [base_offer | {"price": 1.99}],
+            {"offers": [base_offer | {"price": 1.99}]},
+            {"items": [base_offer | {"price": 1.99}]},
+            {"external_offers": {"items": [base_offer | {"price": 1.99}]}},
+        ):
+            with self.subTest(shape=type(shape).__name__):
+                self.assertEqual(normalize_external_offers(shape)["summary"]["items_count"], 1)
+
+    def test_normalize_external_offers_empty_malformed_and_no_ownership_or_ranking_fields(self) -> None:
+        empty_summary = {
+            "items_count": 0,
+            "highlight_count": 0,
+            "review_count": 0,
+            "hidden_count": 0,
+            "official_or_authorized_count": 0,
+            "marketplace_count": 0,
+            "best_external_price_count": 0,
+            "risk_counts": {},
+            "advisory_only": True,
+            "ranking_impact": "none",
+        }
+        for payload in (None, [], {}, {"external_offers": None}, {"offers": []}, {"items": []}):
+            with self.subTest(payload=payload):
+                self.assertEqual(normalize_external_offers(payload), {"items": [], "summary": empty_summary})
+
+        offers = normalize_external_offers(
+            [
+                {
+                    "appid": "80",
+                    "name": "Safe Offer",
+                    "store": "Fanatical",
+                    "price": 5,
+                    "currency": "USD",
+                    "drm": "steam",
+                    "region": "global",
+                    "confidence": "high",
+                }
+            ]
+        )
+        for forbidden_key in ("external_matches", "wishlist_hygiene", "score", "top_picks"):
+            self.assertNotIn(forbidden_key, offers)
+            self.assertNotIn(forbidden_key, offers["summary"])
+            self.assertNotIn(forbidden_key, offers["items"][0])
+        malformed_cases = [
+            ({"external_offers": {}}, "external_offers debe ser una lista"),
+            ({"unexpected": []}, "clave 'external_offers', 'offers' o 'items'"),
+            ([None], "external_offers\\[0\\] debe ser un objeto JSON"),
+            ("bad", "debe ser una lista o un objeto JSON"),
+        ]
+        for payload, expected_error in malformed_cases:
+            with self.subTest(payload=payload):
+                with self.assertRaisesRegex(ValueError, expected_error):
+                    normalize_external_offers(payload)
 
 
 class WishlistHygieneTests(unittest.TestCase):
