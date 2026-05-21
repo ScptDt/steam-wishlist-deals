@@ -2054,7 +2054,10 @@ a.pick-card:hover { border-color: var(--accent-blue); transform: translateY(-2px
 .selection-review-result-main { min-width: 0; }
 .selection-review-result-main strong, .selection-review-result-main span { display: block; }
 .selection-review-result-main strong { font-size: .84rem; line-height: 1.3; margin-bottom: .2rem; }
-.selection-review-result-meta, .selection-review-result-signals, .selection-review-result-reasons { color: var(--text-secondary); font-size: .74rem; line-height: 1.35; }
+.selection-review-result-meta, .selection-review-result-signals, .selection-review-result-reasons, .selection-review-result-confidence, .selection-review-result-next-step, .selection-review-result-why-group { color: var(--text-secondary); font-size: .74rem; line-height: 1.35; }
+.selection-review-result-confidence { color: var(--accent-green); font-weight: 700; }
+.selection-review-result-next-step strong, .selection-review-result-why-group strong { color: var(--text-primary); font-size: inherit; margin: 0; }
+.selection-review-result-why { display: grid !important; gap: .12rem; margin-top: .2rem; }
 @media (max-width: 767px) { .selection-review-head, .selection-review-result { flex-direction: column; } .selection-review-badge { align-self: flex-start; } }
 .wishlist-hygiene { margin: 0 0 1.5rem; padding: 1rem; border: 1px solid rgba(240,178,50,.28); border-radius: 10px; background: linear-gradient(135deg, rgba(240,178,50,.08), rgba(12,20,30,.25)); }
 .wishlist-hygiene-head { display: flex; justify-content: space-between; gap: 1rem; align-items: flex-start; }
@@ -2444,6 +2447,43 @@ function selectionReviewSignals(appid, item, ownedSet, familySet) {
   if (item && Array.isArray(item.collection_reasons) && item.collection_reasons.length) signals.push('recommended_collection');
   return selectionReviewTexts(signals).length ? selectionReviewTexts(signals) : ['selection_only'];
 }
+function selectionReviewConfidence(appid, item, decision, ownedSet, familySet, signals) {
+  if (!appid || ownedSet.has(appid) || familySet.has(appid)) return 'high';
+  const baseScore = selectionReviewBaseScore(item);
+  const affinityScore = selectionReviewNumber(item && item.affinity_score, 0);
+  if (decision === 'conservar') {
+    if (item && item.personalized_score != null && selectionReviewNumber(item.personalized_score, 0) >= 85) return 'high';
+    if (affinityScore >= 24 || baseScore >= 85) return 'high';
+    return 'medium';
+  }
+  if (decision === 'quitar') return selectionReviewHasScore(item) ? 'medium' : 'low';
+  if (selectionReviewTexts(signals).join('|') !== 'selection_only' || selectionReviewHasScore(item)) return 'medium';
+  return 'low';
+}
+function selectionReviewNextStep(decision, appid, ownedSet, familySet) {
+  if (!appid) return 'Corrige o elimina esta entrada de la selección local.';
+  if (ownedSet.has(appid) || familySet.has(appid)) return 'Puedes quitarla de esta selección local; ya aparece disponible.';
+  if (decision === 'conservar') return 'Buena candidata para mantener en tu selección local.';
+  if (decision === 'quitar') return 'Probablemente puedes quitarla de esta selección local.';
+  return 'Revisa si encaja con tu backlog antes de decidir.';
+}
+function selectionReviewWhyGroups(appid, item, decision, ownedSet, familySet, reasons, signals) {
+  const positive = [];
+  const caution = [];
+  const context = [];
+  if (!appid) caution.push('entrada sin appid válido');
+  if (ownedSet.has(appid)) caution.push('ya está en tu biblioteca');
+  if (familySet.has(appid)) caution.push('ya disponible en biblioteca familiar');
+  const target = decision === 'conservar' ? positive : decision === 'quitar' ? caution : context;
+  selectionReviewTexts(reasons).forEach((reason) => target.push(reason));
+  if (selectionReviewTexts(signals).includes('selection_only')) context.push('solo aparece en tu selección manual');
+  if (item && (item.price_final || item.price)) context.push('precio visible en el último reporte');
+  return {
+    positive: selectionReviewTexts(positive).slice(0, 3),
+    caution: selectionReviewTexts(caution).slice(0, 3),
+    context: selectionReviewTexts(context).slice(0, 3),
+  };
+}
 function buildLocalSelectionReview(records, context) {
   const byAppid = selectionReviewContextByAppid(context || {});
   const ownedSet = new Set(Array.isArray(context.owned_appids) ? context.owned_appids.map(String) : []);
@@ -2460,17 +2500,22 @@ function buildLocalSelectionReview(records, context) {
     if (appid) seen.add(appid);
     const source = {...(byAppid[appid] || {}), ...(record || {})};
     const decision = selectionReviewDecision(appid, source, ownedSet, familySet);
+    const signals = selectionReviewSignals(appid, source, ownedSet, familySet);
+    const reasons = selectionReviewReasons(appid, source, decision, ownedSet, familySet);
     items.push({
       appid,
       name: source.name || source.steam_name || (appid ? `App ${appid}` : 'Entrada inválida'),
       decision,
+      confidence: selectionReviewConfidence(appid, source, decision, ownedSet, familySet, signals),
+      next_step: selectionReviewNextStep(decision, appid, ownedSet, familySet),
       base_score: selectionReviewHasScore(source) ? Number(selectionReviewBaseScore(source).toFixed(1)) : null,
       affinity_score: source.affinity_score != null ? Number(selectionReviewNumber(source.affinity_score, 0).toFixed(1)) : null,
       personalized_score: source.personalized_score != null ? Number(selectionReviewNumber(source.personalized_score, 0).toFixed(1)) : null,
       discount: source.discount != null ? Math.round(selectionReviewNumber(source.discount, 0)) : null,
       price_final: source.price_final || source.price || '',
-      signals: selectionReviewSignals(appid, source, ownedSet, familySet),
-      reasons: selectionReviewReasons(appid, source, decision, ownedSet, familySet),
+      signals,
+      reasons,
+      why: selectionReviewWhyGroups(appid, source, decision, ownedSet, familySet, reasons, signals),
     });
   });
   const summary = {total_items: items.length, duplicate_count: duplicateCount, conservar: 0, dudar: 0, quitar: 0};
@@ -2494,6 +2539,23 @@ function selectionReviewSignalLabel(signal) {
   const key = String(signal || '').trim();
   return labels[key] || key.replace(/_/g, ' ');
 }
+function selectionReviewConfidenceLabel(confidence) {
+  const labels = {high: 'Alta', medium: 'Media', low: 'Baja'};
+  const key = String(confidence || '').trim().toLowerCase();
+  return labels[key] || '';
+}
+function selectionReviewWhyItems(why, key) {
+  if (!why || typeof why !== 'object') return [];
+  return Array.isArray(why[key]) ? why[key].map(value => String(value || '').trim()).filter(Boolean).slice(0, 3) : [];
+}
+function renderSelectionReviewWhyGroup(label, items, key) {
+  if (!items.length) return '';
+  return `
+    <span class="selection-review-result-why-group" data-selection-why="${escapeSelectionHtml(key)}">
+      <strong>${escapeSelectionHtml(label)}:</strong> ${escapeSelectionHtml(items.join(' · '))}
+    </span>
+  `;
+}
 function renderSelectionReviewItem(item) {
   const source = item && typeof item === 'object' ? item : {};
   const decision = ['conservar', 'dudar', 'quitar'].includes(source.decision) ? source.decision : 'dudar';
@@ -2509,6 +2571,13 @@ function renderSelectionReviewItem(item) {
   if (Number.isFinite(Number(source.discount))) meta.push(`-${source.discount}%`);
   if (source.price_final) meta.push(source.price_final);
   const signals = Array.isArray(source.signals) ? source.signals.map(selectionReviewSignalLabel).filter(Boolean).slice(0, 4) : [];
+  const confidence = selectionReviewConfidenceLabel(source.confidence);
+  const nextStep = String(source.next_step || '').trim();
+  const whyGroups = [
+    renderSelectionReviewWhyGroup('A favor', selectionReviewWhyItems(source.why, 'positive'), 'positive'),
+    renderSelectionReviewWhyGroup('Cuidado', selectionReviewWhyItems(source.why, 'caution'), 'caution'),
+    renderSelectionReviewWhyGroup('Contexto', selectionReviewWhyItems(source.why, 'context'), 'context'),
+  ].filter(Boolean).join('');
   const nameHtml = safeAppid
     ? `<a href="https://store.steampowered.com/app/${escapeSelectionHtml(safeAppid)}/" target="_blank">${escapeSelectionHtml(name)}</a>`
     : `<span>${escapeSelectionHtml(name)}</span>`;
@@ -2518,8 +2587,11 @@ function renderSelectionReviewItem(item) {
       <div class="selection-review-result-main">
         <strong>${nameHtml}</strong>
         ${meta.length ? `<span class="selection-review-result-meta">${escapeSelectionHtml(meta.join(' · '))}</span>` : ''}
+        ${confidence ? `<span class="selection-review-result-confidence">Confianza: ${escapeSelectionHtml(confidence)}</span>` : ''}
         ${signals.length ? `<span class="selection-review-result-signals">Señales: ${escapeSelectionHtml(signals.join(' · '))}</span>` : ''}
         <span class="selection-review-result-reasons">${escapeSelectionHtml(reasons)}</span>
+        ${nextStep ? `<span class="selection-review-result-next-step"><strong>Siguiente paso:</strong> ${escapeSelectionHtml(nextStep)}</span>` : ''}
+        ${whyGroups ? `<span class="selection-review-result-why">${whyGroups}</span>` : ''}
       </div>
     </article>
   `;
@@ -2558,7 +2630,7 @@ function evaluateSelectionReview(panel, button) {
   }
   const review = buildLocalSelectionReview(records, parseSelectionReviewContext(panel));
   renderSelectionReviewResults(panel, review);
-  if (statusEl) statusEl.textContent = `Evaluación local lista: ${review.summary.total_items} item(s).`;
+  if (statusEl) statusEl.textContent = `Evaluación local lista: ${review.summary.total_items} juego(s).`;
   if (button) {
     button.disabled = false;
     button.textContent = originalLabel || 'Evaluar selección';
