@@ -316,7 +316,7 @@ def parse_warm_cache_log_text(
             hint = match.group("hint")
             values["next_resume_hint"] = None if hint == "none" else hint
 
-        if match := re.search(r"(?P<deals>[\d,]+) deals \(≥(?P<discount>\d+)%\)", line):
+        if match := re.search(r"(?P<deals>[\d,]+) deals \((?:≥|>=)(?P<discount>\d+)%\)", line):
             values["deals_count"] = _parse_int(match.group("deals"))
             values["min_discount"] = _parse_int(match.group("discount"))
 

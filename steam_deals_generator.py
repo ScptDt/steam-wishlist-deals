@@ -1471,6 +1471,42 @@ def strip_ansi_for_log(text: str) -> str:
     return ANSI_ESCAPE_RE.sub("", text)
 
 
+CONSOLE_FALLBACK_REPLACEMENTS = {
+    "≥": ">=",
+    "≤": "<=",
+    "→": "->",
+    "—": "-",
+    "–": "-",
+    "…": "...",
+    "█": "#",
+    "░": "-",
+}
+
+
+def console_fallback_text(message: str) -> str:
+    text = str(message)
+    for original, replacement in CONSOLE_FALLBACK_REPLACEMENTS.items():
+        text = text.replace(original, replacement)
+    return text
+
+
+def emit_terminal_message(terminal_emit, message: str, **kwargs) -> None:
+    try:
+        terminal_emit(message, **kwargs)
+    except TypeError:
+        terminal_emit(message)
+
+
+def emit_terminal_message_safely(terminal_emit, message: str, **kwargs) -> None:
+    try:
+        emit_terminal_message(terminal_emit, message, **kwargs)
+    except (UnicodeEncodeError, OSError):
+        try:
+            emit_terminal_message(terminal_emit, console_fallback_text(message), **kwargs)
+        except (UnicodeEncodeError, OSError):
+            return
+
+
 def write_warm_cache_log(
     log_handle, message: str, *, end: str = "\n", flush: bool = False
 ) -> None:
@@ -1484,10 +1520,7 @@ def write_warm_cache_log(
 
 def build_warm_cache_emit(log_handle, *, terminal_emit=print):
     def emit(message="", **kwargs):
-        try:
-            terminal_emit(message, **kwargs)
-        except TypeError:
-            terminal_emit(message)
+        emit_terminal_message_safely(terminal_emit, message, **kwargs)
         write_warm_cache_log(
             log_handle,
             str(message),
@@ -1876,7 +1909,7 @@ def build_price_cache_completion_message(
     deals: list[dict], min_discount: int, n_fetched: int
 ) -> str:
     suffix = "caché actualizada" if n_fetched > 0 else "desde caché"
-    return _ok(f"{len(deals):,} deals (≥{min_discount}%) — {suffix}")
+    return _ok(f"{len(deals):,} deals (>={min_discount}%) — {suffix}")
 
 
 def run_price_cache_stage(

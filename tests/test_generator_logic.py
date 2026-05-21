@@ -12,6 +12,7 @@ from tempfile import TemporaryDirectory
 from types import SimpleNamespace
 import urllib.error
 
+import app.steam_deals_prices as prices_module
 from steam_deals_itad import (
     itad_get_active_bundles as module_itad_get_active_bundles,
     itad_get_current_prices as module_itad_get_current_prices,
@@ -167,6 +168,7 @@ from steam_deals_generator import (
     analyze_trends,
     build_warm_cache_emit,
     build_final_summary as generator_build_final_summary,
+    build_price_cache_completion_message,
     build_price_cache_coverage,
     build_personalized_recommendations,
     build_recommended_collections,
@@ -2453,6 +2455,92 @@ class WarmCacheTests(unittest.TestCase):
         self.assertIn("OK", content)
         self.assertIn("\nprogress 10/20", content)
         self.assertNotIn("\x1b", content)
+
+    def test_price_emit_retries_with_console_safe_text_on_encoding_error(self) -> None:
+        terminal_calls = []
+
+        def rejecting_emit(message, **kwargs):
+            if "≥" in str(message):
+                text = str(message)
+                index = text.index("≥")
+                raise UnicodeEncodeError(
+                    "charmap",
+                    text,
+                    index,
+                    index + 1,
+                    "character maps to <undefined>",
+                )
+            terminal_calls.append((message, kwargs))
+
+        prices_module._emit(
+            rejecting_emit,
+            "  411 deals (≥50%) — caché actualizada",
+            flush=True,
+        )
+
+        self.assertEqual(len(terminal_calls), 1)
+        self.assertIn(">=50%", terminal_calls[0][0])
+        self.assertEqual(terminal_calls[0][1], {"flush": True})
+
+    def test_price_emit_retries_after_invalid_stdout_oserror(self) -> None:
+        terminal_calls = []
+
+        def rejecting_once_emit(message, **kwargs):
+            terminal_calls.append((message, kwargs))
+            if len(terminal_calls) == 1:
+                raise OSError(22, "Invalid argument")
+
+        prices_module._emit(
+            rejecting_once_emit,
+            "  progress ≥50%",
+            end="",
+            flush=True,
+        )
+
+        self.assertEqual(len(terminal_calls), 2)
+        self.assertIn(">=50%", terminal_calls[1][0])
+        self.assertEqual(terminal_calls[1][1], {"end": "", "flush": True})
+
+    def test_warm_cache_emit_logs_even_when_terminal_rejects_unicode(self) -> None:
+        terminal_calls = []
+
+        def rejecting_terminal_emit(message, **kwargs):
+            if "≥" in str(message):
+                text = str(message)
+                index = text.index("≥")
+                raise UnicodeEncodeError(
+                    "charmap",
+                    text,
+                    index,
+                    index + 1,
+                    "character maps to <undefined>",
+                )
+            terminal_calls.append((message, kwargs))
+
+        with TemporaryDirectory() as temp_dir:
+            log_path = Path(temp_dir) / "warm-cache.log"
+            with log_path.open("w", encoding="utf-8") as log_handle:
+                emit = build_warm_cache_emit(
+                    log_handle,
+                    terminal_emit=rejecting_terminal_emit,
+                )
+                emit("411 deals (≥50%) — caché actualizada", flush=True)
+
+            content = log_path.read_text(encoding="utf-8")
+
+        self.assertEqual(len(terminal_calls), 1)
+        self.assertIn(">=50%", terminal_calls[0][0])
+        self.assertIn("411 deals (≥50%)", content)
+
+    def test_price_cache_completion_message_uses_ascii_threshold_symbol(self) -> None:
+        message = build_price_cache_completion_message(
+            [{"appid": "10"}],
+            50,
+            1,
+        )
+
+        self.assertIn(">=50%", message)
+        self.assertNotIn("≥", message)
 
 
 class PresentationHelpersTests(unittest.TestCase):

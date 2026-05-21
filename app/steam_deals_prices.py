@@ -65,6 +65,16 @@ REFRESH_CANDIDATE_PRIORITY = {
     "stale_without_old_deal": 2,
     "failure_retry": 3,
 }
+CONSOLE_FALLBACK_REPLACEMENTS = {
+    "≥": ">=",
+    "≤": "<=",
+    "→": "->",
+    "—": "-",
+    "–": "-",
+    "…": "...",
+    "█": "#",
+    "░": "-",
+}
 
 
 def load_price_cache(
@@ -369,11 +379,28 @@ def _build_bar(
     return f"{color_green}{bar_fill * filled}{color_dim}{bar_empty * (width - filled)}{color_reset}"
 
 
-def _emit(emit, message: str, **kwargs) -> None:
+def _console_fallback_text(message: str) -> str:
+    text = str(message)
+    for original, replacement in CONSOLE_FALLBACK_REPLACEMENTS.items():
+        text = text.replace(original, replacement)
+    return text
+
+
+def _emit_once(emit, message: str, **kwargs) -> None:
     try:
         emit(message, **kwargs)
     except TypeError:
         emit(message)
+
+
+def _emit(emit, message: str, **kwargs) -> None:
+    try:
+        _emit_once(emit, message, **kwargs)
+    except (UnicodeEncodeError, OSError):
+        try:
+            _emit_once(emit, _console_fallback_text(message), **kwargs)
+        except (UnicodeEncodeError, OSError):
+            return
 
 
 def _bounded_individual_fallback_workers(worker_count: int | None) -> int:

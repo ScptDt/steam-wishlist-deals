@@ -66,6 +66,14 @@ class WarmCacheSummaryTests(unittest.TestCase):
 
         self.assertEqual(summary.elapsed_seconds, 3.5)
 
+    def test_parse_warm_cache_log_text_accepts_ascii_discount_threshold(self) -> None:
+        text = "OK  411 deals (>=50%) - caché actualizada\n"
+
+        summary = parse_warm_cache_log_text(text)
+
+        self.assertEqual(summary.deals_count, 411)
+        self.assertEqual(summary.min_discount, 50)
+
     def test_parse_warm_cache_log_text_extracts_direct_http_400_fallback(self) -> None:
         text = "Fallback individual directo por HTTP 400 repetido: 2,880 juegos en 144 tandas\n"
 
