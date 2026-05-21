@@ -196,6 +196,42 @@ class SelectionReviewTests(unittest.TestCase):
         self.assertEqual(item["personalized_score"], 90.0)
         self.assertIn("curated existing signal", item["reasons"])
 
+    def test_review_items_include_advisory_v2_fields(self) -> None:
+        review = build_selection_review(
+            ["10", "20", "30", "999"],
+            deals=[
+                {"appid": "10", "name": "Strong Fit", "score": 70, "discount": 80},
+                {"appid": "20", "name": "Maybe Later", "score": 62},
+                {"appid": "30", "name": "Already Owned", "score": 95},
+            ],
+            personalized_recommendations={
+                "items": [
+                    {
+                        "appid": "10",
+                        "name": "Strong Fit",
+                        "base_score": 70,
+                        "affinity_score": 28,
+                        "personalized_score": 92,
+                        "reasons": ["similar a Hades"],
+                    }
+                ]
+            },
+            owned={"30": "Already Owned"},
+            max_reasons=3,
+        )
+
+        by_appid = {item["appid"]: item for item in review["items"]}
+        self.assertEqual(by_appid["10"]["confidence"], "high")
+        self.assertIn("mantener", by_appid["10"]["next_step"])
+        self.assertIn("similar a Hades", by_appid["10"]["why"]["positive"])
+        self.assertEqual(by_appid["20"]["confidence"], "medium")
+        self.assertIn("backlog", by_appid["20"]["next_step"])
+        self.assertTrue(by_appid["20"]["why"]["context"])
+        self.assertEqual(by_appid["30"]["confidence"], "high")
+        self.assertIn("ya está en tu biblioteca", by_appid["30"]["why"]["caution"])
+        self.assertEqual(by_appid["999"]["confidence"], "low")
+        self.assertIn("solo aparece en tu selección manual", by_appid["999"]["why"]["context"])
+
     def test_review_contract_strips_commerce_fields_from_report_context(self) -> None:
         review = build_selection_review(
             ["60"],

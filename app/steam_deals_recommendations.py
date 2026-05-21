@@ -1406,6 +1406,85 @@ def _selection_signals(appid: str, candidate: dict, owned_appids: set[str], fami
     return _dedupe_texts(signals) or ["selection_only"]
 
 
+def _selection_confidence(
+    appid: str,
+    candidate: dict,
+    decision: str,
+    owned_appids: set[str],
+    family_appids: set[str],
+    signals: list[str],
+) -> str:
+    if not appid or appid in owned_appids or appid in family_appids:
+        return "high"
+    base_score = _selection_base_score(candidate)
+    affinity_score = _safe_number(candidate.get("affinity_score"))
+    personalized_score = candidate.get("personalized_score")
+    if decision == "conservar":
+        if (
+            personalized_score is not None
+            and _safe_number(personalized_score) >= 85
+        ):
+            return "high"
+        if affinity_score >= 24 or base_score >= 85:
+            return "high"
+        return "medium"
+    if decision == "quitar":
+        return "medium" if _selection_has_score(candidate) else "low"
+    if signals != ["selection_only"] or _selection_has_score(candidate):
+        return "medium"
+    return "low"
+
+
+def _selection_next_step(
+    decision: str,
+    appid: str,
+    owned_appids: set[str],
+    family_appids: set[str],
+) -> str:
+    if not appid:
+        return "Corrige o elimina esta entrada de la selección local."
+    if appid in owned_appids or appid in family_appids:
+        return "Puedes quitarla de esta selección local; ya aparece disponible."
+    if decision == "conservar":
+        return "Buena candidata para mantener en tu selección local."
+    if decision == "quitar":
+        return "Probablemente puedes quitarla de esta selección local."
+    return "Revisa si encaja con tu backlog antes de decidir."
+
+
+def _selection_why_groups(
+    appid: str,
+    candidate: dict,
+    decision: str,
+    owned_appids: set[str],
+    family_appids: set[str],
+    reasons: list[str],
+    signals: list[str],
+) -> dict[str, list[str]]:
+    positive: list[str] = []
+    caution: list[str] = []
+    context: list[str] = []
+    if not appid:
+        caution.append("entrada sin appid válido")
+    if appid in owned_appids:
+        caution.append("ya está en tu biblioteca")
+    if appid in family_appids:
+        caution.append("ya disponible en biblioteca familiar")
+    target = positive if decision == "conservar" else context
+    if decision == "quitar":
+        target = caution
+    target.extend(reasons)
+    if "selection_only" in signals:
+        context.append("solo aparece en tu selección manual")
+    if candidate.get("price_final") or candidate.get("price"):
+        context.append("precio visible en el último reporte")
+    return {
+        "positive": _dedupe_texts(positive)[:3],
+        "caution": _dedupe_texts(caution)[:3],
+        "context": _dedupe_texts(context)[:3],
+    }
+
+
 def _selection_review_item(
     appid: str,
     candidate: dict,
@@ -1414,17 +1493,49 @@ def _selection_review_item(
     max_reasons: int,
 ) -> dict:
     decision = _selection_decision(appid, candidate, owned_appids, family_appids)
+    signals = _selection_signals(appid, candidate, owned_appids, family_appids)
+    reasons = _selection_reasons(
+        appid,
+        candidate,
+        decision,
+        owned_appids,
+        family_appids,
+        max_reasons,
+    )
     return {
         "appid": appid,
         "name": candidate.get("name") or candidate.get("steam_name") or (f"App {appid}" if appid else "Entrada inválida"),
         "decision": decision,
+        "confidence": _selection_confidence(
+            appid,
+            candidate,
+            decision,
+            owned_appids,
+            family_appids,
+            signals,
+        ),
+        "next_step": _selection_next_step(
+            decision,
+            appid,
+            owned_appids,
+            family_appids,
+        ),
         "base_score": round(_selection_base_score(candidate), 1) if _selection_has_score(candidate) else None,
         "affinity_score": round(_safe_number(candidate.get("affinity_score")), 1) if candidate.get("affinity_score") is not None else None,
         "personalized_score": round(_safe_number(candidate.get("personalized_score")), 1) if candidate.get("personalized_score") is not None else None,
         "discount": int(_safe_number(candidate.get("discount"))) if candidate.get("discount") is not None else None,
         "price_final": candidate.get("price_final") or candidate.get("price") or "",
-        "signals": _selection_signals(appid, candidate, owned_appids, family_appids),
-        "reasons": _selection_reasons(appid, candidate, decision, owned_appids, family_appids, max_reasons),
+        "signals": signals,
+        "reasons": reasons,
+        "why": _selection_why_groups(
+            appid,
+            candidate,
+            decision,
+            owned_appids,
+            family_appids,
+            reasons,
+            signals,
+        ),
     }
 
 
