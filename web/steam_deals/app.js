@@ -3835,6 +3835,20 @@ function latestSelectionCandidate(item, sourceLabel) {
   };
 }
 
+function latestSelectionCollectionItems(report) {
+  const collections = Array.isArray(report && report.recommended_collections)
+    ? report.recommended_collections
+    : [];
+  const items = [];
+  collections.forEach((collection) => {
+    const source = collection && typeof collection === 'object' ? collection : {};
+    (Array.isArray(source.items) ? source.items : []).forEach((item) => {
+      if (item && typeof item === 'object') items.push(item);
+    });
+  });
+  return items;
+}
+
 function buildLatestSelectionCandidates(report) {
   const candidates = [];
   const seen = new Set();
@@ -3848,7 +3862,9 @@ function buildLatestSelectionCandidates(report) {
   };
   const personalized = report && report.personalized_recommendations;
   addCandidates(personalized && personalized.items, 'Personalizado', 4);
-  addCandidates(report && report.top_picks, 'Top picks', 6);
+  addCandidates(report && report.top_picks, 'Top Picks', 6);
+  addCandidates(latestSelectionCollectionItems(report), 'Colección', 6);
+  addCandidates(report && report.deals, 'Oferta', 8);
   return candidates.slice(0, 8);
 }
 

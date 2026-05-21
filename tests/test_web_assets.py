@@ -750,6 +750,12 @@ class WebAssetsTests(unittest.TestCase):
         self.assertIn("Duplicados omitidos", app_js)
         self.assertIn("source.price_final", app_js)
         self.assertIn("Evaluación local lista: ${total} juego(s).", app_js)
+        self.assertIn("function latestSelectionCollectionItems", app_js)
+        self.assertIn("recommended_collections", app_js)
+        self.assertIn("'Top Picks'", app_js)
+        self.assertIn("'Colección'", app_js)
+        self.assertIn("'Oferta'", app_js)
+        self.assertIn("report && report.deals", app_js)
         details_start = app_js.index("function renderLatestReportDetails")
         details_end = app_js.index("function latestCacheStateItems", details_start)
         details_block = app_js[details_start:details_end]
