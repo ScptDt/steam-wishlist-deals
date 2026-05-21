@@ -30,6 +30,7 @@
 | `features-validation.md` | Validar features específicas sin cargar el README | Frontmatter Obsidian/Notion, `Tu Presupuesto Ideal`, share E2E |
 | `wishlist-hygiene-windows-validation.md` | Validar en Windows que `wishlist_hygiene` se vea en Web UI/reportes y que el import local opcional funcione como revisión | JSON `wishlist_hygiene.items`, sección `Revisar wishlist`, `external_matches` advisory-only |
 | `wishlist-hygiene-multistore-contract.md` | Consultar contrato y uso local de señales multi-store para `wishlist_hygiene` | `--wishlist-external-matches-json`, shapes aceptadas, señales aceptables/rechazadas y guardrails advisory-only |
+| `multistore-price-comparison.md` | Planificar la comparativa de precios multi-tienda separada de `wishlist_hygiene` | Contrato `external_offers`, taxonomía de tiendas, ITAD/Fanatical, keyshops opt-in y no-checkout |
 
 ## Selector rápido por wave/tipo
 
