@@ -3947,6 +3947,7 @@ function latestSelectionSignalLabel(signal) {
     discount: 'Descuento',
     price: 'Precio',
     reasons: 'Razones',
+    recommended_collection: 'Colección recomendada',
     selection_only: 'Solo selección',
   };
   const key = String(signal || '').trim();
@@ -3967,6 +3968,8 @@ function renderLatestSelectionReviewItem(item) {
   if (Number.isFinite(Number(source.personalized_score))) meta.push(`Personal ${source.personalized_score}`);
   if (Number.isFinite(Number(source.base_score))) meta.push(`Score ${source.base_score}`);
   if (Number.isFinite(Number(source.affinity_score))) meta.push(`Afinidad +${source.affinity_score}`);
+  if (Number.isFinite(Number(source.discount))) meta.push(`-${Math.round(Number(source.discount))}%`);
+  if (source.price_final) meta.push(source.price_final);
   const signals = Array.isArray(source.signals)
     ? source.signals.map(latestSelectionSignalLabel).filter(Boolean).slice(0, 4)
     : [];
@@ -3995,11 +3998,13 @@ function renderLatestSelectionReviewResults(panel, review) {
     return;
   }
   const summary = review.summary || {};
+  const duplicateCopy = summary.duplicate_count ? `<span>Duplicados omitidos: ${escapeHtml(summary.duplicate_count)}</span>` : '';
   resultsEl.innerHTML = `
     <div class="latest-selection-summary">
       <span>Conservar: ${escapeHtml(summary.conservar || 0)}</span>
       <span>Dudar: ${escapeHtml(summary.dudar || 0)}</span>
       <span>Quitar: ${escapeHtml(summary.quitar || 0)}</span>
+      ${duplicateCopy}
     </div>
     <div class="latest-selection-result-list">${items.map(renderLatestSelectionReviewItem).join('')}</div>
   `;
@@ -4027,7 +4032,7 @@ async function evaluateLatestSelectionReview(panel, button) {
     if (!resp.ok) throw new Error(data.message || 'No se pudo evaluar la selección.');
     renderLatestSelectionReviewResults(panel, data.review || {});
     const total = data.review && data.review.summary ? data.review.summary.total_items : records.length;
-    if (statusEl) statusEl.textContent = `Evaluación local lista: ${total} item(s).`;
+    if (statusEl) statusEl.textContent = `Evaluación local lista: ${total} juego(s).`;
   } catch (error) {
     if (statusEl) statusEl.textContent = error.message || 'No se pudo evaluar la selección.';
   } finally {

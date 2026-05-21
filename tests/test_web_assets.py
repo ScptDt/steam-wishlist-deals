@@ -746,6 +746,10 @@ class WebAssetsTests(unittest.TestCase):
         self.assertIn("function latestSelectionSignalLabel", app_js)
         self.assertIn("latest-selection-result-signals", app_js)
         self.assertIn("Señales:", app_js)
+        self.assertIn("Colección recomendada", app_js)
+        self.assertIn("Duplicados omitidos", app_js)
+        self.assertIn("source.price_final", app_js)
+        self.assertIn("Evaluación local lista: ${total} juego(s).", app_js)
         details_start = app_js.index("function renderLatestReportDetails")
         details_end = app_js.index("function latestCacheStateItems", details_start)
         details_block = app_js[details_start:details_end]
