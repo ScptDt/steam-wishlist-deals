@@ -1,9 +1,133 @@
 from __future__ import annotations
 
+import re
 import time
+
+from app.steam_deals_external_offers import normalize_external_offers
 
 
 ITAD_BATCH = 50
+_STEAM_SHOP_KEYS = {"steam", "steamstore"}
+
+
+def itad_prices_to_external_offers(
+    price_payload,
+    appid_to_itad_id: dict[str, str],
+    *,
+    country: str = "MX",
+    include_marketplaces: bool = False,
+) -> dict:
+    """Normalize ITAD prices/v3-shaped data into the safe external_offers contract."""
+    records = _itad_price_records(price_payload, appid_to_itad_id, country=country)
+    return normalize_external_offers(
+        {"offers": records}, include_marketplaces=include_marketplaces
+    )
+
+
+def _itad_price_records(price_payload, appid_to_itad_id: dict[str, str], *, country: str) -> list[dict]:
+    id_to_appid = {str(itad_id): str(appid) for appid, itad_id in appid_to_itad_id.items()}
+    records: list[dict] = []
+    for item in _itad_price_items(price_payload):
+        appid = id_to_appid.get(str(item.get("id") or ""))
+        if not appid:
+            continue
+        for deal in item.get("deals", []):
+            if isinstance(deal, dict) and not _itad_is_steam_deal(deal):
+                records.append(_itad_deal_record(item, deal, appid, country=country))
+    return records
+
+
+def _itad_price_items(price_payload) -> list[dict]:
+    if isinstance(price_payload, list):
+        return [item for item in price_payload if isinstance(item, dict)]
+    if not isinstance(price_payload, dict):
+        return []
+    for key in ("items", "prices", "data"):
+        value = price_payload.get(key)
+        if isinstance(value, list):
+            return [item for item in value if isinstance(item, dict)]
+    return []
+
+
+def _itad_deal_record(item: dict, deal: dict, appid: str, *, country: str) -> dict:
+    price = deal.get("price") if isinstance(deal.get("price"), dict) else {}
+    regular = deal.get("regular") if isinstance(deal.get("regular"), dict) else {}
+    shop = deal.get("shop") if isinstance(deal.get("shop"), dict) else {}
+    shop_name = _itad_shop_name(shop)
+    return {
+        "appid": appid,
+        "name": _itad_game_title(item),
+        "store": shop_name,
+        "store_name": shop_name,
+        "price": _itad_price_amount(price),
+        "currency": _itad_price_currency(price, regular),
+        "discount_pct": deal.get("cut"),
+        "url": deal.get("url"),
+        "drm": _itad_drm(deal.get("drm")),
+        "region": country,
+        "source": "itad",
+        "confidence": "high",
+        "observed_at": _itad_date_text(deal.get("timestamp")),
+        "expires_at": _itad_date_text(deal.get("expiry")),
+    }
+
+
+def _itad_is_steam_deal(deal: dict) -> bool:
+    shop = deal.get("shop") if isinstance(deal.get("shop"), dict) else {}
+    return _itad_slug(_itad_shop_name(shop)) in _STEAM_SHOP_KEYS
+
+
+def _itad_shop_name(shop: dict) -> str:
+    return str(shop.get("name") or shop.get("title") or shop.get("shop") or "").strip()
+
+
+def _itad_game_title(item: dict) -> str:
+    game = item.get("game") if isinstance(item.get("game"), dict) else {}
+    return str(item.get("title") or item.get("name") or game.get("title") or "").strip()
+
+
+def _itad_price_amount(price: dict):
+    amount = price.get("amount")
+    if amount not in (None, ""):
+        return amount
+    try:
+        return int(price.get("amountInt")) / 100
+    except (TypeError, ValueError):
+        return None
+
+
+def _itad_price_currency(price: dict, regular: dict) -> str:
+    return str(price.get("currency") or regular.get("currency") or "").strip().upper()
+
+
+def _itad_drm(value) -> str:
+    labels = [_itad_slug(label) for label in _itad_labels(value)]
+    labels = [label for label in labels if label]
+    if "steam" in labels:
+        return "steam"
+    return labels[0] if labels else "unknown"
+
+
+def _itad_labels(value) -> list[str]:
+    if isinstance(value, list):
+        labels: list[str] = []
+        for item in value:
+            if isinstance(item, dict):
+                labels.append(str(item.get("name") or item.get("title") or item.get("id") or ""))
+            else:
+                labels.append(str(item or ""))
+        return labels
+    if isinstance(value, dict):
+        return [str(value.get("name") or value.get("title") or value.get("id") or "")]
+    return [str(value or "")]
+
+
+def _itad_slug(value: str) -> str:
+    return re.sub(r"[^a-z0-9]+", "", str(value or "").lower())
+
+
+def _itad_date_text(value) -> str:
+    return str(value or "").strip()
 
 
 def _chunked(items: list[str], size: int = ITAD_BATCH):

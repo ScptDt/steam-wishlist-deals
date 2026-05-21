@@ -2,7 +2,7 @@
 
 Track priorizado para ampliar la comparativa multi-tienda hacia Fanatical y más stores sin mezclarla con `wishlist_hygiene` ni con flujos de compra.
 
-Estado actual: Fase 0/docs, Fase 1 normalizador fixture-only, Fase 1B JSON interno opcional, Fase 1C diagnóstico JSON-consumer, primer render visible mínimo risk-gated y Share HTML cerrados el 2026-05-21. El siguiente paso requiere elegir explícitamente entre ITAD/Fanatical controlado con docs externas actuales o ampliar UX/superficies del render bajo los mismos gates.
+Estado actual: Fase 0/docs, Fase 1 normalizador fixture-only, Fase 1B JSON interno opcional, Fase 1C diagnóstico JSON-consumer, primer render visible mínimo risk-gated, Share HTML y adaptador ITAD fixture-only cerrados el 2026-05-21. El siguiente paso requiere elegir explícitamente si conectar ITAD al generator con cache/flag seguro o ampliar UX/superficies del render bajo los mismos gates.
 
 Enfoque de ejecución: **feature-sliced + risk-gated**. La feature avanza por cortes pequeños, pero cada corte debe pasar gates de riesgo antes de exponerse al usuario, tocar ranking o usar fuentes live.
 
@@ -385,6 +385,15 @@ Readiness del próximo slice:
 - Mapear Steam AppID → oferta externa sin asumir ownership.
 - Clasificar tiendas finales (`official_store`, `authorized_key_reseller`, etc.).
 - Si hay error de API, degradar con warning seguro y no romper el reporte.
+
+Corte fixture-only cerrado 2026-05-21:
+
+- Se consultaron docs externas actuales de ITAD API 2.10.0 y Fanatical.
+- `itad_prices_to_external_offers` adapta payloads tipo ITAD `prices/v3` ya obtenidos/fixtureados a `external_offers`, reutilizando `normalize_external_offers`.
+- Fanatical entra como `authorized_key_reseller` solo cuando ITAD lo reporta como tienda final; Steam se omite como oferta externa.
+- URLs checkout-like siguen bloqueadas por el normalizador; tiendas desconocidas quedan ocultas.
+- No hay red live nueva, cache, flags CLI/Web, generator wiring ni credenciales en este corte.
+- Fanatical no tiene API pública de precios documentada para este uso; no scraping/login/private endpoints.
 
 ### Fase 3 — render visible mínimo — primer cierre 2026-05-21
 

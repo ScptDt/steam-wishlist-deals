@@ -18,6 +18,7 @@ from steam_deals_itad import (
     itad_get_current_prices as module_itad_get_current_prices,
     itad_get_store_lows as module_itad_get_store_lows,
     itad_lookup_games as module_itad_lookup_games,
+    itad_prices_to_external_offers as module_itad_prices_to_external_offers,
 )
 from steam_deals_config import (
     build_parser as module_build_parser,
@@ -1069,6 +1070,94 @@ class SelectionReviewTests(unittest.TestCase):
 
 
 class ExternalOffersTests(unittest.TestCase):
+    def test_itad_prices_to_external_offers_normalizes_fanatical_without_ownership_or_checkout(self) -> None:
+        external_offers = module_itad_prices_to_external_offers(
+            [
+                {
+                    "id": "itad-hades",
+                    "title": "Hades <Deal>",
+                    "deals": [
+                        {
+                            "shop": {"id": 35, "name": "Fanatical"},
+                            "price": {"amountInt": 899, "currency": "USD"},
+                            "regular": {"amount": 24.99, "currency": "USD"},
+                            "cut": 64,
+                            "drm": ["steam"],
+                            "timestamp": "2026-05-21T12:00:00Z",
+                            "expiry": "2026-05-22T00:00:00Z",
+                            "url": "https://next.isthereanydeal.com/link/hades",
+                        },
+                        {
+                            "shop": {"id": 61, "name": "Steam"},
+                            "price": {"amount": 10.0, "currency": "USD"},
+                            "regular": {"amount": 24.99, "currency": "USD"},
+                            "cut": 60,
+                            "drm": ["steam"],
+                            "url": "https://store.steampowered.com/app/1145360/",
+                        },
+                    ],
+                },
+                {
+                    "id": "itad-checkout",
+                    "title": "Checkout Trap",
+                    "deals": [
+                        {
+                            "shop": {"id": 17, "name": "GOG"},
+                            "price": {"amount": 2.49, "currency": "USD"},
+                            "regular": {"amount": 19.99, "currency": "USD"},
+                            "cut": 87,
+                            "drm": ["gog"],
+                            "url": "https://gog.example/cart/add-to-cart/20",
+                        }
+                    ],
+                },
+                {
+                    "id": "itad-unknown",
+                    "title": "Mystery Store Deal",
+                    "deals": [
+                        {
+                            "shop": {"id": 999, "name": "Mystery Shop"},
+                            "price": {"amount": 1.25, "currency": "USD"},
+                            "regular": {"amount": 4.99, "currency": "USD"},
+                            "cut": 75,
+                            "drm": ["steam"],
+                            "url": "https://mystery.example/deal/30",
+                        }
+                    ],
+                },
+                {"id": "itad-missing", "title": "No AppID", "deals": []},
+            ],
+            {"1145360": "itad-hades", "20": "itad-checkout", "30": "itad-unknown"},
+            country="MX",
+        )
+
+        items = external_offers["items"]
+        fanatical = next(item for item in items if item["appid"] == "1145360")
+        checkout = next(item for item in items if item["appid"] == "20")
+        unknown = next(item for item in items if item["appid"] == "30")
+
+        self.assertEqual(fanatical["store_id"], "fanatical")
+        self.assertEqual(fanatical["store_type"], "authorized_key_reseller")
+        self.assertEqual(fanatical["price"], 8.99)
+        self.assertEqual(fanatical["source"], "itad")
+        self.assertEqual(fanatical["visibility"], "highlight")
+        self.assertTrue(fanatical["eligible_for_best_external_price"])
+        self.assertTrue(fanatical["link_allowed"])
+        self.assertIn("ownership_not_proven", fanatical["risk_flags"])
+        self.assertNotIn("Steam", {item["store_name"] for item in items})
+        self.assertEqual(checkout["visibility"], "hidden")
+        self.assertFalse(checkout["link_allowed"])
+        self.assertIn("checkout_like_url", checkout["risk_flags"])
+        self.assertEqual(unknown["visibility"], "hidden")
+        self.assertIn("unknown_store", unknown["risk_flags"])
+        for item in items:
+            self.assertNotIn("external_matches", item)
+            self.assertNotIn("wishlist_hygiene", item)
+            self.assertNotIn("score", item)
+            self.assertNotIn("top_picks", item)
+        self.assertTrue(external_offers["summary"]["advisory_only"])
+        self.assertEqual(external_offers["summary"]["ranking_impact"], "none")
+
     def test_diagnose_external_offers_contract_accepts_report_payload_without_side_effects(self) -> None:
         external_offers = normalize_external_offers(
             [
