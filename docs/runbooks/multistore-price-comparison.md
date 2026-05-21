@@ -164,6 +164,165 @@ Campo top-level futuro del JSON:
 | `confidence` | `high`, `medium`, `low`; low no debe destacarse |
 | `risk_flags` | Ej. `marketplace`, `region_locked`, `unknown_seller`, `drm_mismatch` |
 
+## Contrato exacto del normalizador local
+
+Primer slice de implementación: módulo puro `app/steam_deals_external_offers.py` y wrapper raíz `steam_deals_external_offers.py` si se sigue el patrón de `steam_deals_wishlist_hygiene.py`.
+
+### API pública propuesta
+
+```python
+def normalize_external_offers(payload, *, include_marketplaces: bool = False) -> dict:
+    """Normaliza ofertas externas locales a un payload external_offers seguro."""
+```
+
+El helper debe ser puro: sin red, sin filesystem, sin config global, sin tocar ranking, sin leer cache y sin modificar `external_matches`.
+
+### Inputs aceptados en Fase 1
+
+Shapes permitidas:
+
+1. Lista directa de ofertas: `[{...}, {...}]`.
+2. Objeto `{ "external_offers": [...] }`.
+3. Objeto `{ "offers": [...] }`.
+4. Objeto `{ "items": [...] }` solo si representa ofertas, no biblioteca/ownership.
+
+Cada registro puede usar aliases conservadores:
+
+| Campo canónico | Aliases aceptados |
+|---|---|
+| `appid` | `appid`, `steam_appid`, `wishlist_appid` |
+| `name` | `name`, `title`, `steam_name` |
+| `store_id` | `store_id`, `store`, `storefront`, `shop` |
+| `store_name` | `store_name`, `store`, `storefront`, `shop` |
+| `price` | `price`, `final_price`, `amount` |
+| `currency` | `currency`, `currency_code` |
+| `discount_pct` | `discount_pct`, `discount`, `discount_percent` |
+| `url` | `url`, `link` |
+| `drm` | `drm`, `platform` |
+| `region` | `region`, `country` |
+| `source` | `source` |
+| `confidence` | `confidence` |
+| `observed_at` | `observed_at`, `seen_at` |
+| `expires_at` | `expires_at`, `valid_until` |
+
+Payloads vacíos (`None`, `{}`, `[]`) devuelven `{ "items": [], "summary": ... }` sin ruido. Shapes malformadas deben fallar con `ValueError` accionable en tests, sin tracebacks públicos en futuros callers.
+
+### Store registry inicial
+
+El normalizador debe clasificar tiendas por allowlist local, no por texto visible arbitrario:
+
+| `store_id` normalizado | `store_name` | `store_type` | Default |
+|---|---|---|---|
+| `steam` | Steam | `steam` | visible/base |
+| `gog` | GOG | `official_store` | permitido |
+| `epic` | Epic Games Store | `official_store` | permitido |
+| `microsoft` | Microsoft Store | `official_store` | permitido |
+| `humble` | Humble Store | `official_store` | permitido |
+| `fanatical` | Fanatical | `authorized_key_reseller` | permitido si fuente confiable |
+| `greenmangaming` / `gmg` | Green Man Gaming | `authorized_key_reseller` | permitido si fuente confiable |
+| `gamesplanet` | Gamesplanet | `authorized_key_reseller` | permitido si fuente confiable |
+| `itad` | IsThereAnyDeal | `aggregator` | fuente, no tienda final |
+| `g2a`, `kinguin`, `eneba`, `cdkeys` | nombre visible correspondiente | `marketplace_keyshop` | oculto por defecto |
+| cualquier otro | nombre escapado o `Unknown` | `unknown` | oculto/no destacar |
+
+El registry debe ser pequeño y explícito en el primer corte. Agregar una tienda nueva requiere fixture y decisión de `store_type`.
+
+### Output canónico por item
+
+Cada item normalizado debe incluir campos de decisión, no solo datos crudos:
+
+```json
+{
+  "appid": "1145360",
+  "name": "Hades",
+  "store_id": "fanatical",
+  "store_name": "Fanatical",
+  "store_type": "authorized_key_reseller",
+  "price": 8.99,
+  "currency": "USD",
+  "discount_pct": 65,
+  "url": "https://example.invalid/deal",
+  "link_allowed": true,
+  "drm": "steam",
+  "region": "global",
+  "source": "fixture",
+  "confidence": "high",
+  "observed_at": "2026-05-21",
+  "expires_at": null,
+  "visibility": "highlight",
+  "eligible_for_best_external_price": true,
+  "risk_flags": ["ownership_not_proven"]
+}
+```
+
+`visibility` enum:
+
+| Valor | Uso |
+|---|---|
+| `highlight` | Puede competir como oferta externa visible futura |
+| `review` | Puede mostrarse solo como “requiere revisión” |
+| `hidden` | No se muestra por defecto |
+
+Reglas iniciales:
+
+- `highlight`: tienda `official_store` o `authorized_key_reseller`, `confidence=high`, precio/currency válidos, link no checkout-like, DRM y región conocidos.
+- `review`: tienda permitida pero `confidence=medium`, DRM desconocido o región desconocida.
+- `hidden`: tienda `unknown`, `marketplace_keyshop` sin opt-in, `confidence=low`, precio inválido o URL checkout-like.
+
+`ownership_not_proven` debe estar presente por defecto en ofertas de precio, incluso si la oferta es `highlight`, para reforzar que no alimenta `wishlist_hygiene`.
+
+### Summary canónico
+
+```json
+{
+  "items_count": 3,
+  "highlight_count": 1,
+  "review_count": 1,
+  "hidden_count": 1,
+  "official_or_authorized_count": 2,
+  "marketplace_count": 1,
+  "best_external_price_count": 1,
+  "risk_counts": {
+    "ownership_not_proven": 3,
+    "marketplace_keyshop": 1
+  },
+  "advisory_only": true,
+  "ranking_impact": "none"
+}
+```
+
+`best_external_price_count` solo cuenta items `highlight` de tiendas oficiales/autorizadas, nunca marketplaces.
+
+### Dedupe y orden
+
+- Fingerprint recomendado: `(appid, store_id, drm, region, url_normalizada)`.
+- Si hay duplicado exacto, conservar determinísticamente:
+  1. precio válido más bajo;
+  2. mayor confianza (`high` > `medium` > `low`);
+  3. primer registro en orden de entrada.
+- Orden final recomendado: `highlight` → `review` → `hidden`; dentro de cada grupo, precio ascendente y luego nombre/tienda.
+
+### URLs y checkout-like
+
+El primer slice no renderiza links, pero debe marcar o bloquear URLs riesgosas:
+
+- `link_allowed=false` si la URL contiene segmentos o query obvios de `cart`, `checkout`, `add-to-cart`, `payment`, `purchase`.
+- `checkout_like_url` en `risk_flags` cuando se bloquee.
+- No intentar resolver redirects ni hacer requests de red.
+
+### Tests mínimos del primer slice
+
+1. Fanatical autorizado, confianza alta, DRM/región conocidos → `highlight`, eligible, `ownership_not_proven`.
+2. GOG oficial con región desconocida → `review`, no eligible.
+3. G2A/Eneba/Kinguin/CDKeys → `hidden`, `marketplace_keyshop`, no eligible.
+4. Store desconocida → `hidden`, `unknown_store`.
+5. URL checkout-like → `link_allowed=false`, `checkout_like_url`, no eligible.
+6. `confidence=low` → `hidden`, `low_confidence`.
+7. Precio inválido o currency faltante → `hidden` con risk flag correspondiente.
+8. Dedupe conserva el precio válido más bajo para la misma oferta.
+9. Payload vacío devuelve items vacíos + summary segura.
+10. No aparece ningún campo `external_matches`, `wishlist_hygiene`, `score`, `top_picks` ni mutation de ranking en el output.
+
 ## Fases recomendadas
 
 ### Fase 0 — contrato y docs — cerrada
