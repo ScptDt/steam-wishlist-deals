@@ -46,7 +46,9 @@ from steam_tools_desktop import (
     _run_embedded_script,
     _should_force_web_fallback,
     _wait_server,
+    copy_text_to_native_clipboard,
     copy_text_to_qt_clipboard,
+    copy_text_to_windows_clipboard,
     decode_share_payload,
     main as desktop_main,
     resolve_allowed_embedded_script,
@@ -649,6 +651,74 @@ class DesktopLauncherFallbackTests(unittest.TestCase):
 
 
 class DesktopClipboardApiTests(unittest.TestCase):
+    def _fake_windows_ctypes_module(self, *, set_clipboard_data_result=100):
+        class _FakeUser32:
+            def __init__(self):
+                self.open_calls = []
+                self.empty_calls = 0
+                self.set_data_calls = []
+                self.close_calls = 0
+
+            def OpenClipboard(self, hwnd):
+                self.open_calls.append(hwnd)
+                return True
+
+            def EmptyClipboard(self):
+                self.empty_calls += 1
+                return True
+
+            def SetClipboardData(self, clipboard_format, handle):
+                self.set_data_calls.append((clipboard_format, handle))
+                return set_clipboard_data_result
+
+            def CloseClipboard(self):
+                self.close_calls += 1
+                return True
+
+        class _FakeKernel32:
+            def __init__(self):
+                self.alloc_calls = []
+                self.lock_calls = []
+                self.unlock_calls = []
+                self.free_calls = []
+
+            def GlobalAlloc(self, flags, size):
+                self.alloc_calls.append((flags, size))
+                return 100
+
+            def GlobalLock(self, handle):
+                self.lock_calls.append(handle)
+                return 200
+
+            def GlobalUnlock(self, handle):
+                self.unlock_calls.append(handle)
+                return True
+
+            def GlobalFree(self, handle):
+                self.free_calls.append(handle)
+                return None
+
+        class _FakeWindll:
+            def __init__(self):
+                self.user32 = _FakeUser32()
+                self.kernel32 = _FakeKernel32()
+
+        class _FakeCtypes:
+            c_bool = bool
+            c_size_t = int
+            c_uint = int
+            c_void_p = int
+
+            def __init__(self):
+                self.windll = _FakeWindll()
+                self.memmove_calls = []
+
+            def memmove(self, destination, payload, size):
+                self.memmove_calls.append((destination, bytes(payload[:size])))
+                return destination
+
+        return _FakeCtypes()
+
     def test_normalize_clipboard_text_rejects_empty_log(self) -> None:
         with self.assertRaises(ValueError) as ctx:
             _normalize_clipboard_text("   ")
@@ -678,6 +748,73 @@ class DesktopClipboardApiTests(unittest.TestCase):
 
         self.assertEqual(backend, "qt")
         self.assertEqual(copied, ["hello log"])
+
+    def test_copy_text_to_windows_clipboard_uses_unicode_clipboard_api(self) -> None:
+        fake_ctypes = self._fake_windows_ctypes_module()
+
+        backend = copy_text_to_windows_clipboard(
+            "hello ñ",
+            ctypes_module=fake_ctypes,
+            platform="win32",
+        )
+
+        payload = "hello ñ\0".encode("utf-16-le")
+        self.assertEqual(backend, "windows")
+        self.assertEqual(
+            fake_ctypes.windll.kernel32.alloc_calls,
+            [(desktop_module.GMEM_MOVEABLE, len(payload))],
+        )
+        self.assertEqual(fake_ctypes.windll.kernel32.lock_calls, [100])
+        self.assertEqual(fake_ctypes.memmove_calls, [(200, payload)])
+        self.assertEqual(fake_ctypes.windll.kernel32.unlock_calls, [100])
+        self.assertEqual(fake_ctypes.windll.user32.open_calls, [None])
+        self.assertEqual(fake_ctypes.windll.user32.empty_calls, 1)
+        self.assertEqual(
+            fake_ctypes.windll.user32.set_data_calls,
+            [(desktop_module.CF_UNICODETEXT, 100)],
+        )
+        self.assertEqual(fake_ctypes.windll.user32.close_calls, 1)
+        self.assertEqual(fake_ctypes.windll.kernel32.free_calls, [])
+
+    def test_copy_text_to_windows_clipboard_frees_handle_on_failure(self) -> None:
+        fake_ctypes = self._fake_windows_ctypes_module(set_clipboard_data_result=0)
+
+        with self.assertRaises(RuntimeError) as ctx:
+            copy_text_to_windows_clipboard(
+                "hello log",
+                ctypes_module=fake_ctypes,
+                platform="win32",
+            )
+
+        self.assertEqual(str(ctx.exception), "Clipboard nativo Windows no disponible.")
+        self.assertEqual(fake_ctypes.windll.user32.close_calls, 1)
+        self.assertEqual(fake_ctypes.windll.kernel32.free_calls, [100])
+
+    def test_copy_text_to_native_clipboard_uses_windows_backend_on_win32(self) -> None:
+        calls = []
+
+        backend = copy_text_to_native_clipboard(
+            "hello log",
+            platform="win32",
+            windows_copy_fn=lambda text: calls.append(("windows", text)) or "windows",
+            qt_copy_fn=lambda text: calls.append(("qt", text)) or "qt",
+        )
+
+        self.assertEqual(backend, "windows")
+        self.assertEqual(calls, [("windows", "hello log")])
+
+    def test_copy_text_to_native_clipboard_uses_qt_backend_off_windows(self) -> None:
+        calls = []
+
+        backend = copy_text_to_native_clipboard(
+            "hello log",
+            platform="linux",
+            windows_copy_fn=lambda text: calls.append(("windows", text)) or "windows",
+            qt_copy_fn=lambda text: calls.append(("qt", text)) or "qt",
+        )
+
+        self.assertEqual(backend, "qt")
+        self.assertEqual(calls, [("qt", "hello log")])
 
     def test_copy_text_to_qt_clipboard_rejects_missing_qapplication(self) -> None:
         class _FakeQApplication:

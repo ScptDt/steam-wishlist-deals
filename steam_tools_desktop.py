@@ -35,6 +35,8 @@ PORT_SCAN_SIZE = 10
 URL = f"http://{HOST}:{PORT}"
 FORCE_WEB_FALLBACK_ENV = "STEAM_TOOLS_FORCE_WEB_FALLBACK"
 FORCE_WEB_FALLBACK_FLAG = "--force-web-fallback"
+CF_UNICODETEXT = 13
+GMEM_MOVEABLE = 0x0002
 
 FALLBACK_REASON_MESSAGES = {
     "forced-web-fallback": "Fallback web forzado para validacion. Abriendo Steam Tools en el navegador.",
@@ -222,8 +224,107 @@ def copy_text_to_qt_clipboard(
     return "qt"
 
 
+def _set_ctypes_signature(function, *, restype=None, argtypes=None) -> None:
+    try:
+        if restype is not None:
+            function.restype = restype
+        if argtypes is not None:
+            function.argtypes = argtypes
+    except Exception:
+        return
+
+
+def copy_text_to_windows_clipboard(
+    text: str,
+    *,
+    ctypes_module=None,
+    platform: str | None = None,
+) -> str:
+    platform_name = sys.platform if platform is None else str(platform)
+    if not platform_name.startswith("win"):
+        raise RuntimeError("Clipboard nativo Windows no disponible.")
+    if ctypes_module is None:
+        import ctypes as ctypes_module
+
+    user32 = ctypes_module.windll.user32
+    kernel32 = ctypes_module.windll.kernel32
+    _set_ctypes_signature(
+        user32.OpenClipboard,
+        restype=getattr(ctypes_module, "c_bool", None),
+        argtypes=[getattr(ctypes_module, "c_void_p", object)],
+    )
+    _set_ctypes_signature(user32.EmptyClipboard, restype=getattr(ctypes_module, "c_bool", None))
+    _set_ctypes_signature(
+        user32.SetClipboardData,
+        restype=getattr(ctypes_module, "c_void_p", None),
+        argtypes=[getattr(ctypes_module, "c_uint", object), getattr(ctypes_module, "c_void_p", object)],
+    )
+    _set_ctypes_signature(user32.CloseClipboard, restype=getattr(ctypes_module, "c_bool", None))
+    _set_ctypes_signature(
+        kernel32.GlobalAlloc,
+        restype=getattr(ctypes_module, "c_void_p", None),
+        argtypes=[getattr(ctypes_module, "c_uint", object), getattr(ctypes_module, "c_size_t", object)],
+    )
+    _set_ctypes_signature(
+        kernel32.GlobalLock,
+        restype=getattr(ctypes_module, "c_void_p", None),
+        argtypes=[getattr(ctypes_module, "c_void_p", object)],
+    )
+    _set_ctypes_signature(
+        kernel32.GlobalUnlock,
+        restype=getattr(ctypes_module, "c_bool", None),
+        argtypes=[getattr(ctypes_module, "c_void_p", object)],
+    )
+    _set_ctypes_signature(
+        kernel32.GlobalFree,
+        restype=getattr(ctypes_module, "c_void_p", None),
+        argtypes=[getattr(ctypes_module, "c_void_p", object)],
+    )
+
+    payload = (str(text) + "\0").encode("utf-16-le")
+    handle = kernel32.GlobalAlloc(GMEM_MOVEABLE, len(payload))
+    if not handle:
+        raise RuntimeError("Clipboard nativo Windows no disponible.")
+    try:
+        locked = kernel32.GlobalLock(handle)
+        if not locked:
+            raise RuntimeError("Clipboard nativo Windows no disponible.")
+        try:
+            ctypes_module.memmove(locked, payload, len(payload))
+        finally:
+            kernel32.GlobalUnlock(handle)
+
+        if not user32.OpenClipboard(None):
+            raise RuntimeError("Clipboard nativo Windows no disponible.")
+        try:
+            if not user32.EmptyClipboard():
+                raise RuntimeError("Clipboard nativo Windows no disponible.")
+            if not user32.SetClipboardData(CF_UNICODETEXT, handle):
+                raise RuntimeError("Clipboard nativo Windows no disponible.")
+            handle = None
+        finally:
+            user32.CloseClipboard()
+    finally:
+        if handle:
+            kernel32.GlobalFree(handle)
+    return "windows"
+
+
+def copy_text_to_native_clipboard(
+    text: str,
+    *,
+    platform: str | None = None,
+    windows_copy_fn=copy_text_to_windows_clipboard,
+    qt_copy_fn=copy_text_to_qt_clipboard,
+) -> str:
+    platform_name = sys.platform if platform is None else str(platform)
+    if platform_name.startswith("win"):
+        return windows_copy_fn(text)
+    return qt_copy_fn(text)
+
+
 class DesktopClipboardApi:
-    def __init__(self, *, copy_text_fn=copy_text_to_qt_clipboard):
+    def __init__(self, *, copy_text_fn=copy_text_to_native_clipboard):
         self._copy_text_fn = copy_text_fn
 
     def copy_text_to_clipboard(self, text: object) -> dict[str, str]:

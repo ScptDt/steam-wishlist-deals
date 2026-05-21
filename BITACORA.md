@@ -1,6 +1,6 @@
 # Bitácora Operativa
 
-Ultima actualizacion: 2026-05-20
+Ultima actualizacion: 2026-05-21
 
 ## Proposito
 
@@ -79,6 +79,8 @@ La nota de inicio puede omitirse en `BITACORA.md` para cambios triviales que no 
 | 2026-04-16 | macOS | validado en CI (parcial) | Workflow `Desktop Cross-Platform Validation` OK en `macos-latest` (run `24487556896`): install deps, build desktop, `py_compile`, check fallback local y artifact `dist-macos-latest` publicado. Falta validacion manual en host macOS para apertura de `.app`, quarantine/codesign/notarizacion segun distribucion. | Ejecutar checklist manual macOS (apertura local, quarantine, codesign) y registrar incidencias/workarounds. |
 
 ## Bitacora
+
+- 2026-05-21: Cierre bugfix Windows desktop / `Copiar log` con clipboard nativo stdlib. Autor/ejecutor: OpenCoder. Resultado: `DesktopClipboardApi` deja de depender de PyQt6 en Windows y selecciona un backend `ctypes` que publica texto Unicode con `CF_UNICODETEXT`; el backend Qt se conserva para no-Windows y los errores internos siguen ocultos con el mensaje seguro `Clipboard nativo no disponible. Usa Descargar log (.txt).` Evidencia: `.venv/bin/python -m py_compile steam_tools_desktop.py tests/test_desktop_share.py tests/test_web_assets.py`, `.venv/bin/python -m unittest tests.test_desktop_share` (49 OK), `.venv/bin/python -m unittest tests.test_web_assets.WebAssetsTests.test_execution_log_copy_uses_native_bridge_then_browser_clipboard` (1 OK) y `git diff --check` OK. Incidencias: no se ejecutó build/smoke Windows por falta de host en esta sesión. Siguiente seguimiento: validar manualmente en host Windows cuando esté disponible; sin PyQt6/dependencias nuevas, sin tocar constraints, sin red real, `BG00G`, `--no-cache`, builds ni reportes generados.
 
 - 2026-05-20: Cierre bugfix Windows desktop / emisión de progreso no UTF en price-stage. Autor/ejecutor: OpenCoder. Resultado: se corrigió el crash reportado en desktop frozen cuando stdout Windows `charmap` no podía codificar `≥` durante la etapa de precios (`OSError [Errno 22] Invalid argument`). `_emit` y el emisor warm-cache ahora reintentan con texto seguro para consola (`>=`, barras ASCII) y no tumban la corrida si la salida estándar rechaza Unicode; el mensaje final de cache usa `>=` y el parser de logs acepta `≥` legacy o `>=`. El fallback de clipboard queda fuera de alcance: sigue siendo aviso accionable y no causa del traceback. Evidencia: `.venv/bin/python -m py_compile app/steam_deals_prices.py app/steam_deals_warm_cache_summary.py steam_deals_generator.py tests/test_generator_logic.py tests/test_warm_cache_summary.py`, `.venv/bin/python -m unittest tests.test_generator_logic.WarmCacheTests tests.test_warm_cache_summary` (52 OK) y `git diff --check` OK. Sin red real, `BG00G`, `--no-cache`, build desktop, smokes largos, cambios de cache/ranking/scoring ni reportes generados.
 
