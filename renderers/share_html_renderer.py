@@ -2,6 +2,9 @@ from __future__ import annotations
 
 from datetime import date
 import json
+import re
+from urllib.parse import unquote
+from urllib.parse import urlsplit
 
 from share_payload import normalize_share_payload
 
@@ -15,6 +18,35 @@ HEADER_URL = "https://cdn.akamai.steamstatic.com/steam/apps/{appid}/header.jpg"
 _SCORE_EXPLANATION = (
     "Score = recomendación compuesta para priorizar qué revisar primero."
 )
+
+_EXTERNAL_OFFER_CONFIDENCE_LABELS = {
+    "high": "Alta",
+    "medium": "Media",
+    "low": "Baja",
+}
+_EXTERNAL_OFFER_STORE_TYPE_LABELS = {
+    "official_store": "Tienda oficial",
+    "authorized_key_reseller": "Reseller autorizado",
+}
+_EXTERNAL_OFFER_VISIBLE_STORE_TYPES = {"official_store", "authorized_key_reseller"}
+_EXTERNAL_OFFER_VISIBLE_STATES = {"highlight", "review"}
+_EXTERNAL_OFFER_BLOCKING_RISKS = {
+    "appid_missing",
+    "unknown_store",
+    "marketplace_keyshop",
+    "aggregator_source",
+    "low_confidence",
+    "checkout_like_url",
+    "unsafe_url_scheme",
+    "invalid_price",
+    "currency_missing",
+    "invalid_currency",
+}
+_EXTERNAL_OFFER_CHECKOUT_RE = re.compile(
+    r"(^|[/?#&=._-])(cart|checkout|add-to-cart|addtocart|payment|purchase)s?([/?#&=._-]|$)",
+    re.IGNORECASE,
+)
+_EXTERNAL_OFFER_CURRENCY_RE = re.compile(r"^[A-Z]{3}$")
 
 
 def _build_share_payload(
@@ -58,6 +90,175 @@ def _safe_int(value: object, default: int = 0) -> int:
         return int(value or default)
     except (TypeError, ValueError):
         return default
+
+
+def _safe_float(value: object) -> float | None:
+    if isinstance(value, bool):
+        return None
+    try:
+        return float(value)
+    except (TypeError, ValueError):
+        return None
+
+
+def _external_offer_confidence_label(confidence: str) -> str:
+    key = str(confidence or "").strip().lower()
+    return _EXTERNAL_OFFER_CONFIDENCE_LABELS.get(key, key.title() if key else "Sin dato")
+
+
+def _external_offer_store_type_label(store_type: str) -> str:
+    key = str(store_type or "").strip()
+    return _EXTERNAL_OFFER_STORE_TYPE_LABELS.get(key, key.replace("_", " ") or "Tienda")
+
+
+def _external_offer_visibility_label(visibility: str) -> str:
+    return "Destacada" if str(visibility or "").strip() == "highlight" else "Revisión"
+
+
+def _external_offer_risk_flags(item: dict) -> set[str]:
+    flags = item.get("risk_flags") if isinstance(item, dict) else []
+    if not isinstance(flags, list):
+        return set()
+    return {str(flag or "").strip() for flag in flags if str(flag or "").strip()}
+
+
+def _external_offer_price(item: dict) -> float | None:
+    price = _safe_float(item.get("price"))
+    if price is None or price < 0:
+        return None
+    return price
+
+
+def _external_offer_currency(item: dict) -> str:
+    currency = str(item.get("currency") or "").strip().upper()
+    return currency if _EXTERNAL_OFFER_CURRENCY_RE.match(currency) else ""
+
+
+def _external_offer_is_visible(item: dict) -> bool:
+    if not isinstance(item, dict):
+        return False
+    if str(item.get("visibility") or "").strip() not in _EXTERNAL_OFFER_VISIBLE_STATES:
+        return False
+    if str(item.get("store_type") or "").strip() not in _EXTERNAL_OFFER_VISIBLE_STORE_TYPES:
+        return False
+    if _EXTERNAL_OFFER_BLOCKING_RISKS & _external_offer_risk_flags(item):
+        return False
+    return _external_offer_price(item) is not None and bool(_external_offer_currency(item))
+
+
+def _external_offer_items(payload: dict | None, *, limit: int = 8) -> tuple[list[dict], int, int]:
+    if not isinstance(payload, dict):
+        return [], 0, 0
+    raw_items = payload.get("items")
+    items = [item for item in raw_items if _external_offer_is_visible(item)] if isinstance(raw_items, list) else []
+    total = len(items)
+    return items[:limit], total, max(0, total - limit)
+
+
+def _external_offer_safe_url(item: dict) -> str:
+    if item.get("link_allowed") is not True:
+        return ""
+    url = str(item.get("url") or "").strip()
+    if not url:
+        return ""
+    parsed = urlsplit(url)
+    if parsed.scheme not in {"http", "https"} or not parsed.netloc:
+        return ""
+    if _EXTERNAL_OFFER_CHECKOUT_RE.search(unquote(url).lower()):
+        return ""
+    return url
+
+
+def _render_external_offer_title(item: dict) -> str:
+    appid = str(item.get("appid") or item.get("steam_appid") or "").strip()
+    fallback = f"AppID {appid}" if appid else "Oferta externa"
+    name = str(item.get("name") or item.get("steam_name") or fallback).strip()
+    if appid.isdigit():
+        return f'<a href="{STORE_URL.format(appid=appid)}" target="_blank">{html_escape(name)}</a>'
+    return html_escape(name)
+
+
+def _external_offer_price_text(item: dict) -> str:
+    price = _external_offer_price(item)
+    currency = _external_offer_currency(item)
+    price_text = f"{currency} {price:.2f}" if price is not None and currency else "Sin precio válido"
+    discount = _safe_int(item.get("discount_pct"))
+    if discount:
+        price_text += f" · -{discount}%"
+    return price_text
+
+
+def _render_external_offer_meta(item: dict) -> str:
+    store_name = str(item.get("store_name") or item.get("store_id") or "Tienda externa").strip()
+    store_type = _external_offer_store_type_label(str(item.get("store_type") or ""))
+    return html_escape(f"{store_name} · {store_type} · {_external_offer_price_text(item)}")
+
+
+def _render_external_offer_status(item: dict) -> str:
+    parts = [
+        f"Confianza {_external_offer_confidence_label(str(item.get('confidence') or ''))}",
+    ]
+    drm = str(item.get("drm") or "").strip()
+    region = str(item.get("region") or "").strip()
+    source = str(item.get("source") or "").strip()
+    expires_at = str(item.get("expires_at") or "").strip()
+    if drm:
+        parts.append(f"DRM {drm}")
+    if region:
+        parts.append(f"Región {region}")
+    if source:
+        parts.append(f"fuente {source}")
+    if expires_at:
+        parts.append(f"vence {expires_at}")
+    return html_escape(" · ".join(parts))
+
+
+def _render_external_offer_action(item: dict) -> str:
+    url = _external_offer_safe_url(item)
+    if not url:
+        return '<span class="external-offer-link external-offer-link-disabled">Sin link seguro</span>'
+    return f'<a class="external-offer-link" href="{html_escape(url)}" target="_blank" rel="noopener noreferrer">Abrir tienda</a>'
+
+
+def _render_external_offer_item(item: dict) -> str:
+    appid = str(item.get("appid") or item.get("steam_appid") or "").strip()
+    data_attr = f' data-external-offer-appid="{html_escape(appid)}"' if appid.isdigit() else ""
+    badge = _external_offer_visibility_label(str(item.get("visibility") or ""))
+    return f'''<li class="external-offer-item"{data_attr}>
+  <div class="external-offer-main">
+    <strong>{_render_external_offer_title(item)}</strong>
+    <div class="external-offer-meta">{_render_external_offer_meta(item)}</div>
+    <div class="external-offer-status">{_render_external_offer_status(item)}</div>
+    <div class="external-offer-note">Comparativa informativa: no prueba ownership ni stock final.</div>
+  </div>
+  <div class="external-offer-side">
+    <span class="external-offer-badge">{html_escape(badge)}</span>
+    {_render_external_offer_action(item)}
+  </div>
+</li>'''
+
+
+def _render_external_offers(payload: dict | None) -> str:
+    items, total_items, hidden_count = _external_offer_items(payload)
+    if not items:
+        return ""
+    more_html = (
+        f'<div class="external-offers-more">{hidden_count:,} más en el payload completo</div>'
+        if hidden_count
+        else ""
+    )
+    cards = "".join(_render_external_offer_item(item) for item in items)
+    return f'''<section class="external-offers" data-external-offers-section>
+  <div class="external-offers-head">
+    <div>
+      <h2 style="margin:1rem 0 .35rem">Comparativa externa</h2>
+      <p><strong>{total_items:,} oferta(s) externa(s) visibles</strong> desde el JSON local. Comparativa informativa: Steam Tools no compra, no abre carrito, no verifica stock final, no prueba ownership y no cambia score, ranking ni wishlist hygiene.</p>
+    </div>
+    <span class="external-offers-head-badge">Solo tiendas oficiales/autorizadas</span>
+  </div>
+  <ol class="external-offers-list">{cards}</ol>
+  {more_html}
+</section>'''
 
 
 _STYLE = """
@@ -126,6 +327,21 @@ tr:hover { background: #1a3a5c; }
 .gift-meta span:first-child { color:#6cc644; }
 .gift-reasons { color:#8f98a0; font-size:.74rem; margin:.35rem 0 0; padding-left:1rem; }
 .gift-share { display:flex; justify-content:flex-end; margin-top:.45rem; }
+.external-offers { margin:1rem 0 .5rem; }
+.external-offers-head { display:flex; justify-content:space-between; gap:.75rem; align-items:flex-start; }
+.external-offers-head p { color:#8f98a0; font-size:.78rem; margin:0 0 .55rem; }
+.external-offers-head-badge { border:1px solid rgba(102,192,244,.45); border-radius:999px; color:#66c0f4; font-size:.68rem; font-weight:700; padding:.18rem .45rem; white-space:nowrap; }
+.external-offers-list { list-style:none; display:grid; grid-template-columns:repeat(auto-fill,minmax(260px,1fr)); gap:.5rem; }
+.external-offer-item { background:#16202d; border:1px solid rgba(102,192,244,.35); border-radius:8px; padding:.65rem; display:flex; gap:.6rem; justify-content:space-between; }
+.external-offer-main { min-width:0; }
+.external-offer-main strong { color:#66c0f4; font-size:.92rem; }
+.external-offer-meta { color:#c7d5e0; font-size:.74rem; margin:.25rem 0 .1rem; }
+.external-offer-status, .external-offer-note, .external-offers-more { color:#8f98a0; font-size:.72rem; line-height:1.35; }
+.external-offer-side { display:flex; flex-direction:column; gap:.35rem; align-items:flex-end; min-width:max-content; }
+.external-offer-badge { background:rgba(108,198,68,.13); border:1px solid rgba(108,198,68,.35); border-radius:999px; color:#6cc644; font-size:.68rem; font-weight:700; padding:.14rem .38rem; }
+.external-offer-link { border:1px solid #2a475e; border-radius:6px; color:#66c0f4; font-size:.72rem; font-weight:700; padding:.25rem .45rem; }
+.external-offer-link-disabled { color:#8f98a0; }
+.external-offers-more { margin-top:.45rem; }
 .share-modal {
   display: none;
   position: fixed;
@@ -762,6 +978,7 @@ def generate_share_html(
     personalized_recommendations: dict | None = None,
     gift_ideas: list[dict] | None = None,
     compare_data: dict | None = None,
+    external_offers: dict | None = None,
 ):
     """Generate a lightweight shareable HTML page with the deals list."""
     reviews = reviews or {}
@@ -771,6 +988,7 @@ def generate_share_html(
     recommended_collections = recommended_collections or []
     personalized_recommendations = personalized_recommendations or {"items": []}
     gift_ideas = gift_ideas or []
+    external_offers = external_offers if isinstance(external_offers, dict) else None
     today = date.today().strftime("%Y-%m-%d")
     title = f"Steam Deals — {profile_display_name or vanity}"
     deals_by_appid = {deal["appid"]: deal for deal in deals}
@@ -801,6 +1019,7 @@ def generate_share_html(
         personalized_recommendations
     )
     gift_html = _render_gift_ideas(gift_ideas, compare_data)
+    external_offers_html = _render_external_offers(external_offers)
 
     sale_line = f" — {html_escape(sale_name)}" if sale_name else ""
     return f"""<!DOCTYPE html>
@@ -813,6 +1032,7 @@ def generate_share_html(
 {picks_html}
 {personalized_html}
 {gift_html}
+{external_offers_html}
 {collections_html}
 <h2 style="margin:1rem 0 .5rem">Todos los Deals</h2>
 <table><thead><tr><th>%</th><th>Precio</th><th>Reseñas</th><th>Compatibilidad</th><th>Juego</th></tr></thead><tbody>{rows}</tbody></table>

@@ -10196,6 +10196,95 @@ class RankTopPicksTests(unittest.TestCase):
         self.assertNotIn("Checkout Trap", html)
         self.assertNotIn("checkout/40", html)
 
+    def test_generate_share_html_surfaces_external_offers_risk_gated_section(self) -> None:
+        html = generate_share_html(
+            deals=[],
+            vanity="gaben",
+            min_discount=50,
+            recommended_collections=[],
+            personalized_recommendations={"items": []},
+            external_offers={
+                "summary": {"items_count": 4, "advisory_only": True, "ranking_impact": "none"},
+                "items": [
+                    {
+                        "appid": "1145360",
+                        "name": "Hades <Deal>",
+                        "store_name": "Fanatical",
+                        "store_type": "authorized_key_reseller",
+                        "price": 8.99,
+                        "currency": "USD",
+                        "discount_pct": 65,
+                        "url": "https://deals.example/hades",
+                        "link_allowed": True,
+                        "drm": "steam",
+                        "region": "global",
+                        "source": "fixture",
+                        "confidence": "high",
+                        "visibility": "highlight",
+                        "risk_flags": ["ownership_not_proven"],
+                    },
+                    {
+                        "appid": "20",
+                        "name": "Portal 2",
+                        "store_name": "GOG",
+                        "store_type": "official_store",
+                        "price": 2.49,
+                        "currency": "USD",
+                        "link_allowed": False,
+                        "drm": "gog",
+                        "region": "unknown",
+                        "source": "fixture",
+                        "confidence": "medium",
+                        "visibility": "review",
+                        "risk_flags": ["region_unknown", "ownership_not_proven"],
+                    },
+                    {
+                        "appid": "30",
+                        "name": "Risky Key",
+                        "store_name": "Key Market",
+                        "store_type": "marketplace_keyshop",
+                        "price": 1.0,
+                        "currency": "USD",
+                        "visibility": "hidden",
+                        "risk_flags": ["marketplace_keyshop", "ownership_not_proven"],
+                    },
+                    {
+                        "appid": "40",
+                        "name": "Checkout Trap",
+                        "store_name": "GOG",
+                        "store_type": "official_store",
+                        "price": 3.0,
+                        "currency": "USD",
+                        "url": "https://gog.example/cart/add-to-cart/40",
+                        "link_allowed": True,
+                        "visibility": "review",
+                        "risk_flags": ["checkout_like_url", "ownership_not_proven"],
+                    },
+                ],
+            },
+        )
+
+        self.assertIn("data-external-offers-section", html)
+        self.assertIn("Comparativa externa", html)
+        self.assertIn("Solo tiendas oficiales/autorizadas", html)
+        self.assertIn("Comparativa informativa", html)
+        self.assertIn("no compra, no abre carrito", html)
+        self.assertIn("no verifica stock final", html)
+        self.assertIn("no prueba ownership", html)
+        self.assertIn("no cambia score, ranking ni wishlist hygiene", html)
+        self.assertIn('data-external-offer-appid="1145360"', html)
+        self.assertIn("Hades &lt;Deal&gt;", html)
+        self.assertIn("Fanatical · Reseller autorizado · USD 8.99 · -65%", html)
+        self.assertIn("Confianza Alta · DRM steam · Región global · fuente fixture", html)
+        self.assertIn('class="external-offer-link" href="https://deals.example/hades"', html)
+        self.assertIn('rel="noopener noreferrer"', html)
+        self.assertIn("GOG · Tienda oficial · USD 2.49", html)
+        self.assertIn("Sin link seguro", html)
+        self.assertNotIn("Hades <Deal>", html)
+        self.assertNotIn("Risky Key", html)
+        self.assertNotIn("Checkout Trap", html)
+        self.assertNotIn("add-to-cart", html)
+
     def test_generate_share_html_labels_top_pick_score_and_metacritic(self) -> None:
         html = generate_share_html(
             deals=[],

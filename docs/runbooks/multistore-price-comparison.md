@@ -2,7 +2,7 @@
 
 Track priorizado para ampliar la comparativa multi-tienda hacia Fanatical y más stores sin mezclarla con `wishlist_hygiene` ni con flujos de compra.
 
-Estado actual: Fase 0/docs, Fase 1 normalizador fixture-only, Fase 1B JSON interno opcional, Fase 1C diagnóstico JSON-consumer y primer render visible mínimo risk-gated cerrados el 2026-05-21. El siguiente paso requiere elegir explícitamente entre ITAD/Fanatical controlado con docs externas actuales o ampliar UX/superficies del render bajo los mismos gates.
+Estado actual: Fase 0/docs, Fase 1 normalizador fixture-only, Fase 1B JSON interno opcional, Fase 1C diagnóstico JSON-consumer, primer render visible mínimo risk-gated y Share HTML cerrados el 2026-05-21. El siguiente paso requiere elegir explícitamente entre ITAD/Fanatical controlado con docs externas actuales o ampliar UX/superficies del render bajo los mismos gates.
 
 Enfoque de ejecución: **feature-sliced + risk-gated**. La feature avanza por cortes pequeños, pero cada corte debe pasar gates de riesgo antes de exponerse al usuario, tocar ranking o usar fuentes live.
 
@@ -402,12 +402,12 @@ Copy recomendado:
 
 Cierre 2026-05-21:
 
-- Markdown principal, HTML interactivo generado y Web UI del último reporte renderizan `external_offers` solo desde payload local ya transportado en JSON.
+- Markdown principal, HTML interactivo generado, Share HTML y Web UI del último reporte renderizan `external_offers` solo desde payload local ya transportado en JSON.
 - Solo se muestran tiendas `official_store` o `authorized_key_reseller` con `visibility=highlight`/`review`.
 - `hidden`, marketplaces/keyshops, tiendas desconocidas, aggregators y ofertas con riesgos bloqueantes quedan fuera del render visible por defecto.
 - Los links visibles requieren `link_allowed=true`, URL `http/https` y no checkout/cart/add-to-cart/payment.
 - El copy conserva “Comparativa informativa”, “no compra/no abre carrito/no verifica stock final”, “no prueba ownership” y “no cambia score/ranking/wishlist hygiene”.
-- No se agregó ITAD/Fanatical live, Share HTML, ranking/defaults ni integración con `wishlist_hygiene`.
+- No se agregó ITAD/Fanatical live, ranking/defaults ni integración con `wishlist_hygiene`.
 
 ### Fase 4 — Fanatical específico
 
