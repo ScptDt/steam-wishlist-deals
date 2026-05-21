@@ -2624,6 +2624,28 @@ details .details-body .field:last-child {
   font-size: 0.7rem;
   line-height: 1.35;
 }
+.latest-selection-result-confidence,
+.latest-selection-result-next-step,
+.latest-selection-result-why-group {
+  margin-top: 0.2rem;
+  color: var(--text2);
+  font-size: 0.7rem;
+  line-height: 1.35;
+}
+.latest-selection-result-confidence {
+  color: var(--green);
+  font-weight: 700;
+}
+.latest-selection-result-next-step strong,
+.latest-selection-result-why-group strong {
+  color: var(--text);
+  font-size: inherit;
+}
+.latest-selection-result-why {
+  display: grid !important;
+  gap: 0.12rem;
+  margin-top: 0.2rem;
+}
 .latest-selection-result-reasons {
   margin-top: 0.2rem;
   color: var(--text2);

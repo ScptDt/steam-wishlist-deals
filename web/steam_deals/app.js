@@ -4149,6 +4149,28 @@ function latestSelectionSignalLabel(signal) {
   return labels[key] || key.replace(/_/g, ' ');
 }
 
+function latestSelectionConfidenceLabel(confidence) {
+  const labels = {high: 'Alta', medium: 'Media', low: 'Baja'};
+  const key = String(confidence || '').trim().toLowerCase();
+  return labels[key] || '';
+}
+
+function latestSelectionWhyItems(why, key) {
+  if (!why || typeof why !== 'object') return [];
+  return Array.isArray(why[key])
+    ? why[key].map(item => String(item || '').trim()).filter(Boolean).slice(0, 3)
+    : [];
+}
+
+function renderLatestSelectionWhyGroup(label, items, key) {
+  if (!items.length) return '';
+  return `
+    <span class="latest-selection-result-why-group" data-selection-why="${escapeHtml(key)}">
+      <strong>${escapeHtml(label)}:</strong> ${escapeHtml(items.join(' · '))}
+    </span>
+  `;
+}
+
 function renderLatestSelectionReviewItem(item) {
   const source = item && typeof item === 'object' ? item : {};
   const decision = ['conservar', 'dudar', 'quitar'].includes(source.decision) ? source.decision : 'dudar';
@@ -4168,6 +4190,13 @@ function renderLatestSelectionReviewItem(item) {
   const signals = Array.isArray(source.signals)
     ? source.signals.map(latestSelectionSignalLabel).filter(Boolean).slice(0, 4)
     : [];
+  const confidence = latestSelectionConfidenceLabel(source.confidence);
+  const nextStep = String(source.next_step || '').trim();
+  const whyGroups = [
+    renderLatestSelectionWhyGroup('A favor', latestSelectionWhyItems(source.why, 'positive'), 'positive'),
+    renderLatestSelectionWhyGroup('Cuidado', latestSelectionWhyItems(source.why, 'caution'), 'caution'),
+    renderLatestSelectionWhyGroup('Contexto', latestSelectionWhyItems(source.why, 'context'), 'context'),
+  ].filter(Boolean).join('');
   const nameHtml = safeAppid
     ? `<a href="https://store.steampowered.com/app/${escapeHtml(safeAppid)}/" target="_blank" rel="noopener noreferrer">${escapeHtml(name)}</a>`
     : `<span>${escapeHtml(name)}</span>`;
@@ -4177,8 +4206,11 @@ function renderLatestSelectionReviewItem(item) {
       <div class="latest-selection-result-main">
         <strong>${nameHtml}</strong>
         ${meta.length ? `<span class="latest-selection-result-meta">${escapeHtml(meta.join(' · '))}</span>` : ''}
+        ${confidence ? `<span class="latest-selection-result-confidence">Confianza: ${escapeHtml(confidence)}</span>` : ''}
         ${signals.length ? `<span class="latest-selection-result-signals">Señales: ${escapeHtml(signals.join(' · '))}</span>` : ''}
         <span class="latest-selection-result-reasons">${escapeHtml(reasons)}</span>
+        ${nextStep ? `<span class="latest-selection-result-next-step"><strong>Siguiente paso:</strong> ${escapeHtml(nextStep)}</span>` : ''}
+        ${whyGroups ? `<span class="latest-selection-result-why">${whyGroups}</span>` : ''}
       </div>
     </article>
   `;
