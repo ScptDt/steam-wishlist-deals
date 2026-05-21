@@ -556,6 +556,43 @@ class WebAssetsTests(unittest.TestCase):
         self.assertIn(".latest-free-weekend-empty", app_css)
         self.assertIn(".latest-free-weekend-badge", app_css)
 
+    def test_latest_report_surfaces_external_offers_risk_gated_inside_details(self) -> None:
+        app_js = (ROOT / "web" / "steam_deals" / "app.js").read_text(
+            encoding="utf-8"
+        )
+        app_css = (ROOT / "web" / "steam_deals" / "app.css").read_text(
+            encoding="utf-8"
+        )
+
+        self.assertIn("function renderLatestExternalOffers", app_js)
+        self.assertIn("function latestExternalOffersPayload", app_js)
+        self.assertIn("function latestExternalOfferItems", app_js)
+        self.assertIn("function latestExternalOfferSafeUrl", app_js)
+        self.assertIn("LATEST_EXTERNAL_OFFER_VISIBLE_STORE_TYPES", app_js)
+        self.assertIn("LATEST_EXTERNAL_OFFER_VISIBLE_STATES", app_js)
+        self.assertIn("LATEST_EXTERNAL_OFFER_BLOCKING_RISKS", app_js)
+        self.assertIn("LATEST_EXTERNAL_OFFER_CHECKOUT_RE", app_js)
+        self.assertIn("report.external_offers", app_js)
+        self.assertIn("data-latest-external-offers", app_js)
+        self.assertIn("data-latest-external-offer-appid", app_js)
+        self.assertIn("Comparativa externa", app_js)
+        self.assertIn("Comparativa informativa", app_js)
+        self.assertIn("no compra, no abre carrito", app_js)
+        self.assertIn("no verifica stock final", app_js)
+        self.assertIn("no prueba ownership", app_js)
+        self.assertIn("no cambia score, ranking ni wishlist hygiene", app_js)
+        self.assertIn("Solo tiendas oficiales/autorizadas", app_js)
+        self.assertIn("Abrir tienda", app_js)
+        self.assertIn("Sin link seguro", app_js)
+        self.assertIn("renderLatestExternalOffers(report)", app_js)
+        self.assertIn("renderLatestReportIntentWrapper(activeReport, meta, summary, files)", app_js)
+        self.assertIn(".latest-external-offers-section", app_css)
+        self.assertIn(".latest-external-offers-list", app_css)
+        self.assertIn(".latest-external-offer-item", app_css)
+        self.assertIn(".latest-external-offer-badge", app_css)
+        self.assertIn(".latest-external-offer-link-disabled", app_css)
+        self.assertIn(".latest-external-offers-more", app_css)
+
     def test_advanced_filters_include_free_weekend_live_opt_in(self) -> None:
         index_html = (ROOT / "web" / "steam_deals" / "index.html").read_text(
             encoding="utf-8"

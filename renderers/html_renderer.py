@@ -3,6 +3,8 @@ from __future__ import annotations
 from datetime import date
 import json
 import re
+from urllib.parse import unquote
+from urllib.parse import urlsplit
 
 from share_payload import normalize_share_payload
 
@@ -142,6 +144,35 @@ _FREE_WEEKEND_CONFIDENCE_LABELS = {
     "medium": "Media",
     "low": "Baja",
 }
+
+_EXTERNAL_OFFER_CONFIDENCE_LABELS = {
+    "high": "Alta",
+    "medium": "Media",
+    "low": "Baja",
+}
+_EXTERNAL_OFFER_STORE_TYPE_LABELS = {
+    "official_store": "Tienda oficial",
+    "authorized_key_reseller": "Reseller autorizado",
+}
+_EXTERNAL_OFFER_VISIBLE_STORE_TYPES = {"official_store", "authorized_key_reseller"}
+_EXTERNAL_OFFER_VISIBLE_STATES = {"highlight", "review"}
+_EXTERNAL_OFFER_BLOCKING_RISKS = {
+    "appid_missing",
+    "unknown_store",
+    "marketplace_keyshop",
+    "aggregator_source",
+    "low_confidence",
+    "checkout_like_url",
+    "unsafe_url_scheme",
+    "invalid_price",
+    "currency_missing",
+    "invalid_currency",
+}
+_EXTERNAL_OFFER_CHECKOUT_RE = re.compile(
+    r"(^|[/?#&=._-])(cart|checkout|add-to-cart|addtocart|payment|purchase)s?([/?#&=._-]|$)",
+    re.IGNORECASE,
+)
+_EXTERNAL_OFFER_CURRENCY_RE = re.compile(r"^[A-Z]{3}$")
 
 _TOP_PICK_RECOMMENDATION_FILTERS = (
     "Comprar ahora",
@@ -490,6 +521,164 @@ def _html_free_weekend_now(payload: dict | None) -> str:
   </div>
   {policy_html}
   {body_html}
+</section>'''
+
+
+def _external_offer_confidence_label(confidence: str) -> str:
+    key = str(confidence or "").strip().lower()
+    return _EXTERNAL_OFFER_CONFIDENCE_LABELS.get(key, key.title() if key else "Sin dato")
+
+
+def _external_offer_store_type_label(store_type: str) -> str:
+    key = str(store_type or "").strip()
+    return _EXTERNAL_OFFER_STORE_TYPE_LABELS.get(key, key.replace("_", " ") or "Tienda")
+
+
+def _external_offer_visibility_label(visibility: str) -> str:
+    return "Destacada" if str(visibility or "").strip() == "highlight" else "Revisión"
+
+
+def _external_offer_risk_flags(item: dict) -> set[str]:
+    flags = item.get("risk_flags") if isinstance(item, dict) else []
+    if not isinstance(flags, list):
+        return set()
+    return {str(flag or "").strip() for flag in flags if str(flag or "").strip()}
+
+
+def _external_offer_price(item: dict) -> float | None:
+    try:
+        price = float(item.get("price"))
+    except (TypeError, ValueError):
+        return None
+    return price if price >= 0 else None
+
+
+def _external_offer_currency(item: dict) -> str:
+    currency = str(item.get("currency") or "").strip().upper()
+    return currency if _EXTERNAL_OFFER_CURRENCY_RE.match(currency) else ""
+
+
+def _external_offer_is_visible(item: dict) -> bool:
+    if not isinstance(item, dict):
+        return False
+    if str(item.get("visibility") or "").strip() not in _EXTERNAL_OFFER_VISIBLE_STATES:
+        return False
+    if str(item.get("store_type") or "").strip() not in _EXTERNAL_OFFER_VISIBLE_STORE_TYPES:
+        return False
+    if _EXTERNAL_OFFER_BLOCKING_RISKS & _external_offer_risk_flags(item):
+        return False
+    return _external_offer_price(item) is not None and bool(_external_offer_currency(item))
+
+
+def _external_offer_items(payload: dict | None, *, limit: int = 8) -> tuple[list[dict], int, int]:
+    if not isinstance(payload, dict):
+        return [], 0, 0
+    raw_items = payload.get("items")
+    items = [item for item in raw_items if _external_offer_is_visible(item)] if isinstance(raw_items, list) else []
+    total = len(items)
+    return items[:limit], total, max(0, total - limit)
+
+
+def _external_offer_safe_url(item: dict) -> str:
+    if item.get("link_allowed") is not True:
+        return ""
+    url = str(item.get("url") or "").strip()
+    if not url:
+        return ""
+    parsed = urlsplit(url)
+    if parsed.scheme not in {"http", "https"} or not parsed.netloc:
+        return ""
+    if _EXTERNAL_OFFER_CHECKOUT_RE.search(unquote(url).lower()):
+        return ""
+    return url
+
+
+def _html_external_offer_title(item: dict) -> str:
+    appid = str(item.get("appid") or item.get("steam_appid") or "").strip()
+    fallback = f"AppID {appid}" if appid else "Oferta externa"
+    name = str(item.get("name") or item.get("steam_name") or fallback).strip()
+    return _html_link(name, appid) if appid.isdigit() else _html_esc(name)
+
+
+def _html_external_offer_meta(item: dict) -> str:
+    price = _external_offer_price(item)
+    currency = _external_offer_currency(item)
+    price_text = f"{currency} {price:.2f}" if price is not None and currency else "Sin precio válido"
+    discount = item.get("discount_pct")
+    try:
+        discount_int = int(discount)
+    except (TypeError, ValueError):
+        discount_int = 0
+    if discount_int:
+        price_text += f" · -{discount_int}%"
+    store_name = str(item.get("store_name") or item.get("store_id") or "Tienda externa").strip()
+    store_type = _external_offer_store_type_label(str(item.get("store_type") or ""))
+    return _html_esc(f"{store_name} · {store_type} · {price_text}")
+
+
+def _html_external_offer_status(item: dict) -> str:
+    parts = [
+        f"Confianza {_external_offer_confidence_label(str(item.get('confidence') or ''))}",
+    ]
+    drm = str(item.get("drm") or "").strip()
+    region = str(item.get("region") or "").strip()
+    source = str(item.get("source") or "").strip()
+    expires_at = str(item.get("expires_at") or "").strip()
+    if drm:
+        parts.append(f"DRM {drm}")
+    if region:
+        parts.append(f"Región {region}")
+    if source:
+        parts.append(f"fuente {source}")
+    if expires_at:
+        parts.append(f"vence {expires_at}")
+    return _html_esc(" · ".join(parts))
+
+
+def _html_external_offer_action(item: dict) -> str:
+    url = _external_offer_safe_url(item)
+    if not url:
+        return '<span class="external-offer-link external-offer-link-disabled">Sin link seguro</span>'
+    return f'<a class="external-offer-link" href="{_html_esc(url)}" target="_blank" rel="noopener noreferrer">Abrir tienda</a>'
+
+
+def _html_external_offer_item(item: dict) -> str:
+    appid = str(item.get("appid") or item.get("steam_appid") or "").strip()
+    data_attr = f' data-external-offer-appid="{_html_esc(appid)}"' if appid.isdigit() else ""
+    badge = _external_offer_visibility_label(str(item.get("visibility") or ""))
+    return f'''<li class="external-offer-item"{data_attr}>
+  <div class="external-offer-main">
+    <strong>{_html_external_offer_title(item)}</strong>
+    <div class="external-offer-meta">{_html_external_offer_meta(item)}</div>
+    <div class="external-offer-status">{_html_external_offer_status(item)}</div>
+    <div class="external-offer-note">Comparativa informativa: no prueba ownership ni stock final.</div>
+  </div>
+  <div class="external-offer-side">
+    <span class="external-offer-badge">{_html_esc(badge)}</span>
+    {_html_external_offer_action(item)}
+  </div>
+</li>'''
+
+
+def _html_external_offers(payload: dict | None) -> str:
+    items, total_items, hidden_count = _external_offer_items(payload)
+    if not items:
+        return ""
+    more_html = (
+        f'<div class="external-offers-more">{hidden_count:,} más en el payload completo</div>'
+        if hidden_count
+        else ""
+    )
+    return f'''<section class="external-offers" data-external-offers-section>
+  <div class="external-offers-head">
+    <div>
+      <h2>Comparativa externa</h2>
+      <p class="section-desc"><strong>{total_items:,} oferta(s) externa(s) visibles</strong> desde el JSON local. Comparativa informativa: Steam Tools no compra, no abre carrito, no verifica stock final, no prueba ownership y no cambia score, ranking ni wishlist hygiene.</p>
+    </div>
+    <span class="external-offers-head-badge">Solo tiendas oficiales/autorizadas</span>
+  </div>
+  <ol class="external-offers-list">{"".join(_html_external_offer_item(item) for item in items)}</ol>
+  {more_html}
 </section>'''
 
 
@@ -1897,6 +2086,21 @@ a.pick-card:hover { border-color: var(--accent-blue); transform: translateY(-2px
 .free-weekend-item-sources { flex: 0 0 8.5rem; text-align: right; }
 .free-weekend-more { margin-top: .6rem; }
 @media (max-width: 767px) { .free-weekend-head, .free-weekend-item { flex-direction: column; } .free-weekend-head-badge { align-self: flex-start; } .free-weekend-item-sources { flex-basis: auto; text-align: left; } }
+.external-offers { margin: 0 0 1.5rem; padding: 1rem; border: 1px solid rgba(102,192,244,.28); border-radius: 10px; background: linear-gradient(135deg, rgba(102,192,244,.08), rgba(12,20,30,.25)); }
+.external-offers-head { display: flex; justify-content: space-between; gap: 1rem; align-items: flex-start; }
+.external-offers h2 { font-size: 1.2rem; margin-bottom: .3rem; }
+.external-offers-head-badge, .external-offer-badge { white-space: nowrap; border: 1px solid rgba(102,192,244,.4); border-radius: 999px; color: var(--accent-blue); background: rgba(12,20,30,.32); padding: .16rem .55rem; font-size: .74rem; font-weight: 700; }
+.external-offers-list { list-style: none; display: grid; grid-template-columns: repeat(auto-fit, minmax(260px, 1fr)); gap: .7rem; }
+.external-offer-item { display: flex; justify-content: space-between; gap: .75rem; background: var(--bg-card); border: 1px solid rgba(102,192,244,.22); border-radius: 8px; padding: .75rem; }
+.external-offer-main { min-width: 0; }
+.external-offer-main strong { display: block; font-size: .86rem; line-height: 1.3; margin-bottom: .35rem; }
+.external-offer-meta { color: var(--accent-blue); font-size: .74rem; line-height: 1.4; margin-bottom: .25rem; }
+.external-offer-status, .external-offer-note, .external-offers-more { color: var(--text-secondary); font-size: .74rem; line-height: 1.4; }
+.external-offer-side { display: flex; flex-direction: column; align-items: flex-end; gap: .45rem; }
+.external-offer-link { color: var(--accent-blue); font-size: .74rem; font-weight: 700; text-decoration: none; }
+.external-offer-link-disabled { color: var(--text-secondary); font-weight: 600; }
+.external-offers-more { margin-top: .6rem; }
+@media (max-width: 767px) { .external-offers-head, .external-offer-item { flex-direction: column; } .external-offers-head-badge, .external-offer-side { align-self: flex-start; align-items: flex-start; } }
 .smart-alert-digest { margin: 0 0 1.5rem; padding: 1rem; border: 1px solid rgba(102,192,244,.26); border-radius: 10px; background: linear-gradient(135deg, rgba(102,192,244,.08), rgba(12,20,30,.25)); }
 .smart-alert-digest-head { display: flex; justify-content: space-between; gap: 1rem; align-items: flex-start; }
 .smart-alert-digest h2 { font-size: 1.2rem; margin-bottom: .3rem; }
@@ -2817,6 +3021,7 @@ def generate_html(
     active_promo_context: dict | None = None,
     smart_alert_digest: dict | None = None,
     free_weekend_now: dict | None = None,
+    external_offers: dict | None = None,
     *,
     group_by_tier,
     group_deals_by_tag,
@@ -2842,6 +3047,7 @@ def generate_html(
     personalized_recommendations = personalized_recommendations or {"items": []}
     wishlist_hygiene = wishlist_hygiene or {"items": []}
     smart_alert_digest = smart_alert_digest if isinstance(smart_alert_digest, dict) else None
+    external_offers = external_offers if isinstance(external_offers, dict) else None
     achievements_data = achievements_data or {}
     watchlist_alerts = watchlist_alerts or []
     price_history_games = (price_history or {}).get("games", {})
@@ -3002,6 +3208,7 @@ def generate_html(
         )
     )
     parts.append(_html_free_weekend_now(free_weekend_now))
+    parts.append(_html_external_offers(external_offers))
     parts.append(_html_wishlist_hygiene(wishlist_hygiene))
     parts.append(_html_smart_alert_digest(smart_alert_digest))
 

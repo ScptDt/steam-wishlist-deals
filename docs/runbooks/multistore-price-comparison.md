@@ -2,7 +2,7 @@
 
 Track priorizado para ampliar la comparativa multi-tienda hacia Fanatical y más stores sin mezclarla con `wishlist_hygiene` ni con flujos de compra.
 
-Estado actual: Fase 0/docs, Fase 1 normalizador fixture-only, Fase 1B JSON interno opcional y Fase 1C diagnóstico JSON-consumer cerradas el 2026-05-21. El siguiente paso requiere elegir explícitamente entre render visible mínimo risk-gated o ITAD/Fanatical controlado con docs externas actuales.
+Estado actual: Fase 0/docs, Fase 1 normalizador fixture-only, Fase 1B JSON interno opcional, Fase 1C diagnóstico JSON-consumer y primer render visible mínimo risk-gated cerrados el 2026-05-21. El siguiente paso requiere elegir explícitamente entre ITAD/Fanatical controlado con docs externas actuales o ampliar UX/superficies del render bajo los mismos gates.
 
 Enfoque de ejecución: **feature-sliced + risk-gated**. La feature avanza por cortes pequeños, pero cada corte debe pasar gates de riesgo antes de exponerse al usuario, tocar ranking o usar fuentes live.
 
@@ -43,7 +43,7 @@ Regla de trabajo:
 | Contrato/normalizador local | Existe `external_offers` normalizado desde fixtures | Clasificación de tienda, `risk_flags`, deny-by-default, sin side effects |
 | JSON interno opcional | Cerrado 2026-05-21: el reporte puede transportar ofertas externas explícitas | No ownership, no ranking, no checkout URLs, ausencia compatible |
 | Diagnóstico JSON-consumer | Cerrado 2026-05-21: consumidor offline valida el contrato transportado | Detecta drift/riesgos sin UI, sin ranking, sin ownership y sin red |
-| Render mínimo | Usuario ve comparativa externa | Solo official/authorized visibles, copy informativo, sin carrito |
+| Render mínimo | Cerrado 2026-05-21: usuario ve comparativa externa desde JSON local | Solo official/authorized visibles, copy informativo, sin carrito |
 | ITAD live | Precios reales multi-tienda | Errores seguros, cache/control, confidence y no ownership |
 | Fanatical específico | Fanatical aparece como reseller autorizado | Fuente confiable/ITAD o import local; no scraping/login |
 | Keyshops/marketplaces | Sección opt-in futura si se decide | Separado, warning, no “mejor precio oficial”, nunca por defecto |
@@ -386,7 +386,7 @@ Readiness del próximo slice:
 - Clasificar tiendas finales (`official_store`, `authorized_key_reseller`, etc.).
 - Si hay error de API, degradar con warning seguro y no romper el reporte.
 
-### Fase 3 — render visible mínimo
+### Fase 3 — render visible mínimo — primer cierre 2026-05-21
 
 Mostrar en JSON/Markdown/HTML/Web UI:
 
@@ -399,6 +399,15 @@ Mostrar en JSON/Markdown/HTML/Web UI:
 Copy recomendado:
 
 > Comparativa informativa. Steam Tools no compra, no abre carrito y no verifica stock final.
+
+Cierre 2026-05-21:
+
+- Markdown principal, HTML interactivo generado y Web UI del último reporte renderizan `external_offers` solo desde payload local ya transportado en JSON.
+- Solo se muestran tiendas `official_store` o `authorized_key_reseller` con `visibility=highlight`/`review`.
+- `hidden`, marketplaces/keyshops, tiendas desconocidas, aggregators y ofertas con riesgos bloqueantes quedan fuera del render visible por defecto.
+- Los links visibles requieren `link_allowed=true`, URL `http/https` y no checkout/cart/add-to-cart/payment.
+- El copy conserva “Comparativa informativa”, “no compra/no abre carrito/no verifica stock final”, “no prueba ownership” y “no cambia score/ranking/wishlist hygiene”.
+- No se agregó ITAD/Fanatical live, Share HTML, ranking/defaults ni integración con `wishlist_hygiene`.
 
 ### Fase 4 — Fanatical específico
 

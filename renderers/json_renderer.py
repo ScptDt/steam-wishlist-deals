@@ -58,6 +58,44 @@ def _external_offers_total(payload: dict | None) -> int:
     return len(items) if isinstance(items, list) else 0
 
 
+TASTE_PRIORITY_CATEGORY_LABELS = {
+    "compra_inmediata": "Prioridad alta para revisar",
+    "espera_oferta": "Esperar mejor oferta",
+    "riesgo_abandono": "Riesgo de abandono",
+    "reemplaza_varios": "Solapa con varios juegos",
+    "no_comprar_aun": "No priorizar aún",
+}
+
+
+def _taste_priority_payload(payload: dict | None) -> dict | None:
+    if not isinstance(payload, dict):
+        return None
+    items = payload.get("items")
+    if not isinstance(items, list) or not items:
+        return None
+    category_labels = dict(TASTE_PRIORITY_CATEGORY_LABELS)
+    if isinstance(payload.get("category_labels"), dict):
+        category_labels.update(payload["category_labels"])
+    summary = dict(payload.get("summary") if isinstance(payload.get("summary"), dict) else {})
+    summary.update(
+        {
+            "items_count": len(items),
+            "advisory_only": True,
+            "ranking_impact": "none",
+        }
+    )
+    return {
+        **payload,
+        "category_labels": category_labels,
+        "summary": summary,
+    }
+
+
+def _taste_priority_total(payload: dict | None) -> int:
+    normalized = _taste_priority_payload(payload)
+    return len(normalized["items"]) if normalized else 0
+
+
 def generate_json(
     deals: list[dict],
     backlog_on_sale: list[dict],
@@ -98,6 +136,7 @@ def generate_json(
     smart_alert_digest: dict | None = None,
     free_weekend_now: dict | None = None,
     external_offers: dict | None = None,
+    taste_priority: dict | None = None,
 ) -> str:
     previous_appids = previous_appids or set()
     family_appids = family_appids or set()
@@ -122,6 +161,7 @@ def generate_json(
     smart_alert_digest = smart_alert_digest if isinstance(smart_alert_digest, dict) else None
     free_weekend_now = free_weekend_now if isinstance(free_weekend_now, dict) else None
     external_offers = external_offers if isinstance(external_offers, dict) else None
+    taste_priority = _taste_priority_payload(taste_priority)
 
     payload = {
         "meta": {
@@ -154,6 +194,7 @@ def generate_json(
             "wishlist_hygiene_count": len(wishlist_hygiene.get("items", [])),
             "free_weekend_now_count": _free_weekend_now_total(free_weekend_now),
             "external_offers_count": _external_offers_total(external_offers),
+            "taste_priority_count": _taste_priority_total(taste_priority),
         },
         "comparison": _json_safe(comparison),
         "top_picks": _json_safe(top_picks),
@@ -189,4 +230,6 @@ def generate_json(
         payload["free_weekend_now"] = _json_safe(free_weekend_now)
     if external_offers:
         payload["external_offers"] = _json_safe(external_offers)
+    if taste_priority:
+        payload["taste_priority"] = _json_safe(taste_priority)
     return json.dumps(payload, ensure_ascii=False, indent=2)

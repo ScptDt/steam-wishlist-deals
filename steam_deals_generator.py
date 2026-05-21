@@ -100,6 +100,7 @@ try:
         build_personalized_recommendations as _build_personalized_recommendations_impl,
         build_recommended_collections as _build_recommended_collections_impl,
         build_selection_review as _build_selection_review_impl,
+        build_taste_priority_contract as _build_taste_priority_contract_impl,
         compute_budget_picks as _compute_budget_picks_impl,
         compute_value_score as _compute_value_score_impl,
         rank_top_picks as _rank_top_picks_impl,
@@ -109,6 +110,7 @@ except Exception:
     _build_personalized_recommendations_impl = None
     _build_recommended_collections_impl = None
     _build_selection_review_impl = None
+    _build_taste_priority_contract_impl = None
     _compute_budget_picks_impl = None
     _compute_value_score_impl = None
     _rank_top_picks_impl = None
@@ -2937,6 +2939,17 @@ def build_personalized_recommendations(
     return _build_personalized_recommendations_impl(deals, top_picks=top_picks, **kwargs)
 
 
+def build_taste_priority_contract(
+    deals: list[dict] | None,
+    top_picks: list[dict] | None = None,
+    **kwargs,
+) -> dict:
+    """Build advisory taste-priority metadata without changing report ranking."""
+    if _build_taste_priority_contract_impl is None:
+        raise RuntimeError("Recommendations module is not available")
+    return _build_taste_priority_contract_impl(deals, top_picks=top_picks, **kwargs)
+
+
 def build_selection_review(
     selection,
     deals: list[dict] | None = None,
@@ -3022,6 +3035,7 @@ def generate_md(
     active_promo_context: dict | None = None,
     smart_alert_digest: dict | None = None,
     free_weekend_now: dict | None = None,
+    external_offers: dict | None = None,
 ) -> str:
     if _generate_md_renderer is None:
         raise RuntimeError("Markdown renderer module is not available")
@@ -3099,6 +3113,7 @@ def generate_md(
         active_promo_context=active_promo_context,
         smart_alert_digest=smart_alert_digest,
         free_weekend_now=free_weekend_now,
+        external_offers=external_offers,
         group_by_tier=group_by_tier,
         filter_by_genres=filter_by_genres,
         group_deals_by_tag=group_deals_by_tag,
@@ -3156,6 +3171,7 @@ def generate_html(
     active_promo_context: dict | None = None,
     smart_alert_digest: dict | None = None,
     free_weekend_now: dict | None = None,
+    external_offers: dict | None = None,
     recommended_collections: list[dict] | None = None,
     personalized_recommendations: dict | None = None,
     wishlist_hygiene=None,
@@ -3237,6 +3253,7 @@ def generate_html(
             active_promo_context=active_promo_context,
             smart_alert_digest=smart_alert_digest,
             free_weekend_now=free_weekend_now,
+            external_offers=external_offers,
             group_by_tier=group_by_tier,
             group_deals_by_tag=group_deals_by_tag,
         )
@@ -3277,6 +3294,7 @@ def generate_html(
         active_promo_context=active_promo_context,
         smart_alert_digest=smart_alert_digest,
         free_weekend_now=free_weekend_now,
+        external_offers=external_offers,
         group_by_tier=group_by_tier,
         group_deals_by_tag=group_deals_by_tag,
     )
@@ -3450,6 +3468,7 @@ def generate_json(
     smart_alert_digest: dict | None = None,
     free_weekend_now: dict | None = None,
     external_offers: dict | None = None,
+    taste_priority: dict | None = None,
 ) -> str:
     if _generate_json_renderer is None:
         raise RuntimeError("JSON renderer module is not available")
@@ -3489,6 +3508,20 @@ def generate_json(
         liked_appids=liked_appids,
         preference_relations=preference_relations,
     )
+    if taste_priority is None:
+        taste_priority = build_taste_priority_contract(
+            deals,
+            top_picks=top_picks,
+            personalized_recommendations=personalized_recommendations,
+            activity_games=activity_games,
+            library_games=library_games if library_games is not None else have_on_sale,
+            owned=owned,
+            family_appids=family_appids,
+            liked_appids=liked_appids,
+            preference_relations=preference_relations,
+            recommended_collections=recommended_collections,
+            hltb_hours=hltb_hours,
+        )
     return _generate_json_renderer(
         deals,
         backlog_on_sale,
@@ -3529,6 +3562,7 @@ def generate_json(
         smart_alert_digest=smart_alert_digest,
         free_weekend_now=free_weekend_now,
         external_offers=external_offers,
+        taste_priority=taste_priority,
     )
 
 

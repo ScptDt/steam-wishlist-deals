@@ -2848,6 +2848,33 @@ const LATEST_FREE_WEEKEND_CONFIDENCE_LABELS = Object.freeze({
   low: 'Baja',
 });
 
+const LATEST_EXTERNAL_OFFER_CONFIDENCE_LABELS = Object.freeze({
+  high: 'Alta',
+  medium: 'Media',
+  low: 'Baja',
+});
+
+const LATEST_EXTERNAL_OFFER_STORE_TYPE_LABELS = Object.freeze({
+  official_store: 'Tienda oficial',
+  authorized_key_reseller: 'Reseller autorizado',
+});
+
+const LATEST_EXTERNAL_OFFER_VISIBLE_STORE_TYPES = Object.freeze(['official_store', 'authorized_key_reseller']);
+const LATEST_EXTERNAL_OFFER_VISIBLE_STATES = Object.freeze(['highlight', 'review']);
+const LATEST_EXTERNAL_OFFER_BLOCKING_RISKS = Object.freeze([
+  'appid_missing',
+  'unknown_store',
+  'marketplace_keyshop',
+  'aggregator_source',
+  'low_confidence',
+  'checkout_like_url',
+  'unsafe_url_scheme',
+  'invalid_price',
+  'currency_missing',
+  'invalid_currency',
+]);
+const LATEST_EXTERNAL_OFFER_CHECKOUT_RE = /(^|[/?#&=._-])(cart|checkout|add-to-cart|addtocart|payment|purchase)s?([/?#&=._-]|$)/i;
+
 function latestPromoCategoryLabel(category) {
   const key = String(category || '').trim();
   return LATEST_PROMO_CATEGORY_LABELS[key] || key || 'Otra promo';
@@ -3081,6 +3108,158 @@ function renderLatestFreeWeekendNow(report) {
       </div>
       ${policyHtml}
       ${bodyHtml}
+    </div>
+  `;
+}
+
+function latestExternalOffersPayload(report) {
+  const payload = report && typeof report === 'object' ? report.external_offers : null;
+  return payload && typeof payload === 'object' && !Array.isArray(payload) ? payload : null;
+}
+
+function latestExternalOfferRiskFlags(source) {
+  return Array.isArray(source && source.risk_flags)
+    ? source.risk_flags.map(flag => String(flag || '').trim()).filter(Boolean)
+    : [];
+}
+
+function latestExternalOfferPrice(source) {
+  const price = Number(source && source.price);
+  return Number.isFinite(price) && price >= 0 ? price : null;
+}
+
+function latestExternalOfferCurrency(source) {
+  const currency = String((source && source.currency) || '').trim().toUpperCase();
+  return /^[A-Z]{3}$/.test(currency) ? currency : '';
+}
+
+function latestExternalOfferIsVisible(source) {
+  if (!source || typeof source !== 'object') return false;
+  if (!LATEST_EXTERNAL_OFFER_VISIBLE_STATES.includes(String(source.visibility || '').trim())) return false;
+  if (!LATEST_EXTERNAL_OFFER_VISIBLE_STORE_TYPES.includes(String(source.store_type || '').trim())) return false;
+  const flags = new Set(latestExternalOfferRiskFlags(source));
+  if (LATEST_EXTERNAL_OFFER_BLOCKING_RISKS.some(flag => flags.has(flag))) return false;
+  return latestExternalOfferPrice(source) !== null && Boolean(latestExternalOfferCurrency(source));
+}
+
+function latestExternalOfferItems(payload) {
+  return Array.isArray(payload && payload.items)
+    ? payload.items.filter(latestExternalOfferIsVisible)
+    : [];
+}
+
+function latestExternalOffersTotal(items) {
+  return Array.isArray(items) ? items.length : 0;
+}
+
+function latestExternalOfferConfidenceLabel(confidence) {
+  const key = String(confidence || '').trim().toLowerCase();
+  return LATEST_EXTERNAL_OFFER_CONFIDENCE_LABELS[key] || (key ? key.charAt(0).toUpperCase() + key.slice(1) : 'Sin dato');
+}
+
+function latestExternalOfferStoreTypeLabel(storeType) {
+  const key = String(storeType || '').trim();
+  return LATEST_EXTERNAL_OFFER_STORE_TYPE_LABELS[key] || (key ? key.replace(/_/g, ' ') : 'Tienda');
+}
+
+function latestExternalOfferSafeUrl(source) {
+  if (!source || source.link_allowed !== true) return '';
+  const rawUrl = String(source.url || '').trim();
+  if (!rawUrl) return '';
+  let parsed;
+  try {
+    parsed = new URL(rawUrl);
+  } catch (e) {
+    return '';
+  }
+  if (!['http:', 'https:'].includes(parsed.protocol) || !parsed.hostname) return '';
+  let decoded = rawUrl.toLowerCase();
+  try {
+    decoded = decodeURIComponent(rawUrl).toLowerCase();
+  } catch (e) {}
+  return LATEST_EXTERNAL_OFFER_CHECKOUT_RE.test(decoded) ? '' : rawUrl;
+}
+
+function latestExternalOfferTitle(source) {
+  const appid = String(source.appid || source.steam_appid || '').trim();
+  const safeAppid = /^\d+$/.test(appid) ? appid : '';
+  const name = String(source.name || source.steam_name || (appid ? `AppID ${appid}` : 'Oferta externa')).trim();
+  const nameHtml = safeAppid
+    ? `<a href="https://store.steampowered.com/app/${escapeHtml(safeAppid)}/" target="_blank" rel="noopener noreferrer">${escapeHtml(name)}</a>`
+    : `<span>${escapeHtml(name)}</span>`;
+  return {appid, safeAppid, nameHtml};
+}
+
+function latestExternalOfferPriceText(source) {
+  const price = latestExternalOfferPrice(source);
+  const currency = latestExternalOfferCurrency(source);
+  const parts = [price !== null && currency ? `${currency} ${price.toFixed(2)}` : 'Sin precio válido'];
+  const discount = Number(source.discount_pct);
+  if (Number.isFinite(discount) && discount) parts.push(`-${discount.toFixed(0)}%`);
+  return parts.join(' · ');
+}
+
+function latestExternalOfferMeta(source) {
+  const storeName = String(source.store_name || source.store_id || 'Tienda externa').trim();
+  const storeType = latestExternalOfferStoreTypeLabel(source.store_type);
+  return `${storeName} · ${storeType} · ${latestExternalOfferPriceText(source)}`;
+}
+
+function latestExternalOfferStatus(source) {
+  const parts = [`Confianza ${latestExternalOfferConfidenceLabel(source.confidence)}`];
+  const drm = String(source.drm || '').trim();
+  const region = String(source.region || '').trim();
+  const sourceName = String(source.source || '').trim();
+  const expiresAt = String(source.expires_at || '').trim();
+  if (drm) parts.push(`DRM ${drm}`);
+  if (region) parts.push(`Región ${region}`);
+  if (sourceName) parts.push(`fuente ${sourceName}`);
+  if (expiresAt) parts.push(`vence ${expiresAt}`);
+  return parts.join(' · ');
+}
+
+function renderLatestExternalOfferItem(item) {
+  const source = item && typeof item === 'object' ? item : {};
+  const title = latestExternalOfferTitle(source);
+  const safeUrl = latestExternalOfferSafeUrl(source);
+  const actionHtml = safeUrl
+    ? `<a class="latest-external-offer-link" href="${escapeHtml(safeUrl)}" target="_blank" rel="noopener noreferrer">Abrir tienda</a>`
+    : '<span class="latest-external-offer-link latest-external-offer-link-disabled">Sin link seguro</span>';
+  const badge = String(source.visibility || '').trim() === 'highlight' ? 'Destacada' : 'Revisión';
+  return `
+    <li class="latest-external-offer-item"${title.safeAppid ? ` data-latest-external-offer-appid="${escapeHtml(title.safeAppid)}"` : ''}>
+      <div class="latest-external-offer-main">
+        <strong>${title.nameHtml}</strong>
+        <span class="latest-external-offer-meta">${escapeHtml(latestExternalOfferMeta(source))}</span>
+        <span class="latest-external-offer-status">${escapeHtml(latestExternalOfferStatus(source))}</span>
+        <span class="latest-external-offer-note">Comparativa informativa: no prueba ownership ni stock final.</span>
+      </div>
+      <span class="latest-external-offer-side">
+        <span class="latest-external-offer-badge">${escapeHtml(badge)}</span>
+        ${actionHtml}
+      </span>
+    </li>
+  `;
+}
+
+function renderLatestExternalOffers(report) {
+  const payload = latestExternalOffersPayload(report);
+  const items = latestExternalOfferItems(payload);
+  const totalCount = latestExternalOffersTotal(items);
+  if (!totalCount) return '';
+  const selectedItems = items.slice(0, 3);
+  const hiddenCount = Math.max(0, totalCount - selectedItems.length);
+  return `
+    <div class="latest-external-offers-section" data-latest-external-offers>
+      <div class="latest-external-offers-head">
+        <div>
+          <div class="latest-external-offers-title">Comparativa externa</div>
+          <div class="latest-external-offers-subtitle">${escapeHtml(formatLatestCoverageCount(totalCount))} oferta(s) visible(s) desde el JSON local. Comparativa informativa: Steam Tools no compra, no abre carrito, no verifica stock final, no prueba ownership y no cambia score, ranking ni wishlist hygiene.</div>
+        </div>
+        <span class="latest-external-offers-head-badge">Solo tiendas oficiales/autorizadas</span>
+      </div>
+      <ol class="latest-external-offers-list">${selectedItems.map(renderLatestExternalOfferItem).join('')}</ol>
+      ${hiddenCount ? `<div class="latest-external-offers-more">${escapeHtml(formatLatestCoverageCount(hiddenCount))} más en el JSON completo</div>` : ''}
     </div>
   `;
 }
@@ -4248,6 +4427,7 @@ function renderLatestReportActionsPanel(files = null) {
 function renderLatestRecommendationsPanel(report, files = null) {
   const body = [
     renderLatestPromoContext(report),
+    renderLatestExternalOffers(report),
     renderLatestFreeWeekendNow(report),
     renderLatestSmartAlertDigest(report),
     renderLatestRecommendedCollections(report),

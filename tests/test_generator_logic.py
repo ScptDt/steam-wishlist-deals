@@ -5513,6 +5513,103 @@ class RunOutputTests(unittest.TestCase):
         self.assertEqual(data["summary"]["external_offers_count"], 0)
         self.assertNotIn("external_offers", data)
 
+    def test_generate_json_serializes_taste_priority_contract_without_ranking_changes(self) -> None:
+        taste_priority = {
+            "source_signals": ["personalized_recommendations", "value", "redundancy_stub"],
+            "categories": ["compra_inmediata", "espera_oferta"],
+            "cluster_distribution": [],
+            "items": [
+                {
+                    "appid": "10",
+                    "name": "Deep Action",
+                    "taste_priority": 86.4,
+                    "category": "compra_inmediata",
+                    "factors": {
+                        "personal_affinity": 48,
+                        "value": 80,
+                        "redundancy": 10,
+                        "cluster_redundancy": 0,
+                        "abandon_risk": 0,
+                        "waiting_penalty": 0,
+                    },
+                    "clusters": [],
+                    "reasons": ["similar a Hades", "alta afinidad con tus gustos locales"],
+                }
+            ],
+        }
+        top_picks = [{"appid": "10", "name": "Deep Action", "score": 91.2}]
+        deals = [{"appid": "10", "name": "Deep Action", "score": 91.2, "discount": 80}]
+
+        payload = generate_json(
+            deals=deals,
+            backlog_on_sale=[],
+            have_on_sale=[],
+            vanity="gaben",
+            owned={},
+            wishlist_appids=["10"],
+            min_discount=50,
+            genres=[],
+            top_picks=top_picks,
+            taste_priority=taste_priority,
+        )
+
+        data = json.loads(payload)
+
+        self.assertEqual(data["summary"]["taste_priority_count"], 1)
+        self.assertEqual(data["taste_priority"]["items"][0]["category"], "compra_inmediata")
+        self.assertEqual(
+            data["taste_priority"]["category_labels"]["compra_inmediata"],
+            "Prioridad alta para revisar",
+        )
+        self.assertTrue(data["taste_priority"]["summary"]["advisory_only"])
+        self.assertEqual(data["taste_priority"]["summary"]["ranking_impact"], "none")
+        self.assertEqual(data["top_picks"], top_picks)
+        self.assertEqual(data["deals"][0]["score"], 91.2)
+
+    def test_generate_json_omits_empty_or_invalid_taste_priority_contract(self) -> None:
+        cases = [[], {"items": []}, {"items": None}]
+
+        for taste_priority in cases:
+            with self.subTest(taste_priority=taste_priority):
+                payload = generate_json(
+                    deals=[],
+                    backlog_on_sale=[],
+                    have_on_sale=[],
+                    vanity="gaben",
+                    owned={},
+                    wishlist_appids=[],
+                    min_discount=50,
+                    genres=[],
+                    taste_priority=taste_priority,
+                )
+
+                data = json.loads(payload)
+
+                self.assertEqual(data["summary"]["taste_priority_count"], 0)
+                self.assertNotIn("taste_priority", data)
+
+    def test_generate_json_can_build_taste_priority_from_existing_signals(self) -> None:
+        payload = generate_json(
+            deals=[{"appid": "10", "name": "Action Deal", "score": 80, "discount": 70, "genres": ["Action"]}],
+            backlog_on_sale=[],
+            have_on_sale=[{"appid": "91", "name": "Dead Cells", "genres": ["Action"]}],
+            vanity="gaben",
+            owned={},
+            wishlist_appids=["10"],
+            min_discount=50,
+            genres=[],
+            top_picks=[{"appid": "10", "name": "Action Deal", "score": 80, "discount": 70}],
+            activity_games=[{"appid": "90", "name": "Hades", "genres": ["Action"], "playtime_2weeks": 120}],
+            liked_appids={"10"},
+        )
+
+        data = json.loads(payload)
+
+        self.assertEqual(data["summary"]["taste_priority_count"], 1)
+        self.assertEqual(data["taste_priority"]["items"][0]["appid"], "10")
+        self.assertIn(data["taste_priority"]["items"][0]["category"], data["taste_priority"]["categories"])
+        self.assertEqual(data["top_picks"][0]["score"], 80)
+
     def test_generate_json_enriches_free_weekend_now_cross_signals(self) -> None:
         payload = generate_json(
             deals=[],
@@ -9176,6 +9273,100 @@ class RankTopPicksTests(unittest.TestCase):
         self.assertIn("Sin candidatos locales de Free Weekend en el JSON actual", md)
         self.assertIn("no hace fetch live ni cambia score/cache", md)
 
+    def test_generate_md_surfaces_external_offers_risk_gated_section(self) -> None:
+        md = generate_md(
+            deals=[],
+            backlog_on_sale=[],
+            have_on_sale=[],
+            vanity="gaben",
+            owned={},
+            wishlist_appids=[],
+            min_discount=50,
+            genres=[],
+            external_offers={
+                "summary": {"items_count": 4, "advisory_only": True, "ranking_impact": "none"},
+                "items": [
+                    {
+                        "appid": "1145360",
+                        "name": "Hades",
+                        "store_id": "fanatical",
+                        "store_name": "Fanatical",
+                        "store_type": "authorized_key_reseller",
+                        "price": 8.99,
+                        "currency": "USD",
+                        "discount_pct": 65,
+                        "url": "https://deals.example/hades",
+                        "link_allowed": True,
+                        "drm": "steam",
+                        "region": "global",
+                        "source": "fixture",
+                        "confidence": "high",
+                        "expires_at": "2026-05-22T00:00:00Z",
+                        "visibility": "highlight",
+                        "risk_flags": ["ownership_not_proven"],
+                    },
+                    {
+                        "appid": "20",
+                        "name": "Portal 2",
+                        "store_id": "gog",
+                        "store_name": "GOG",
+                        "store_type": "official_store",
+                        "price": 2.49,
+                        "currency": "USD",
+                        "url": "https://gog.example/portal-2",
+                        "link_allowed": False,
+                        "drm": "gog",
+                        "region": "unknown",
+                        "source": "fixture",
+                        "confidence": "medium",
+                        "visibility": "review",
+                        "risk_flags": ["region_unknown", "ownership_not_proven"],
+                    },
+                    {
+                        "appid": "30",
+                        "name": "Risky Key",
+                        "store_name": "Key Market",
+                        "store_type": "marketplace_keyshop",
+                        "price": 1.0,
+                        "currency": "USD",
+                        "visibility": "hidden",
+                        "risk_flags": ["marketplace_keyshop", "ownership_not_proven"],
+                    },
+                    {
+                        "appid": "40",
+                        "name": "Checkout Trap",
+                        "store_name": "GOG",
+                        "store_type": "official_store",
+                        "price": 3.0,
+                        "currency": "USD",
+                        "url": "https://gog.example/cart/add-to-cart/40",
+                        "link_allowed": True,
+                        "visibility": "review",
+                        "risk_flags": ["checkout_like_url", "ownership_not_proven"],
+                    },
+                ],
+            },
+        )
+
+        self.assertIn("## 🏬 Comparativa externa", md)
+        self.assertIn("Comparativa informativa", md)
+        self.assertIn("no compra, no abre carrito", md)
+        self.assertIn("no verifica stock final", md)
+        self.assertIn("no prueba ownership", md)
+        self.assertIn("no cambia score, ranking ni wishlist hygiene", md)
+        self.assertIn("[Hades](https://store.steampowered.com/app/1145360/)", md)
+        self.assertIn("Fanatical · Reseller autorizado · fuente fixture", md)
+        self.assertIn("USD 8.99 · -65%", md)
+        self.assertIn("Destacada · Confianza Alta · DRM steam · Región global", md)
+        self.assertIn("[Abrir tienda](https://deals.example/hades)", md)
+        self.assertIn("[Portal 2](https://store.steampowered.com/app/20/)", md)
+        self.assertIn("GOG · Tienda oficial · fuente fixture", md)
+        self.assertIn("Revisión · Confianza Media · DRM gog · Región unknown", md)
+        self.assertIn("Sin link seguro", md)
+        self.assertNotIn("Risky Key", md)
+        self.assertNotIn("Checkout Trap", md)
+        self.assertNotIn("add-to-cart", md)
+
     def test_generate_md_can_include_obsidian_notion_frontmatter(self) -> None:
         md = generate_md(
             deals=[],
@@ -9909,6 +10100,87 @@ class RankTopPicksTests(unittest.TestCase):
         self.assertIn("data-free-weekend-now-section", html)
         self.assertIn("Sin candidatos locales de Free Weekend en el JSON actual", html)
         self.assertIn("no hace fetch live ni cambia score/cache", html)
+
+    def test_generate_html_surfaces_external_offers_risk_gated_section(self) -> None:
+        html = generate_html(
+            deals=[],
+            backlog_on_sale=[],
+            have_on_sale=[],
+            vanity="gaben",
+            owned={},
+            wishlist_appids=[],
+            min_discount=50,
+            genres=[],
+            external_offers={
+                "summary": {"items_count": 3, "advisory_only": True, "ranking_impact": "none"},
+                "items": [
+                    {
+                        "appid": "1145360",
+                        "name": "Hades <Deal>",
+                        "store_name": "Fanatical",
+                        "store_type": "authorized_key_reseller",
+                        "price": 8.99,
+                        "currency": "USD",
+                        "discount_pct": 65,
+                        "url": "https://deals.example/hades",
+                        "link_allowed": True,
+                        "drm": "steam",
+                        "region": "global",
+                        "source": "fixture",
+                        "confidence": "high",
+                        "visibility": "highlight",
+                        "risk_flags": ["ownership_not_proven"],
+                    },
+                    {
+                        "appid": "20",
+                        "name": "Portal 2",
+                        "store_name": "GOG",
+                        "store_type": "official_store",
+                        "price": 2.49,
+                        "currency": "USD",
+                        "link_allowed": False,
+                        "drm": "gog",
+                        "region": "unknown",
+                        "source": "fixture",
+                        "confidence": "medium",
+                        "visibility": "review",
+                        "risk_flags": ["region_unknown", "ownership_not_proven"],
+                    },
+                    {
+                        "appid": "40",
+                        "name": "Checkout Trap",
+                        "store_name": "GOG",
+                        "store_type": "official_store",
+                        "price": 3.0,
+                        "currency": "USD",
+                        "url": "https://gog.example/checkout/40",
+                        "link_allowed": True,
+                        "visibility": "review",
+                        "risk_flags": ["checkout_like_url", "ownership_not_proven"],
+                    },
+                ],
+            },
+        )
+
+        self.assertIn("data-external-offers-section", html)
+        self.assertIn("Comparativa externa", html)
+        self.assertIn("Solo tiendas oficiales/autorizadas", html)
+        self.assertIn("Comparativa informativa", html)
+        self.assertIn("no compra, no abre carrito", html)
+        self.assertIn("no verifica stock final", html)
+        self.assertIn("no prueba ownership", html)
+        self.assertIn("no cambia score, ranking ni wishlist hygiene", html)
+        self.assertIn('data-external-offer-appid="1145360"', html)
+        self.assertIn("Hades &lt;Deal&gt;", html)
+        self.assertIn("Fanatical · Reseller autorizado · USD 8.99 · -65%", html)
+        self.assertIn("Confianza Alta · DRM steam · Región global · fuente fixture", html)
+        self.assertIn('class="external-offer-link" href="https://deals.example/hades"', html)
+        self.assertIn('rel="noopener noreferrer"', html)
+        self.assertIn("GOG · Tienda oficial · USD 2.49", html)
+        self.assertIn("Sin link seguro", html)
+        self.assertNotIn("Hades <Deal>", html)
+        self.assertNotIn("Checkout Trap", html)
+        self.assertNotIn("checkout/40", html)
 
     def test_generate_share_html_labels_top_pick_score_and_metacritic(self) -> None:
         html = generate_share_html(

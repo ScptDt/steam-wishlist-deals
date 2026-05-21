@@ -2,6 +2,8 @@ from __future__ import annotations
 
 from datetime import date
 import re
+from urllib.parse import unquote
+from urllib.parse import urlsplit
 
 from .common import markdown_escape
 from .social_rows import (
@@ -89,6 +91,35 @@ _FREE_WEEKEND_CONFIDENCE_LABELS = {
     "medium": "Media",
     "low": "Baja",
 }
+
+_EXTERNAL_OFFER_CONFIDENCE_LABELS = {
+    "high": "Alta",
+    "medium": "Media",
+    "low": "Baja",
+}
+_EXTERNAL_OFFER_STORE_TYPE_LABELS = {
+    "official_store": "Tienda oficial",
+    "authorized_key_reseller": "Reseller autorizado",
+}
+_EXTERNAL_OFFER_VISIBLE_STORE_TYPES = {"official_store", "authorized_key_reseller"}
+_EXTERNAL_OFFER_VISIBLE_STATES = {"highlight", "review"}
+_EXTERNAL_OFFER_BLOCKING_RISKS = {
+    "appid_missing",
+    "unknown_store",
+    "marketplace_keyshop",
+    "aggregator_source",
+    "low_confidence",
+    "checkout_like_url",
+    "unsafe_url_scheme",
+    "invalid_price",
+    "currency_missing",
+    "invalid_currency",
+}
+_EXTERNAL_OFFER_CHECKOUT_RE = re.compile(
+    r"(^|[/?#&=._-])(cart|checkout|add-to-cart|addtocart|payment|purchase)s?([/?#&=._-]|$)",
+    re.IGNORECASE,
+)
+_EXTERNAL_OFFER_CURRENCY_RE = re.compile(r"^[A-Z]{3}$")
 
 
 def _promo_category_label(category: str) -> str:
@@ -572,6 +603,152 @@ def _build_free_weekend_now_lines(payload: dict | None) -> list[str]:
     return lines
 
 
+def _external_offer_confidence_label(confidence: str) -> str:
+    key = str(confidence or "").strip().lower()
+    return _EXTERNAL_OFFER_CONFIDENCE_LABELS.get(key, key.title() if key else "Sin dato")
+
+
+def _external_offer_store_type_label(store_type: str) -> str:
+    key = str(store_type or "").strip()
+    return _EXTERNAL_OFFER_STORE_TYPE_LABELS.get(key, key.replace("_", " ") or "Tienda")
+
+
+def _external_offer_visibility_label(visibility: str) -> str:
+    return "Destacada" if str(visibility or "").strip() == "highlight" else "Revisión"
+
+
+def _external_offer_risk_flags(item: dict) -> set[str]:
+    flags = item.get("risk_flags") if isinstance(item, dict) else []
+    if not isinstance(flags, list):
+        return set()
+    return {str(flag or "").strip() for flag in flags if str(flag or "").strip()}
+
+
+def _external_offer_price(item: dict) -> float | None:
+    price = _safe_float(item.get("price"))
+    if price is None or price < 0:
+        return None
+    return price
+
+
+def _external_offer_currency(item: dict) -> str:
+    currency = str(item.get("currency") or "").strip().upper()
+    return currency if _EXTERNAL_OFFER_CURRENCY_RE.match(currency) else ""
+
+
+def _external_offer_is_visible(item: dict) -> bool:
+    if not isinstance(item, dict):
+        return False
+    if str(item.get("visibility") or "").strip() not in _EXTERNAL_OFFER_VISIBLE_STATES:
+        return False
+    if str(item.get("store_type") or "").strip() not in _EXTERNAL_OFFER_VISIBLE_STORE_TYPES:
+        return False
+    if _EXTERNAL_OFFER_BLOCKING_RISKS & _external_offer_risk_flags(item):
+        return False
+    return _external_offer_price(item) is not None and bool(_external_offer_currency(item))
+
+
+def _external_offer_items(payload: dict | None, *, limit: int = 8) -> tuple[list[dict], int, int]:
+    if not isinstance(payload, dict):
+        return [], 0, 0
+    raw_items = payload.get("items")
+    items = [item for item in raw_items if _external_offer_is_visible(item)] if isinstance(raw_items, list) else []
+    total = len(items)
+    return items[:limit], total, max(0, total - limit)
+
+
+def _external_offer_safe_url(item: dict) -> str:
+    if item.get("link_allowed") is not True:
+        return ""
+    url = str(item.get("url") or "").strip()
+    if not url:
+        return ""
+    parsed = urlsplit(url)
+    if parsed.scheme not in {"http", "https"} or not parsed.netloc:
+        return ""
+    if _EXTERNAL_OFFER_CHECKOUT_RE.search(unquote(url).lower()):
+        return ""
+    return url
+
+
+def _external_offer_title(item: dict) -> str:
+    appid = str(item.get("appid") or item.get("steam_appid") or "").strip()
+    fallback = f"AppID {appid}" if appid else "Oferta externa"
+    name = str(item.get("name") or item.get("steam_name") or fallback).strip()
+    return _optional_link(name, appid)
+
+
+def _external_offer_store_text(item: dict) -> str:
+    store_name = str(item.get("store_name") or item.get("store_id") or "Tienda externa").strip()
+    store_type = _external_offer_store_type_label(str(item.get("store_type") or ""))
+    source = str(item.get("source") or "").strip()
+    parts = [store_name, store_type]
+    if source:
+        parts.append(f"fuente {source}")
+    return _md_esc(" · ".join(parts))
+
+
+def _external_offer_price_text(item: dict) -> str:
+    price = _external_offer_price(item)
+    currency = _external_offer_currency(item)
+    price_text = f"{currency} {price:.2f}" if price is not None and currency else "Sin precio válido"
+    discount = item.get("discount_pct")
+    try:
+        discount_int = int(discount)
+    except (TypeError, ValueError):
+        discount_int = 0
+    if discount_int:
+        price_text += f" · -{discount_int}%"
+    return _md_esc(price_text)
+
+
+def _external_offer_status_text(item: dict) -> str:
+    parts = [
+        _external_offer_visibility_label(str(item.get("visibility") or "")),
+        f"Confianza {_external_offer_confidence_label(str(item.get('confidence') or ''))}",
+    ]
+    drm = str(item.get("drm") or "").strip()
+    region = str(item.get("region") or "").strip()
+    if drm:
+        parts.append(f"DRM {drm}")
+    if region:
+        parts.append(f"Región {region}")
+    expires_at = str(item.get("expires_at") or "").strip()
+    if expires_at:
+        parts.append(f"vence {expires_at}")
+    return _md_esc(" · ".join(parts))
+
+
+def _external_offer_action_text(item: dict) -> str:
+    url = _external_offer_safe_url(item)
+    if not url:
+        return "Sin link seguro"
+    safe_url = url.replace(")", "%29")
+    return f"[Abrir tienda]({safe_url})"
+
+
+def _build_external_offers_lines(payload: dict | None) -> list[str]:
+    items, total_items, hidden_count = _external_offer_items(payload)
+    if not items:
+        return []
+    lines = [
+        "## 🏬 Comparativa externa",
+        "",
+        f"> **{total_items:,} oferta(s) externa(s) visibles** desde el JSON local. Comparativa informativa: Steam Tools no compra, no abre carrito, no verifica stock final, no prueba ownership y no cambia score, ranking ni wishlist hygiene.",
+        "",
+        "| Juego | Tienda | Precio | Estado | Acción |",
+        "|-------|--------|--------|--------|--------|",
+    ]
+    for item in items:
+        lines.append(
+            f"| {_external_offer_title(item)} | {_external_offer_store_text(item)} | {_external_offer_price_text(item)} | {_external_offer_status_text(item)} | {_external_offer_action_text(item)} |"
+        )
+    if hidden_count:
+        lines += ["", f"> {hidden_count:,} más en el payload completo."]
+    lines += ["", "---", ""]
+    return lines
+
+
 def _build_frontmatter(
     *,
     vanity: str,
@@ -887,6 +1064,7 @@ def generate_md(
     active_promo_context: dict | None = None,
     smart_alert_digest: dict | None = None,
     free_weekend_now: dict | None = None,
+    external_offers: dict | None = None,
     *,
     group_by_tier,
     filter_by_genres,
@@ -918,6 +1096,7 @@ def generate_md(
     personalized_recommendations = personalized_recommendations or {"items": []}
     wishlist_hygiene = wishlist_hygiene or {"items": []}
     smart_alert_digest = smart_alert_digest if isinstance(smart_alert_digest, dict) else None
+    external_offers = external_offers if isinstance(external_offers, dict) else None
     watchlist_alerts = watchlist_alerts or []
     comp = comparison or {}
     owned_and_wishlisted = sorted(
@@ -1030,6 +1209,7 @@ def generate_md(
 
     lines += _build_recommended_collection_lines(recommended_collections)
     lines += _build_personalized_recommendation_lines(personalized_recommendations)
+    lines += _build_external_offers_lines(external_offers)
     lines += _build_free_weekend_now_lines(free_weekend_now)
     lines += _build_wishlist_hygiene_lines(wishlist_hygiene)
     lines += _build_smart_alert_digest_lines(smart_alert_digest)
