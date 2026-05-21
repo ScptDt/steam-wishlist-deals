@@ -1197,12 +1197,31 @@ class ExternalOffersTests(unittest.TestCase):
                     "region": "global",
                     "confidence": "high",
                 },
+                {
+                    "appid": "76",
+                    "name": "Invalid Currency",
+                    "store": "GOG",
+                    "price": 6,
+                    "currency": "???",
+                    "drm": "gog",
+                    "region": "global",
+                    "confidence": "high",
+                },
+                {
+                    "name": "Missing AppID",
+                    "store": "Fanatical",
+                    "price": 7,
+                    "currency": "USD",
+                    "drm": "steam",
+                    "region": "global",
+                    "confidence": "high",
+                },
             ]
         )
 
         by_name = {item["name"]: item for item in offers["items"]}
 
-        self.assertEqual(offers["summary"]["hidden_count"], 5)
+        self.assertEqual(offers["summary"]["hidden_count"], 7)
         self.assertEqual(offers["summary"]["best_external_price_count"], 0)
         self.assertIn("unknown_store", by_name["Unknown Store"]["risk_flags"])
         self.assertEqual(by_name["Checkout Link"]["url"], "")
@@ -1214,6 +1233,9 @@ class ExternalOffersTests(unittest.TestCase):
         self.assertEqual(by_name["Unsafe Scheme"]["url"], "")
         self.assertFalse(by_name["Unsafe Scheme"]["link_allowed"])
         self.assertIn("unsafe_url_scheme", by_name["Unsafe Scheme"]["risk_flags"])
+        self.assertIn("invalid_currency", by_name["Invalid Currency"]["risk_flags"])
+        self.assertIn("appid_missing", by_name["Missing AppID"]["risk_flags"])
+        self.assertFalse(by_name["Missing AppID"]["eligible_for_best_external_price"])
 
     def test_normalize_external_offers_accepts_zero_price_as_valid_offer(self) -> None:
         offers = normalize_external_offers(
@@ -5286,6 +5308,92 @@ class RunOutputTests(unittest.TestCase):
 
         self.assertEqual(data["summary"]["free_weekend_now_count"], 0)
         self.assertNotIn("free_weekend_now", data)
+
+    def test_generate_json_serializes_external_offers_contract_without_ranking_changes(self) -> None:
+        external_offers = {
+            "items": [
+                {
+                    "appid": "1145360",
+                    "name": "Hades",
+                    "store_id": "fanatical",
+                    "store_name": "Fanatical",
+                    "store_type": "authorized_key_reseller",
+                    "price": 8.99,
+                    "currency": "USD",
+                    "visibility": "highlight",
+                    "eligible_for_best_external_price": True,
+                    "risk_flags": ["ownership_not_proven"],
+                }
+            ],
+            "summary": {
+                "items_count": 1,
+                "highlight_count": 1,
+                "review_count": 0,
+                "hidden_count": 0,
+                "advisory_only": True,
+                "ranking_impact": "none",
+            },
+        }
+        top_picks = [{"appid": "10", "name": "Portal 2", "score": 95.4}]
+        wishlist_hygiene = {"source_signals": [], "items": [], "summary": {"advisory_only": True}}
+
+        payload = generate_json(
+            deals=[{"appid": "10", "name": "Portal 2", "discount": 80}],
+            backlog_on_sale=[],
+            have_on_sale=[],
+            vanity="gaben",
+            owned={},
+            wishlist_appids=["10"],
+            min_discount=50,
+            genres=[],
+            top_picks=top_picks,
+            wishlist_hygiene=wishlist_hygiene,
+            external_offers=external_offers,
+        )
+
+        data = json.loads(payload)
+
+        self.assertEqual(data["summary"]["external_offers_count"], 1)
+        self.assertEqual(data["external_offers"]["items"][0]["store_id"], "fanatical")
+        self.assertTrue(data["external_offers"]["summary"]["advisory_only"])
+        self.assertEqual(data["external_offers"]["summary"]["ranking_impact"], "none")
+        self.assertEqual(data["top_picks"], top_picks)
+        self.assertEqual(data["wishlist_hygiene"], wishlist_hygiene)
+
+    def test_generate_json_omits_invalid_external_offers_contract(self) -> None:
+        payload = generate_json(
+            deals=[],
+            backlog_on_sale=[],
+            have_on_sale=[],
+            vanity="gaben",
+            owned={},
+            wishlist_appids=[],
+            min_discount=50,
+            genres=[],
+            external_offers=[],
+        )
+
+        data = json.loads(payload)
+
+        self.assertEqual(data["summary"]["external_offers_count"], 0)
+        self.assertNotIn("external_offers", data)
+
+    def test_generate_json_external_offers_absence_is_backward_compatible(self) -> None:
+        payload = generate_json(
+            deals=[],
+            backlog_on_sale=[],
+            have_on_sale=[],
+            vanity="gaben",
+            owned={},
+            wishlist_appids=[],
+            min_discount=50,
+            genres=[],
+        )
+
+        data = json.loads(payload)
+
+        self.assertEqual(data["summary"]["external_offers_count"], 0)
+        self.assertNotIn("external_offers", data)
 
     def test_generate_json_enriches_free_weekend_now_cross_signals(self) -> None:
         payload = generate_json(

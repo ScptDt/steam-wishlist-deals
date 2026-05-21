@@ -13,7 +13,9 @@ _REVIEWABLE_STORE_TYPES = _HIGHLIGHT_STORE_TYPES | {"steam", "manual_import"}
 _CHECKOUT_LIKE_PATTERN = re.compile(
     r"(^|[/?#&=._-])(cart|checkout|add-to-cart|addtocart|payment|purchase)s?([/?#&=._-]|$)"
 )
+_CURRENCY_PATTERN = re.compile(r"^[A-Z]{3}$")
 _RISK_ORDER = (
+    "appid_missing",
     "unknown_store",
     "marketplace_keyshop",
     "aggregator_source",
@@ -24,6 +26,7 @@ _RISK_ORDER = (
     "unsafe_url_scheme",
     "invalid_price",
     "currency_missing",
+    "invalid_currency",
     "ownership_not_proven",
 )
 _STORE_REGISTRY = {
@@ -108,6 +111,7 @@ def _copy_offer_records(records, *, context: str) -> list[dict]:
 def _normalize_offer(record: dict, index: int, *, include_marketplaces: bool) -> dict | None:
     if not any(_clean_text(value) for value in record.values()):
         return None
+    appid = _clean_text(_first(record, "appid", "steam_appid", "wishlist_appid"))
     store_id, store_name, store_type = _store_metadata(record)
     price = _price(record)
     currency = _currency(record)
@@ -118,6 +122,7 @@ def _normalize_offer(record: dict, index: int, *, include_marketplaces: bool) ->
     checkout_like = _is_checkout_like_url(raw_url)
     unsafe_url_scheme = _is_unsafe_url_scheme(raw_url)
     risk_flags = _risk_flags(
+        appid,
         store_type,
         confidence,
         price,
@@ -128,6 +133,7 @@ def _normalize_offer(record: dict, index: int, *, include_marketplaces: bool) ->
         unsafe_url_scheme,
     )
     visibility = _visibility(
+        appid,
         store_type,
         confidence,
         price,
@@ -139,7 +145,7 @@ def _normalize_offer(record: dict, index: int, *, include_marketplaces: bool) ->
         include_marketplaces=include_marketplaces,
     )
     return {
-        "appid": _clean_text(_first(record, "appid", "steam_appid", "wishlist_appid")),
+        "appid": appid,
         "name": _clean_text(_first(record, "name", "title", "steam_name")),
         "store_id": store_id,
         "store_name": store_name,
@@ -176,6 +182,7 @@ def _store_metadata(record: dict) -> tuple[str, str, str]:
 
 
 def _risk_flags(
+    appid: str,
     store_type: str,
     confidence: str,
     price: float | None,
@@ -186,6 +193,8 @@ def _risk_flags(
     unsafe_url_scheme: bool,
 ) -> list[str]:
     flags = {"ownership_not_proven"}
+    if not appid:
+        flags.add("appid_missing")
     if store_type == "unknown":
         flags.add("unknown_store")
     if store_type == "marketplace_keyshop":
@@ -206,10 +215,13 @@ def _risk_flags(
         flags.add("invalid_price")
     if not currency:
         flags.add("currency_missing")
+    elif not _valid_currency(currency):
+        flags.add("invalid_currency")
     return [flag for flag in _RISK_ORDER if flag in flags]
 
 
 def _visibility(
+    appid: str,
     store_type: str,
     confidence: str,
     price: float | None,
@@ -221,7 +233,7 @@ def _visibility(
     *,
     include_marketplaces: bool,
 ) -> str:
-    if price is None or not currency or checkout_like or unsafe_url_scheme or confidence == "low":
+    if not appid or price is None or not _valid_currency(currency) or checkout_like or unsafe_url_scheme or confidence == "low":
         return "hidden"
     if store_type in {"unknown", "aggregator"}:
         return "hidden"
@@ -352,7 +364,11 @@ def _confidence(record: dict) -> str:
 
 
 def _has_valid_price(offer: dict) -> bool:
-    return offer["price"] is not None and bool(offer["currency"])
+    return offer["price"] is not None and _valid_currency(offer["currency"])
+
+
+def _valid_currency(currency: str) -> bool:
+    return bool(_CURRENCY_PATTERN.fullmatch(currency))
 
 
 def _price_sort_value(value: float | None) -> float:

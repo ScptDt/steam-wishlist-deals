@@ -41,7 +41,7 @@ Regla de trabajo:
 | Slice | Feature entregada | Risk gate antes de avanzar |
 |---|---|---|
 | Contrato/normalizador local | Existe `external_offers` normalizado desde fixtures | Clasificación de tienda, `risk_flags`, deny-by-default, sin side effects |
-| JSON interno opcional | El reporte puede transportar ofertas externas | No ownership, no ranking, no checkout URLs, ausencia compatible |
+| JSON interno opcional | Cerrado 2026-05-21: el reporte puede transportar ofertas externas explícitas | No ownership, no ranking, no checkout URLs, ausencia compatible |
 | Render mínimo | Usuario ve comparativa externa | Solo official/authorized visibles, copy informativo, sin carrito |
 | ITAD live | Precios reales multi-tienda | Errores seguros, cache/control, confidence y no ownership |
 | Fanatical específico | Fanatical aparece como reseller autorizado | Fuente confiable/ITAD o import local; no scraping/login |
@@ -66,13 +66,18 @@ La implementación debe mantener gates conservadores: una oferta externa empieza
 ```json
 {
   "risk_flags": [
+    "appid_missing",
     "unknown_store",
     "marketplace_keyshop",
+    "aggregator_source",
     "drm_unknown",
     "region_unknown",
     "low_confidence",
     "checkout_like_url",
     "unsafe_url_scheme",
+    "invalid_price",
+    "currency_missing",
+    "invalid_currency",
     "ownership_not_proven"
   ]
 }
@@ -82,10 +87,13 @@ Reglas de gating:
 
 - `unknown_store` → ocultar/no destacar.
 - `marketplace_keyshop` → ocultar por defecto; solo opt-in futuro.
+- `appid_missing` → ocultar/no destacar; no puede competir como oferta externa segura.
+- `aggregator_source` → ocultar como tienda final; ITAD es fuente, no tienda destino.
 - `low_confidence` → no destacar.
 - `drm_unknown` o `region_unknown` → máximo “requiere revisión”, no “mejor oferta”.
 - `checkout_like_url` → rechazar link.
 - `unsafe_url_scheme` → rechazar link; solo `http`/`https` podrán ser linkeables en fases visibles.
+- `invalid_price`, `currency_missing` o `invalid_currency` → ocultar/no destacar.
 - `ownership_not_proven` → no alimentar `wishlist_hygiene` como owned.
 
 ### Riesgos, mitigaciones y tests esperados
@@ -94,7 +102,7 @@ Reglas de gating:
 |---|---|---|---|
 | Confundir “lo venden barato” con “ya lo tienes” | Separar `external_offers` de `external_matches` | `price_only` nunca emite ownership/hygiene | Oferta con precio no produce `external_owned` |
 | Mostrar keyshops grises sin contexto | Ocultos por defecto y opt-in futuro | `store_type=marketplace_keyshop` agrega flag y no destaca | Keyshop queda hidden/no-highlight |
-| DRM/región incorrecta | Campos visibles y flags de incertidumbre | `drm/region=unknown` agrega flag y baja elegibilidad | Oferta unknown queda “requiere revisión” |
+| DRM/región/AppID/moneda incorrecta | Campos visibles y flags de incertidumbre | `drm/region=unknown`, AppID faltante o moneda inválida agregan flags y bajan elegibilidad | Oferta incierta queda review/hidden según riesgo |
 | Romper ranking por precio externo | Sección/contrato separado | Normalizador no toca `score`, `top_picks` ni defaults | Tests confirman ranking intacto/ausencia de side effects |
 | Checkout encubierto | Copy y URL allowlist conservadora | URLs con `cart`, `checkout`, `add-to-cart` o scheme no `http/https` se rechazan | Link checkout-like/unsafe queda removido o invalidado |
 | Mezclar tiendas oficiales con marketplaces | Taxonomía obligatoria | UI futura agrupa por `store_type` y keyshops no compiten | Marketplace no cuenta como “mejor precio oficial” |
@@ -323,7 +331,7 @@ El primer slice no renderiza links, pero debe marcar o bloquear URLs riesgosas:
 6. URL con scheme inseguro (`javascript:`, `data:`) → `link_allowed=false`, `unsafe_url_scheme`, no eligible.
 7. `confidence=low` → `hidden`, `low_confidence`.
 8. Precio `0` con currency válida cuenta como precio válido.
-9. Precio inválido o currency faltante → `hidden` con risk flag correspondiente.
+9. Precio inválido, currency faltante/inválida o AppID ausente → `hidden` con risk flag correspondiente.
 10. Dedupe conserva el precio válido más bajo para la misma oferta.
 11. Payload vacío devuelve items vacíos + summary segura.
 12. No aparece ningún campo `external_matches`, `wishlist_hygiene`, `score`, `top_picks` ni mutation de ranking en el output.
@@ -351,6 +359,14 @@ Readiness del próximo slice:
 - Archivos probables: helper en `app/`, wrapper raíz si el patrón del repo lo pide, tests puros y este runbook si cambia el shape.
 - Validación mínima: `py_compile`, tests puros del normalizador/shape/risk flags/gating, ausencia compatible de `external_offers`, ranking intacto y `git diff --check`.
 - Evidencia esperada: cierre compacto en `BITACORA.md` y actualización de `PENDIENTES.md` si cambia el estado del track.
+
+### Fase 1B — JSON interno opcional — cerrada
+
+- `generate_json` acepta `external_offers` explícito y lo pasa al renderer JSON.
+- `renderers/json_renderer.py` serializa `external_offers` solo si es `dict`.
+- `summary.external_offers_count` usa `summary.items_count` o fallback a `len(items)`.
+- Payloads inválidos/ausentes se omiten con count `0`.
+- No normaliza ofertas automáticamente, no llama APIs, no toca UI/renderers HTML/Markdown/Web, no cambia ranking/defaults.
 
 ### Fase 2 — ITAD como proveedor preferido
 

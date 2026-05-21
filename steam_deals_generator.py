@@ -3449,6 +3449,7 @@ def generate_json(
     active_promo_context: dict | None = None,
     smart_alert_digest: dict | None = None,
     free_weekend_now: dict | None = None,
+    external_offers: dict | None = None,
 ) -> str:
     if _generate_json_renderer is None:
         raise RuntimeError("JSON renderer module is not available")
@@ -3527,6 +3528,7 @@ def generate_json(
         active_promo_context=active_promo_context,
         smart_alert_digest=smart_alert_digest,
         free_weekend_now=free_weekend_now,
+        external_offers=external_offers,
     )
 
 
