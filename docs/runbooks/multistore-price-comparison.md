@@ -4,6 +4,8 @@ Track priorizado para ampliar la comparativa multi-tienda hacia Fanatical y más
 
 Estado actual: Fase 0/docs cerrada el 2026-05-21 y track reclasificado como listo para un primer slice fixture-only. El siguiente paso recomendado es crear el contrato/normalizador local `external_offers` sin red real.
 
+Enfoque de ejecución: **feature-sliced + risk-gated**. La feature avanza por cortes pequeños, pero cada corte debe pasar gates de riesgo antes de exponerse al usuario, tocar ranking o usar fuentes live.
+
 ## Objetivo
 
 Mostrar opciones externas de precio/disponibilidad para juegos de la wishlist, con confianza y tipo de tienda claros.
@@ -27,6 +29,73 @@ La expansión multi-tienda debe mantener separados estos conceptos:
 | Mínimo histórico/global | ITAD/cache actual | Contexto de valor, no ownership |
 
 Regla: un precio externo nunca equivale a “ya lo tienes”. Para ownership externo se requiere evidencia explícita del usuario, como export local de biblioteca/órdenes/bundles.
+
+## Enfoque: feature-sliced + risk-gated
+
+No se implementa como “feature-first y luego revisar riesgos”, porque eso podría exponer links, copy o ranking inseguros antes de tiempo. Tampoco se bloquea como “risk-first infinito”.
+
+Regla de trabajo:
+
+> Cada slice entrega una parte de la feature, pero solo avanza al siguiente nivel de visibilidad si pasa sus risk gates.
+
+| Slice | Feature entregada | Risk gate antes de avanzar |
+|---|---|---|
+| Contrato/normalizador local | Existe `external_offers` normalizado desde fixtures | Clasificación de tienda, `risk_flags`, deny-by-default, sin side effects |
+| JSON interno opcional | El reporte puede transportar ofertas externas | No ownership, no ranking, no checkout URLs, ausencia compatible |
+| Render mínimo | Usuario ve comparativa externa | Solo official/authorized visibles, copy informativo, sin carrito |
+| ITAD live | Precios reales multi-tienda | Errores seguros, cache/control, confidence y no ownership |
+| Fanatical específico | Fanatical aparece como reseller autorizado | Fuente confiable/ITAD o import local; no scraping/login |
+| Keyshops/marketplaces | Sección opt-in futura si se decide | Separado, warning, no “mejor precio oficial”, nunca por defecto |
+
+## Minimización máxima de riesgos por slice
+
+La implementación debe mantener gates conservadores: una oferta externa empieza como **no destacable** hasta pasar validaciones explícitas. El primer slice no debe renderizar links ni botones visibles; solo debe normalizar, clasificar y marcar riesgos con fixtures.
+
+### Reglas duras
+
+1. **Deny-by-default**: tiendas desconocidas, baja confianza, DRM/región desconocidos o marketplaces no opt-in no se destacan.
+2. **Precio no es ownership**: `external_offers` nunca genera `external_owned`, `external_bundle_owned` ni señales de `wishlist_hygiene`.
+3. **Sin exposición visible en el primer corte**: no UI, no botones y no links hasta que el contrato/risk flags estén probados.
+4. **Risk flags obligatorios**: toda oferta riesgosa debe conservar señales de por qué no se destaca.
+5. **Ranking intocable**: `score`, `top_picks`, filtros, defaults y recomendaciones no cambian por precio externo en las primeras fases.
+6. **No checkout encubierto**: no aceptar copy ni URLs de carrito/checkout/add-to-cart/pago.
+7. **Keyshops al final**: marketplaces/keyshops solo con opt-in futuro, sección separada y badge de riesgo; nunca mezclados con tiendas oficiales/autorizadas.
+
+### Risk flags mínimos
+
+```json
+{
+  "risk_flags": [
+    "unknown_store",
+    "marketplace_keyshop",
+    "drm_unknown",
+    "region_unknown",
+    "low_confidence",
+    "checkout_like_url",
+    "ownership_not_proven"
+  ]
+}
+```
+
+Reglas de gating:
+
+- `unknown_store` → ocultar/no destacar.
+- `marketplace_keyshop` → ocultar por defecto; solo opt-in futuro.
+- `low_confidence` → no destacar.
+- `drm_unknown` o `region_unknown` → máximo “requiere revisión”, no “mejor oferta”.
+- `checkout_like_url` → rechazar link.
+- `ownership_not_proven` → no alimentar `wishlist_hygiene` como owned.
+
+### Riesgos, mitigaciones y tests esperados
+
+| Riesgo | Mitigación | Regla técnica | Test esperado |
+|---|---|---|---|
+| Confundir “lo venden barato” con “ya lo tienes” | Separar `external_offers` de `external_matches` | `price_only` nunca emite ownership/hygiene | Oferta con precio no produce `external_owned` |
+| Mostrar keyshops grises sin contexto | Ocultos por defecto y opt-in futuro | `store_type=marketplace_keyshop` agrega flag y no destaca | Keyshop queda hidden/no-highlight |
+| DRM/región incorrecta | Campos visibles y flags de incertidumbre | `drm/region=unknown` agrega flag y baja elegibilidad | Oferta unknown queda “requiere revisión” |
+| Romper ranking por precio externo | Sección/contrato separado | Normalizador no toca `score`, `top_picks` ni defaults | Tests confirman ranking intacto/ausencia de side effects |
+| Checkout encubierto | Copy y URL allowlist conservadora | URLs con `cart`, `checkout`, `add-to-cart` se rechazan | Link checkout-like queda removido o invalidado |
+| Mezclar tiendas oficiales con marketplaces | Taxonomía obligatoria | UI futura agrupa por `store_type` y keyshops no compiten | Marketplace no cuenta como “mejor precio oficial” |
 
 ## Taxonomía de tiendas
 
@@ -108,15 +177,15 @@ Campo top-level futuro del JSON:
 
 - Helper puro que normalice una lista local de ofertas a `external_offers`.
 - Fixtures para Fanatical autorizado, GOG oficial, marketplace oculto, precio low-confidence y DRM mismatch.
-- Validar escaping, duplicados y prioridades.
+- Validar escaping, duplicados, prioridades, `risk_flags` y gating deny-by-default.
 - Sin Web UI todavía si el contrato no está estable.
 
 Readiness del próximo slice:
 
-- Objetivo: normalizar ofertas externas locales a `external_offers` con helper puro y fixtures.
+- Objetivo: normalizar ofertas externas locales a `external_offers` con helper puro, fixtures, risk flags y gating conservador.
 - Fuera de alcance: ITAD live, Fanatical live, scraping, credenciales, checkout, cambios de score/ranking/defaults y UI grande.
 - Archivos probables: helper en `app/`, wrapper raíz si el patrón del repo lo pide, tests puros y este runbook si cambia el shape.
-- Validación mínima: `py_compile`, tests puros del normalizador/shape, ausencia compatible de `external_offers` y `git diff --check`.
+- Validación mínima: `py_compile`, tests puros del normalizador/shape/risk flags/gating, ausencia compatible de `external_offers`, ranking intacto y `git diff --check`.
 - Evidencia esperada: cierre compacto en `BITACORA.md` y actualización de `PENDIENTES.md` si cambia el estado del track.
 
 ### Fase 2 — ITAD como proveedor preferido
@@ -166,7 +235,7 @@ Reglas:
 - warning de región, DRM, vendedor y políticas;
 - nunca abrir checkout.
 
-## Criterios de aceptación por slice futuro
+## Criterios de aceptación por slice
 
 Antes de implementar cada fuente o renderer:
 
@@ -176,6 +245,14 @@ Antes de implementar cada fuente o renderer:
 4. Copy visible de revisión manual y sin checkout.
 5. Sin red real salvo smoke aprobado y acotado.
 6. Sin cambios a score/ranking/defaults en el primer corte.
+
+Checklist de handoff para otra IA antes de empezar implementación:
+
+1. Leer este runbook completo.
+2. Leer `docs/runbooks/wishlist-hygiene-multistore-contract.md` para preservar la separación `external_matches` vs `external_offers`.
+3. Empezar solo por Fase 1: normalizador local fixture-only.
+4. No tocar Web UI/renderers/live APIs en el primer PR/slice.
+5. Detenerse si un test o validación falla; reportar antes de arreglar.
 
 ## Validación proporcional
 
