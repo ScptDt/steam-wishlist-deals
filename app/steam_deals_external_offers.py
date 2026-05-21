@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import json
 import re
 from decimal import Decimal
 from decimal import InvalidOperation
@@ -10,6 +11,20 @@ from urllib.parse import urlsplit
 _CONFIDENCE_RANK = {"high": 3, "medium": 2, "low": 1}
 _HIGHLIGHT_STORE_TYPES = {"official_store", "authorized_key_reseller"}
 _REVIEWABLE_STORE_TYPES = _HIGHLIGHT_STORE_TYPES | {"steam", "manual_import"}
+_VISIBILITY_VALUES = {"highlight", "review", "hidden"}
+_BLOCKING_HIGHLIGHT_RISKS = {
+    "appid_missing",
+    "unknown_store",
+    "marketplace_keyshop",
+    "aggregator_source",
+    "low_confidence",
+    "checkout_like_url",
+    "unsafe_url_scheme",
+    "invalid_price",
+    "currency_missing",
+    "invalid_currency",
+}
+_FORBIDDEN_CONTRACT_FIELDS = {"external_matches", "wishlist_hygiene", "score", "top_picks"}
 _CHECKOUT_LIKE_PATTERN = re.compile(
     r"(^|[/?#&=._-])(cart|checkout|add-to-cart|addtocart|payment|purchase)s?([/?#&=._-]|$)"
 )
@@ -73,6 +88,70 @@ def normalize_external_offers(payload, *, include_marketplaces: bool = False) ->
     ]
     items = [_public_offer(offer) for offer in _sort_offers(_dedupe_offers(offers))]
     return {"items": items, "summary": _summary(items)}
+
+
+def diagnose_external_offers_contract(payload) -> dict:
+    """Inspect a JSON report or external_offers payload without mutating ranking/ownership."""
+    source, parse_issue = _diagnostic_source(payload)
+    issues: list[dict] = []
+    if parse_issue:
+        issues.append(parse_issue)
+        return _diagnostic_result(False, [], {}, issues)
+    if not isinstance(source, dict):
+        issues.append(
+            _diagnostic_issue(
+                "error",
+                "invalid_payload",
+                "El diagnóstico espera un objeto JSON o un string JSON con objeto raíz.",
+                "payload",
+            )
+        )
+        return _diagnostic_result(False, [], {}, issues)
+
+    external_offers, report_count = _diagnostic_external_offers_payload(source)
+    if external_offers is None:
+        return _diagnostic_result(False, [], {}, issues)
+    if not isinstance(external_offers, dict):
+        issues.append(
+            _diagnostic_issue(
+                "error",
+                "invalid_external_offers",
+                "external_offers debe ser un objeto con items y summary.",
+                "external_offers",
+            )
+        )
+        return _diagnostic_result(True, [], {}, issues)
+
+    contract_forbidden = sorted(_FORBIDDEN_CONTRACT_FIELDS & set(external_offers))
+    for field in contract_forbidden:
+        issues.append(
+            _diagnostic_issue(
+                "error",
+                "forbidden_contract_field",
+                f"external_offers no debe contener {field}.",
+                f"external_offers.{field}",
+            )
+        )
+
+    items, item_issues = _diagnostic_items(external_offers.get("items"))
+    issues.extend(item_issues)
+    summary = external_offers.get("summary")
+    if not isinstance(summary, dict):
+        issues.append(
+            _diagnostic_issue(
+                "error",
+                "missing_summary",
+                "external_offers.summary debe existir como objeto.",
+                "external_offers.summary",
+            )
+        )
+        summary = {}
+
+    issues.extend(_diagnostic_summary_issues(summary, items, report_count))
+    for index, item in enumerate(items):
+        issues.extend(_diagnostic_item_issues(item, index))
+
+    return _diagnostic_result(True, items, _computed_risk_counts(items), issues)
 
 
 def _offer_records(payload) -> list[dict]:
@@ -303,6 +382,289 @@ def _summary(items: list[dict]) -> dict:
         "advisory_only": True,
         "ranking_impact": "none",
     }
+
+
+def _diagnostic_source(payload) -> tuple[object | None, dict | None]:
+    if isinstance(payload, (bytes, bytearray)):
+        try:
+            payload = payload.decode("utf-8")
+        except UnicodeDecodeError:
+            return None, _diagnostic_issue(
+                "error",
+                "invalid_json",
+                "El contenido JSON no está codificado como UTF-8.",
+                "payload",
+            )
+    if isinstance(payload, str):
+        try:
+            return json.loads(payload), None
+        except json.JSONDecodeError:
+            return None, _diagnostic_issue(
+                "error",
+                "invalid_json",
+                "El contenido no es JSON válido.",
+                "payload",
+            )
+    return payload, None
+
+
+def _diagnostic_external_offers_payload(source: dict) -> tuple[object | None, int | None]:
+    report_count = None
+    report_summary = source.get("summary")
+    if isinstance(report_summary, dict):
+        report_count = _safe_non_negative_int(report_summary.get("external_offers_count"))
+    if "external_offers" in source:
+        return source.get("external_offers"), report_count
+    if "items" in source:
+        return source, None
+    return None, report_count
+
+
+def _diagnostic_items(value) -> tuple[list[dict], list[dict]]:
+    issues: list[dict] = []
+    if not isinstance(value, list):
+        return [], [
+            _diagnostic_issue(
+                "error",
+                "invalid_items",
+                "external_offers.items debe ser una lista.",
+                "external_offers.items",
+            )
+        ]
+    items: list[dict] = []
+    for index, item in enumerate(value):
+        if isinstance(item, dict):
+            items.append(item)
+            continue
+        issues.append(
+            _diagnostic_issue(
+                "error",
+                "invalid_item",
+                "Cada oferta externa debe ser un objeto JSON.",
+                f"external_offers.items[{index}]",
+            )
+        )
+    return items, issues
+
+
+def _diagnostic_summary_issues(summary: dict, items: list[dict], report_count: int | None) -> list[dict]:
+    issues: list[dict] = []
+    visibility_counts = _computed_visibility_counts(items)
+    risk_counts = _computed_risk_counts(items)
+    count_checks = {
+        "items_count": len(items),
+        "highlight_count": visibility_counts["highlight"],
+        "review_count": visibility_counts["review"],
+        "hidden_count": visibility_counts["hidden"],
+        "official_or_authorized_count": sum(
+            1 for item in items if item.get("store_type") in _HIGHLIGHT_STORE_TYPES
+        ),
+        "marketplace_count": sum(1 for item in items if item.get("store_type") == "marketplace_keyshop"),
+        "best_external_price_count": sum(
+            1 for item in items if item.get("eligible_for_best_external_price") is True
+        ),
+    }
+    for key, expected in count_checks.items():
+        actual = _safe_non_negative_int(summary.get(key))
+        if actual is not None and actual != expected:
+            issues.append(
+                _diagnostic_issue(
+                    "warning",
+                    f"summary_{key}_mismatch",
+                    f"external_offers.summary.{key}={actual} no coincide con {expected}.",
+                    f"external_offers.summary.{key}",
+                )
+            )
+    if report_count is not None and report_count != len(items):
+        issues.append(
+            _diagnostic_issue(
+                "warning",
+                "summary_external_offers_count_mismatch",
+                f"summary.external_offers_count={report_count} no coincide con {len(items)}.",
+                "summary.external_offers_count",
+            )
+        )
+    if summary.get("advisory_only") is not True:
+        issues.append(
+            _diagnostic_issue(
+                "error",
+                "advisory_only_not_true",
+                "external_offers.summary.advisory_only debe ser true.",
+                "external_offers.summary.advisory_only",
+            )
+        )
+    if summary.get("ranking_impact") != "none":
+        issues.append(
+            _diagnostic_issue(
+                "error",
+                "ranking_impact_not_none",
+                "external_offers.summary.ranking_impact debe ser 'none'.",
+                "external_offers.summary.ranking_impact",
+            )
+        )
+    if isinstance(summary.get("risk_counts"), dict) and summary.get("risk_counts") != risk_counts:
+        issues.append(
+            _diagnostic_issue(
+                "warning",
+                "summary_risk_counts_mismatch",
+                "external_offers.summary.risk_counts no coincide con los items.",
+                "external_offers.summary.risk_counts",
+            )
+        )
+    return issues
+
+
+def _diagnostic_item_issues(item: dict, index: int) -> list[dict]:
+    issues: list[dict] = []
+    path = f"external_offers.items[{index}]"
+    risk_flags = item.get("risk_flags")
+    if not isinstance(risk_flags, list) or not all(isinstance(flag, str) for flag in risk_flags):
+        issues.append(
+            _diagnostic_issue(
+                "error",
+                "invalid_risk_flags",
+                "risk_flags debe ser una lista de strings.",
+                f"{path}.risk_flags",
+            )
+        )
+        risk_flags = []
+    risk_set = set(risk_flags)
+    visibility = item.get("visibility")
+    store_type = item.get("store_type")
+    eligible = item.get("eligible_for_best_external_price") is True
+    forbidden_fields = sorted(_FORBIDDEN_CONTRACT_FIELDS & set(item))
+    for field in forbidden_fields:
+        issues.append(
+            _diagnostic_issue(
+                "error",
+                "forbidden_item_field",
+                f"La oferta externa no debe contener {field}.",
+                f"{path}.{field}",
+            )
+        )
+    if "ownership_not_proven" not in risk_set:
+        issues.append(
+            _diagnostic_issue(
+                "error",
+                "missing_ownership_not_proven",
+                "Cada oferta de precio debe conservar ownership_not_proven.",
+                f"{path}.risk_flags",
+            )
+        )
+    if visibility not in _VISIBILITY_VALUES:
+        issues.append(
+            _diagnostic_issue(
+                "error",
+                "invalid_visibility",
+                "visibility debe ser highlight, review o hidden.",
+                f"{path}.visibility",
+            )
+        )
+    if visibility == "highlight" and risk_set & _BLOCKING_HIGHLIGHT_RISKS:
+        issues.append(
+            _diagnostic_issue(
+                "error",
+                "highlight_with_blocking_risk",
+                "Una oferta highlight no puede tener risk_flags bloqueantes.",
+                f"{path}.risk_flags",
+            )
+        )
+    if store_type == "marketplace_keyshop" and (visibility == "highlight" or eligible):
+        issues.append(
+            _diagnostic_issue(
+                "error",
+                "marketplace_visible_or_eligible",
+                "Los marketplaces/keyshops no pueden destacarse ni competir por mejor precio por defecto.",
+                path,
+            )
+        )
+    if store_type in {"unknown", "aggregator"} and (visibility == "highlight" or eligible):
+        issues.append(
+            _diagnostic_issue(
+                "error",
+                "restricted_store_visible_or_eligible",
+                "Tiendas unknown/aggregator no pueden destacarse ni competir por mejor precio.",
+                path,
+            )
+        )
+    if eligible and (visibility != "highlight" or store_type not in _HIGHLIGHT_STORE_TYPES):
+        issues.append(
+            _diagnostic_issue(
+                "error",
+                "best_external_price_ineligible",
+                "eligible_for_best_external_price solo aplica a highlight official/authorized.",
+                f"{path}.eligible_for_best_external_price",
+            )
+        )
+    if _link_should_be_blocked(item) and item.get("link_allowed") is True:
+        issues.append(
+            _diagnostic_issue(
+                "error",
+                "blocked_link_allowed",
+                "Links checkout-like o con scheme inseguro no pueden quedar permitidos.",
+                f"{path}.link_allowed",
+            )
+        )
+    return issues
+
+
+def _diagnostic_result(contract_present: bool, items: list[dict], risk_counts: dict[str, int], issues: list[dict]) -> dict:
+    error_count = sum(1 for issue in issues if issue["severity"] == "error")
+    warning_count = sum(1 for issue in issues if issue["severity"] == "warning")
+    return {
+        "status": "error" if error_count else "warning" if warning_count else "ok" if contract_present else "absent",
+        "contract_present": contract_present,
+        "items_count": len(items),
+        "visibility_counts": _computed_visibility_counts(items),
+        "eligible_for_best_external_price_count": sum(
+            1 for item in items if item.get("eligible_for_best_external_price") is True
+        ),
+        "blocked_link_count": sum(1 for item in items if _link_should_be_blocked(item)),
+        "risk_counts": risk_counts,
+        "issue_counts": {"error": error_count, "warning": warning_count},
+        "issues": issues,
+        "advisory_only": True,
+        "ranking_impact": "none",
+    }
+
+
+def _diagnostic_issue(severity: str, code: str, message: str, path: str) -> dict:
+    return {"severity": severity, "code": code, "message": message, "path": path}
+
+
+def _computed_visibility_counts(items: list[dict]) -> dict[str, int]:
+    return {value: sum(1 for item in items if item.get("visibility") == value) for value in ("highlight", "review", "hidden")}
+
+
+def _computed_risk_counts(items: list[dict]) -> dict[str, int]:
+    risk_counts: dict[str, int] = {}
+    for item in items:
+        risks = item.get("risk_flags")
+        if not isinstance(risks, list):
+            continue
+        for flag in risks:
+            if isinstance(flag, str):
+                risk_counts[flag] = risk_counts.get(flag, 0) + 1
+    return risk_counts
+
+
+def _safe_non_negative_int(value) -> int | None:
+    try:
+        number = int(value)
+    except (TypeError, ValueError):
+        return None
+    return number if number >= 0 else None
+
+
+def _link_should_be_blocked(item: dict) -> bool:
+    url = _clean_text(item.get("url"))
+    risk_flags = item.get("risk_flags")
+    risk_set = set(risk_flags) if isinstance(risk_flags, list) else set()
+    return bool(
+        risk_set & {"checkout_like_url", "unsafe_url_scheme"}
+        or _is_checkout_like_url(url)
+        or _is_unsafe_url_scheme(url)
+    )
 
 
 def _public_offer(offer: dict) -> dict:

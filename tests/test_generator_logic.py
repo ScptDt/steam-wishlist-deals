@@ -38,6 +38,7 @@ from steam_deals_alerts import (
 from steam_deals_recommendations import (
     build_taste_priority_contract as module_build_taste_priority_contract,
 )
+from steam_deals_external_offers import diagnose_external_offers_contract
 from steam_deals_external_offers import normalize_external_offers
 from steam_deals_cache_policy import (
     build_cache_state_summary as module_build_cache_state_summary,
@@ -1068,6 +1069,123 @@ class SelectionReviewTests(unittest.TestCase):
 
 
 class ExternalOffersTests(unittest.TestCase):
+    def test_diagnose_external_offers_contract_accepts_report_payload_without_side_effects(self) -> None:
+        external_offers = normalize_external_offers(
+            [
+                {
+                    "appid": "1145360",
+                    "name": "Hades",
+                    "store": "Fanatical",
+                    "price": 8.99,
+                    "currency": "USD",
+                    "url": "https://example.invalid/deal/hades",
+                    "drm": "steam",
+                    "region": "global",
+                    "confidence": "high",
+                }
+            ]
+        )
+        report_payload = {
+            "summary": {"external_offers_count": 1},
+            "external_offers": external_offers,
+            "top_picks": [{"appid": "10", "score": 95}],
+            "wishlist_hygiene": {"items": [], "summary": {"advisory_only": True}},
+        }
+
+        diagnostic = diagnose_external_offers_contract(json.dumps(report_payload))
+
+        self.assertEqual(diagnostic["status"], "ok")
+        self.assertTrue(diagnostic["contract_present"])
+        self.assertEqual(diagnostic["items_count"], 1)
+        self.assertEqual(diagnostic["visibility_counts"], {"highlight": 1, "review": 0, "hidden": 0})
+        self.assertEqual(diagnostic["eligible_for_best_external_price_count"], 1)
+        self.assertEqual(diagnostic["issue_counts"], {"error": 0, "warning": 0})
+        self.assertTrue(diagnostic["advisory_only"])
+        self.assertEqual(diagnostic["ranking_impact"], "none")
+        self.assertEqual(report_payload["top_picks"], [{"appid": "10", "score": 95}])
+
+    def test_diagnose_external_offers_contract_reports_summary_mismatch_as_warning(self) -> None:
+        external_offers = normalize_external_offers(
+            [
+                {
+                    "appid": "10",
+                    "name": "GOG Review",
+                    "store": "GOG",
+                    "price": 4.99,
+                    "currency": "USD",
+                    "drm": "unknown",
+                    "region": "global",
+                    "confidence": "high",
+                }
+            ]
+        )
+        report_payload = {"summary": {"external_offers_count": 3}, "external_offers": external_offers}
+
+        diagnostic = diagnose_external_offers_contract(report_payload)
+
+        self.assertEqual(diagnostic["status"], "warning")
+        self.assertEqual(diagnostic["issue_counts"], {"error": 0, "warning": 1})
+        self.assertEqual(diagnostic["issues"][0]["code"], "summary_external_offers_count_mismatch")
+
+    def test_diagnose_external_offers_contract_reports_risk_gate_violations(self) -> None:
+        diagnostic = diagnose_external_offers_contract(
+            {
+                "items": [
+                    {
+                        "appid": "10",
+                        "name": "Grey Market",
+                        "store_id": "g2a",
+                        "store_type": "marketplace_keyshop",
+                        "price": 2.99,
+                        "currency": "USD",
+                        "url": "https://example.invalid/cart?appid=10",
+                        "link_allowed": True,
+                        "visibility": "highlight",
+                        "eligible_for_best_external_price": True,
+                        "risk_flags": ["marketplace_keyshop"],
+                        "score": 99,
+                    }
+                ],
+                "summary": {
+                    "items_count": 1,
+                    "highlight_count": 1,
+                    "review_count": 0,
+                    "hidden_count": 0,
+                    "best_external_price_count": 1,
+                    "risk_counts": {},
+                    "advisory_only": False,
+                    "ranking_impact": "external_price",
+                },
+            }
+        )
+
+        codes = {issue["code"] for issue in diagnostic["issues"]}
+
+        self.assertEqual(diagnostic["status"], "error")
+        self.assertIn("advisory_only_not_true", codes)
+        self.assertIn("ranking_impact_not_none", codes)
+        self.assertIn("missing_ownership_not_proven", codes)
+        self.assertIn("highlight_with_blocking_risk", codes)
+        self.assertIn("marketplace_visible_or_eligible", codes)
+        self.assertIn("best_external_price_ineligible", codes)
+        self.assertIn("blocked_link_allowed", codes)
+        self.assertIn("forbidden_item_field", codes)
+        self.assertIn("summary_risk_counts_mismatch", codes)
+        self.assertEqual(diagnostic["blocked_link_count"], 1)
+        self.assertEqual(diagnostic["ranking_impact"], "none")
+
+    def test_diagnose_external_offers_contract_handles_absent_and_invalid_payloads(self) -> None:
+        absent = diagnose_external_offers_contract({"summary": {"external_offers_count": 0}})
+        invalid_json = diagnose_external_offers_contract("{not-json")
+        invalid_contract = diagnose_external_offers_contract({"external_offers": []})
+
+        self.assertEqual(absent["status"], "absent")
+        self.assertFalse(absent["contract_present"])
+        self.assertEqual(invalid_json["status"], "error")
+        self.assertEqual(invalid_json["issues"][0]["code"], "invalid_json")
+        self.assertEqual(invalid_contract["status"], "error")
+        self.assertEqual(invalid_contract["issues"][0]["code"], "invalid_external_offers")
+
     def test_normalize_external_offers_gates_authorized_official_and_marketplace(self) -> None:
         offers = normalize_external_offers(
             [

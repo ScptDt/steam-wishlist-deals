@@ -2,7 +2,7 @@
 
 Track priorizado para ampliar la comparativa multi-tienda hacia Fanatical y más stores sin mezclarla con `wishlist_hygiene` ni con flujos de compra.
 
-Estado actual: Fase 0/docs cerrada el 2026-05-21 y track reclasificado como listo para un primer slice fixture-only. El siguiente paso recomendado es crear el contrato/normalizador local `external_offers` sin red real.
+Estado actual: Fase 0/docs, Fase 1 normalizador fixture-only, Fase 1B JSON interno opcional y Fase 1C diagnóstico JSON-consumer cerradas el 2026-05-21. El siguiente paso requiere elegir explícitamente entre render visible mínimo risk-gated o ITAD/Fanatical controlado con docs externas actuales.
 
 Enfoque de ejecución: **feature-sliced + risk-gated**. La feature avanza por cortes pequeños, pero cada corte debe pasar gates de riesgo antes de exponerse al usuario, tocar ranking o usar fuentes live.
 
@@ -42,6 +42,7 @@ Regla de trabajo:
 |---|---|---|
 | Contrato/normalizador local | Existe `external_offers` normalizado desde fixtures | Clasificación de tienda, `risk_flags`, deny-by-default, sin side effects |
 | JSON interno opcional | Cerrado 2026-05-21: el reporte puede transportar ofertas externas explícitas | No ownership, no ranking, no checkout URLs, ausencia compatible |
+| Diagnóstico JSON-consumer | Cerrado 2026-05-21: consumidor offline valida el contrato transportado | Detecta drift/riesgos sin UI, sin ranking, sin ownership y sin red |
 | Render mínimo | Usuario ve comparativa externa | Solo official/authorized visibles, copy informativo, sin carrito |
 | ITAD live | Precios reales multi-tienda | Errores seguros, cache/control, confidence y no ownership |
 | Fanatical específico | Fanatical aparece como reseller autorizado | Fuente confiable/ITAD o import local; no scraping/login |
@@ -183,6 +184,9 @@ Primer slice de implementación: módulo puro `app/steam_deals_external_offers.p
 ```python
 def normalize_external_offers(payload, *, include_marketplaces: bool = False) -> dict:
     """Normaliza ofertas externas locales a un payload external_offers seguro."""
+
+def diagnose_external_offers_contract(payload) -> dict:
+    """Inspecciona un reporte JSON o payload external_offers sin mutar ranking/ownership."""
 ```
 
 El helper debe ser puro: sin red, sin filesystem, sin config global, sin tocar ranking, sin leer cache y sin modificar `external_matches`.
@@ -367,6 +371,13 @@ Readiness del próximo slice:
 - `summary.external_offers_count` usa `summary.items_count` o fallback a `len(items)`.
 - Payloads inválidos/ausentes se omiten con count `0`.
 - No normaliza ofertas automáticamente, no llama APIs, no toca UI/renderers HTML/Markdown/Web, no cambia ranking/defaults.
+
+### Fase 1C — diagnóstico JSON-consumer offline — cerrada
+
+- `diagnose_external_offers_contract` acepta un reporte JSON/string JSON o un payload `external_offers` directo.
+- Si el contrato está ausente, devuelve estado `absent` sin ruido.
+- Si está presente, verifica `items`, `summary`, conteos, `advisory_only=true`, `ranking_impact=none`, risk gates, links bloqueados, separación de ownership/ranking y keyshops no elegibles.
+- Devuelve estado `ok`, `warning` o `error` con issues accionables; no muta payloads, no renderiza UI, no llama APIs y no cambia ranking/defaults.
 
 ### Fase 2 — ITAD como proveedor preferido
 
