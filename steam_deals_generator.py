@@ -3036,6 +3036,7 @@ def generate_md(
     smart_alert_digest: dict | None = None,
     free_weekend_now: dict | None = None,
     external_offers: dict | None = None,
+    taste_priority: dict | None = None,
 ) -> str:
     if _generate_md_renderer is None:
         raise RuntimeError("Markdown renderer module is not available")
@@ -3075,6 +3076,20 @@ def generate_md(
         liked_appids=liked_appids,
         preference_relations=preference_relations,
     )
+    if taste_priority is None:
+        taste_priority = build_taste_priority_contract(
+            deals,
+            top_picks=top_picks,
+            personalized_recommendations=personalized_recommendations,
+            activity_games=activity_games,
+            library_games=library_games if library_games is not None else have_on_sale,
+            owned=owned,
+            family_appids=family_appids,
+            liked_appids=liked_appids,
+            preference_relations=preference_relations,
+            recommended_collections=recommended_collections,
+            hltb_hours=hltb_hours,
+        )
     return _generate_md_renderer(
         deals,
         backlog_on_sale,
@@ -3114,6 +3129,7 @@ def generate_md(
         smart_alert_digest=smart_alert_digest,
         free_weekend_now=free_weekend_now,
         external_offers=external_offers,
+        taste_priority=taste_priority,
         group_by_tier=group_by_tier,
         filter_by_genres=filter_by_genres,
         group_deals_by_tag=group_deals_by_tag,
@@ -3172,6 +3188,7 @@ def generate_html(
     smart_alert_digest: dict | None = None,
     free_weekend_now: dict | None = None,
     external_offers: dict | None = None,
+    taste_priority: dict | None = None,
     recommended_collections: list[dict] | None = None,
     personalized_recommendations: dict | None = None,
     wishlist_hygiene=None,
@@ -3217,6 +3234,20 @@ def generate_html(
         liked_appids=liked_appids,
         preference_relations=preference_relations,
     )
+    if taste_priority is None:
+        taste_priority = build_taste_priority_contract(
+            deals,
+            top_picks=top_picks,
+            personalized_recommendations=personalized_recommendations,
+            activity_games=activity_games,
+            library_games=library_games if library_games is not None else have_on_sale,
+            owned=owned,
+            family_appids=family_appids,
+            liked_appids=liked_appids,
+            preference_relations=preference_relations,
+            recommended_collections=recommended_collections,
+            hltb_hours=hltb_hours,
+        )
     if _generate_html_renderer is not None:
         return _generate_html_renderer(
             deals,
@@ -3254,6 +3285,7 @@ def generate_html(
             smart_alert_digest=smart_alert_digest,
             free_weekend_now=free_weekend_now,
             external_offers=external_offers,
+            taste_priority=taste_priority,
             group_by_tier=group_by_tier,
             group_deals_by_tag=group_deals_by_tag,
         )
@@ -3295,6 +3327,7 @@ def generate_html(
         smart_alert_digest=smart_alert_digest,
         free_weekend_now=free_weekend_now,
         external_offers=external_offers,
+        taste_priority=taste_priority,
         group_by_tier=group_by_tier,
         group_deals_by_tag=group_deals_by_tag,
     )

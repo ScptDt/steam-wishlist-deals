@@ -383,6 +383,39 @@ class WebAssetsTests(unittest.TestCase):
         self.assertIn(".latest-personalized-item", app_css)
         self.assertIn(".latest-personalized-footer", app_css)
 
+    def test_latest_report_renders_taste_priority_advisory_inside_details(self) -> None:
+        app_js = (ROOT / "web" / "steam_deals" / "app.js").read_text(
+            encoding="utf-8"
+        )
+        app_css = (ROOT / "web" / "steam_deals" / "app.css").read_text(
+            encoding="utf-8"
+        )
+
+        self.assertIn("function renderLatestTastePriority", app_js)
+        self.assertIn("function latestTastePriorityPayload", app_js)
+        self.assertIn("function latestTastePriorityItems", app_js)
+        self.assertIn("function latestTastePrioritySignals", app_js)
+        self.assertIn("LATEST_TASTE_PRIORITY_CATEGORY_LABELS", app_js)
+        self.assertIn("report.taste_priority", app_js)
+        self.assertIn("data-latest-taste-priority", app_js)
+        self.assertIn("data-latest-taste-priority-appid", app_js)
+        self.assertIn("items.filter(item => item && typeof item === 'object')", app_js)
+        self.assertIn("items.slice(0, 3)", app_js)
+        self.assertIn("Prioridad por gustos", app_js)
+        self.assertIn("Sin impacto en ranking", app_js)
+        self.assertIn("Advisory-only", app_js)
+        self.assertIn("no cambia score, ranking, Top Picks, defaults, cache ni fetching", app_js)
+        self.assertIn("no cambia score, ranking ni Top Picks", app_js)
+        self.assertIn("renderLatestTastePriority(report)", app_js)
+        self.assertIn("renderLatestReportIntentWrapper(activeReport, meta, summary, files)", app_js)
+        self.assertNotIn("data-share-taste-priority", app_js)
+        self.assertNotIn("renderLatestShareTastePriority", app_js)
+        self.assertIn(".latest-taste-priority-section", app_css)
+        self.assertIn(".latest-taste-priority-list", app_css)
+        self.assertIn(".latest-taste-priority-item", app_css)
+        self.assertIn(".latest-taste-priority-badge", app_css)
+        self.assertIn(".latest-taste-priority-more", app_css)
+
     def test_latest_report_renders_advisory_offer_highlights(self) -> None:
         app_js = (ROOT / "web" / "steam_deals" / "app.js").read_text(
             encoding="utf-8"

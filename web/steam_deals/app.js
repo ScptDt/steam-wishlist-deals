@@ -2875,6 +2875,14 @@ const LATEST_EXTERNAL_OFFER_BLOCKING_RISKS = Object.freeze([
 ]);
 const LATEST_EXTERNAL_OFFER_CHECKOUT_RE = /(^|[/?#&=._-])(cart|checkout|add-to-cart|addtocart|payment|purchase)s?([/?#&=._-]|$)/i;
 
+const LATEST_TASTE_PRIORITY_CATEGORY_LABELS = Object.freeze({
+  compra_inmediata: 'Prioridad alta para revisar',
+  espera_oferta: 'Esperar mejor oferta',
+  riesgo_abandono: 'Riesgo de abandono',
+  reemplaza_varios: 'Solapa con varios juegos',
+  no_comprar_aun: 'No priorizar aún',
+});
+
 function latestPromoCategoryLabel(category) {
   const key = String(category || '').trim();
   return LATEST_PROMO_CATEGORY_LABELS[key] || key || 'Otra promo';
@@ -3260,6 +3268,102 @@ function renderLatestExternalOffers(report) {
       </div>
       <ol class="latest-external-offers-list">${selectedItems.map(renderLatestExternalOfferItem).join('')}</ol>
       ${hiddenCount ? `<div class="latest-external-offers-more">${escapeHtml(formatLatestCoverageCount(hiddenCount))} más en el JSON completo</div>` : ''}
+    </div>
+  `;
+}
+
+function latestTastePriorityPayload(report) {
+  const payload = report && typeof report === 'object' ? report.taste_priority : null;
+  return payload && typeof payload === 'object' && !Array.isArray(payload) ? payload : null;
+}
+
+function latestTastePriorityLabels(payload) {
+  const labels = {...LATEST_TASTE_PRIORITY_CATEGORY_LABELS};
+  const rawLabels = payload && payload.category_labels;
+  if (rawLabels && typeof rawLabels === 'object' && !Array.isArray(rawLabels)) {
+    Object.entries(rawLabels).forEach(([key, value]) => {
+      labels[String(key)] = String(value);
+    });
+  }
+  return labels;
+}
+
+function latestTastePriorityItems(payload) {
+  return Array.isArray(payload && payload.items)
+    ? payload.items.filter(item => item && typeof item === 'object')
+    : [];
+}
+
+function latestTastePriorityTitle(item) {
+  const source = item && typeof item === 'object' ? item : {};
+  const appid = String(source.appid || source.steam_appid || '').trim();
+  const safeAppid = /^\d+$/.test(appid) ? appid : '';
+  const name = String(source.name || source.steam_name || (appid ? `AppID ${appid}` : 'Juego')).trim();
+  const nameHtml = safeAppid
+    ? `<a href="https://store.steampowered.com/app/${escapeHtml(safeAppid)}/" target="_blank" rel="noopener noreferrer">${escapeHtml(name)}</a>`
+    : `<span>${escapeHtml(name)}</span>`;
+  return {appid, safeAppid, nameHtml};
+}
+
+function latestTastePriorityCategory(item, labels) {
+  const category = String((item && item.category) || '').trim();
+  return labels[category] || (category ? category.replace(/_/g, ' ') : 'Sin categoría');
+}
+
+function latestTastePriorityScore(item) {
+  const score = Number(item && item.taste_priority);
+  return Number.isFinite(score) ? score.toFixed(1) : '—';
+}
+
+function latestTastePrioritySignals(item) {
+  const source = item && typeof item === 'object' ? item : {};
+  const reasons = Array.isArray(source.reasons)
+    ? source.reasons.map(reason => String(reason || '').trim()).filter(Boolean).slice(0, 2)
+    : [];
+  const clusters = Array.isArray(source.clusters)
+    ? source.clusters
+        .map(cluster => cluster && typeof cluster === 'object' ? String(cluster.label || cluster.id || '').trim() : '')
+        .filter(Boolean)
+        .slice(0, 2)
+    : [];
+  const parts = reasons.length ? reasons : clusters;
+  return parts.length ? parts.join(' · ') : '—';
+}
+
+function renderLatestTastePriorityItem(item, labels) {
+  const title = latestTastePriorityTitle(item);
+  const category = latestTastePriorityCategory(item, labels);
+  return `
+    <li class="latest-taste-priority-item"${title.safeAppid ? ` data-latest-taste-priority-appid="${escapeHtml(title.safeAppid)}"` : ''}>
+      <div class="latest-taste-priority-main">
+        <strong>${title.nameHtml}</strong>
+        <span class="latest-taste-priority-meta">${escapeHtml(category)} · Índice ${escapeHtml(latestTastePriorityScore(item))}</span>
+        <span class="latest-taste-priority-signals">${escapeHtml(latestTastePrioritySignals(item))}</span>
+        <span class="latest-taste-priority-note">Señal informativa: no cambia score, ranking ni Top Picks.</span>
+      </div>
+      <span class="latest-taste-priority-badge">Advisory</span>
+    </li>
+  `;
+}
+
+function renderLatestTastePriority(report) {
+  const payload = latestTastePriorityPayload(report);
+  const items = latestTastePriorityItems(payload);
+  if (!items.length) return '';
+  const labels = latestTastePriorityLabels(payload);
+  const selectedItems = items.slice(0, 3);
+  const hiddenCount = Math.max(0, items.length - selectedItems.length);
+  return `
+    <div class="latest-taste-priority-section" data-latest-taste-priority>
+      <div class="latest-taste-priority-head">
+        <div>
+          <div class="latest-taste-priority-title">Prioridad por gustos</div>
+          <div class="latest-taste-priority-subtitle">${escapeHtml(formatLatestCoverageCount(items.length))} juego(s) desde taste_priority local. Advisory-only: no cambia score, ranking, Top Picks, defaults, cache ni fetching.</div>
+        </div>
+        <span class="latest-taste-priority-head-badge">Sin impacto en ranking</span>
+      </div>
+      <ol class="latest-taste-priority-list">${selectedItems.map(item => renderLatestTastePriorityItem(item, labels)).join('')}</ol>
+      ${hiddenCount ? `<div class="latest-taste-priority-more">${escapeHtml(formatLatestCoverageCount(hiddenCount))} más en el JSON completo</div>` : ''}
     </div>
   `;
 }
@@ -4464,6 +4568,7 @@ function renderLatestRecommendationsPanel(report, files = null) {
     renderLatestSmartAlertDigest(report),
     renderLatestRecommendedCollections(report),
     renderLatestPersonalizedRecommendations(report, files),
+    renderLatestTastePriority(report),
     renderLatestGiftIdeas(report),
     renderLatestWishlistHygiene(report),
     renderLatestShareTopPicks(report),

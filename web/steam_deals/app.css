@@ -2169,6 +2169,99 @@ details .details-body .field:last-child {
   color: var(--text2);
   font-size: 0.72rem;
 }
+.latest-taste-priority-section {
+  margin-top: 0.95rem;
+  padding-top: 0.95rem;
+  border-top: 1px solid rgba(255,255,255,0.06);
+}
+.latest-taste-priority-head {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: flex-start;
+  justify-content: space-between;
+  gap: 0.65rem;
+  margin-bottom: 0.55rem;
+}
+.latest-taste-priority-title {
+  color: var(--text);
+  font-size: 0.88rem;
+  font-weight: 700;
+  margin-bottom: 0.22rem;
+}
+.latest-taste-priority-subtitle,
+.latest-taste-priority-more {
+  color: var(--text2);
+  font-size: 0.76rem;
+  line-height: 1.45;
+}
+.latest-taste-priority-head-badge,
+.latest-taste-priority-badge {
+  display: inline-flex;
+  align-items: center;
+  padding: 0.16rem 0.48rem;
+  border-radius: 999px;
+  border: 1px solid rgba(240,178,50,0.28);
+  background: rgba(240,178,50,0.08);
+  color: var(--yellow);
+  font-size: 0.7rem;
+  font-weight: 700;
+}
+.latest-taste-priority-list {
+  list-style: none;
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(190px, 1fr));
+  gap: 0.55rem;
+}
+.latest-taste-priority-item {
+  display: flex;
+  justify-content: space-between;
+  gap: 0.55rem;
+  padding: 0.72rem 0.8rem;
+  border-radius: 8px;
+  border: 1px solid rgba(240,178,50,0.24);
+  background: var(--bg);
+}
+.latest-taste-priority-main {
+  min-width: 0;
+}
+.latest-taste-priority-main strong,
+.latest-taste-priority-main a {
+  color: var(--text);
+  font-size: 0.79rem;
+  text-decoration: none;
+}
+.latest-taste-priority-main a:hover {
+  color: var(--accent);
+}
+.latest-taste-priority-main span {
+  display: block;
+}
+.latest-taste-priority-meta {
+  margin-top: 0.2rem;
+  color: var(--yellow);
+  font-size: 0.71rem;
+  line-height: 1.35;
+}
+.latest-taste-priority-signals,
+.latest-taste-priority-note,
+.latest-taste-priority-more {
+  margin-top: 0.2rem;
+  color: var(--text2);
+  font-size: 0.71rem;
+  line-height: 1.35;
+}
+.latest-taste-priority-badge {
+  flex: 0 0 auto;
+  align-self: flex-start;
+}
+.latest-taste-priority-more {
+  margin-top: 0.55rem;
+}
+@media (max-width: 640px) {
+  .latest-taste-priority-item {
+    flex-direction: column;
+  }
+}
 .latest-gift-section {
   margin-top: 0.95rem;
   padding-top: 0.95rem;

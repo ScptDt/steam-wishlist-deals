@@ -172,6 +172,14 @@ _EXTERNAL_OFFER_CHECKOUT_RE = re.compile(
     r"(^|[/?#&=._-])(cart|checkout|add-to-cart|addtocart|payment|purchase)s?([/?#&=._-]|$)",
     re.IGNORECASE,
 )
+
+_TASTE_PRIORITY_CATEGORY_LABELS = {
+    "compra_inmediata": "Prioridad alta para revisar",
+    "espera_oferta": "Esperar mejor oferta",
+    "riesgo_abandono": "Riesgo de abandono",
+    "reemplaza_varios": "Solapa con varios juegos",
+    "no_comprar_aun": "No priorizar aún",
+}
 _EXTERNAL_OFFER_CURRENCY_RE = re.compile(r"^[A-Z]{3}$")
 
 _TOP_PICK_RECOMMENDATION_FILTERS = (
@@ -678,6 +686,98 @@ def _html_external_offers(payload: dict | None) -> str:
     <span class="external-offers-head-badge">Solo tiendas oficiales/autorizadas</span>
   </div>
   <ol class="external-offers-list">{"".join(_html_external_offer_item(item) for item in items)}</ol>
+  {more_html}
+</section>'''
+
+
+def _taste_priority_labels(payload: dict) -> dict[str, str]:
+    labels = dict(_TASTE_PRIORITY_CATEGORY_LABELS)
+    raw_labels = payload.get("category_labels")
+    if isinstance(raw_labels, dict):
+        labels.update({str(key): str(value) for key, value in raw_labels.items()})
+    return labels
+
+
+def _taste_priority_items(payload: dict | None, *, limit: int = 6) -> tuple[list[dict], int, int, dict[str, str]]:
+    if not isinstance(payload, dict):
+        return [], 0, 0, {}
+    raw_items = payload.get("items")
+    if not isinstance(raw_items, list):
+        return [], 0, 0, {}
+    items = [item for item in raw_items if isinstance(item, dict)]
+    total = len(items)
+    return items[:limit], total, max(0, total - limit), _taste_priority_labels(payload)
+
+
+def _html_taste_priority_title(item: dict) -> str:
+    appid = str(item.get("appid") or item.get("steam_appid") or "").strip()
+    fallback = f"AppID {appid}" if appid else "Juego"
+    name = str(item.get("name") or item.get("steam_name") or fallback).strip()
+    return _html_link(name, appid) if appid.isdigit() else _html_esc(name)
+
+
+def _html_taste_priority_score(item: dict) -> str:
+    try:
+        score = float(item.get("taste_priority"))
+    except (TypeError, ValueError):
+        return "—"
+    return f"{score:.1f}"
+
+
+def _html_taste_priority_category(item: dict, labels: dict[str, str]) -> str:
+    category = str(item.get("category") or "").strip()
+    label = labels.get(category) or category.replace("_", " ").strip().title() or "Sin categoría"
+    return _html_esc(label)
+
+
+def _html_taste_priority_signals(item: dict) -> str:
+    reasons = item.get("reasons") if isinstance(item.get("reasons"), list) else []
+    compact_reasons = [str(reason).strip() for reason in reasons if str(reason).strip()][:2]
+    clusters = item.get("clusters") if isinstance(item.get("clusters"), list) else []
+    cluster_labels = [
+        str(cluster.get("label") or cluster.get("id") or "").strip()
+        for cluster in clusters
+        if isinstance(cluster, dict) and str(cluster.get("label") or cluster.get("id") or "").strip()
+    ][:2]
+    parts = compact_reasons or cluster_labels
+    if not parts:
+        return "—"
+    return _html_esc(" · ".join(parts))
+
+
+def _html_taste_priority_item(item: dict, labels: dict[str, str]) -> str:
+    appid = str(item.get("appid") or item.get("steam_appid") or "").strip()
+    data_attr = f' data-taste-priority-appid="{_html_esc(appid)}"' if appid.isdigit() else ""
+    category = _html_taste_priority_category(item, labels)
+    return f'''<li class="taste-priority-item"{data_attr}>
+  <div class="taste-priority-main">
+    <strong>{_html_taste_priority_title(item)}</strong>
+    <div class="taste-priority-meta">{category} · Índice {_html_taste_priority_score(item)}</div>
+    <div class="taste-priority-signals">{_html_taste_priority_signals(item)}</div>
+    <div class="taste-priority-note">Señal informativa: no cambia score, ranking ni Top Picks.</div>
+  </div>
+  <span class="taste-priority-badge">Advisory</span>
+</li>'''
+
+
+def _html_taste_priority(payload: dict | None) -> str:
+    items, total_items, hidden_count, labels = _taste_priority_items(payload)
+    if not items:
+        return ""
+    more_html = (
+        f'<div class="taste-priority-more">{hidden_count:,} más en el payload completo</div>'
+        if hidden_count
+        else ""
+    )
+    return f'''<section class="taste-priority" data-taste-priority-section>
+  <div class="taste-priority-head">
+    <div>
+      <h2>Prioridad por gustos</h2>
+      <p class="section-desc"><strong>{total_items:,} juego(s)</strong> desde <code>taste_priority</code> local. Advisory-only: no cambia score, ranking, Top Picks, defaults, cache ni fetching.</p>
+    </div>
+    <span class="taste-priority-head-badge">Sin impacto en ranking</span>
+  </div>
+  <ol class="taste-priority-list">{"".join(_html_taste_priority_item(item, labels) for item in items)}</ol>
   {more_html}
 </section>'''
 
@@ -2025,6 +2125,19 @@ a.pick-card:hover { border-color: var(--accent-blue); transform: translateY(-2px
 .personalized-item-meta span:first-child { color: var(--accent-green); font-weight: 700; }
 .personalized-item-main ul { margin-left: 1rem; color: var(--text-secondary); font-size: .75rem; line-height: 1.35; }
 @media (max-width: 767px) { .personalized-item-card { grid-template-columns: 1fr; } }
+.taste-priority { margin: 0 0 1.5rem; padding: 1rem; border: 1px solid rgba(240,178,50,.3); border-radius: 10px; background: linear-gradient(135deg, rgba(240,178,50,.09), rgba(12,20,30,.25)); }
+.taste-priority-head { display: flex; justify-content: space-between; gap: 1rem; align-items: flex-start; }
+.taste-priority h2 { font-size: 1.2rem; margin-bottom: .3rem; }
+.taste-priority-head-badge, .taste-priority-badge { white-space: nowrap; border: 1px solid rgba(240,178,50,.45); border-radius: 999px; color: var(--accent-yellow); background: rgba(12,20,30,.32); padding: .16rem .55rem; font-size: .74rem; font-weight: 700; }
+.taste-priority-list { list-style: none; display: grid; grid-template-columns: repeat(auto-fit, minmax(260px, 1fr)); gap: .7rem; }
+.taste-priority-item { display: flex; justify-content: space-between; gap: .75rem; background: var(--bg-card); border: 1px solid rgba(240,178,50,.24); border-radius: 8px; padding: .75rem; }
+.taste-priority-main { min-width: 0; }
+.taste-priority-main strong { display: block; font-size: .86rem; line-height: 1.3; margin-bottom: .35rem; }
+.taste-priority-meta { color: var(--accent-yellow); font-size: .74rem; line-height: 1.4; margin-bottom: .25rem; }
+.taste-priority-signals, .taste-priority-note, .taste-priority-more { color: var(--text-secondary); font-size: .74rem; line-height: 1.4; }
+.taste-priority-badge { align-self: flex-start; }
+.taste-priority-more { margin-top: .6rem; }
+@media (max-width: 767px) { .taste-priority-head, .taste-priority-item { flex-direction: column; } .taste-priority-head-badge { align-self: flex-start; } }
 .selection-review { margin: 0 0 1.5rem; padding: 1rem; border: 1px solid rgba(102,192,244,.28); border-radius: 10px; background: linear-gradient(135deg, rgba(102,192,244,.08), rgba(12,20,30,.25)); }
 .selection-review-head { display: flex; justify-content: space-between; gap: 1rem; align-items: flex-start; }
 .selection-review h2 { font-size: 1.2rem; margin-bottom: .3rem; }
@@ -3094,6 +3207,7 @@ def generate_html(
     smart_alert_digest: dict | None = None,
     free_weekend_now: dict | None = None,
     external_offers: dict | None = None,
+    taste_priority: dict | None = None,
     *,
     group_by_tier,
     group_deals_by_tag,
@@ -3120,6 +3234,7 @@ def generate_html(
     wishlist_hygiene = wishlist_hygiene or {"items": []}
     smart_alert_digest = smart_alert_digest if isinstance(smart_alert_digest, dict) else None
     external_offers = external_offers if isinstance(external_offers, dict) else None
+    taste_priority = taste_priority if isinstance(taste_priority, dict) else None
     achievements_data = achievements_data or {}
     watchlist_alerts = watchlist_alerts or []
     price_history_games = (price_history or {}).get("games", {})
@@ -3269,6 +3384,7 @@ def generate_html(
 
     parts.append(_html_recommended_collections(recommended_collections))
     parts.append(_html_personalized_recommendations(personalized_recommendations))
+    parts.append(_html_taste_priority(taste_priority))
     parts.append(
         _html_selection_review(
             deals,

@@ -119,6 +119,14 @@ _EXTERNAL_OFFER_CHECKOUT_RE = re.compile(
     r"(^|[/?#&=._-])(cart|checkout|add-to-cart|addtocart|payment|purchase)s?([/?#&=._-]|$)",
     re.IGNORECASE,
 )
+
+_TASTE_PRIORITY_CATEGORY_LABELS = {
+    "compra_inmediata": "Prioridad alta para revisar",
+    "espera_oferta": "Esperar mejor oferta",
+    "riesgo_abandono": "Riesgo de abandono",
+    "reemplaza_varios": "Solapa con varios juegos",
+    "no_comprar_aun": "No priorizar aún",
+}
 _EXTERNAL_OFFER_CURRENCY_RE = re.compile(r"^[A-Z]{3}$")
 
 
@@ -749,6 +757,80 @@ def _build_external_offers_lines(payload: dict | None) -> list[str]:
     return lines
 
 
+def _taste_priority_labels(payload: dict) -> dict[str, str]:
+    labels = dict(_TASTE_PRIORITY_CATEGORY_LABELS)
+    raw_labels = payload.get("category_labels")
+    if isinstance(raw_labels, dict):
+        labels.update({str(key): str(value) for key, value in raw_labels.items()})
+    return labels
+
+
+def _taste_priority_items(payload: dict | None, *, limit: int = 6) -> tuple[list[dict], int, int, dict[str, str]]:
+    if not isinstance(payload, dict):
+        return [], 0, 0, {}
+    raw_items = payload.get("items")
+    if not isinstance(raw_items, list):
+        return [], 0, 0, {}
+    items = [item for item in raw_items if isinstance(item, dict)]
+    total = len(items)
+    return items[:limit], total, max(0, total - limit), _taste_priority_labels(payload)
+
+
+def _taste_priority_title(item: dict) -> str:
+    appid = str(item.get("appid") or item.get("steam_appid") or "").strip()
+    fallback = f"AppID {appid}" if appid else "Juego"
+    name = str(item.get("name") or item.get("steam_name") or fallback).strip()
+    return _optional_link(name, appid)
+
+
+def _taste_priority_score_text(item: dict) -> str:
+    score = _safe_float(item.get("taste_priority"))
+    return f"{score:.1f}" if score is not None else "—"
+
+
+def _taste_priority_category_text(item: dict, labels: dict[str, str]) -> str:
+    category = str(item.get("category") or "").strip()
+    label = labels.get(category) or category.replace("_", " ").strip().title() or "Sin categoría"
+    return _md_esc(label)
+
+
+def _taste_priority_signal_text(item: dict) -> str:
+    reasons = item.get("reasons") if isinstance(item.get("reasons"), list) else []
+    compact_reasons = [str(reason).strip() for reason in reasons if str(reason).strip()][:2]
+    clusters = item.get("clusters") if isinstance(item.get("clusters"), list) else []
+    cluster_labels = [
+        str(cluster.get("label") or cluster.get("id") or "").strip()
+        for cluster in clusters
+        if isinstance(cluster, dict) and str(cluster.get("label") or cluster.get("id") or "").strip()
+    ][:2]
+    parts = compact_reasons or cluster_labels
+    if not parts:
+        return "—"
+    return _md_esc(" · ".join(parts))
+
+
+def _build_taste_priority_lines(payload: dict | None) -> list[str]:
+    items, total_items, hidden_count, labels = _taste_priority_items(payload)
+    if not items:
+        return []
+    lines = [
+        "## 🎯 Prioridad por gustos",
+        "",
+        f"> **{total_items:,} juego(s)** desde `taste_priority` local. Señal informativa: no cambia score, ranking, Top Picks, defaults, cache ni fetching.",
+        "",
+        "| Juego | Categoría | Índice | Señales locales |",
+        "|-------|-----------|--------|----------------|",
+    ]
+    for item in items:
+        lines.append(
+            f"| {_taste_priority_title(item)} | {_taste_priority_category_text(item, labels)} | {_taste_priority_score_text(item)} | {_taste_priority_signal_text(item)} |"
+        )
+    if hidden_count:
+        lines += ["", f"> {hidden_count:,} más en el payload completo."]
+    lines += ["", "---", ""]
+    return lines
+
+
 def _build_frontmatter(
     *,
     vanity: str,
@@ -1065,6 +1147,7 @@ def generate_md(
     smart_alert_digest: dict | None = None,
     free_weekend_now: dict | None = None,
     external_offers: dict | None = None,
+    taste_priority: dict | None = None,
     *,
     group_by_tier,
     filter_by_genres,
@@ -1097,6 +1180,7 @@ def generate_md(
     wishlist_hygiene = wishlist_hygiene or {"items": []}
     smart_alert_digest = smart_alert_digest if isinstance(smart_alert_digest, dict) else None
     external_offers = external_offers if isinstance(external_offers, dict) else None
+    taste_priority = taste_priority if isinstance(taste_priority, dict) else None
     watchlist_alerts = watchlist_alerts or []
     comp = comparison or {}
     owned_and_wishlisted = sorted(
@@ -1209,6 +1293,7 @@ def generate_md(
 
     lines += _build_recommended_collection_lines(recommended_collections)
     lines += _build_personalized_recommendation_lines(personalized_recommendations)
+    lines += _build_taste_priority_lines(taste_priority)
     lines += _build_external_offers_lines(external_offers)
     lines += _build_free_weekend_now_lines(free_weekend_now)
     lines += _build_wishlist_hygiene_lines(wishlist_hygiene)

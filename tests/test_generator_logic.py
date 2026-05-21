@@ -9273,6 +9273,57 @@ class RankTopPicksTests(unittest.TestCase):
         self.assertIn("Sin candidatos locales de Free Weekend en el JSON actual", md)
         self.assertIn("no hace fetch live ni cambia score/cache", md)
 
+    def test_generate_md_surfaces_taste_priority_advisory_section(self) -> None:
+        md = generate_md(
+            deals=[],
+            backlog_on_sale=[],
+            have_on_sale=[],
+            vanity="gaben",
+            owned={},
+            wishlist_appids=[],
+            min_discount=50,
+            genres=[],
+            taste_priority={
+                "items": [
+                    {
+                        "appid": "10",
+                        "name": "Deep Action",
+                        "taste_priority": 86.4,
+                        "category": "compra_inmediata",
+                        "reasons": ["similar a Hades", "alta afinidad con tus gustos locales"],
+                    }
+                ],
+            },
+        )
+
+        self.assertIn("## 🎯 Prioridad por gustos", md)
+        self.assertIn("desde `taste_priority` local", md)
+        self.assertIn("no cambia score, ranking, Top Picks, defaults, cache ni fetching", md)
+        self.assertIn("[Deep Action](https://store.steampowered.com/app/10/)", md)
+        self.assertIn("Prioridad alta para revisar", md)
+        self.assertIn("86.4", md)
+        self.assertIn("similar a Hades · alta afinidad con tus gustos locales", md)
+
+    def test_generate_md_omits_empty_or_invalid_taste_priority_section(self) -> None:
+        cases = [None, [], {"items": []}, {"items": None}, {"items": ["not-a-dict"]}]
+
+        for taste_priority in cases:
+            with self.subTest(taste_priority=taste_priority):
+                md = generate_md(
+                    deals=[],
+                    backlog_on_sale=[],
+                    have_on_sale=[],
+                    vanity="gaben",
+                    owned={},
+                    wishlist_appids=[],
+                    min_discount=50,
+                    genres=[],
+                    taste_priority=taste_priority,
+                )
+
+                self.assertNotIn("Prioridad por gustos", md)
+                self.assertNotIn("data-taste-priority-section", md)
+
     def test_generate_md_surfaces_external_offers_risk_gated_section(self) -> None:
         md = generate_md(
             deals=[],
@@ -10114,6 +10165,62 @@ class RankTopPicksTests(unittest.TestCase):
         self.assertIn("data-free-weekend-now-section", html)
         self.assertIn("Sin candidatos locales de Free Weekend en el JSON actual", html)
         self.assertIn("no hace fetch live ni cambia score/cache", html)
+
+    def test_generate_html_surfaces_taste_priority_advisory_section(self) -> None:
+        html = generate_html(
+            deals=[],
+            backlog_on_sale=[],
+            have_on_sale=[],
+            vanity="gaben",
+            owned={},
+            wishlist_appids=[],
+            min_discount=50,
+            genres=[],
+            taste_priority={
+                "items": [
+                    {
+                        "appid": "10",
+                        "name": "Deep <Action>",
+                        "taste_priority": 86.4,
+                        "category": "compra_inmediata",
+                        "reasons": ["alta afinidad <local>", "valor/descuento sólido"],
+                    }
+                ],
+            },
+        )
+
+        self.assertIn("data-taste-priority-section", html)
+        self.assertIn("Prioridad por gustos", html)
+        self.assertIn("Sin impacto en ranking", html)
+        self.assertIn("Advisory-only", html)
+        self.assertIn("no cambia score, ranking, Top Picks, defaults, cache ni fetching", html)
+        self.assertIn('data-taste-priority-appid="10"', html)
+        self.assertIn("Deep &lt;Action&gt;", html)
+        self.assertIn("Prioridad alta para revisar · Índice 86.4", html)
+        self.assertIn("alta afinidad &lt;local&gt; · valor/descuento sólido", html)
+        self.assertIn("no cambia score, ranking ni Top Picks", html)
+        self.assertNotIn("Deep <Action>", html)
+        self.assertNotIn("alta afinidad <local>", html)
+
+    def test_generate_html_omits_empty_or_invalid_taste_priority_section(self) -> None:
+        cases = [None, [], {"items": []}, {"items": None}, {"items": ["not-a-dict"]}]
+
+        for taste_priority in cases:
+            with self.subTest(taste_priority=taste_priority):
+                html = generate_html(
+                    deals=[],
+                    backlog_on_sale=[],
+                    have_on_sale=[],
+                    vanity="gaben",
+                    owned={},
+                    wishlist_appids=[],
+                    min_discount=50,
+                    genres=[],
+                    taste_priority=taste_priority,
+                )
+
+                self.assertNotIn("data-taste-priority-section", html)
+                self.assertNotIn("Prioridad por gustos", html)
 
     def test_generate_html_surfaces_external_offers_risk_gated_section(self) -> None:
         html = generate_html(
