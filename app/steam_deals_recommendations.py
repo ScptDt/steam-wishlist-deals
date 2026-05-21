@@ -998,6 +998,8 @@ def _taste_profile(personalized_recommendations) -> dict:
 def _taste_library_distribution(profile: dict) -> list[dict]:
     library_summary = profile.get("library_summary") if isinstance(profile, dict) else {}
     distribution = library_summary.get("genre_distribution") if isinstance(library_summary, dict) else []
+    if not isinstance(distribution, list):
+        return []
     return [item for item in distribution if isinstance(item, dict)]
 
 
