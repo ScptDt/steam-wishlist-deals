@@ -677,6 +677,10 @@ class WebAssetsTests(unittest.TestCase):
         self.assertIn("requiere ITAD key y ruta de caché", index_html)
         self.assertIn("sin cambiar score, ranking ni ownership", index_html)
         self.assertIn("'itad_refresh_external_offers_cache'", app_js)
+        self.assertIn("const itadRefreshEl = $('itad_refresh_external_offers_cache')", app_js)
+        self.assertIn("itadRefreshEl.checked = false", app_js)
+        self.assertIn("itadRefreshEl.defaultChecked = false", app_js)
+        self.assertIn("itadRefreshEl.removeAttribute('checked')", app_js)
 
     def test_latest_report_surfaces_partial_cache_coverage(self) -> None:
         app_js = (ROOT / "web" / "steam_deals" / "app.js").read_text(

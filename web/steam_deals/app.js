@@ -366,6 +366,8 @@ function fillForm(cfg) {
 function applyDefaultTransientFilters() {
   const noCacheEl = $('no_cache');
   if (noCacheEl) noCacheEl.checked = false;
+  const itadRefreshEl = $('itad_refresh_external_offers_cache');
+  if (itadRefreshEl) itadRefreshEl.checked = false;
   const pd2NoCacheEl = $('pd2_no_cache');
   if (pd2NoCacheEl) pd2NoCacheEl.checked = false;
 }
@@ -376,6 +378,11 @@ function enforceTransientFilterDefaults() {
   if (noCacheEl) {
     noCacheEl.defaultChecked = false;
     noCacheEl.removeAttribute('checked');
+  }
+  const itadRefreshEl = $('itad_refresh_external_offers_cache');
+  if (itadRefreshEl) {
+    itadRefreshEl.defaultChecked = false;
+    itadRefreshEl.removeAttribute('checked');
   }
   const pd2NoCacheEl = $('pd2_no_cache');
   if (pd2NoCacheEl) {

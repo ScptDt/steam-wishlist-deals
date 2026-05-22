@@ -197,6 +197,17 @@ class GeneratedFilesServingTests(unittest.TestCase):
         self.assertIn("--itad-refresh-external-offers-cache", opt_in_cmd)
         self.assertEqual(opt_in_cmd.count("--itad-refresh-external-offers-cache"), 1)
 
+    def test_build_command_does_not_enable_itad_refresh_from_saved_config(self) -> None:
+        config = {
+            "vanity": "gaben",
+            "itad_external_offers_cache": "/tmp/itad-external-offers.json",
+            "itad_refresh_external_offers_cache": True,
+        }
+
+        cmd = build_command(config, {})
+
+        self.assertNotIn("--itad-refresh-external-offers-cache", cmd)
+
     def test_build_command_passes_wishlist_external_matches_json(self) -> None:
         cmd = build_command(
             {
@@ -420,6 +431,29 @@ class GeneratedFilesServingTests(unittest.TestCase):
         self.assertFalse(handler.json["ok"])
         self.assertIn("Refresh ITAD external_offers requiere ITAD API Key", payload)
         self.assertIn("Caché ITAD external_offers (JSON)", payload)
+
+    def test_preflight_does_not_require_itad_key_when_itad_refresh_is_unchecked(self) -> None:
+        original_load_config = web.load_config
+        original_find_hltb_csv_candidates = web.find_hltb_csv_candidates
+        web.load_config = lambda: {}
+        web.find_hltb_csv_candidates = lambda: []
+        handler = _FakeJsonHandler(
+            {
+                "config": {"vanity": "gaben"},
+                "filters": {"itad_refresh_external_offers_cache": False},
+            }
+        )
+        try:
+            Handler._serve_preflight(handler)
+        finally:
+            web.load_config = original_load_config
+            web.find_hltb_csv_candidates = original_find_hltb_csv_candidates
+
+        payload = str(handler.json)
+        self.assertEqual(handler.status, 200)
+        self.assertTrue(handler.json["ok"])
+        self.assertNotIn("ITAD API Key", payload)
+        self.assertNotIn("Caché ITAD external_offers (JSON)", payload)
 
     def test_preflight_allows_missing_itad_cache_target_when_refreshing(self) -> None:
         original_load_config = web.load_config

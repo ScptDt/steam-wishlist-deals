@@ -178,6 +178,46 @@ class ItadExternalOffersGeneratorTests(unittest.TestCase):
         self.assertEqual(save_calls, [])
         self.assertIn("No se pudo refrescar caché ITAD external_offers", emitted[0])
 
+    def test_refresh_itad_external_offers_cache_skips_live_helpers_without_appids(self) -> None:
+        emitted: list[str] = []
+        calls: list[str] = []
+
+        payload = refresh_itad_external_offers_cache(
+            Path("itad-cache.json"),
+            [],
+            "SECRET-ITAD",
+            lookup_games_fn=lambda _missing, _key: calls.append("lookup") or {},
+            get_prices_payload_fn=lambda _ids, _key, country="MX": calls.append("prices") or [],
+            save_cache_fn=lambda _path, _cache: calls.append("save"),
+            emit_fn=emitted.append,
+        )
+
+        self.assertIsNone(payload)
+        self.assertEqual(calls, [])
+        self.assertIn("sin IDs ITAD", emitted[0])
+
+    def test_refresh_itad_external_offers_cache_skips_prices_and_save_on_lookup_miss(self) -> None:
+        emitted: list[str] = []
+        calls: list[object] = []
+
+        def fake_lookup(missing, key):
+            calls.append(("lookup", list(missing), key))
+            return {}
+
+        payload = refresh_itad_external_offers_cache(
+            Path("itad-cache.json"),
+            ["10"],
+            "SECRET-ITAD",
+            lookup_games_fn=fake_lookup,
+            get_prices_payload_fn=lambda _ids, _key, country="MX": calls.append("prices") or [],
+            save_cache_fn=lambda _path, _cache: calls.append("save"),
+            emit_fn=emitted.append,
+        )
+
+        self.assertIsNone(payload)
+        self.assertEqual(calls, [("lookup", ["10"], "SECRET-ITAD")])
+        self.assertIn("sin IDs ITAD", emitted[0])
+
 
 if __name__ == "__main__":
     unittest.main()
