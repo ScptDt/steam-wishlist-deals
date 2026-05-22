@@ -222,6 +222,26 @@ class WebAssetsTests(unittest.TestCase):
             app_js,
         )
 
+    def test_play_access_import_is_visible_and_local_only(self) -> None:
+        index_html = (ROOT / "web" / "steam_deals" / "index.html").read_text(
+            encoding="utf-8"
+        )
+        app_js = (ROOT / "web" / "steam_deals" / "app.js").read_text(
+            encoding="utf-8"
+        )
+
+        self.assertIn("Play access local (JSON)", index_html)
+        self.assertIn('id="play_access_json"', index_html)
+        self.assertIn("Import local explícito", index_html)
+        self.assertIn("No hace auto-scan", index_html)
+        self.assertIn("no borra, no auto-excluye", index_html)
+        self.assertIn("no cambia score ni ranking", index_html)
+        self.assertIn("play_access_json", app_js)
+        self.assertIn(
+            "'play_access_json'",
+            app_js,
+        )
+
     def test_itad_external_offers_cache_import_is_visible_and_local_only(self) -> None:
         index_html = (ROOT / "web" / "steam_deals" / "index.html").read_text(
             encoding="utf-8"

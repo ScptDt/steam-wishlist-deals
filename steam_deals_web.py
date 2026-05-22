@@ -791,6 +791,9 @@ def build_command(config: dict, filters: dict) -> list[str]:
             "--wishlist-external-matches-json",
             config["wishlist_external_matches_json"],
         ]
+    play_access_json = normalize_optional_local_path_value(config.get("play_access_json"))
+    if play_access_json:
+        cmd += ["--play-access-json", play_access_json]
     itad_external_offers_cache = normalize_optional_local_path_value(
         config.get("itad_external_offers_cache")
     )
@@ -1080,6 +1083,18 @@ class Handler(BaseHTTPRequestHandler):
                 + redact_sensitive_text(
                     external_matches_json,
                     extra_values=[Path(external_matches_json).expanduser()],
+                )
+            )
+
+        play_access_json = normalize_optional_local_path_value(
+            config.get("play_access_json")
+        )
+        if play_access_json and not Path(play_access_json).expanduser().exists():
+            issues.append(
+                "No se encontró JSON local de play_access: "
+                + redact_sensitive_text(
+                    play_access_json,
+                    extra_values=[Path(play_access_json).expanduser()],
                 )
             )
 
@@ -1527,6 +1542,7 @@ class Handler(BaseHTTPRequestHandler):
             "hltb",
             "family_json",
             "wishlist_external_matches_json",
+            "play_access_json",
             "itad_external_offers_cache",
             "itad_key",
         ):
