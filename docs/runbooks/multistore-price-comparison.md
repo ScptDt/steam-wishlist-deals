@@ -349,20 +349,18 @@ El primer slice no renderiza links, pero debe marcar o bloquear URLs riesgosas:
 - Mantener `external_matches` intacto para `wishlist_hygiene`.
 - Validación: revisión documental + `git diff --check`.
 
-### Fase 1 — parser/fixtures sin red — próximo slice ready
+### Fase 1 — parser/fixtures sin red — cerrada
 
-- Helper puro que normalice una lista local de ofertas a `external_offers`.
-- Fixtures para Fanatical autorizado, GOG oficial, marketplace oculto, precio low-confidence y DRM mismatch.
-- Validar escaping, duplicados, prioridades, `risk_flags` y gating deny-by-default.
-- Sin Web UI todavía si el contrato no está estable.
+- `normalize_external_offers(payload, include_marketplaces=False)` normaliza fixtures/local imports a `external_offers`.
+- Cubre Fanatical autorizado, GOG oficial, marketplaces/keyshops ocultos por defecto, low-confidence, URLs checkout-like/unsafe, precio/currency inválidos, dedupe y payload vacío.
+- Mantiene `ownership_not_proven`, `advisory_only=true`, `ranking_impact=none` y ausencia de campos prohibidos (`external_matches`, `wishlist_hygiene`, `score`, `top_picks`).
+- No hace red, no lee filesystem/config, no renderiza UI por sí mismo y no toca ranking/defaults.
 
-Readiness del próximo slice:
+Cierre 2026-05-21:
 
-- Objetivo: normalizar ofertas externas locales a `external_offers` con helper puro, fixtures, risk flags y gating conservador.
-- Fuera de alcance: ITAD live, Fanatical live, scraping, credenciales, checkout, cambios de score/ranking/defaults y UI grande.
-- Archivos probables: helper en `app/`, wrapper raíz si el patrón del repo lo pide, tests puros y este runbook si cambia el shape.
-- Validación mínima: `py_compile`, tests puros del normalizador/shape/risk flags/gating, ausencia compatible de `external_offers`, ranking intacto y `git diff --check`.
-- Evidencia esperada: cierre compacto en `BITACORA.md` y actualización de `PENDIENTES.md` si cambia el estado del track.
+- Helper y wrapper raíz implementados en `app/steam_deals_external_offers.py` / `steam_deals_external_offers.py`.
+- Evidencia y detalle operativo viven en `PENDIENTES.md`/`BITACORA.md`; este bloque queda como referencia histórica de contrato, no como siguiente acción.
+- Siguiente acción vigente: usar el selector actual de `PENDIENTES.md` y el estado al inicio de este runbook, no reiniciar en Fase 1.
 
 ### Fase 1B — JSON interno opcional — cerrada
 
@@ -493,13 +491,14 @@ Antes de implementar cada fuente o renderer:
 5. Sin red real salvo smoke aprobado y acotado.
 6. Sin cambios a score/ranking/defaults en el primer corte.
 
-Checklist de handoff para otra IA antes de empezar implementación:
+Checklist de handoff para otra IA antes de continuar implementación:
 
 1. Leer este runbook completo.
 2. Leer `docs/runbooks/wishlist-hygiene-multistore-contract.md` para preservar la separación `external_matches` vs `external_offers`.
-3. Empezar solo por Fase 1: normalizador local fixture-only.
-4. No tocar Web UI/renderers/live APIs en el primer PR/slice.
-5. Detenerse si un test o validación falla; reportar antes de arreglar.
+3. Confirmar el estado vigente en `PENDIENTES.md` y en el encabezado de este runbook antes de elegir slice.
+4. Si el slice es nuevo proveedor, renderer o live smoke, partir de las fases ya cerradas como contrato y no reabrir Fase 1 salvo cambio explícito de shape.
+5. No tocar Web UI/renderers/live APIs ni hacer red real fuera del slice aprobado.
+6. Detenerse si un test o validación falla; reportar antes de arreglar.
 
 ## Validación proporcional
 
