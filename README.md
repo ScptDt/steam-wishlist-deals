@@ -152,6 +152,12 @@ python3 steam_deals_generator.py --vanity gaben --md-frontmatter
 
 `--max-workers` controla el paralelismo de fetch en enrichment. Recomendación práctica: dejar `16` (default actual), bajar a `12` o `8` si notas rate limits/red inestable, y evitar valores muy altos para reducir riesgo de fallos externos. Este ajuste ya está expuesto también en **Filtros avanzados** de la UI compartida (web + desktop), y los presets sugieren valores rápidos (`rapido=12`, `completo=16`, `ahorro=8`).
 
+### Comparativa externa desde caché ITAD local
+
+`--itad-external-offers-cache` permite sumar precios externos desde una caché JSON ITAD local. Leer esa caché no hace red live por sí solo y la comparativa es informativa: no prueba ownership, no abre carrito/checkout y no cambia score/ranking.
+
+La Web UI expone el flujo en **Archivos opcionales** → `Caché ITAD external_offers (JSON)`. Si necesitas poblarla o actualizarla desde ITAD, marca explícitamente **Filtros avanzados** → `Refrescar caché ITAD external_offers en vivo (opt-in)`; ese refresh requiere `ITAD key` y ruta de caché, y puede crear/actualizar el archivo indicado.
+
 ### Import local para revisar la wishlist
 
 Puedes aportar un JSON local con matches externos para que `Revisar wishlist` sugiera juegos que quizá ya tienes en otra tienda. Es **solo revisión manual**: no borra juegos, no auto-excluye, no cambia score/ranking y no llama APIs externas.

@@ -659,6 +659,20 @@ class WebAssetsTests(unittest.TestCase):
         self.assertIn("consulta señales Store JSON y usa cache separado", index_html)
         self.assertIn("'free_weekend_live'", app_js)
 
+    def test_advanced_filters_include_itad_external_offers_refresh_opt_in(self) -> None:
+        index_html = (ROOT / "web" / "steam_deals" / "index.html").read_text(
+            encoding="utf-8"
+        )
+        app_js = (ROOT / "web" / "steam_deals" / "app.js").read_text(
+            encoding="utf-8"
+        )
+
+        self.assertIn('id="itad_refresh_external_offers_cache"', index_html)
+        self.assertIn("Refrescar caché ITAD external_offers en vivo (opt-in)", index_html)
+        self.assertIn("requiere ITAD key y ruta de caché", index_html)
+        self.assertIn("sin cambiar score, ranking ni ownership", index_html)
+        self.assertIn("'itad_refresh_external_offers_cache'", app_js)
+
     def test_latest_report_surfaces_partial_cache_coverage(self) -> None:
         app_js = (ROOT / "web" / "steam_deals" / "app.js").read_text(
             encoding="utf-8"

@@ -803,6 +803,8 @@ def build_command(config: dict, filters: dict) -> list[str]:
         cmd.append("--no-cache")
     if filters.get("free_weekend_live"):
         cmd.append("--free-weekend-live")
+    if filters.get("itad_refresh_external_offers_cache"):
+        cmd.append("--itad-refresh-external-offers-cache")
     if filters.get("max_price"):
         cmd += ["--max-price", str(filters["max_price"])]
     if filters.get("deck_only"):
@@ -1028,6 +1030,13 @@ class Handler(BaseHTTPRequestHandler):
                 status=400,
             )
             return
+        filters = body.get("filters", {}) or {}
+        if not isinstance(filters, dict):
+            self._send_json(
+                {"error": "invalid_payload", "message": "filters debe ser objeto."},
+                status=400,
+            )
+            return
         runtime_config = hydrate_config_secrets(config, load_config())
         issues = []
         warnings = []
@@ -1077,14 +1086,33 @@ class Handler(BaseHTTPRequestHandler):
         itad_external_offers_cache = normalize_optional_local_path_value(
             config.get("itad_external_offers_cache")
         )
-        if itad_external_offers_cache and not Path(itad_external_offers_cache).expanduser().exists():
-            issues.append(
-                "No se encontró caché ITAD external_offers local: "
-                + redact_sensitive_text(
-                    itad_external_offers_cache,
-                    extra_values=[Path(itad_external_offers_cache).expanduser()],
+        itad_refresh_external_offers_cache = bool(
+            filters.get("itad_refresh_external_offers_cache")
+        )
+        if itad_refresh_external_offers_cache:
+            if not (runtime_config.get("itad_key") or "").strip():
+                issues.append(
+                    "Refresh ITAD external_offers requiere ITAD API Key."
                 )
+            if not itad_external_offers_cache:
+                issues.append(
+                    "Refresh ITAD external_offers requiere configurar Caché ITAD external_offers (JSON)."
+                )
+        if itad_external_offers_cache and not Path(itad_external_offers_cache).expanduser().exists():
+            cache_label = redact_sensitive_text(
+                itad_external_offers_cache,
+                extra_values=[Path(itad_external_offers_cache).expanduser()],
             )
+            if itad_refresh_external_offers_cache:
+                warnings.append(
+                    "La caché ITAD external_offers local se creará o actualizará al refrescar: "
+                    + cache_label
+                )
+            else:
+                issues.append(
+                    "No se encontró caché ITAD external_offers local: "
+                    + cache_label
+                )
 
         output_dir = resolve_output_dir(config.get("output"))
         output_label = redact_sensitive_text(
