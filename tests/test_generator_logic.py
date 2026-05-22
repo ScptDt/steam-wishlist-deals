@@ -38,6 +38,7 @@ from steam_deals_alerts import (
     build_smart_alert_counts as module_build_smart_alert_counts,
     build_smart_alert_digest as module_build_smart_alert_digest,
 )
+from steam_deals_access import build_play_access_contract
 from steam_deals_recommendations import (
     build_recommendation_diagnostics as module_build_recommendation_diagnostics,
     build_taste_priority_contract as module_build_taste_priority_contract,
@@ -1640,6 +1641,48 @@ class ExternalOffersTests(unittest.TestCase):
                     normalize_external_offers(payload)
 
 
+class AccessLayerTests(unittest.TestCase):
+    def test_build_play_access_contract_marks_owned_family_and_probable_family(self) -> None:
+        access = build_play_access_contract(
+            [
+                {"appid": "10", "name": "Owned Game"},
+                {"appid": "20", "name": "Family Game"},
+                {"appid": "30", "name": "Installed Only"},
+                {"appid": "40", "name": "Unknown"},
+            ],
+            owned={"10": "Owned Game"},
+            family_appids={"20"},
+            installed_or_playable_appids=["10", "20", "30"],
+        )
+
+        by_appid = {item["appid"]: item for item in access["items"]}
+
+        self.assertEqual(set(by_appid), {"10", "20", "30"})
+        self.assertEqual(by_appid["10"]["access_type"], "owned")
+        self.assertTrue(by_appid["10"]["owned"])
+        self.assertEqual(by_appid["20"]["access_type"], "family_shared")
+        self.assertTrue(by_appid["20"]["family_shared"])
+        self.assertEqual(by_appid["30"]["access_type"], "probable_family_shared")
+        self.assertEqual(by_appid["30"]["source"], "installed_or_playable_not_owned")
+        self.assertTrue(by_appid["30"]["playable_without_buying"])
+        self.assertEqual(access["summary"]["owned_count"], 1)
+        self.assertEqual(access["summary"]["family_shared_count"], 2)
+        self.assertEqual(access["summary"]["probable_family_shared_count"], 1)
+        self.assertTrue(access["summary"]["advisory_only"])
+
+    def test_build_play_access_contract_omits_wishlist_items_without_access_signal(self) -> None:
+        access = build_play_access_contract(
+            [{"appid": "40", "name": "Unknown"}, {}, None],
+            owned={},
+            family_appids=[],
+            installed_or_playable_appids=[],
+        )
+
+        self.assertEqual(access["items"], [])
+        self.assertEqual(access["summary"]["total_wishlist_items"], 3)
+        self.assertEqual(access["summary"]["playable_without_buying_count"], 0)
+
+
 class WishlistHygieneTests(unittest.TestCase):
     def test_build_wishlist_hygiene_signals_marks_local_advisory_matches(self) -> None:
         hygiene = build_wishlist_hygiene_signals(
@@ -1676,6 +1719,27 @@ class WishlistHygieneTests(unittest.TestCase):
         self.assertEqual(hygiene["summary"]["review_items_count"], 5)
         self.assertEqual(hygiene["summary"]["signal_counts"]["hltb_match"], 2)
         self.assertTrue(hygiene["summary"]["advisory_only"])
+
+    def test_build_wishlist_hygiene_signals_consumes_play_access_probable_family(self) -> None:
+        play_access = build_play_access_contract(
+            [{"appid": "30", "name": "Installed Only"}],
+            installed_or_playable_appids=["30"],
+        )
+
+        hygiene = build_wishlist_hygiene_signals(
+            [{"appid": "30", "name": "Installed Only"}],
+            play_access=play_access,
+        )
+
+        item = hygiene["items"][0]
+
+        self.assertEqual(item["signals"], ["probable_family_shared"])
+        self.assertEqual(item["reasons"], ["probablemente ya puedes jugarlo sin comprarlo"])
+        self.assertEqual(item["play_access"]["access_type"], "probable_family_shared")
+        self.assertEqual(item["play_access"]["source"], "installed_or_playable_not_owned")
+        self.assertTrue(item["play_access"]["advisory_only"])
+        self.assertIn("play_access", hygiene["source_signals"])
+        self.assertEqual(hygiene["summary"]["signal_counts"], {"probable_family_shared": 1})
 
     def test_build_wishlist_hygiene_signals_handles_malformed_and_clean_entries(self) -> None:
         self.assertEqual(build_wishlist_hygiene_signals([])["items"], [])

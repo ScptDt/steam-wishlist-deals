@@ -448,6 +448,76 @@ def _lookup_external_matches(record: dict, by_appid: dict[str, list[dict]], by_n
     return unique
 
 
+def _play_access_items(play_access) -> list[dict]:
+    if not play_access:
+        return []
+    if isinstance(play_access, dict):
+        if isinstance(play_access.get("items"), list):
+            return _records(play_access["items"])
+        if _appid(play_access):
+            return [dict(play_access)]
+        return []
+    return _records(play_access)
+
+
+def _index_play_access(play_access) -> tuple[dict[str, dict], dict[str, dict], bool]:
+    by_appid: dict[str, dict] = {}
+    by_name: dict[str, dict] = {}
+    items = _play_access_items(play_access)
+    for item in items:
+        if appid := _appid(item):
+            by_appid[appid] = item
+        if name_key := _name_key(_name(item)):
+            by_name[name_key] = item
+    return by_appid, by_name, bool(items)
+
+
+def _lookup_play_access(record: dict, by_appid: dict[str, dict], by_name: dict[str, dict]) -> dict | None:
+    if appid := _appid(record):
+        if appid in by_appid:
+            return by_appid[appid]
+    if name_key := _name_key(_name(record)):
+        return by_name.get(name_key)
+    return None
+
+
+def _play_access_signal(access: dict) -> str:
+    if not access.get("playable_without_buying"):
+        return ""
+    access_type = _slug(access.get("access_type"))
+    if access.get("owned") is True or access_type == "owned":
+        return "owned"
+    if access_type == "family_shared":
+        return "family"
+    if access_type == "probable_family_shared" or access.get("family_shared") is True:
+        return "probable_family_shared"
+    return "playable_without_buying"
+
+
+def _play_access_reason(access: dict, signal: str) -> str:
+    if signal == "owned":
+        return "ya está en tu biblioteca"
+    if signal == "family":
+        return "ya disponible en biblioteca familiar"
+    if signal == "probable_family_shared":
+        return "probablemente ya puedes jugarlo sin comprarlo"
+    return "ya aparece como jugable sin compra localmente"
+
+
+def _play_access_public(access: dict) -> dict:
+    allowed = {
+        "access_type",
+        "owned",
+        "family_shared",
+        "playable_without_buying",
+        "confidence",
+        "source",
+        "reasons",
+        "advisory_only",
+    }
+    return {key: value for key, value in access.items() if key in allowed}
+
+
 def _append_signal(signals: list[str], reasons: list[str], signal: str, reason: str) -> None:
     if signal not in signals:
         signals.append(signal)
@@ -484,6 +554,7 @@ def build_wishlist_hygiene_signals(
     known_catalog_appids=None,
     removed_appids=None,
     external_matches=None,
+    play_access=None,
 ) -> dict:
     """Build advisory-only hygiene hints from local wishlist signals."""
     wishlist_records = _records(wishlist)
@@ -495,6 +566,7 @@ def build_wishlist_hygiene_signals(
     library_by_appid, library_by_name = _index_records(library_games)
     hltb_by_appid, hltb_by_name = _index_records(_flatten_hltb_records(hltb_records))
     external_by_appid, external_by_name, has_external_records = _index_external_matches(external_matches)
+    access_by_appid, access_by_name, has_play_access_records = _index_play_access(play_access)
     items: list[dict] = []
     signal_counts: dict[str, int] = {}
 
@@ -511,6 +583,20 @@ def build_wishlist_hygiene_signals(
             _append_signal(signals, reasons, "owned", "ya está en tu biblioteca")
         if appid in family_set:
             _append_signal(signals, reasons, "family", "ya disponible en biblioteca familiar")
+        play_access_match = _lookup_play_access(record, access_by_appid, access_by_name)
+        if play_access_match:
+            access_signal = _play_access_signal(play_access_match)
+            if access_signal:
+                _append_signal(
+                    signals,
+                    reasons,
+                    access_signal,
+                    _play_access_reason(play_access_match, access_signal),
+                )
+                if not appid:
+                    appid = _appid(play_access_match)
+                if not name:
+                    name = _name(play_access_match)
         if library_record := _lookup(record, library_by_appid, library_by_name):
             _append_signal(signals, reasons, "library_match", "aparece en biblioteca local")
             if not appid:
@@ -558,8 +644,12 @@ def build_wishlist_hygiene_signals(
             item["missing_local_name"] = True
         if accepted_external_matches:
             item["external_matches"] = accepted_external_matches
+        if play_access_match:
+            item["play_access"] = _play_access_public(play_access_match)
         items.append(item)
     source_signals = ["owned", "family", "library", "hltb", "catalog"]
+    if has_play_access_records:
+        source_signals.append("play_access")
     if has_external_records:
         source_signals.append("external")
     return {
