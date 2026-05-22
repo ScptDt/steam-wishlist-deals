@@ -181,7 +181,7 @@ def _render_external_offer_title(item: dict) -> str:
     fallback = f"AppID {appid}" if appid else "Oferta externa"
     name = str(item.get("name") or item.get("steam_name") or fallback).strip()
     if appid.isdigit():
-        return f'<a href="{STORE_URL.format(appid=appid)}" target="_blank">{html_escape(name)}</a>'
+        return f'<a href="{STORE_URL.format(appid=appid)}" target="_blank" rel="noopener noreferrer">{html_escape(name)}</a>'
     return html_escape(name)
 
 
@@ -292,7 +292,7 @@ def _render_taste_priority_title(item: dict) -> str:
     fallback = f"AppID {appid}" if appid else "Juego"
     name = str(item.get("name") or item.get("steam_name") or fallback).strip()
     if appid.isdigit():
-        return f'<a href="{STORE_URL.format(appid=appid)}" target="_blank">{html_escape(name)}</a>'
+        return f'<a href="{STORE_URL.format(appid=appid)}" target="_blank" rel="noopener noreferrer">{html_escape(name)}</a>'
     return html_escape(name)
 
 
@@ -356,7 +356,6 @@ def _render_taste_priority(payload: dict | None) -> str:
   <ol class="taste-priority-list">{cards}</ol>
   {more_html}
 </section>'''
-
 
 _STYLE = """
 * { box-sizing: border-box; margin: 0; padding: 0; }
@@ -704,7 +703,7 @@ def _render_deal_row(
         f'<div style="display:flex;align-items:center;gap:.4rem">'
         f'<img src="{capsule}" style="width:80px;height:30px;object-fit:cover;border-radius:3px" '
         f'loading="lazy" onerror="this.style.display=\'none\'">'
-        f'<a href="{store}" target="_blank">{html_escape(deal["name"])}</a>'
+        f'<a href="{store}" target="_blank" rel="noopener noreferrer">{html_escape(deal["name"])}</a>'
         f"</div>{_render_share_button(share_payload)}</div></td></tr>\n"
     )
 
@@ -743,7 +742,7 @@ def _render_top_pick_card(
     score_title = html_escape(_SCORE_EXPLANATION)
     return (
         f'<div class="share-card">'
-        f'<a href="{store}" target="_blank" '
+        f'<a href="{store}" target="_blank" rel="noopener noreferrer" '
         f'style="text-decoration:none;color:inherit;display:flex;flex-direction:column">'
         f'<img src="{header}" style="width:100%;aspect-ratio:460/215;object-fit:cover" loading="lazy">'
         f'<div class="share-card-body">'
@@ -764,7 +763,7 @@ def _render_collection_item(item: dict) -> str:
     discount = _safe_int(item.get("discount"))
     price_final = str(item.get("price_final") or item.get("price") or "")
     name_html = (
-        f'<a href="{STORE_URL.format(appid=appid)}" target="_blank">'
+        f'<a href="{STORE_URL.format(appid=appid)}" target="_blank" rel="noopener noreferrer">'
         f"{html_escape(name)}</a>"
         if appid.isdigit()
         else html_escape(name)
@@ -929,7 +928,7 @@ def _render_personalized_item(item: dict, index: int) -> str:
     safe_appid = appid if appid.isdigit() else ""
     name = str(item.get("name") or item.get("steam_name") or "Juego desconocido")
     name_html = (
-        f'<a href="{STORE_URL.format(appid=safe_appid)}" target="_blank">'
+        f'<a href="{STORE_URL.format(appid=safe_appid)}" target="_blank" rel="noopener noreferrer">'
         f"{html_escape(name)}</a>"
         if safe_appid
         else html_escape(name)
@@ -1014,7 +1013,7 @@ def _render_gift_idea_item(item: dict, index: int) -> str:
     safe_appid = appid if appid.isdigit() else ""
     name = str(item.get("name") or item.get("steam_name") or "Juego desconocido")
     name_html = (
-        f'<a href="{STORE_URL.format(appid=safe_appid)}" target="_blank">'
+        f'<a href="{STORE_URL.format(appid=safe_appid)}" target="_blank" rel="noopener noreferrer">'
         f"{html_escape(name)}</a>"
         if safe_appid
         else html_escape(name)

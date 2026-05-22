@@ -2,6 +2,7 @@ from __future__ import annotations
 
 import html as html_module
 import json
+import re
 import threading
 import time
 import unittest
@@ -13,6 +14,7 @@ from types import SimpleNamespace
 import urllib.error
 
 import app.steam_deals_prices as prices_module
+import steam_deals_generator as generator_module
 from steam_deals_itad import (
     itad_get_active_bundles as module_itad_get_active_bundles,
     itad_get_current_prices as module_itad_get_current_prices,
@@ -589,7 +591,8 @@ class PersonalizedRecommendationsTests(unittest.TestCase):
                     "name": "Hades",
                     "playtime_2weeks": 180,
                     "genres": ["Action", "Roguelike"],
-                }
+                },
+                "not-a-dict",
             ],
             library_games=[
                 {"appid": "91", "name": "Dead Cells", "genres": ["Action", "Roguelike"], "price_raw": 25000},
@@ -5664,6 +5667,7 @@ class RunOutputTests(unittest.TestCase):
         data = json.loads(payload)
 
         self.assertEqual(data["summary"]["taste_priority_count"], 1)
+        self.assertEqual(len(data["taste_priority"]["items"]), 1)
         self.assertEqual(data["taste_priority"]["items"][0]["category"], "compra_inmediata")
         self.assertEqual(
             data["taste_priority"]["category_labels"]["compra_inmediata"],
@@ -5675,7 +5679,7 @@ class RunOutputTests(unittest.TestCase):
         self.assertEqual(data["deals"][0]["score"], 91.2)
 
     def test_generate_json_omits_empty_or_invalid_taste_priority_contract(self) -> None:
-        cases = [[], {"items": []}, {"items": None}]
+        cases = [[], {"items": []}, {"items": None}, {"items": ["not-a-dict"]}]
 
         for taste_priority in cases:
             with self.subTest(taste_priority=taste_priority):
@@ -8772,6 +8776,14 @@ class BudgetPickTests(unittest.TestCase):
 
 
 class RankTopPicksTests(unittest.TestCase):
+    def assertBlankTargetsUseNoopener(self, html: str) -> None:
+        unsafe_links = [
+            tag
+            for tag in re.findall(r"<a\b(?:(?!>).)*target=\"_blank\"(?:(?!>).)*>", html, re.DOTALL)
+            if 'rel="noopener noreferrer"' not in tag
+        ]
+        self.assertEqual([], unsafe_links)
+
     def test_returns_highest_scoring_deals_first_and_limits_result_count(self) -> None:
         deals = [
             {
@@ -10307,6 +10319,7 @@ class RankTopPicksTests(unittest.TestCase):
         self.assertIn("Prioridad alta para revisar · Índice 86.4", html)
         self.assertIn("alta afinidad &lt;local&gt; · valor/descuento sólido", html)
         self.assertIn("no cambia score, ranking ni Top Picks", html)
+        self.assertBlankTargetsUseNoopener(html)
         self.assertNotIn("Deep <Action>", html)
         self.assertNotIn("alta afinidad <local>", html)
 
@@ -10407,6 +10420,7 @@ class RankTopPicksTests(unittest.TestCase):
         self.assertIn('rel="noopener noreferrer"', html)
         self.assertIn("GOG · Tienda oficial · USD 2.49", html)
         self.assertIn("Sin link seguro", html)
+        self.assertBlankTargetsUseNoopener(html)
         self.assertNotIn("Hades <Deal>", html)
         self.assertNotIn("Checkout Trap", html)
         self.assertNotIn("checkout/40", html)
@@ -10495,6 +10509,7 @@ class RankTopPicksTests(unittest.TestCase):
         self.assertIn('rel="noopener noreferrer"', html)
         self.assertIn("GOG · Tienda oficial · USD 2.49", html)
         self.assertIn("Sin link seguro", html)
+        self.assertBlankTargetsUseNoopener(html)
         self.assertNotIn("Hades <Deal>", html)
         self.assertNotIn("Risky Key", html)
         self.assertNotIn("Checkout Trap", html)
@@ -10528,10 +10543,12 @@ class RankTopPicksTests(unittest.TestCase):
         self.assertIn("no cambia score, ranking, Top Picks, defaults, cache ni fetching", html)
         self.assertIn('data-taste-priority-appid="10"', html)
         self.assertIn('href="https://store.steampowered.com/app/10/"', html)
+        self.assertIn('rel="noopener noreferrer"', html)
         self.assertIn("Deep &lt;Action&gt;", html)
         self.assertIn("Prioridad alta para revisar · Índice 86.4", html)
         self.assertIn("alta afinidad &lt;local&gt; · valor/descuento sólido", html)
         self.assertIn("no cambia score, ranking ni Top Picks", html)
+        self.assertBlankTargetsUseNoopener(html)
         self.assertNotIn("Deep <Action>", html)
         self.assertNotIn("alta afinidad <local>", html)
         self.assertNotIn("data-share-taste-priority", html)
@@ -10575,6 +10592,7 @@ class RankTopPicksTests(unittest.TestCase):
         self.assertIn("Metacritic 90", html)
         self.assertIn("Score = recomendación compuesta para priorizar qué revisar primero.", html)
         self.assertIn("Mínimo histórico en Steam", html)
+        self.assertBlankTargetsUseNoopener(html)
 
     def test_generate_share_html_renders_recommended_collections(self) -> None:
         html = generate_share_html(

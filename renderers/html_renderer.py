@@ -42,7 +42,7 @@ def _html_esc(text: str) -> str:
 
 
 def _html_link(name: str, appid: str) -> str:
-    return f'<a href="{STORE_URL.format(appid=appid)}" target="_blank">{_html_esc(name)}</a>'
+    return f'<a href="{STORE_URL.format(appid=appid)}" target="_blank" rel="noopener noreferrer">{_html_esc(name)}</a>'
 
 
 def _html_social_game_cell(row: dict) -> str:
@@ -54,10 +54,10 @@ def _html_social_game_cell(row: dict) -> str:
     store_url = STORE_URL.format(appid=appid)
     safe_name = _html_esc(name)
     return f'''<div class="social-game-cell">
-      <a class="social-game-thumb" href="{store_url}" target="_blank" aria-label="Abrir {safe_name} en Steam">
+      <a class="social-game-thumb" href="{store_url}" target="_blank" rel="noopener noreferrer" aria-label="Abrir {safe_name} en Steam">
         <img src="{capsule}" alt="" loading="lazy" onerror="this.style.display='none'">
       </a>
-      <a href="{store_url}" target="_blank">{safe_name}</a>
+      <a href="{store_url}" target="_blank" rel="noopener noreferrer">{safe_name}</a>
     </div>'''
 
 
@@ -1016,11 +1016,11 @@ def _html_shuffle_one_game(candidates: list[dict]) -> str:
     <p class="section-desc">Si no quieres revisar toda la tabla, empieza por esta recomendación. El botón rota entre candidatos ya calculados del reporte.</p>
   </div>
   <div class="shuffle-card">
-    <a class="shuffle-image-link" data-shuffle-link href="{_html_esc(first['url'])}" target="_blank">
+    <a class="shuffle-image-link" data-shuffle-link href="{_html_esc(first['url'])}" target="_blank" rel="noopener noreferrer">
       <img class="shuffle-img" data-shuffle-image src="{_html_esc(first['image_url'])}" alt="" loading="lazy" onerror="this.style.display='none'">
     </a>
     <div class="shuffle-info">
-      <a class="shuffle-name" data-shuffle-name href="{_html_esc(first['url'])}" target="_blank">{_html_esc(first['name'])}</a>
+      <a class="shuffle-name" data-shuffle-name href="{_html_esc(first['url'])}" target="_blank" rel="noopener noreferrer">{_html_esc(first['name'])}</a>
       <div class="shuffle-meta"><span data-shuffle-score>{_html_esc(first['score_text'])}</span> &middot; <span data-shuffle-discount>-{int(first['discount'])}%</span> &middot; <span data-shuffle-price>{_html_esc(first['price_final'])}</span></div>
       <div class="shuffle-reason" data-shuffle-reason>{_html_esc(first['reason'])}</div>
     </div>
@@ -1061,7 +1061,7 @@ def _html_recommended_collection_item(item: dict, *, featured: bool = False) -> 
     thumb_html = ""
     if featured and appid.isdigit():
         item_class += " collection-item-featured"
-        thumb_html = f'''<a class="collection-item-thumb" href="{STORE_URL.format(appid=appid)}" target="_blank" aria-label="Abrir {_html_esc(name)} en Steam">
+        thumb_html = f'''<a class="collection-item-thumb" href="{STORE_URL.format(appid=appid)}" target="_blank" rel="noopener noreferrer" aria-label="Abrir {_html_esc(name)} en Steam">
     <img src="{CAPSULE_URL.format(appid=appid)}" alt="" loading="lazy" onerror="this.style.display='none'">
   </a>'''
     return f'''<li class="{item_class}">
@@ -1215,7 +1215,7 @@ def _html_personalized_item(item: dict, index: int) -> str:
     meta_html = f'''<div class="personalized-item-meta">{"".join(meta)}</div>''' if meta else ""
     image_html = ""
     if safe_appid:
-        image_html = f'''<a class="personalized-item-thumb" href="{STORE_URL.format(appid=safe_appid)}" target="_blank" aria-label="Abrir {_html_esc(name)} en Steam">
+        image_html = f'''<a class="personalized-item-thumb" href="{STORE_URL.format(appid=safe_appid)}" target="_blank" rel="noopener noreferrer" aria-label="Abrir {_html_esc(name)} en Steam">
       <img src="{CAPSULE_URL.format(appid=safe_appid)}" alt="" loading="lazy" onerror="this.style.display='none'">
     </a>'''
     data_attr = f' data-personalized-recommendation="{_html_esc(safe_appid)}"' if safe_appid else ""
@@ -1860,7 +1860,7 @@ def _html_budget_variant_panel(variant: dict, *, is_selected: bool) -> str:
     <div class="game-cell">
       <img class="game-thumb" src="{capsule}" alt="" loading="lazy" onerror="this.style.display='none'">
       <span>
-        <a class="budget-value-link" href="{STORE_URL.format(appid=appid)}" target="_blank">{_html_esc(pick_name)}</a>
+        <a class="budget-value-link" href="{STORE_URL.format(appid=appid)}" target="_blank" rel="noopener noreferrer">{_html_esc(pick_name)}</a>
         <span class="budget-value-context">{pick_context}</span>
         <div class="budget-reroll-preview hidden"></div>
       </span>
@@ -2692,7 +2692,7 @@ function renderSelectionReviewItem(item) {
     renderSelectionReviewWhyGroup('Contexto', selectionReviewWhyItems(source.why, 'context'), 'context'),
   ].filter(Boolean).join('');
   const nameHtml = safeAppid
-    ? `<a href="https://store.steampowered.com/app/${escapeSelectionHtml(safeAppid)}/" target="_blank">${escapeSelectionHtml(name)}</a>`
+    ? `<a href="https://store.steampowered.com/app/${escapeSelectionHtml(safeAppid)}/" target="_blank" rel="noopener noreferrer">${escapeSelectionHtml(name)}</a>`
     : `<span>${escapeSelectionHtml(name)}</span>`;
   return `
     <article class="selection-review-result selection-review-result-${escapeSelectionHtml(decision)}" data-selection-decision="${escapeSelectionHtml(decision)}">
@@ -3360,7 +3360,7 @@ def generate_html(
                 min_hist=min_hist_str,
             )
             cards.append(f'''<div class="pick-card {rank_cls}" data-top-pick-card data-recommendation="{recommendation_filter}">
-  <a href="{store_url}" target="_blank" style="display:block">
+  <a href="{store_url}" target="_blank" rel="noopener noreferrer" style="display:block">
     <img class="pick-img" src="{header_img}" alt="" loading="lazy" onerror="this.style.display='none'">
     <div class="pick-body">
       <div class="pick-rank">#{idx}</div>
@@ -3601,7 +3601,7 @@ def generate_html(
             if has_best:
                 bp = current_prices.get(appid)
                 if bp:
-                    bp_html = f'${bp["price"]:.0f} en <a href="{bp["url"]}" target="_blank">{_html_esc(bp["store"])} </a>'
+                    bp_html = f'${bp["price"]:.0f} en <a href="{bp["url"]}" target="_blank" rel="noopener noreferrer">{_html_esc(bp["store"])} </a>'
                     cells.append(f"<td>{bp_html}</td>")
                 else:
                     cells.append("<td>—</td>")

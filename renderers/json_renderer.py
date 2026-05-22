@@ -73,6 +73,9 @@ def _taste_priority_payload(payload: dict | None) -> dict | None:
     items = payload.get("items")
     if not isinstance(items, list) or not items:
         return None
+    items = [item for item in items if isinstance(item, dict)]
+    if not items:
+        return None
     category_labels = dict(TASTE_PRIORITY_CATEGORY_LABELS)
     if isinstance(payload.get("category_labels"), dict):
         category_labels.update(payload["category_labels"])
@@ -86,6 +89,7 @@ def _taste_priority_payload(payload: dict | None) -> dict | None:
     )
     return {
         **payload,
+        "items": items,
         "category_labels": category_labels,
         "summary": summary,
     }
