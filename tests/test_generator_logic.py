@@ -10022,7 +10022,7 @@ class RankTopPicksTests(unittest.TestCase):
             min_discount=50,
             genres=[],
             external_offers={
-                "summary": {"items_count": 4, "advisory_only": True, "ranking_impact": "none"},
+                "summary": {"items_count": 5, "advisory_only": True, "ranking_impact": "none"},
                 "items": [
                     {
                         "appid": "1145360",
@@ -10071,6 +10071,22 @@ class RankTopPicksTests(unittest.TestCase):
                         "risk_flags": ["marketplace_keyshop", "ownership_not_proven"],
                     },
                     {
+                        "appid": "50",
+                        "name": "Encoded Checkout",
+                        "store_name": "GOG",
+                        "store_type": "official_store",
+                        "price": 4.0,
+                        "currency": "USD",
+                        "url": "https://gog.example/add%5Fto%5Fcart/50",
+                        "link_allowed": True,
+                        "drm": "gog",
+                        "region": "global",
+                        "source": "fixture",
+                        "confidence": "high",
+                        "visibility": "review",
+                        "risk_flags": ["ownership_not_proven"],
+                    },
+                    {
                         "appid": "40",
                         "name": "Checkout Trap",
                         "store_name": "GOG",
@@ -10104,7 +10120,9 @@ class RankTopPicksTests(unittest.TestCase):
         self.assertIn("GOG · Tienda oficial · fuente fixture", md)
         self.assertIn("Revisión · Confianza Media · DRM gog · Región unknown", md)
         self.assertIn("Tienda oficial · Revisar DRM/región", md)
+        self.assertIn("[Encoded Checkout](https://store.steampowered.com/app/50/)", md)
         self.assertIn("Sin link seguro", md)
+        self.assertNotIn("add%5Fto%5Fcart", md)
         self.assertNotIn("Risky Key", md)
         self.assertNotIn("Checkout Trap", md)
         self.assertNotIn("add-to-cart", md)
@@ -10925,7 +10943,7 @@ class RankTopPicksTests(unittest.TestCase):
             min_discount=50,
             genres=[],
             external_offers={
-                "summary": {"items_count": 3, "advisory_only": True, "ranking_impact": "none"},
+                "summary": {"items_count": 4, "advisory_only": True, "ranking_impact": "none"},
                 "items": [
                     {
                         "appid": "1145360",
@@ -10958,6 +10976,22 @@ class RankTopPicksTests(unittest.TestCase):
                         "confidence": "medium",
                         "visibility": "review",
                         "risk_flags": ["region_unknown", "ownership_not_proven"],
+                    },
+                    {
+                        "appid": "50",
+                        "name": "Encoded Checkout",
+                        "store_name": "GOG",
+                        "store_type": "official_store",
+                        "price": 4.0,
+                        "currency": "USD",
+                        "url": "https://gog.example/add%5Fto%5Fcart/50",
+                        "link_allowed": True,
+                        "drm": "gog",
+                        "region": "global",
+                        "source": "fixture",
+                        "confidence": "high",
+                        "visibility": "review",
+                        "risk_flags": ["ownership_not_proven"],
                     },
                     {
                         "appid": "40",
@@ -10999,7 +11033,9 @@ class RankTopPicksTests(unittest.TestCase):
         self.assertIn("Ver tienda (sin carrito)", html)
         self.assertIn('rel="noopener noreferrer"', html)
         self.assertIn("GOG · Tienda oficial · USD 2.49", html)
+        self.assertIn("Encoded Checkout", html)
         self.assertIn("Sin link seguro", html)
+        self.assertNotIn("add%5Fto%5Fcart", html)
         self.assertBlankTargetsUseNoopener(html)
         self.assertNotIn("Hades <Deal>", html)
         self.assertNotIn("Checkout Trap", html)
@@ -11013,7 +11049,7 @@ class RankTopPicksTests(unittest.TestCase):
             recommended_collections=[],
             personalized_recommendations={"items": []},
             external_offers={
-                "summary": {"items_count": 4, "advisory_only": True, "ranking_impact": "none"},
+                "summary": {"items_count": 5, "advisory_only": True, "ranking_impact": "none"},
                 "items": [
                     {
                         "appid": "1145360",
@@ -11058,6 +11094,22 @@ class RankTopPicksTests(unittest.TestCase):
                         "risk_flags": ["marketplace_keyshop", "ownership_not_proven"],
                     },
                     {
+                        "appid": "50",
+                        "name": "Encoded Checkout",
+                        "store_name": "GOG",
+                        "store_type": "official_store",
+                        "price": 4.0,
+                        "currency": "USD",
+                        "url": "https://gog.example/add%5Fto%5Fcart/50",
+                        "link_allowed": True,
+                        "drm": "gog",
+                        "region": "global",
+                        "source": "fixture",
+                        "confidence": "high",
+                        "visibility": "review",
+                        "risk_flags": ["ownership_not_proven"],
+                    },
+                    {
                         "appid": "40",
                         "name": "Checkout Trap",
                         "store_name": "GOG",
@@ -11097,7 +11149,9 @@ class RankTopPicksTests(unittest.TestCase):
         self.assertIn("Ver tienda (sin carrito)", html)
         self.assertIn('rel="noopener noreferrer"', html)
         self.assertIn("GOG · Tienda oficial · USD 2.49", html)
+        self.assertIn("Encoded Checkout", html)
         self.assertIn("Sin link seguro", html)
+        self.assertNotIn("add%5Fto%5Fcart", html)
         self.assertBlankTargetsUseNoopener(html)
         self.assertNotIn("Hades <Deal>", html)
         self.assertNotIn("Risky Key", html)

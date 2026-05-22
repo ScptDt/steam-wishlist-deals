@@ -3308,6 +3308,7 @@ function latestExternalOfferSafeUrl(source) {
   try {
     decoded = decodeURIComponent(rawUrl).toLowerCase();
   } catch (e) {}
+  decoded = decoded.replace(/[\s_]+/g, '-');
   return LATEST_EXTERNAL_OFFER_CHECKOUT_RE.test(decoded) ? '' : rawUrl;
 }
 

@@ -699,6 +699,7 @@ class WebAssetsTests(unittest.TestCase):
         self.assertIn("function latestExternalOffersPayload", app_js)
         self.assertIn("function latestExternalOfferItems", app_js)
         self.assertIn("function latestExternalOfferSafeUrl", app_js)
+        self.assertIn("decoded = decoded.replace(/[\\s_]+/g, '-')", app_js)
         self.assertIn("LATEST_EXTERNAL_OFFER_VISIBLE_STORE_TYPES", app_js)
         self.assertIn("LATEST_EXTERNAL_OFFER_VISIBLE_STATES", app_js)
         self.assertIn("LATEST_EXTERNAL_OFFER_BLOCKING_RISKS", app_js)

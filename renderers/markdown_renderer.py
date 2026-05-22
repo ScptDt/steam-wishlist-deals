@@ -674,7 +674,8 @@ def _external_offer_safe_url(item: dict) -> str:
     parsed = urlsplit(url)
     if parsed.scheme not in {"http", "https"} or not parsed.netloc:
         return ""
-    if _EXTERNAL_OFFER_CHECKOUT_RE.search(unquote(url).lower()):
+    checkout_candidate = re.sub(r"[\s_]+", "-", unquote(url).lower())
+    if _EXTERNAL_OFFER_CHECKOUT_RE.search(checkout_candidate):
         return ""
     return url
 
