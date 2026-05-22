@@ -3740,6 +3740,7 @@ def generate_json(
     taste_priority: dict | None = None,
     recommendation_diagnostics: dict | None = None,
     promo_highlights: dict | None = None,
+    play_access: dict | None = None,
 ) -> str:
     if _generate_json_renderer is None:
         raise RuntimeError("JSON renderer module is not available")
@@ -3769,6 +3770,7 @@ def generate_json(
             family_appids=family_appids,
             library_games=library_games if library_games is not None else have_on_sale,
             hltb_records=hltb_hours,
+            play_access=play_access,
         )
     free_weekend_now = enrich_free_weekend_cross_signals(
         free_weekend_now,
@@ -3851,6 +3853,7 @@ def generate_json(
         taste_priority=taste_priority,
         recommendation_diagnostics=recommendation_diagnostics,
         promo_highlights=promo_highlights,
+        play_access=play_access,
     )
 
 

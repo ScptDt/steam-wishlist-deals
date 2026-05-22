@@ -145,6 +145,37 @@ def _promo_highlights_total(payload: dict | None) -> int:
     return len(normalized["sections"]) if normalized else 0
 
 
+def _play_access_payload(payload: dict | None) -> dict | None:
+    if not isinstance(payload, dict):
+        return None
+    items = payload.get("items")
+    if not isinstance(items, list):
+        return None
+    items = [item for item in items if isinstance(item, dict)]
+    if not items:
+        return None
+    summary = dict(payload.get("summary") if isinstance(payload.get("summary"), dict) else {})
+    summary.update(
+        {
+            "items_count": len(items),
+            "advisory_only": True,
+            "ranking_impact": "none",
+        }
+    )
+    return {
+        **payload,
+        "items": items,
+        "summary": summary,
+        "advisory_only": True,
+        "ranking_impact": "none",
+    }
+
+
+def _play_access_total(payload: dict | None) -> int:
+    normalized = _play_access_payload(payload)
+    return len(normalized["items"]) if normalized else 0
+
+
 RECOMMENDATION_DIAGNOSTIC_MODES = {"behavioral", "mixed", "score_fallback"}
 
 
@@ -205,6 +236,7 @@ def generate_json(
     taste_priority: dict | None = None,
     recommendation_diagnostics: dict | None = None,
     promo_highlights: dict | None = None,
+    play_access: dict | None = None,
 ) -> str:
     previous_appids = previous_appids or set()
     family_appids = family_appids or set()
@@ -232,6 +264,7 @@ def generate_json(
     taste_priority = _taste_priority_payload(taste_priority)
     recommendation_diagnostics = _recommendation_diagnostics_payload(recommendation_diagnostics)
     promo_highlights = _promo_highlights_payload(promo_highlights)
+    play_access = _play_access_payload(play_access)
 
     payload = {
         "meta": {
@@ -266,6 +299,7 @@ def generate_json(
             "external_offers_count": _external_offers_total(external_offers),
             "taste_priority_count": _taste_priority_total(taste_priority),
             "promo_highlights_count": _promo_highlights_total(promo_highlights),
+            "play_access_count": _play_access_total(play_access),
         },
         "comparison": _json_safe(comparison),
         "top_picks": _json_safe(top_picks),
@@ -307,4 +341,6 @@ def generate_json(
         payload["recommendation_diagnostics"] = _json_safe(recommendation_diagnostics)
     if promo_highlights:
         payload["promo_highlights"] = _json_safe(promo_highlights)
+    if play_access:
+        payload["play_access"] = _json_safe(play_access)
     return json.dumps(payload, ensure_ascii=False, indent=2)

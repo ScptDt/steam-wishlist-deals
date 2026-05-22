@@ -38,7 +38,11 @@ from steam_deals_alerts import (
     build_smart_alert_counts as module_build_smart_alert_counts,
     build_smart_alert_digest as module_build_smart_alert_digest,
 )
-from steam_deals_access import build_play_access_contract
+from steam_deals_access import (
+    build_play_access_contract,
+    load_local_play_access_import,
+    normalize_local_play_access_import,
+)
 from steam_deals_recommendations import (
     build_recommendation_diagnostics as module_build_recommendation_diagnostics,
     build_taste_priority_contract as module_build_taste_priority_contract,
@@ -1642,6 +1646,72 @@ class ExternalOffersTests(unittest.TestCase):
 
 
 class AccessLayerTests(unittest.TestCase):
+    def test_normalize_local_play_access_import_accepts_explicit_local_shapes(self) -> None:
+        records = normalize_local_play_access_import(
+            {
+                "source": "steam_local_library_export",
+                "observed_at": "2026-05-22",
+                "installed_or_playable": [
+                    {"appid": "30", "name": "Installed Only", "installed": True},
+                    {"steam_appid": "40", "title": "Playable Elsewhere", "playable": True},
+                    "50",
+                    {"name": "Ambiguous Without AppID"},
+                    {"appid": "30", "name": "Installed Only", "installed": True},
+                ],
+            }
+        )
+
+        self.assertEqual([record["appid"] for record in records], ["30", "40", "50"])
+        self.assertEqual(records[0]["name"], "Installed Only")
+        self.assertEqual(records[0]["source"], "steam_local_library_export")
+        self.assertEqual(records[0]["play_state"], "installed")
+        self.assertEqual(records[1]["name"], "Playable Elsewhere")
+        self.assertEqual(records[1]["play_state"], "playable")
+        self.assertEqual(records[2]["play_state"], "installed_or_playable")
+
+    def test_load_local_play_access_import_accepts_common_json_shapes(self) -> None:
+        cases = [
+            ([{"appid": "10", "name": "Direct List"}], ["10"]),
+            ({"installed": {"20": "Installed Map"}}, ["20"]),
+            ({"playable": [{"appid": "30", "name": "Playable List"}]}, ["30"]),
+            ({"40": "Direct AppID Map"}, ["40"]),
+        ]
+
+        with TemporaryDirectory() as temp_dir:
+            for index, (payload, expected_appids) in enumerate(cases):
+                path = Path(temp_dir) / f"play_access_{index}.json"
+                path.write_text(json.dumps(payload), encoding="utf-8")
+
+                records = load_local_play_access_import(path)
+
+                self.assertEqual([record["appid"] for record in records], expected_appids)
+
+    def test_load_local_play_access_import_keeps_empty_payloads_quiet(self) -> None:
+        cases = ["", "null", "{}", "[]", '{"installed_or_playable": null}']
+
+        with TemporaryDirectory() as temp_dir:
+            for index, content in enumerate(cases):
+                path = Path(temp_dir) / f"empty_play_access_{index}.json"
+                path.write_text(content, encoding="utf-8")
+
+                self.assertEqual(load_local_play_access_import(path), [])
+
+    def test_load_local_play_access_import_rejects_malformed_payloads(self) -> None:
+        cases = [
+            ("{bad", "JSON local de play_access inválido"),
+            (json.dumps({"installed_or_playable": "30"}), "installed_or_playable debe ser una lista"),
+            (json.dumps({"unexpected": []}), "debe incluir una lista"),
+            (json.dumps("bad"), "debe ser una lista o un objeto JSON"),
+        ]
+
+        with TemporaryDirectory() as temp_dir:
+            for index, (content, expected_error) in enumerate(cases):
+                path = Path(temp_dir) / f"bad_play_access_{index}.json"
+                path.write_text(content, encoding="utf-8")
+
+                with self.assertRaisesRegex(ValueError, expected_error):
+                    load_local_play_access_import(path)
+
     def test_build_play_access_contract_marks_owned_family_and_probable_family(self) -> None:
         access = build_play_access_contract(
             [
@@ -1681,6 +1751,25 @@ class AccessLayerTests(unittest.TestCase):
         self.assertEqual(access["items"], [])
         self.assertEqual(access["summary"]["total_wishlist_items"], 3)
         self.assertEqual(access["summary"]["playable_without_buying_count"], 0)
+
+    def test_build_play_access_contract_consumes_local_import_records(self) -> None:
+        installed_or_playable = normalize_local_play_access_import(
+            {"installed": [{"appid": "30", "name": "Installed Only"}]}
+        )
+
+        access = build_play_access_contract(
+            [{"appid": "30", "name": "Installed Only"}],
+            owned={},
+            family_appids=[],
+            installed_or_playable_appids=installed_or_playable,
+        )
+
+        item = access["items"][0]
+
+        self.assertEqual(item["appid"], "30")
+        self.assertEqual(item["access_type"], "probable_family_shared")
+        self.assertEqual(item["source"], "installed_or_playable_not_owned")
+        self.assertTrue(item["advisory_only"])
 
 
 class WishlistHygieneTests(unittest.TestCase):
@@ -1740,6 +1829,26 @@ class WishlistHygieneTests(unittest.TestCase):
         self.assertTrue(item["play_access"]["advisory_only"])
         self.assertIn("play_access", hygiene["source_signals"])
         self.assertEqual(hygiene["summary"]["signal_counts"], {"probable_family_shared": 1})
+
+    def test_build_wishlist_hygiene_signals_consumes_local_play_access_import(self) -> None:
+        local_import = normalize_local_play_access_import(
+            {"playable": [{"appid": "30", "name": "Playable Local"}]}
+        )
+        play_access = build_play_access_contract(
+            [{"appid": "30", "name": "Playable Local"}],
+            installed_or_playable_appids=local_import,
+        )
+
+        hygiene = build_wishlist_hygiene_signals(
+            [{"appid": "30", "name": "Playable Local"}],
+            play_access=play_access,
+        )
+
+        item = hygiene["items"][0]
+
+        self.assertEqual(item["signals"], ["probable_family_shared"])
+        self.assertEqual(item["play_access"]["access_type"], "probable_family_shared")
+        self.assertTrue(item["advisory_only"])
 
     def test_build_wishlist_hygiene_signals_handles_malformed_and_clean_entries(self) -> None:
         self.assertEqual(build_wishlist_hygiene_signals([])["items"], [])
@@ -6630,6 +6739,56 @@ class StopApiContractTests(unittest.TestCase):
         self.assertIn("library_match", by_appid["20"]["signals"])
         self.assertEqual(by_appid["30"]["signals"], ["family"])
         self.assertTrue(all(item["action"] == "review" for item in hygiene["items"]))
+
+    def test_generate_json_serializes_play_access_and_feeds_wishlist_hygiene(self) -> None:
+        play_access = build_play_access_contract(
+            [{"appid": "30", "name": "Installed Only"}],
+            installed_or_playable_appids=["30"],
+        )
+        deals = [{"appid": "30", "name": "Installed Only", "score": 70}]
+
+        payload = generate_json(
+            deals=deals,
+            backlog_on_sale=[],
+            have_on_sale=[],
+            vanity="gaben",
+            owned={},
+            wishlist_appids=["30"],
+            min_discount=0,
+            genres=[],
+            play_access=play_access,
+        )
+
+        data = json.loads(payload)
+        hygiene_item = data["wishlist_hygiene"]["items"][0]
+
+        self.assertEqual(data["summary"]["play_access_count"], 1)
+        self.assertEqual(data["play_access"]["schema"], "play_access_v1")
+        self.assertTrue(data["play_access"]["advisory_only"])
+        self.assertEqual(data["play_access"]["ranking_impact"], "none")
+        self.assertEqual(data["play_access"]["summary"]["items_count"], 1)
+        self.assertEqual(hygiene_item["signals"], ["probable_family_shared"])
+        self.assertEqual(hygiene_item["play_access"]["access_type"], "probable_family_shared")
+        self.assertEqual(data["deals"], deals)
+
+    def test_generate_json_omits_empty_play_access_payload(self) -> None:
+        payload = generate_json(
+            deals=[],
+            backlog_on_sale=[],
+            have_on_sale=[],
+            vanity="gaben",
+            owned={},
+            wishlist_appids=["30"],
+            min_discount=0,
+            genres=[],
+            play_access={"items": []},
+        )
+
+        data = json.loads(payload)
+
+        self.assertEqual(data["summary"]["play_access_count"], 0)
+        self.assertNotIn("play_access", data)
+        self.assertEqual(data["wishlist_hygiene"]["items"], [])
 
     def test_generate_json_respects_explicit_empty_wishlist_hygiene(self) -> None:
         payload = generate_json(
