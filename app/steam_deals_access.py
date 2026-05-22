@@ -1,5 +1,24 @@
 from __future__ import annotations
 
+import json
+from pathlib import Path
+
+
+_LOCAL_PLAY_ACCESS_COLLECTION_KEYS = (
+    "installed_or_playable",
+    "installed_or_playable_appids",
+    "installed",
+    "playable",
+    "games",
+    "items",
+    "library",
+)
+_LOCAL_PLAY_ACCESS_DEFAULT_SOURCE = "local_play_access_import"
+
+
+def _clean_text(value) -> str:
+    return str(value or "").strip()
+
 
 def _record_appid(record) -> str:
     if isinstance(record, dict):
@@ -34,6 +53,108 @@ def _records(records) -> list[dict]:
         else:
             result.append({})
     return result
+
+
+def _looks_like_appid_map(payload: dict) -> bool:
+    return bool(payload) and all(str(key).strip().isdigit() for key in payload)
+
+
+def _local_play_access_records(payload) -> tuple[list[dict], dict]:
+    if payload is None:
+        return [], {}
+    if isinstance(payload, list):
+        return _records(payload), {}
+    if not isinstance(payload, dict):
+        raise ValueError("import local play_access debe ser una lista o un objeto JSON")
+    if not payload:
+        return [], {}
+    for key in _LOCAL_PLAY_ACCESS_COLLECTION_KEYS:
+        if key in payload:
+            records = payload[key]
+            if records is None:
+                return [], payload
+            if not isinstance(records, (list, dict)):
+                raise ValueError(f"{key} debe ser una lista u objeto de appids")
+            return _records(records), {**payload, "_collection_key": key}
+    if _looks_like_appid_map(payload):
+        return _records(payload), {}
+    raise ValueError(
+        "import local play_access debe incluir una lista en 'installed_or_playable', "
+        "'installed_or_playable_appids', 'installed', 'playable', 'games', 'items' o 'library'"
+    )
+
+
+def _local_play_state(record: dict, defaults: dict) -> str:
+    if record.get("installed") is True:
+        return "installed"
+    if record.get("playable") is True or record.get("playable_without_buying") is True:
+        return "playable"
+    state = _clean_text(record.get("play_state") or record.get("status") or record.get("state")).lower()
+    if state in {"installed", "playable", "installed_or_playable"}:
+        return state
+    collection_key = _clean_text(defaults.get("_collection_key"))
+    if collection_key in {"installed", "playable", "installed_or_playable"}:
+        return collection_key
+    return "installed_or_playable"
+
+
+def _local_play_access_record(record: dict, defaults: dict) -> dict | None:
+    appid = _record_appid(record)
+    if not appid:
+        return None
+    play_state = _local_play_state(record, defaults)
+    normalized = {
+        "appid": appid,
+        "source": _clean_text(record.get("source") or defaults.get("source"))
+        or _LOCAL_PLAY_ACCESS_DEFAULT_SOURCE,
+        "play_state": play_state,
+    }
+    if name := _record_name(record):
+        normalized["name"] = name
+    if observed_at := _clean_text(record.get("observed_at") or record.get("imported_at") or defaults.get("observed_at")):
+        normalized["observed_at"] = observed_at
+    return normalized
+
+
+def normalize_local_play_access_import(payload) -> list[dict]:
+    """Normalize an explicit local installed/playable JSON payload into app records."""
+    records, defaults = _local_play_access_records(payload)
+    normalized: list[dict] = []
+    seen: set[tuple[str, str, str]] = set()
+    for record in records:
+        item = _local_play_access_record(record, defaults)
+        if not item:
+            continue
+        fingerprint = (item["appid"], item["source"], item["play_state"])
+        if fingerprint in seen:
+            continue
+        seen.add(fingerprint)
+        normalized.append(item)
+    return normalized
+
+
+def load_local_play_access_import(json_path: Path | str | None) -> list[dict]:
+    """Load an explicit local installed/playable JSON import without network access."""
+    if json_path is None:
+        return []
+    path = Path(json_path).expanduser()
+    try:
+        raw = path.read_text(encoding="utf-8")
+    except OSError as exc:
+        raise ValueError(f"No se pudo leer JSON local de play_access ({path}): {exc}") from exc
+    if not raw.strip():
+        return []
+    try:
+        payload = json.loads(raw)
+    except json.JSONDecodeError as exc:
+        raise ValueError(
+            "JSON local de play_access inválido "
+            f"({path}): {exc.msg} en línea {exc.lineno}, columna {exc.colno}"
+        ) from exc
+    try:
+        return normalize_local_play_access_import(payload)
+    except ValueError as exc:
+        raise ValueError(f"JSON local de play_access inválido ({path}): {exc}") from exc
 
 
 def _appid_set(records) -> set[str]:
