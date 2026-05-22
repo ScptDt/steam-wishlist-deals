@@ -23,6 +23,8 @@ Python → Cruce con HLTB + scoring + generación de reportes
 
 Base URL: `https://api.steampowered.com/`
 
+Referencias de consulta antes de cambiar endpoints: wiki pública de Steam Web API (`https://developer.valvesoftware.com/wiki/Steam_Web_API?`) y explorador comunitario `https://steamapi.xpaw.me/`. Úsalas solo para verificar contratos endpoint por endpoint; no habilitan por sí solas red live, scraping, endpoints no oficiales en producción ni cambios de límites/cache sin un slice aprobado.
+
 Necesitas:
 - **Perfil Steam**: vanity URL, URL completa o Steam ID de 17 dígitos.
 - **API Key**: opcional para wishlist pública; recomendable para resolver datos privados como juegos propios y biblioteca familiar. Se obtiene en https://steamcommunity.com/dev/apikey

@@ -192,6 +192,26 @@ Shapes aceptadas:
 
 También acepta lista directa, `{ "matches": [...] }` y exports manuales simples con `games`, `library`, `orders`, `purchases` o `bundles`. Los imports de biblioteca/órdenes pueden generar `external_owned` o `external_bundle_owned`; matches medios quedan como `external_review_needed`; precio/catálogo público o `confidence=low` no cuentan como higiene.
 
+Si quieres sumar señales locales de juegos instalados o jugables sin compra nueva, usa `--play-access-json`. Es otro import **local y explícito**: no escanea carpetas de Steam, no usa SteamKit2, no llama APIs externas y no cambia score/ranking.
+
+```bash
+python3 steam_deals_generator.py --vanity gaben \
+  --play-access-json ./play-access-local.json
+```
+
+Shape mínima aceptada:
+
+```json
+{
+  "installed_or_playable": [
+    {"appid": "30", "name": "Installed Only", "installed": true},
+    {"steam_appid": "40", "title": "Playable Elsewhere", "playable": true}
+  ]
+}
+```
+
+También acepta lista directa, mapas `{ "appid": "Nombre" }`, y listas bajo `installed`, `playable`, `games`, `items` o `library`. Cuando un juego de tu wishlist aparece en ese import local pero no como owned/family, `play_access` puede marcarlo como `probable_family_shared` para revisión manual.
+
 Contrato completo y ejemplos: `docs/runbooks/wishlist-hygiene-multistore-contract.md`.
 
 ### Warm cache headless

@@ -1,10 +1,10 @@
 # Contrato: wishlist hygiene multi-store local
 
-Contrato de decisión y uso para ampliar `wishlist_hygiene` con señales externas/multi-tienda sin cambiar el comportamiento advisory-only.
+Contrato de decisión y uso para ampliar `wishlist_hygiene` con señales externas/multi-tienda y `play_access` local sin cambiar el comportamiento advisory-only.
 
 ## Readiness del slice
 
-- Objetivo: documentar el contrato y uso actual del import local `external_matches` para `wishlist_hygiene`, dejando claro qué señales externas pueden alimentar revisiones manuales.
+- Objetivo: documentar el contrato y uso actual de imports locales (`external_matches` y `play_access`) para `wishlist_hygiene`, dejando claro qué señales pueden alimentar revisiones manuales.
 - Fuera de alcance permanente: APIs reales, scraping, credenciales, scoring, borrado, auto-exclusión, `BG00G`, `--no-cache`, builds y reportes generados.
 - Archivos relacionados: `README.md`, `PENDIENTES.md`, `BITACORA.md`, este runbook, el índice de runbooks y los runbooks Windows.
 - Validación mínima: revisión documental + `git diff --check`.
@@ -89,6 +89,46 @@ Reglas de interpretación del import:
 - `price_only`, `price`, catálogo público, bundle público, promociones o `confidence=low` no generan higiene por sí solos.
 - Payload vacío (`null`, `{}`, `[]`) no genera ruido; JSON malformado o shapes incorrectas fallan con error accionable.
 
+## Uso actual: import local `play_access`
+
+El generator también acepta un archivo local explícito con juegos instalados o jugables:
+
+```bash
+python3 steam_deals_generator.py --vanity gaben \
+  --play-access-json ./play-access-local.json
+```
+
+Este import alimenta `build_play_access_contract` y puede generar señales `owned`, `family_shared` o `probable_family_shared` para `wishlist_hygiene`, siempre como revisión manual. La ruta local no se expone en el JSON generado.
+
+Shapes aceptadas:
+
+1. Lista directa de registros o appids.
+2. Mapa simple `{ "appid": "Nombre" }`.
+3. Objeto con lista/mapa en `installed_or_playable`, `installed_or_playable_appids`, `installed`, `playable`, `games`, `items` o `library`.
+
+Ejemplo explícito:
+
+```json
+{
+  "source": "steam_local_library_export",
+  "observed_at": "2026-05-22",
+  "installed_or_playable": [
+    {"appid": "30", "name": "Installed Only", "installed": true},
+    {"steam_appid": "40", "title": "Playable Elsewhere", "playable": true},
+    "50"
+  ]
+}
+```
+
+Reglas de interpretación:
+
+- El import es **local y opt-in**: no hay auto-scan de carpetas Steam, launcher automation, SteamKit2, scraping, login ni red real.
+- Entradas sin `appid`/`steam_appid` se ignoran para evitar matches ambiguos por nombre.
+- Duplicados exactos por `appid` + `source` + `play_state` se deduplican.
+- Payload vacío (`null`, `{}`, `[]`) no genera ruido; JSON malformado o shapes incorrectas fallan con error accionable.
+- Si un juego aparece en el import local pero no en owned/family, la señal visible esperada es `probable_family_shared`, no ownership definitivo.
+- No cambia score, ranking, filtros, defaults, wishlist deletion ni auto-exclusión.
+
 ## Contrato actual que se debe preservar
 
 El payload visible sigue esta semántica base:
@@ -118,7 +158,7 @@ El payload visible sigue esta semántica base:
 }
 ```
 
-Cualquier ampliación multi-store debe ser compatible hacia atrás: los consumidores que solo lean `signals`, `reasons`, `action` y `advisory_only` deben seguir funcionando.
+Cualquier ampliación multi-store o `play_access` debe ser compatible hacia atrás: los consumidores que solo lean `signals`, `reasons`, `action` y `advisory_only` deben seguir funcionando. Cuando hay `play_access`, `source_signals` puede incluir `play_access` y cada item puede adjuntar metadata pública bajo `play_access` sin reemplazar `signals` ni `reasons`.
 
 ## Extensión propuesta por item
 
