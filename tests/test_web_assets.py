@@ -571,6 +571,39 @@ class WebAssetsTests(unittest.TestCase):
         self.assertIn(".latest-promo-extra", app_css)
         self.assertIn(".latest-promo-hint", app_css)
 
+    def test_latest_report_surfaces_promo_highlights_page_view(self) -> None:
+        app_js = (ROOT / "web" / "steam_deals" / "app.js").read_text(
+            encoding="utf-8"
+        )
+
+        self.assertIn("function renderLatestPromoHighlights", app_js)
+        self.assertIn("function latestPromoHighlightsPayload", app_js)
+        self.assertIn("function latestPromoHighlightsSections", app_js)
+        self.assertIn("function latestPromoHighlightsItems", app_js)
+        self.assertIn("function latestPromoHighlightsHasContract", app_js)
+        self.assertIn("report.promo_highlights", app_js)
+        self.assertIn("data-latest-promo-highlights", app_js)
+        self.assertIn("data-latest-promo-highlight-section", app_js)
+        self.assertIn("data-latest-promo-highlight-appid", app_js)
+        self.assertIn("Highlights por promo", app_js)
+        self.assertIn("Highlights de", app_js)
+        self.assertIn("promo_highlights_count", app_js)
+        self.assertIn("Advisory-only", app_js)
+        self.assertIn("no prueba pertenencia oficial por juego", app_js)
+        self.assertIn("no cambia score, ranking, Top Picks, cache ni fetching", app_js)
+        self.assertIn("Sin highlights por promo en este JSON local", app_js)
+        self.assertIn("Sin grupos de promo con señales suficientes todavía", app_js)
+        self.assertIn("items.filter(item => item && typeof item === 'object')", app_js)
+        self.assertIn("items.slice(0, 3)", app_js)
+        self.assertIn("sections.map(renderLatestPromoHighlightSection).filter(Boolean).slice(0, 4)", app_js)
+        self.assertIn("latestPromoCategoryLabel(source.category)", app_js)
+        self.assertIn("https://store.steampowered.com/app/${escapeHtml(safeAppid)}/", app_js)
+        self.assertIn('target="_blank" rel="noopener noreferrer"', app_js)
+        self.assertIn("renderLatestPromoHighlights(report)", app_js)
+        self.assertIn("renderLatestReportIntentWrapper(activeReport, meta, summary, files)", app_js)
+        self.assertIn("highlights por promo", app_js)
+        self.assertNotIn("data-share-promo-highlights", app_js)
+
     def test_latest_report_surfaces_free_weekend_now_inside_details(self) -> None:
         app_js = (ROOT / "web" / "steam_deals" / "app.js").read_text(
             encoding="utf-8"

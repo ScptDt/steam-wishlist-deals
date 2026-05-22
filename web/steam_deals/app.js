@@ -2999,6 +2999,122 @@ function renderLatestPromoContext(report) {
   `;
 }
 
+function latestPromoHighlightsPayload(report) {
+  const payload = report && typeof report === 'object' ? report.promo_highlights : null;
+  return payload && typeof payload === 'object' && !Array.isArray(payload) ? payload : null;
+}
+
+function latestPromoHighlightsSections(payload) {
+  return Array.isArray(payload && payload.sections)
+    ? payload.sections.filter(section => section && typeof section === 'object')
+    : [];
+}
+
+function latestPromoHighlightsItems(section) {
+  return Array.isArray(section && section.items)
+    ? section.items.filter(item => item && typeof item === 'object')
+    : [];
+}
+
+function latestPromoHighlightsHasContract(report) {
+  if (!report || typeof report !== 'object') return false;
+  if (latestPromoHighlightsPayload(report)) return true;
+  const summary = report.summary && typeof report.summary === 'object' ? report.summary : {};
+  return Object.prototype.hasOwnProperty.call(summary, 'promo_highlights_count');
+}
+
+function latestPromoHighlightItemTitle(item) {
+  const source = item && typeof item === 'object' ? item : {};
+  const appid = String(source.appid || source.steam_appid || '').trim();
+  const safeAppid = /^\d+$/.test(appid) ? appid : '';
+  const name = String(source.name || source.steam_name || (appid ? `AppID ${appid}` : 'Juego destacado')).trim();
+  const nameHtml = safeAppid
+    ? `<a href="https://store.steampowered.com/app/${escapeHtml(safeAppid)}/" target="_blank" rel="noopener noreferrer">${escapeHtml(name)}</a>`
+    : `<span>${escapeHtml(name)}</span>`;
+  return {appid, safeAppid, nameHtml};
+}
+
+function latestPromoHighlightItemMeta(item) {
+  const source = item && typeof item === 'object' ? item : {};
+  const parts = [];
+  const sourceLabel = String(source.source || '').trim();
+  if (sourceLabel) parts.push(sourceLabel === 'top_pick' ? 'Top Pick' : sourceLabel.replace(/_/g, ' '));
+  const recommendation = String(source.recommendation || '').trim();
+  if (recommendation) parts.push(recommendation);
+  const discount = Number(source.discount);
+  if (Number.isFinite(discount) && discount > 0) parts.push(`-${discount.toFixed(0)}%`);
+  const price = String(source.price_final || source.price || '').trim();
+  if (price) parts.push(price);
+  return parts.join(' · ');
+}
+
+function latestPromoHighlightReasons(item) {
+  return Array.isArray(item && item.highlight_reasons)
+    ? item.highlight_reasons.map(reason => String(reason || '').trim()).filter(Boolean).slice(0, 3)
+    : [];
+}
+
+function renderLatestPromoHighlightItem(item) {
+  const title = latestPromoHighlightItemTitle(item);
+  const meta = latestPromoHighlightItemMeta(item);
+  const reasons = latestPromoHighlightReasons(item);
+  return `
+    <li class="latest-promo-highlight-item"${title.safeAppid ? ` data-latest-promo-highlight-appid="${escapeHtml(title.safeAppid)}"` : ''}>
+      <div class="latest-promo-highlight-item-main">
+        <strong>${title.nameHtml}</strong>
+        ${meta ? `<span class="latest-promo-highlight-item-meta">${escapeHtml(meta)}</span>` : ''}
+        <span class="latest-promo-highlight-item-reasons">${escapeHtml((reasons.length ? reasons : ['contexto local de promo activa']).join(' · '))}</span>
+      </div>
+    </li>
+  `;
+}
+
+function renderLatestPromoHighlightSection(section) {
+  const source = section && typeof section === 'object' ? section : {};
+  const title = String(source.title || (source.promo_title ? `Highlights de ${source.promo_title}` : 'Highlights de promo')).trim();
+  const category = String(source.category_label || latestPromoCategoryLabel(source.category) || 'Otra promo').trim();
+  const items = latestPromoHighlightsItems(source);
+  const selectedItems = items.slice(0, 3);
+  const hiddenCount = Math.max(0, items.length - selectedItems.length);
+  if (!selectedItems.length) return '';
+  return `
+    <article class="latest-promo-highlight-section" data-latest-promo-highlight-section="${escapeHtml(source.id || source.promo_title || 'promo')}">
+      <div class="latest-promo-highlight-section-head">
+        <h4>${escapeHtml(title)}</h4>
+        <span>${escapeHtml(category)}</span>
+      </div>
+      <ol class="latest-promo-highlight-list">
+        ${selectedItems.map(renderLatestPromoHighlightItem).join('')}
+      </ol>
+      ${hiddenCount ? `<div class="latest-promo-highlight-more">${escapeHtml(formatLatestCoverageCount(hiddenCount))} más en el JSON completo</div>` : ''}
+    </article>
+  `;
+}
+
+function renderLatestPromoHighlights(report) {
+  const payload = latestPromoHighlightsPayload(report);
+  const sections = latestPromoHighlightsSections(payload);
+  const sectionCards = sections.map(renderLatestPromoHighlightSection).filter(Boolean).slice(0, 4);
+  const summary = payload && payload.summary && typeof payload.summary === 'object' ? payload.summary : {};
+  const count = latestCoverageCount(summary.promos_count) || sectionCards.length;
+  const subtitle = count > 0
+    ? `${formatLatestCoverageCount(count)} promo(s) con highlights desde el JSON local. Advisory-only: no prueba pertenencia oficial por juego, no cambia score, ranking, Top Picks, cache ni fetching.`
+    : 'Sin highlights por promo en este JSON local. Advisory-only: no prueba pertenencia oficial por juego; no cambia score, ranking, Top Picks, cache ni fetching.';
+  if (!sectionCards.length && !latestPromoHighlightsHasContract(report)) return '';
+  return `
+    <div class="latest-promo-highlights-section" data-latest-promo-highlights>
+      <div class="latest-promo-highlights-head">
+        <div>
+          <div class="latest-promo-highlights-title">Highlights por promo</div>
+          <div class="latest-promo-highlights-subtitle">${escapeHtml(subtitle)}</div>
+        </div>
+        <span class="latest-promo-highlights-badge">Vista local</span>
+      </div>
+      ${sectionCards.length ? `<div class="latest-promo-highlights-grid">${sectionCards.join('')}</div>` : '<div class="latest-promo-highlights-empty">Sin grupos de promo con señales suficientes todavía.</div>'}
+    </div>
+  `;
+}
+
 function latestFreeWeekendPayload(report) {
   const payload = report && typeof report === 'object' ? report.free_weekend_now : null;
   return payload && typeof payload === 'object' && !Array.isArray(payload) ? payload : null;
@@ -4591,6 +4707,7 @@ function renderLatestReportActionsPanel(files = null) {
 function renderLatestRecommendationsPanel(report, files = null) {
   const body = [
     renderLatestPromoContext(report),
+    renderLatestPromoHighlights(report),
     renderLatestExternalOffers(report),
     renderLatestFreeWeekendNow(report),
     renderLatestSmartAlertDigest(report),
@@ -4822,7 +4939,7 @@ function latestReportIntents(report, meta = {}, summary = {}, files = null) {
       label: 'Recomendaciones',
       hint: 'Picks y señales',
       eyebrow: 'Decidir qué revisar',
-      copy: 'Agrupa promo activa, alertas dry-run, colecciones, recomendaciones personales, regalos, wishlist hygiene y picks compartibles.',
+      copy: 'Agrupa promo activa, highlights por promo, alertas dry-run, colecciones, recomendaciones personales, regalos, wishlist hygiene y picks compartibles.',
       body: renderLatestRecommendationsPanel(report, files),
     },
     {
