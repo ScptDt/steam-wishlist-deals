@@ -28,13 +28,6 @@ _EXTERNAL_OFFER_STORE_TYPE_LABELS = {
     "official_store": "Tienda oficial",
     "authorized_key_reseller": "Reseller autorizado",
 }
-_TASTE_PRIORITY_CATEGORY_LABELS = {
-    "compra_inmediata": "Prioridad alta para revisar",
-    "espera_oferta": "Esperar mejor oferta",
-    "riesgo_abandono": "Riesgo de abandono",
-    "reemplaza_varios": "Solapa con varios juegos",
-    "no_comprar_aun": "No priorizar aún",
-}
 _EXTERNAL_OFFER_VISIBLE_STORE_TYPES = {"official_store", "authorized_key_reseller"}
 _EXTERNAL_OFFER_VISIBLE_STATES = {"highlight", "review"}
 _EXTERNAL_OFFER_BLOCKING_RISKS = {
@@ -268,95 +261,6 @@ def _render_external_offers(payload: dict | None) -> str:
 </section>'''
 
 
-def _taste_priority_labels(payload: dict) -> dict[str, str]:
-    labels = dict(_TASTE_PRIORITY_CATEGORY_LABELS)
-    raw_labels = payload.get("category_labels")
-    if isinstance(raw_labels, dict):
-        labels.update({str(key): str(value) for key, value in raw_labels.items()})
-    return labels
-
-
-def _taste_priority_items(payload: dict | None, *, limit: int = 6) -> tuple[list[dict], int, int, dict[str, str]]:
-    if not isinstance(payload, dict):
-        return [], 0, 0, {}
-    raw_items = payload.get("items")
-    if not isinstance(raw_items, list):
-        return [], 0, 0, {}
-    items = [item for item in raw_items if isinstance(item, dict)]
-    total = len(items)
-    return items[:limit], total, max(0, total - limit), _taste_priority_labels(payload)
-
-
-def _render_taste_priority_title(item: dict) -> str:
-    appid = str(item.get("appid") or item.get("steam_appid") or "").strip()
-    fallback = f"AppID {appid}" if appid else "Juego"
-    name = str(item.get("name") or item.get("steam_name") or fallback).strip()
-    if appid.isdigit():
-        return f'<a href="{STORE_URL.format(appid=appid)}" target="_blank" rel="noopener noreferrer">{html_escape(name)}</a>'
-    return html_escape(name)
-
-
-def _taste_priority_score_text(item: dict) -> str:
-    score = _safe_float(item.get("taste_priority"))
-    return f"{score:.1f}" if score is not None else "—"
-
-
-def _taste_priority_category_text(item: dict, labels: dict[str, str]) -> str:
-    category = str(item.get("category") or "").strip()
-    label = labels.get(category) or category.replace("_", " ").strip().title() or "Sin categoría"
-    return html_escape(label)
-
-
-def _taste_priority_signal_text(item: dict) -> str:
-    reasons = item.get("reasons") if isinstance(item.get("reasons"), list) else []
-    compact_reasons = [str(reason).strip() for reason in reasons if str(reason).strip()][:2]
-    clusters = item.get("clusters") if isinstance(item.get("clusters"), list) else []
-    cluster_labels = [
-        str(cluster.get("label") or cluster.get("id") or "").strip()
-        for cluster in clusters
-        if isinstance(cluster, dict) and str(cluster.get("label") or cluster.get("id") or "").strip()
-    ][:2]
-    parts = compact_reasons or cluster_labels
-    return html_escape(" · ".join(parts)) if parts else "—"
-
-
-def _render_taste_priority_item(item: dict, labels: dict[str, str]) -> str:
-    appid = str(item.get("appid") or item.get("steam_appid") or "").strip()
-    data_attr = f' data-taste-priority-appid="{html_escape(appid)}"' if appid.isdigit() else ""
-    category = _taste_priority_category_text(item, labels)
-    return f'''<li class="taste-priority-item"{data_attr}>
-  <div class="taste-priority-main">
-    <strong>{_render_taste_priority_title(item)}</strong>
-    <div class="taste-priority-meta">{category} · Índice {_taste_priority_score_text(item)}</div>
-    <div class="taste-priority-signals">{_taste_priority_signal_text(item)}</div>
-    <div class="taste-priority-note">Señal informativa: no cambia score, ranking ni Top Picks.</div>
-  </div>
-  <span class="taste-priority-badge">Advisory</span>
-</li>'''
-
-
-def _render_taste_priority(payload: dict | None) -> str:
-    items, total_items, hidden_count, labels = _taste_priority_items(payload)
-    if not items:
-        return ""
-    cards = "".join(_render_taste_priority_item(item, labels) for item in items)
-    more_html = (
-        f'<div class="taste-priority-more">{hidden_count:,} más en el payload completo</div>'
-        if hidden_count
-        else ""
-    )
-    return f'''<section class="taste-priority" data-taste-priority-section>
-  <div class="taste-priority-head">
-    <div>
-      <h2 style="margin:1rem 0 .35rem">Prioridad por gustos</h2>
-      <p><strong>{total_items:,} juego(s)</strong> desde <code>taste_priority</code> local. Advisory-only: no compra, no abre carrito, no cambia score, ranking, Top Picks, defaults, cache ni fetching.</p>
-    </div>
-    <span class="taste-priority-head-badge">Sin impacto en ranking</span>
-  </div>
-  <ol class="taste-priority-list">{cards}</ol>
-  {more_html}
-</section>'''
-
 _STYLE = """
 * { box-sizing: border-box; margin: 0; padding: 0; }
 body {
@@ -438,18 +342,6 @@ tr:hover { background: #1a3a5c; }
 .external-offer-link { border:1px solid #2a475e; border-radius:6px; color:#66c0f4; font-size:.72rem; font-weight:700; padding:.25rem .45rem; }
 .external-offer-link-disabled { color:#8f98a0; }
 .external-offers-more { margin-top:.45rem; }
-.taste-priority { margin:1rem 0 .5rem; }
-.taste-priority-head { display:flex; justify-content:space-between; gap:.75rem; align-items:flex-start; }
-.taste-priority-head p { color:#8f98a0; font-size:.78rem; margin:0 0 .55rem; }
-.taste-priority-head-badge, .taste-priority-badge { border:1px solid rgba(240,178,50,.45); border-radius:999px; color:#f0b232; font-size:.68rem; font-weight:700; padding:.18rem .45rem; white-space:nowrap; }
-.taste-priority-list { list-style:none; display:grid; grid-template-columns:repeat(auto-fill,minmax(240px,1fr)); gap:.5rem; }
-.taste-priority-item { background:#16202d; border:1px solid rgba(240,178,50,.35); border-radius:8px; padding:.65rem; display:flex; gap:.6rem; justify-content:space-between; }
-.taste-priority-main { min-width:0; }
-.taste-priority-main strong { color:#66c0f4; font-size:.92rem; }
-.taste-priority-meta { color:#f0b232; font-size:.74rem; margin:.25rem 0 .1rem; }
-.taste-priority-signals, .taste-priority-note, .taste-priority-more { color:#8f98a0; font-size:.72rem; line-height:1.35; }
-.taste-priority-badge { align-self:flex-start; }
-.taste-priority-more { margin-top:.45rem; }
 .share-modal {
   display: none;
   position: fixed;
@@ -1087,7 +979,6 @@ def generate_share_html(
     gift_ideas: list[dict] | None = None,
     compare_data: dict | None = None,
     external_offers: dict | None = None,
-    taste_priority: dict | None = None,
 ):
     """Generate a lightweight shareable HTML page with the deals list."""
     reviews = reviews or {}
@@ -1098,7 +989,6 @@ def generate_share_html(
     personalized_recommendations = personalized_recommendations or {"items": []}
     gift_ideas = gift_ideas or []
     external_offers = external_offers if isinstance(external_offers, dict) else None
-    taste_priority = taste_priority if isinstance(taste_priority, dict) else None
     today = date.today().strftime("%Y-%m-%d")
     title = f"Steam Deals — {profile_display_name or vanity}"
     deals_by_appid = {deal["appid"]: deal for deal in deals}
@@ -1130,7 +1020,6 @@ def generate_share_html(
     )
     gift_html = _render_gift_ideas(gift_ideas, compare_data)
     external_offers_html = _render_external_offers(external_offers)
-    taste_priority_html = _render_taste_priority(taste_priority)
 
     sale_line = f" — {html_escape(sale_name)}" if sale_name else ""
     return f"""<!DOCTYPE html>
@@ -1142,7 +1031,6 @@ def generate_share_html(
 <div class="meta">{today} | {len(deals)} deals (&ge;{min_discount}%) | Precios en MXN</div>
 {picks_html}
 {personalized_html}
-{taste_priority_html}
 {gift_html}
 {external_offers_html}
 {collections_html}

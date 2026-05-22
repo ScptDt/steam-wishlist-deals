@@ -5645,7 +5645,8 @@ class RunOutputTests(unittest.TestCase):
                     },
                     "clusters": [],
                     "reasons": ["similar a Hades", "alta afinidad con tus gustos locales"],
-                }
+                },
+                "not-a-dict",
             ],
         }
         top_picks = [{"appid": "10", "name": "Deep Action", "score": 91.2}]
@@ -10515,61 +10516,50 @@ class RankTopPicksTests(unittest.TestCase):
         self.assertNotIn("Checkout Trap", html)
         self.assertNotIn("add-to-cart", html)
 
-    def test_generate_share_html_surfaces_taste_priority_advisory_section(self) -> None:
+    def test_generate_share_html_excludes_taste_priority_surface(self) -> None:
         html = generate_share_html(
             deals=[],
             vanity="gaben",
             min_discount=50,
+            top_picks=[],
             recommended_collections=[],
             personalized_recommendations={"items": []},
-            taste_priority={
-                "items": [
-                    {
-                        "appid": "10",
-                        "name": "Deep <Action>",
-                        "taste_priority": 86.4,
-                        "category": "compra_inmediata",
-                        "reasons": ["alta afinidad <local>", "valor/descuento sólido"],
-                    }
-                ],
-            },
         )
 
-        self.assertIn("data-taste-priority-section", html)
-        self.assertIn("Prioridad por gustos", html)
-        self.assertIn("Sin impacto en ranking", html)
-        self.assertIn("Advisory-only", html)
-        self.assertIn("no compra, no abre carrito", html)
-        self.assertIn("no cambia score, ranking, Top Picks, defaults, cache ni fetching", html)
-        self.assertIn('data-taste-priority-appid="10"', html)
-        self.assertIn('href="https://store.steampowered.com/app/10/"', html)
-        self.assertIn('rel="noopener noreferrer"', html)
-        self.assertIn("Deep &lt;Action&gt;", html)
-        self.assertIn("Prioridad alta para revisar · Índice 86.4", html)
-        self.assertIn("alta afinidad &lt;local&gt; · valor/descuento sólido", html)
-        self.assertIn("no cambia score, ranking ni Top Picks", html)
-        self.assertBlankTargetsUseNoopener(html)
-        self.assertNotIn("Deep <Action>", html)
-        self.assertNotIn("alta afinidad <local>", html)
-        self.assertNotIn("data-share-taste-priority", html)
+        self.assertNotIn("taste_priority", html)
+        self.assertNotIn("taste-priority", html)
+        self.assertNotIn("Prioridad por gustos", html)
+        self.assertNotIn("data-taste-priority-section", html)
 
-    def test_generate_share_html_omits_empty_or_invalid_taste_priority_section(self) -> None:
-        cases = [None, [], {"items": []}, {"items": None}, {"items": ["not-a-dict"]}]
+    def test_generator_share_html_does_not_build_or_pass_taste_priority(self) -> None:
+        captured_kwargs = {}
+        original_renderer = generator_module._generate_share_html_renderer
+        original_builder = generator_module.build_taste_priority_contract
 
-        for taste_priority in cases:
-            with self.subTest(taste_priority=taste_priority):
-                html = generate_share_html(
-                    deals=[],
-                    vanity="gaben",
-                    min_discount=50,
-                    top_picks=[],
-                    recommended_collections=[],
-                    personalized_recommendations={"items": []},
-                    taste_priority=taste_priority,
-                )
+        def fake_renderer(*args, **kwargs):
+            captured_kwargs.update(kwargs)
+            return "<html>share</html>"
 
-                self.assertNotIn("data-taste-priority-section", html)
-                self.assertNotIn("Prioridad por gustos", html)
+        def fail_builder(*args, **kwargs):
+            raise AssertionError("Share HTML must not build taste_priority")
+
+        try:
+            generator_module._generate_share_html_renderer = fake_renderer
+            generator_module.build_taste_priority_contract = fail_builder
+            html = generator_module.generate_share_html(
+                deals=[],
+                vanity="gaben",
+                min_discount=50,
+                top_picks=[],
+                recommended_collections=[],
+                personalized_recommendations={"items": []},
+            )
+        finally:
+            generator_module._generate_share_html_renderer = original_renderer
+            generator_module.build_taste_priority_contract = original_builder
+
+        self.assertEqual("<html>share</html>", html)
+        self.assertNotIn("taste_priority", captured_kwargs)
 
     def test_generate_share_html_labels_top_pick_score_and_metacritic(self) -> None:
         html = generate_share_html(
