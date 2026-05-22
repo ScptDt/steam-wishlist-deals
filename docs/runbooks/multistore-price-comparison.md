@@ -2,7 +2,7 @@
 
 Track priorizado para ampliar la comparativa multi-tienda hacia Fanatical y más stores sin mezclarla con `wishlist_hygiene` ni con flujos de compra.
 
-Estado actual: Fase 0/docs, Fase 1 normalizador fixture-only, Fase 1B JSON interno opcional, Fase 1C diagnóstico JSON-consumer, primer render visible mínimo risk-gated, Share HTML, adaptador ITAD fixture-only, lectura de caché ITAD local por flag, configuración Web de esa caché, refresh live opt-in/acotado y trigger Web explícito cerrados entre 2026-05-21 y 2026-05-22. El siguiente paso requiere elegir explícitamente si hacer un live smoke acotado/aprobado o ampliar UX/superficies del render bajo los mismos gates.
+Estado actual: Fase 0/docs, Fase 1 normalizador fixture-only, Fase 1B JSON interno opcional, Fase 1C diagnóstico JSON-consumer, primer render visible mínimo risk-gated, Share HTML, adaptador ITAD fixture-only, lectura de caché ITAD local por flag, configuración Web de esa caché, refresh live opt-in/acotado, trigger Web explícito y pulido UX no-checkout cerrados entre 2026-05-21 y 2026-05-22. El siguiente paso requiere elegir explícitamente si hacer un live smoke acotado/aprobado o ampliar otra superficie bajo los mismos gates.
 
 Enfoque de ejecución: **feature-sliced + risk-gated**. La feature avanza por cortes pequeños, pero cada corte debe pasar gates de riesgo antes de exponerse al usuario, tocar ranking o usar fuentes live.
 
@@ -448,6 +448,13 @@ Cierre 2026-05-21:
 - Los links visibles requieren `link_allowed=true`, URL `http/https` y no checkout/cart/add-to-cart/payment.
 - El copy conserva “Comparativa informativa”, “no compra/no abre carrito/no verifica stock final”, “no prueba ownership” y “no cambia score/ranking/wishlist hygiene”.
 - No se agregó ITAD/Fanatical live, ranking/defaults ni integración con `wishlist_hygiene`.
+
+Pulido UX/copy 2026-05-22:
+
+- Web UI del último reporte, HTML generado, Markdown y Share HTML cambian la acción externa a `Ver tienda (sin carrito)` para evitar lectura de checkout/carrito.
+- El copy visible agrega `sin checkout` y conserva `Comparativa informativa`, `no compra/no abre carrito`, `no verifica stock final`, `no prueba ownership` y `no cambia score/ranking/wishlist hygiene`.
+- La Web UI refuerza el link como pill accesible con foco visible sin cambiar payload, backend, endpoints, ranking ni providers.
+- No se agregó live smoke real, refresh automático, scraping, credenciales Fanatical, checkout/carrito, ownership, ranking ni defaults.
 
 ### Fase 4 — Fanatical específico
 

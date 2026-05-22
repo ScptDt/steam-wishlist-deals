@@ -217,7 +217,7 @@ def _render_external_offer_action(item: dict) -> str:
     url = _external_offer_safe_url(item)
     if not url:
         return '<span class="external-offer-link external-offer-link-disabled">Sin link seguro</span>'
-    return f'<a class="external-offer-link" href="{html_escape(url)}" target="_blank" rel="noopener noreferrer">Abrir tienda</a>'
+    return f'<a class="external-offer-link" href="{html_escape(url)}" target="_blank" rel="noopener noreferrer">Ver tienda (sin carrito)</a>'
 
 
 def _render_external_offer_item(item: dict) -> str:
@@ -229,7 +229,7 @@ def _render_external_offer_item(item: dict) -> str:
     <strong>{_render_external_offer_title(item)}</strong>
     <div class="external-offer-meta">{_render_external_offer_meta(item)}</div>
     <div class="external-offer-status">{_render_external_offer_status(item)}</div>
-    <div class="external-offer-note">Comparativa informativa: no prueba ownership ni stock final.</div>
+    <div class="external-offer-note">Comparativa informativa: no prueba ownership, no abre carrito/checkout ni verifica stock final.</div>
   </div>
   <div class="external-offer-side">
     <span class="external-offer-badge">{html_escape(badge)}</span>
@@ -252,9 +252,9 @@ def _render_external_offers(payload: dict | None) -> str:
   <div class="external-offers-head">
     <div>
       <h2 style="margin:1rem 0 .35rem">Comparativa externa</h2>
-      <p><strong>{total_items:,} oferta(s) externa(s) visibles</strong> desde el JSON local. Comparativa informativa: Steam Tools no compra, no abre carrito, no verifica stock final, no prueba ownership y no cambia score, ranking ni wishlist hygiene.</p>
+      <p><strong>{total_items:,} oferta(s) externa(s) visibles</strong> desde el JSON local. Comparativa informativa: Steam Tools no compra, no abre carrito ni checkout, no verifica stock final, no prueba ownership y no cambia score, ranking ni wishlist hygiene.</p>
     </div>
-    <span class="external-offers-head-badge">Solo tiendas oficiales/autorizadas</span>
+    <span class="external-offers-head-badge">Solo tiendas oficiales/autorizadas · sin checkout</span>
   </div>
   <ol class="external-offers-list">{cards}</ol>
   {more_html}

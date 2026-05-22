@@ -1798,12 +1798,25 @@ details .details-body .field:last-child {
   gap: 0.45rem;
 }
 .latest-external-offer-link {
+  display: inline-flex;
+  align-items: center;
+  min-height: 32px;
+  padding: 0.18rem 0.5rem;
+  border: 1px solid rgba(102, 192, 244, 0.32);
+  border-radius: 999px;
+  background: rgba(102, 192, 244, 0.08);
   color: var(--accent);
   font-size: 0.72rem;
   font-weight: 700;
   text-decoration: none;
 }
+.latest-external-offer-link:focus-visible {
+  outline: 2px solid var(--accent);
+  outline-offset: 2px;
+}
 .latest-external-offer-link-disabled {
+  border-color: rgba(255, 255, 255, 0.12);
+  background: rgba(255, 255, 255, 0.03);
   color: var(--text2);
   font-weight: 600;
 }

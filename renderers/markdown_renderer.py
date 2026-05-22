@@ -732,7 +732,7 @@ def _external_offer_action_text(item: dict) -> str:
     if not url:
         return "Sin link seguro"
     safe_url = url.replace(")", "%29")
-    return f"[Abrir tienda]({safe_url})"
+    return f"[Ver tienda (sin carrito)]({safe_url})"
 
 
 def _build_external_offers_lines(payload: dict | None) -> list[str]:
@@ -742,7 +742,7 @@ def _build_external_offers_lines(payload: dict | None) -> list[str]:
     lines = [
         "## 🏬 Comparativa externa",
         "",
-        f"> **{total_items:,} oferta(s) externa(s) visibles** desde el JSON local. Comparativa informativa: Steam Tools no compra, no abre carrito, no verifica stock final, no prueba ownership y no cambia score, ranking ni wishlist hygiene.",
+        f"> **{total_items:,} oferta(s) externa(s) visibles** desde el JSON local. Comparativa informativa: Steam Tools no compra, no abre carrito ni checkout, no verifica stock final, no prueba ownership y no cambia score, ranking ni wishlist hygiene.",
         "",
         "| Juego | Tienda | Precio | Estado | Acción |",
         "|-------|--------|--------|--------|--------|",

@@ -3231,7 +3231,7 @@ function renderLatestExternalOfferItem(item) {
   const title = latestExternalOfferTitle(source);
   const safeUrl = latestExternalOfferSafeUrl(source);
   const actionHtml = safeUrl
-    ? `<a class="latest-external-offer-link" href="${escapeHtml(safeUrl)}" target="_blank" rel="noopener noreferrer">Abrir tienda</a>`
+    ? `<a class="latest-external-offer-link" href="${escapeHtml(safeUrl)}" target="_blank" rel="noopener noreferrer">Ver tienda (sin carrito)</a>`
     : '<span class="latest-external-offer-link latest-external-offer-link-disabled">Sin link seguro</span>';
   const badge = String(source.visibility || '').trim() === 'highlight' ? 'Destacada' : 'Revisión';
   return `
@@ -3240,7 +3240,7 @@ function renderLatestExternalOfferItem(item) {
         <strong>${title.nameHtml}</strong>
         <span class="latest-external-offer-meta">${escapeHtml(latestExternalOfferMeta(source))}</span>
         <span class="latest-external-offer-status">${escapeHtml(latestExternalOfferStatus(source))}</span>
-        <span class="latest-external-offer-note">Comparativa informativa: no prueba ownership ni stock final.</span>
+        <span class="latest-external-offer-note">Comparativa informativa: no prueba ownership, no abre carrito/checkout ni verifica stock final.</span>
       </div>
       <span class="latest-external-offer-side">
         <span class="latest-external-offer-badge">${escapeHtml(badge)}</span>
@@ -3262,9 +3262,9 @@ function renderLatestExternalOffers(report) {
       <div class="latest-external-offers-head">
         <div>
           <div class="latest-external-offers-title">Comparativa externa</div>
-          <div class="latest-external-offers-subtitle">${escapeHtml(formatLatestCoverageCount(totalCount))} oferta(s) visible(s) desde el JSON local. Comparativa informativa: Steam Tools no compra, no abre carrito, no verifica stock final, no prueba ownership y no cambia score, ranking ni wishlist hygiene.</div>
+          <div class="latest-external-offers-subtitle">${escapeHtml(formatLatestCoverageCount(totalCount))} oferta(s) visible(s) desde el JSON local. Comparativa informativa: Steam Tools no compra, no abre carrito ni checkout, no verifica stock final, no prueba ownership y no cambia score, ranking ni wishlist hygiene.</div>
         </div>
-        <span class="latest-external-offers-head-badge">Solo tiendas oficiales/autorizadas</span>
+        <span class="latest-external-offers-head-badge">Solo tiendas oficiales/autorizadas · sin checkout</span>
       </div>
       <ol class="latest-external-offers-list">${selectedItems.map(renderLatestExternalOfferItem).join('')}</ol>
       ${hiddenCount ? `<div class="latest-external-offers-more">${escapeHtml(formatLatestCoverageCount(hiddenCount))} más en el JSON completo</div>` : ''}
