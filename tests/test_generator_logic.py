@@ -1670,6 +1670,24 @@ class AccessLayerTests(unittest.TestCase):
         self.assertEqual(records[1]["play_state"], "playable")
         self.assertEqual(records[2]["play_state"], "installed_or_playable")
 
+    def test_normalize_local_play_access_import_covers_collection_keys_and_play_states(self) -> None:
+        cases = [
+            ({"installed_or_playable_appids": ["60"]}, ("60", "installed_or_playable", None)),
+            ({"games": [{"appid": "70", "status": "playable"}]}, ("70", "playable", None)),
+            ({"items": [{"appid": "80", "state": "installed"}]}, ("80", "installed", None)),
+            ({"library": {"90": {"title": "Library Map", "play_state": "installed_or_playable"}}}, ("90", "installed_or_playable", "Library Map")),
+            ([{"appid": "100", "status": "ready"}], ("100", "installed_or_playable", None)),
+        ]
+
+        for payload, (expected_appid, expected_state, expected_name) in cases:
+            with self.subTest(payload=payload):
+                records = normalize_local_play_access_import(payload)
+
+                self.assertEqual(records[0]["appid"], expected_appid)
+                self.assertEqual(records[0]["play_state"], expected_state)
+                if expected_name:
+                    self.assertEqual(records[0]["name"], expected_name)
+
     def test_load_local_play_access_import_accepts_common_json_shapes(self) -> None:
         cases = [
             ([{"appid": "10", "name": "Direct List"}], ["10"]),
@@ -1753,6 +1771,37 @@ class AccessLayerTests(unittest.TestCase):
         self.assertEqual(access["summary"]["family_shared_count"], 2)
         self.assertEqual(access["summary"]["probable_family_shared_count"], 1)
         self.assertTrue(access["summary"]["advisory_only"])
+
+    def test_build_play_access_contract_keeps_owned_family_precedence_over_local_import(self) -> None:
+        local_import = normalize_local_play_access_import(
+            {
+                "installed_or_playable": [
+                    {"appid": "10", "name": "Owned Local", "installed": True},
+                    {"appid": "20", "name": "Family Local", "playable": True},
+                    {"appid": "30", "name": "Installed Only", "playable": True},
+                    {"appid": "30", "name": "Installed Only", "playable": True},
+                ]
+            }
+        )
+
+        access = build_play_access_contract(
+            [
+                {"appid": "10", "name": "Owned Game"},
+                {"appid": "20", "name": "Family Game"},
+                {"appid": "30", "name": "Installed Only"},
+            ],
+            owned={"10": "Owned Game"},
+            family_appids=["10", "20"],
+            installed_or_playable_appids=local_import,
+        )
+        by_appid = {item["appid"]: item for item in access["items"]}
+
+        self.assertEqual([item["appid"] for item in access["items"]], ["10", "20", "30"])
+        self.assertEqual(by_appid["10"]["access_type"], "owned")
+        self.assertEqual(by_appid["20"]["access_type"], "family_shared")
+        self.assertEqual(by_appid["30"]["access_type"], "probable_family_shared")
+        self.assertEqual(access["summary"]["owned_count"], 1)
+        self.assertEqual(access["summary"]["probable_family_shared_count"], 1)
 
     def test_build_play_access_contract_omits_wishlist_items_without_access_signal(self) -> None:
         access = build_play_access_contract(
