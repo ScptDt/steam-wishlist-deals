@@ -131,7 +131,8 @@ python3 steam_deals_generator.py --vanity gaben \
   --itad-external-offers-cache ./itad-external-offers.json
 
 # Refrescar esa caché ITAD bajo opt-in explícito
-python3 steam_deals_generator.py --vanity gaben --itad-key TU_ITAD_KEY \
+STEAM_TOOLS_ITAD_API_KEY="tu-key-local" \
+python3 steam_deals_generator.py --vanity gaben \
   --itad-external-offers-cache ./itad-external-offers.json \
   --itad-refresh-external-offers-cache
 
@@ -157,6 +158,10 @@ python3 steam_deals_generator.py --vanity gaben --md-frontmatter
 `--itad-external-offers-cache` permite sumar precios externos desde una caché JSON ITAD local. Leer esa caché no hace red live por sí solo y la comparativa es informativa: no prueba ownership, no abre carrito/checkout y no cambia score/ranking.
 
 La Web UI expone el flujo en **Archivos opcionales** → `Caché ITAD external_offers (JSON)`. Si necesitas poblarla o actualizarla desde ITAD, marca explícitamente **Filtros avanzados** → `Refrescar caché ITAD external_offers en vivo (opt-in)`; ese refresh requiere `ITAD key` y ruta de caché, y puede crear/actualizar el archivo indicado.
+
+Para obtener una ITAD key, crea o usa tu cuenta regular de IsThereAnyDeal y registra una app en <https://isthereanydeal.com/apps/my/>. La documentación oficial vive en <https://docs.isthereanydeal.com/>. Guarda la key solo en tu entorno local, por ejemplo `STEAM_TOOLS_ITAD_API_KEY`, o en la config local de la Web UI si aceptas guardarla en tu máquina. No la pegues en issues, commits, reportes generados ni ejemplos compartidos.
+
+Steam Tools envía la key de refresh ITAD como header `ITAD-API-Key` para evitar filtrarla en URLs/logs. Sin una key válida no se hace live smoke ni refresh real; sigue siendo posible usar una caché local ya descargada o fixtures sin red.
 
 ### Import local para revisar la wishlist
 

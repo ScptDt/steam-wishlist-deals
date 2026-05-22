@@ -416,6 +416,13 @@ Corte refresh live opt-in cerrado 2026-05-22:
 - Si falta key/ruta, no hay IDs ITAD o falla fetch/429, no sobreescribe la caché existente y el reporte continúa usando lo local disponible.
 - No se agregó live smoke real, scraping, credenciales Fanatical, checkout/carrito, ownership, ranking ni defaults.
 
+Credenciales ITAD seguras:
+
+- Obtener key oficial requiere cuenta regular de IsThereAnyDeal y registrar una app en <https://isthereanydeal.com/apps/my/>; docs oficiales: <https://docs.isthereanydeal.com/>.
+- Preferir `STEAM_TOOLS_ITAD_API_KEY` o config local de Web/Desktop; nunca versionar keys ni copiarlas a ejemplos, logs, reportes o issues.
+- Aunque algunos endpoints aceptan `key=...`, este proyecto usa `ITAD-API-Key` header en los helpers nuevos para evitar filtrado por URL.
+- Sin key válida no hay live smoke ni refresh real; no probar keys random. Mantener fixtures/caché local como alternativa offline.
+
 Corte Web trigger refresh live cerrado 2026-05-22:
 
 - `Filtros avanzados` expone `Refrescar caché ITAD external_offers en vivo (opt-in)` como acción separada del uso normal de caché local.
