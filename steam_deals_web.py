@@ -791,6 +791,11 @@ def build_command(config: dict, filters: dict) -> list[str]:
             "--wishlist-external-matches-json",
             config["wishlist_external_matches_json"],
         ]
+    itad_external_offers_cache = normalize_optional_local_path_value(
+        config.get("itad_external_offers_cache")
+    )
+    if itad_external_offers_cache:
+        cmd += ["--itad-external-offers-cache", itad_external_offers_cache]
     warm_cache = bool(filters.get("warm_cache"))
     if warm_cache:
         cmd.append("--warm-cache")
@@ -1066,6 +1071,18 @@ class Handler(BaseHTTPRequestHandler):
                 + redact_sensitive_text(
                     external_matches_json,
                     extra_values=[Path(external_matches_json).expanduser()],
+                )
+            )
+
+        itad_external_offers_cache = normalize_optional_local_path_value(
+            config.get("itad_external_offers_cache")
+        )
+        if itad_external_offers_cache and not Path(itad_external_offers_cache).expanduser().exists():
+            issues.append(
+                "No se encontró caché ITAD external_offers local: "
+                + redact_sensitive_text(
+                    itad_external_offers_cache,
+                    extra_values=[Path(itad_external_offers_cache).expanduser()],
                 )
             )
 
@@ -1482,6 +1499,7 @@ class Handler(BaseHTTPRequestHandler):
             "hltb",
             "family_json",
             "wishlist_external_matches_json",
+            "itad_external_offers_cache",
             "itad_key",
         ):
             if config.get(k) and not is_redacted_config_secret(config.get(k)):

@@ -258,7 +258,7 @@ function validatePd2FormBeforeRun() {
 }
 
 // ── Config fields (saveable) ──
-const CONFIG_FIELDS = ['vanity','key','hltb','output','discount','genres','family_json','wishlist_external_matches_json','itad_key','compare','telegram_token','telegram_chat','discord_webhook'];
+const CONFIG_FIELDS = ['vanity','key','hltb','output','discount','genres','family_json','wishlist_external_matches_json','itad_external_offers_cache','itad_key','compare','telegram_token','telegram_chat','discord_webhook'];
 const FILTER_FIELDS = ['max_price','min_reviews','min_review_count','max_hours','top','sort','budget','max_workers'];
 const CHECK_FIELDS  = ['deck_only','deck_verified','new_only','csv','no_cache','free_weekend_live'];
 const GENRE_SUGGESTIONS = [

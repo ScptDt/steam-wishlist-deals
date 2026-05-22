@@ -222,6 +222,26 @@ class WebAssetsTests(unittest.TestCase):
             app_js,
         )
 
+    def test_itad_external_offers_cache_import_is_visible_and_local_only(self) -> None:
+        index_html = (ROOT / "web" / "steam_deals" / "index.html").read_text(
+            encoding="utf-8"
+        )
+        app_js = (ROOT / "web" / "steam_deals" / "app.js").read_text(
+            encoding="utf-8"
+        )
+
+        self.assertIn("Caché ITAD external_offers (JSON)", index_html)
+        self.assertIn('id="itad_external_offers_cache"', index_html)
+        self.assertIn("Import local de precios ITAD", index_html)
+        self.assertIn("No hace red live por sí solo", index_html)
+        self.assertIn("no prueba ownership", index_html)
+        self.assertIn("no cambia score, ranking ni wishlist hygiene", index_html)
+        self.assertIn("itad_external_offers_cache", app_js)
+        self.assertIn(
+            "'itad_external_offers_cache'",
+            app_js,
+        )
+
     def test_hltb_path_copy_handles_windows_paths_without_quotes(self) -> None:
         index_html = (ROOT / "web" / "steam_deals" / "index.html").read_text(
             encoding="utf-8"

@@ -197,6 +197,21 @@ class GeneratedFilesServingTests(unittest.TestCase):
             "/tmp/wishlist-external.json",
         )
 
+    def test_build_command_passes_itad_external_offers_cache(self) -> None:
+        cmd = build_command(
+            {
+                "vanity": "gaben",
+                "itad_external_offers_cache": " /tmp/itad-external-offers.json ",
+            },
+            {},
+        )
+
+        self.assertIn("--itad-external-offers-cache", cmd)
+        self.assertEqual(
+            cmd[cmd.index("--itad-external-offers-cache") + 1],
+            "/tmp/itad-external-offers.json",
+        )
+
     def test_build_command_preserves_hltb_windows_paths_with_spaces(self) -> None:
         path_with_slashes = "C:/Users/Bryan Grijalva/Downloads/HLTB_Games_2026-05-15.csv"
         path_with_backslashes = r"C:\Users\Bryan Grijalva\Downloads\HLTB_Games_2026-05-15.csv"
@@ -336,6 +351,7 @@ class GeneratedFilesServingTests(unittest.TestCase):
         hltb_path = "C:/Users/Bryan Grijalva/Downloads/HLTB_Games_2026-05-15.csv"
         family_path = "/private/tmp/steamtools-family-missing.json"
         wishlist_matches_path = "/private/tmp/wishlist-external-missing.json"
+        itad_external_offers_cache_path = "/private/tmp/itad-external-offers-missing.json"
         output_path = "/srv/app/steamtools-output-secret"
 
         web.load_config = lambda: {"key": "SAVED-SECRET"}
@@ -346,6 +362,7 @@ class GeneratedFilesServingTests(unittest.TestCase):
                     "hltb": hltb_path,
                     "family_json": family_path,
                     "wishlist_external_matches_json": wishlist_matches_path,
+                    "itad_external_offers_cache": itad_external_offers_cache_path,
                     "output": output_path,
                 }
             }
@@ -362,10 +379,12 @@ class GeneratedFilesServingTests(unittest.TestCase):
         self.assertNotIn("HLTB_Games_2026-05-15.csv", payload)
         self.assertNotIn(family_path, payload)
         self.assertNotIn(wishlist_matches_path, payload)
+        self.assertNotIn(itad_external_offers_cache_path, payload)
         self.assertNotIn(output_path, payload)
         self.assertIn("[ruta]", payload)
         self.assertIn("ruta completa sin comillas", payload)
         self.assertIn("JSON de matches externos wishlist", payload)
+        self.assertIn("caché ITAD external_offers local", payload)
 
     def test_preflight_suggests_redacted_hltb_autodetect_only_when_field_empty(self) -> None:
         original_find_hltb_csv_candidates = web.find_hltb_csv_candidates
