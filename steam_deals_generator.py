@@ -98,6 +98,7 @@ try:
     from steam_deals_recommendations import (
         build_gift_ideas as _build_gift_ideas_impl,
         build_personalized_recommendations as _build_personalized_recommendations_impl,
+        build_recommendation_diagnostics as _build_recommendation_diagnostics_impl,
         build_recommended_collections as _build_recommended_collections_impl,
         build_selection_review as _build_selection_review_impl,
         build_taste_priority_contract as _build_taste_priority_contract_impl,
@@ -108,6 +109,7 @@ try:
 except Exception:
     _build_gift_ideas_impl = None
     _build_personalized_recommendations_impl = None
+    _build_recommendation_diagnostics_impl = None
     _build_recommended_collections_impl = None
     _build_selection_review_impl = None
     _build_taste_priority_contract_impl = None
@@ -3137,6 +3139,13 @@ def build_personalized_recommendations(
     return _build_personalized_recommendations_impl(deals, top_picks=top_picks, **kwargs)
 
 
+def build_recommendation_diagnostics(personalized_recommendations, **kwargs) -> dict:
+    """Explain whether recommendations are personalized or score fallback."""
+    if _build_recommendation_diagnostics_impl is None:
+        raise RuntimeError("Recommendations module is not available")
+    return _build_recommendation_diagnostics_impl(personalized_recommendations, **kwargs)
+
+
 def build_taste_priority_contract(
     deals: list[dict] | None,
     top_picks: list[dict] | None = None,
@@ -3703,6 +3712,7 @@ def generate_json(
     free_weekend_now: dict | None = None,
     external_offers: dict | None = None,
     taste_priority: dict | None = None,
+    recommendation_diagnostics: dict | None = None,
 ) -> str:
     if _generate_json_renderer is None:
         raise RuntimeError("JSON renderer module is not available")
@@ -3756,6 +3766,15 @@ def generate_json(
             recommended_collections=recommended_collections,
             hltb_hours=hltb_hours,
         )
+    if recommendation_diagnostics is None:
+        recommendation_diagnostics = build_recommendation_diagnostics(
+            personalized_recommendations,
+            activity_games=activity_games,
+            library_games=library_games if library_games is not None else have_on_sale,
+            owned=owned,
+            liked_appids=liked_appids,
+            preference_relations=preference_relations,
+        )
     return _generate_json_renderer(
         deals,
         backlog_on_sale,
@@ -3797,6 +3816,7 @@ def generate_json(
         free_weekend_now=free_weekend_now,
         external_offers=external_offers,
         taste_priority=taste_priority,
+        recommendation_diagnostics=recommendation_diagnostics,
     )
 
 

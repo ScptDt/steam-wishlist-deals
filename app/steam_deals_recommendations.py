@@ -958,6 +958,193 @@ def build_personalized_recommendations(
     }
 
 
+def _diagnostic_int(value, fallback: int = 0) -> int:
+    return int(_safe_number(value, fallback))
+
+
+def _diagnostic_recommendation_items(personalized_recommendations) -> list[dict]:
+    if isinstance(personalized_recommendations, dict):
+        return _record_list(personalized_recommendations.get("items"))
+    return _record_list(personalized_recommendations)
+
+
+def _diagnostic_profile_depth(
+    personalized_recommendations,
+    *,
+    activity_games,
+    library_games,
+    owned,
+    liked_appids,
+    preference_relations,
+) -> dict:
+    profile = (
+        personalized_recommendations.get("profile")
+        if isinstance(personalized_recommendations, dict)
+        else {}
+    )
+    activity_summary = profile.get("activity_summary") if isinstance(profile, dict) else {}
+    library_summary = profile.get("library_summary") if isinstance(profile, dict) else {}
+    activity_terms = profile.get("activity_terms") if isinstance(profile, dict) else []
+    activity_records_count = len(_record_list(activity_games))
+    library_records_count = len(_record_list(library_games))
+    owned_count = len(_normalize_appid_set(owned))
+    return {
+        "activity_records": _diagnostic_int(
+            activity_summary.get("records_count"),
+            activity_records_count,
+        ) if isinstance(activity_summary, dict) else activity_records_count,
+        "activity_tracked_count": _diagnostic_int(
+            activity_summary.get("tracked_count"),
+        ) if isinstance(activity_summary, dict) else 0,
+        "activity_recent_count": _diagnostic_int(
+            activity_summary.get("recent_count"),
+        ) if isinstance(activity_summary, dict) else 0,
+        "activity_terms_count": len(activity_terms) if isinstance(activity_terms, list) else 0,
+        "library_records_count": library_records_count,
+        "library_owned_count": _diagnostic_int(
+            library_summary.get("owned_count"),
+            owned_count,
+        ) if isinstance(library_summary, dict) else library_records_count,
+        "library_genre_coverage_count": _diagnostic_int(
+            library_summary.get("genre_coverage_count"),
+        ) if isinstance(library_summary, dict) else 0,
+        "liked_appids_count": len(_normalize_appid_set(liked_appids)),
+        "preference_relations_count": _preference_relations_count(preference_relations),
+    }
+
+
+def _preference_relations_count(preference_relations) -> int:
+    if isinstance(preference_relations, dict):
+        return sum(
+            1
+            for appid, reasons in preference_relations.items()
+            if str(appid).strip() and reasons
+        )
+    return len(_record_list(preference_relations))
+
+
+def _diagnostic_signal_sources(depth: dict) -> list[str]:
+    sources: list[str] = []
+    if depth["activity_tracked_count"] > 0 or depth["activity_terms_count"] > 0:
+        sources.append("activity")
+    if depth["library_records_count"] > 0 or depth["library_genre_coverage_count"] > 0:
+        sources.append("library")
+    if depth["liked_appids_count"] > 0:
+        sources.append("liked_appids")
+    if depth["preference_relations_count"] > 0:
+        sources.append("preferences")
+    return [*sources, "score"]
+
+
+def _diagnostic_mode(
+    items: list[dict],
+    behavioral_signal_strength: float,
+    fallback_dependence: float,
+    signal_sources: list[str],
+) -> str:
+    non_score_sources = [source for source in signal_sources if source != "score"]
+    if not items or all(_safe_number(item.get("affinity_score")) <= 0 for item in items):
+        return "score_fallback"
+    if (
+        fallback_dependence <= 0.2
+        and behavioral_signal_strength >= 0.5
+        and len(non_score_sources) >= 2
+    ):
+        return "behavioral"
+    return "mixed"
+
+
+def _diagnostic_confidence(
+    mode: str,
+    behavioral_signal_strength: float,
+    fallback_dependence: float,
+    signal_sources: list[str],
+) -> dict:
+    non_score_sources = [source for source in signal_sources if source != "score"]
+    source_bonus = min(0.18, len(non_score_sources) * 0.045)
+    if mode == "behavioral":
+        score = min(1.0, 0.62 + behavioral_signal_strength * 0.25 + source_bonus)
+    elif mode == "mixed":
+        score = min(
+            0.74,
+            0.42 + behavioral_signal_strength * 0.35 + source_bonus - fallback_dependence * 0.10,
+        )
+    else:
+        score = max(0.1, 0.34 - fallback_dependence * 0.16 + source_bonus)
+    score = round(_clamp_score(score, high=1.0), 3)
+    level = "high" if score >= 0.67 else "medium" if score >= 0.4 else "low"
+    return {"level": level, "score": score}
+
+
+def _diagnostic_improvement_hints(mode: str, depth: dict, fallback_dependence: float) -> list[str]:
+    hints: list[str] = []
+    if depth["activity_tracked_count"] <= 0:
+        hints.append("agrega actividad local reciente para distinguir gustos reales de score base")
+    if depth["library_genre_coverage_count"] <= 0:
+        hints.append("enriquece biblioteca con géneros/tags para medir afinidad y redundancia")
+    if depth["liked_appids_count"] <= 0 and depth["preference_relations_count"] <= 0:
+        hints.append("marca juegos como me gusta o agrega relaciones 'similar a' para subir confianza")
+    if mode == "score_fallback" or fallback_dependence >= 0.5:
+        hints.append("revisa candidatos con affinity_score=0 antes de asumir personalización fuerte")
+    return _dedupe_texts(hints)[:4]
+
+
+def build_recommendation_diagnostics(
+    personalized_recommendations,
+    *,
+    activity_games=None,
+    library_games=None,
+    owned=None,
+    liked_appids=None,
+    preference_relations=None,
+) -> dict:
+    """Explain how much personalized recommendations depend on local behavioral signals."""
+    items = _diagnostic_recommendation_items(personalized_recommendations)
+    if not items:
+        return {}
+    affinities = [_safe_number(item.get("affinity_score")) for item in items]
+    positive_count = sum(1 for affinity in affinities if affinity > 0)
+    affinity_zero_rate = round((len(items) - positive_count) / len(items), 3)
+    average_affinity = sum(affinities) / len(affinities)
+    positive_affinity_rate = positive_count / len(items)
+    behavioral_signal_strength = round(
+        _clamp_score(
+            (average_affinity / 60.0) * 0.7 + positive_affinity_rate * 0.3,
+            high=1.0,
+        ),
+        3,
+    )
+    depth = _diagnostic_profile_depth(
+        personalized_recommendations,
+        activity_games=activity_games,
+        library_games=library_games,
+        owned=owned,
+        liked_appids=liked_appids,
+        preference_relations=preference_relations,
+    )
+    depth["recommendations_count"] = len(items)
+    signal_sources = _diagnostic_signal_sources(depth)
+    mode = _diagnostic_mode(items, behavioral_signal_strength, affinity_zero_rate, signal_sources)
+    return {
+        "schema": "recommendation_diagnostics_v1",
+        "recommendation_mode": mode,
+        "recommendation_confidence": _diagnostic_confidence(
+            mode,
+            behavioral_signal_strength,
+            affinity_zero_rate,
+            signal_sources,
+        ),
+        "behavioral_signal_strength": behavioral_signal_strength,
+        "fallback_dependence": affinity_zero_rate,
+        "affinity_zero_rate": affinity_zero_rate,
+        "profile_depth": depth,
+        "signal_sources": signal_sources,
+        "improve_recommendations": _diagnostic_improvement_hints(mode, depth, affinity_zero_rate),
+        "advisory_only": True,
+        "ranking_impact": "none",
+    }
+
+
 TASTE_PRIORITY_CATEGORIES = (
     "compra_inmediata",
     "espera_oferta",

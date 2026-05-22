@@ -39,6 +39,7 @@ from steam_deals_alerts import (
     build_smart_alert_digest as module_build_smart_alert_digest,
 )
 from steam_deals_recommendations import (
+    build_recommendation_diagnostics as module_build_recommendation_diagnostics,
     build_taste_priority_contract as module_build_taste_priority_contract,
 )
 from steam_deals_promo_highlights import (
@@ -825,6 +826,71 @@ class PersonalizedRecommendationsTests(unittest.TestCase):
         self.assertEqual(recommendations["profile"]["library_summary"]["owned_count"], 0)
         self.assertEqual(recommendations["profile"]["library_summary"]["genre_distribution"], [])
         self.assertEqual(recommendations["profile"]["library_summary"]["genre_coverage_count"], 0)
+
+    def test_build_recommendation_diagnostics_marks_behavioral_mode(self) -> None:
+        recommendations = build_personalized_recommendations(
+            [
+                {"appid": "10", "name": "Deep Action", "score": 70, "genres": ["Action", "Roguelike"]},
+                {"appid": "20", "name": "Cozy Puzzle", "score": 72, "genres": ["Puzzle"]},
+            ],
+            activity_games=[{"appid": "90", "name": "Hades", "playtime_2weeks": 180, "genres": ["Action", "Roguelike"]}],
+            library_games=[{"appid": "91", "name": "Dead Cells", "genres": ["Action", "Roguelike"]}],
+            liked_appids={"20"},
+            preference_relations={"10": ["similar a Hades"]},
+        )
+
+        diagnostics = module_build_recommendation_diagnostics(
+            recommendations,
+            activity_games=[{"appid": "90", "name": "Hades", "playtime_2weeks": 180, "genres": ["Action", "Roguelike"]}],
+            library_games=[{"appid": "91", "name": "Dead Cells", "genres": ["Action", "Roguelike"]}],
+            liked_appids={"20"},
+            preference_relations={"10": ["similar a Hades"]},
+        )
+
+        self.assertEqual(diagnostics["recommendation_mode"], "behavioral")
+        self.assertEqual(diagnostics["fallback_dependence"], 0.0)
+        self.assertEqual(diagnostics["recommendation_confidence"]["level"], "high")
+        self.assertIn("activity", diagnostics["signal_sources"])
+        self.assertIn("library", diagnostics["signal_sources"])
+        self.assertTrue(diagnostics["advisory_only"])
+        self.assertEqual(diagnostics["ranking_impact"], "none")
+
+    def test_build_recommendation_diagnostics_marks_mixed_mode(self) -> None:
+        recommendations = build_personalized_recommendations(
+            [
+                {"appid": "10", "name": "Action Match", "score": 60, "genres": ["Action"]},
+                {"appid": "20", "name": "Score Only", "score": 90, "genres": ["Puzzle"]},
+            ],
+            activity_games=[{"appid": "90", "name": "Recent Action", "playtime_2weeks": 120, "genres": ["Action"]}],
+        )
+
+        diagnostics = module_build_recommendation_diagnostics(
+            recommendations,
+            activity_games=[{"appid": "90", "name": "Recent Action", "playtime_2weeks": 120, "genres": ["Action"]}],
+        )
+
+        self.assertEqual(diagnostics["recommendation_mode"], "mixed")
+        self.assertEqual(diagnostics["affinity_zero_rate"], 0.5)
+        self.assertGreater(diagnostics["behavioral_signal_strength"], 0)
+        self.assertIn("activity", diagnostics["signal_sources"])
+        self.assertIn("revisa candidatos con affinity_score=0", " ".join(diagnostics["improve_recommendations"]))
+
+    def test_build_recommendation_diagnostics_marks_score_fallback_mode(self) -> None:
+        recommendations = build_personalized_recommendations(
+            [
+                {"appid": "a", "name": "Alpha", "score": 60},
+                {"appid": "b", "name": "Bravo", "score": 80},
+            ],
+            max_items=2,
+        )
+
+        diagnostics = module_build_recommendation_diagnostics(recommendations)
+
+        self.assertEqual(diagnostics["recommendation_mode"], "score_fallback")
+        self.assertEqual(diagnostics["recommendation_confidence"]["level"], "low")
+        self.assertEqual(diagnostics["fallback_dependence"], 1.0)
+        self.assertEqual(diagnostics["signal_sources"], ["score"])
+        self.assertEqual(diagnostics["profile_depth"]["recommendations_count"], 2)
 
     def test_build_personalized_recommendations_handles_empty_candidates(self) -> None:
         recommendations = build_personalized_recommendations([], [], max_items=5)
@@ -5725,6 +5791,62 @@ class RunOutputTests(unittest.TestCase):
         self.assertEqual(data["taste_priority"]["items"][0]["appid"], "10")
         self.assertIn(data["taste_priority"]["items"][0]["category"], data["taste_priority"]["categories"])
         self.assertEqual(data["top_picks"][0]["score"], 80)
+
+    def test_generate_json_serializes_recommendation_diagnostics_without_ranking_changes(self) -> None:
+        deals = [
+            {"appid": "10", "name": "Action Deal", "score": 80, "discount": 70, "genres": ["Action"]},
+            {"appid": "20", "name": "Action Sequel", "score": 75, "discount": 60, "genres": ["Action"]},
+        ]
+
+        payload = generate_json(
+            deals=deals,
+            backlog_on_sale=[],
+            have_on_sale=[{"appid": "91", "name": "Dead Cells", "genres": ["Action"]}],
+            vanity="gaben",
+            owned={},
+            wishlist_appids=["10", "20"],
+            min_discount=50,
+            genres=[],
+            activity_games=[{"appid": "90", "name": "Hades", "genres": ["Action"], "playtime_2weeks": 120}],
+        )
+
+        data = json.loads(payload)
+        diagnostics = data["recommendation_diagnostics"]
+
+        self.assertEqual(diagnostics["recommendation_mode"], "behavioral")
+        self.assertEqual(diagnostics["recommendation_confidence"]["level"], "high")
+        self.assertTrue(diagnostics["advisory_only"])
+        self.assertEqual(diagnostics["ranking_impact"], "none")
+        self.assertIn("activity", diagnostics["signal_sources"])
+        self.assertIn("library", diagnostics["signal_sources"])
+        self.assertEqual(data["summary"]["personalized_recommendations_count"], 2)
+        self.assertEqual(data["deals"], deals)
+
+    def test_generate_json_omits_empty_or_invalid_recommendation_diagnostics(self) -> None:
+        empty_payload = generate_json(
+            deals=[],
+            backlog_on_sale=[],
+            have_on_sale=[],
+            vanity="gaben",
+            owned={},
+            wishlist_appids=[],
+            min_discount=50,
+            genres=[],
+        )
+        invalid_payload = generate_json(
+            deals=[{"appid": "10", "name": "Baseline", "score": 80}],
+            backlog_on_sale=[],
+            have_on_sale=[],
+            vanity="gaben",
+            owned={},
+            wishlist_appids=["10"],
+            min_discount=50,
+            genres=[],
+            recommendation_diagnostics={"recommendation_mode": "unknown"},
+        )
+
+        self.assertNotIn("recommendation_diagnostics", json.loads(empty_payload))
+        self.assertNotIn("recommendation_diagnostics", json.loads(invalid_payload))
 
     def test_generate_json_enriches_free_weekend_now_cross_signals(self) -> None:
         payload = generate_json(
