@@ -119,6 +119,14 @@ except Exception:
 
 
 try:
+    from steam_deals_promo_highlights import (
+        build_promo_highlights as _build_promo_highlights_impl,
+    )
+except Exception:
+    _build_promo_highlights_impl = None
+
+
+try:
     from steam_deals_wishlist_hygiene import (
         build_wishlist_hygiene_signals as _build_wishlist_hygiene_signals_impl,
         load_wishlist_external_matches as _load_wishlist_external_matches_impl,
@@ -3157,6 +3165,24 @@ def build_taste_priority_contract(
     return _build_taste_priority_contract_impl(deals, top_picks=top_picks, **kwargs)
 
 
+def build_promo_highlights(
+    deals: list[dict] | None,
+    *,
+    top_picks: list[dict] | None = None,
+    active_promo_context: dict | None = None,
+    **kwargs,
+) -> dict | None:
+    """Build local advisory promo-highlight sections from existing report signals."""
+    if _build_promo_highlights_impl is None:
+        raise RuntimeError("Promo highlights module is not available")
+    return _build_promo_highlights_impl(
+        deals,
+        top_picks=top_picks,
+        active_promo_context=active_promo_context,
+        **kwargs,
+    )
+
+
 def build_selection_review(
     selection,
     deals: list[dict] | None = None,
@@ -3713,6 +3739,7 @@ def generate_json(
     external_offers: dict | None = None,
     taste_priority: dict | None = None,
     recommendation_diagnostics: dict | None = None,
+    promo_highlights: dict | None = None,
 ) -> str:
     if _generate_json_renderer is None:
         raise RuntimeError("JSON renderer module is not available")
@@ -3775,6 +3802,12 @@ def generate_json(
             liked_appids=liked_appids,
             preference_relations=preference_relations,
         )
+    if promo_highlights is None:
+        promo_highlights = build_promo_highlights(
+            deals,
+            top_picks=top_picks,
+            active_promo_context=active_promo_context,
+        )
     return _generate_json_renderer(
         deals,
         backlog_on_sale,
@@ -3817,6 +3850,7 @@ def generate_json(
         external_offers=external_offers,
         taste_priority=taste_priority,
         recommendation_diagnostics=recommendation_diagnostics,
+        promo_highlights=promo_highlights,
     )
 
 

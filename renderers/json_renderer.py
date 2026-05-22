@@ -100,6 +100,51 @@ def _taste_priority_total(payload: dict | None) -> int:
     return len(normalized["items"]) if normalized else 0
 
 
+def _promo_highlights_payload(payload: dict | None) -> dict | None:
+    if not isinstance(payload, dict):
+        return None
+    sections = payload.get("sections")
+    if not isinstance(sections, list):
+        return None
+    normalized_sections = []
+    for section in sections:
+        if not isinstance(section, dict):
+            continue
+        items = section.get("items")
+        if not isinstance(items, list):
+            continue
+        items = [item for item in items if isinstance(item, dict)]
+        if items:
+            normalized_sections.append({**section, "items": items})
+    sections = normalized_sections
+    if not sections:
+        return None
+    items_count = sum(
+        len(section.get("items"))
+        for section in sections
+        if isinstance(section.get("items"), list)
+    )
+    summary = dict(payload.get("summary") if isinstance(payload.get("summary"), dict) else {})
+    summary.update(
+        {
+            "promos_count": len(sections),
+            "items_count": items_count,
+            "advisory_only": True,
+            "ranking_impact": "none",
+        }
+    )
+    return {
+        **payload,
+        "sections": sections,
+        "summary": summary,
+    }
+
+
+def _promo_highlights_total(payload: dict | None) -> int:
+    normalized = _promo_highlights_payload(payload)
+    return len(normalized["sections"]) if normalized else 0
+
+
 RECOMMENDATION_DIAGNOSTIC_MODES = {"behavioral", "mixed", "score_fallback"}
 
 
@@ -159,6 +204,7 @@ def generate_json(
     external_offers: dict | None = None,
     taste_priority: dict | None = None,
     recommendation_diagnostics: dict | None = None,
+    promo_highlights: dict | None = None,
 ) -> str:
     previous_appids = previous_appids or set()
     family_appids = family_appids or set()
@@ -185,6 +231,7 @@ def generate_json(
     external_offers = external_offers if isinstance(external_offers, dict) else None
     taste_priority = _taste_priority_payload(taste_priority)
     recommendation_diagnostics = _recommendation_diagnostics_payload(recommendation_diagnostics)
+    promo_highlights = _promo_highlights_payload(promo_highlights)
 
     payload = {
         "meta": {
@@ -218,6 +265,7 @@ def generate_json(
             "free_weekend_now_count": _free_weekend_now_total(free_weekend_now),
             "external_offers_count": _external_offers_total(external_offers),
             "taste_priority_count": _taste_priority_total(taste_priority),
+            "promo_highlights_count": _promo_highlights_total(promo_highlights),
         },
         "comparison": _json_safe(comparison),
         "top_picks": _json_safe(top_picks),
@@ -257,4 +305,6 @@ def generate_json(
         payload["taste_priority"] = _json_safe(taste_priority)
     if recommendation_diagnostics:
         payload["recommendation_diagnostics"] = _json_safe(recommendation_diagnostics)
+    if promo_highlights:
+        payload["promo_highlights"] = _json_safe(promo_highlights)
     return json.dumps(payload, ensure_ascii=False, indent=2)

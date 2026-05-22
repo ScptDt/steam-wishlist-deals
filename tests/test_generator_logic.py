@@ -5693,6 +5693,109 @@ class RunOutputTests(unittest.TestCase):
         self.assertEqual(data["summary"]["external_offers_count"], 0)
         self.assertNotIn("external_offers", data)
 
+    def test_generate_json_serializes_promo_highlights_contract_without_ranking_changes(self) -> None:
+        promo_highlights = {
+            "summary": {"promos_count": 1, "items_count": 1},
+            "sections": [
+                {
+                    "id": "steam-ocean-fest",
+                    "title": "Highlights de Steam Ocean Fest",
+                    "promo_title": "Steam Ocean Fest",
+                    "category": "fest",
+                    "items": [
+                        {
+                            "appid": "10",
+                            "name": "Subnautica",
+                            "source": "top_pick",
+                            "highlight_reasons": ["contexto local de promo activa"],
+                        },
+                        "not-a-dict",
+                    ],
+                }
+            ],
+        }
+        top_picks = [{"appid": "10", "name": "Subnautica", "score": 91.2}]
+
+        payload = generate_json(
+            deals=[{"appid": "10", "name": "Subnautica", "score": 91.2, "discount": 80}],
+            backlog_on_sale=[],
+            have_on_sale=[],
+            vanity="gaben",
+            owned={},
+            wishlist_appids=["10"],
+            min_discount=50,
+            genres=[],
+            top_picks=top_picks,
+            promo_highlights=promo_highlights,
+        )
+
+        data = json.loads(payload)
+
+        self.assertEqual(data["summary"]["promo_highlights_count"], 1)
+        self.assertEqual(data["promo_highlights"]["summary"]["promos_count"], 1)
+        self.assertEqual(data["promo_highlights"]["summary"]["items_count"], 1)
+        self.assertTrue(data["promo_highlights"]["summary"]["advisory_only"])
+        self.assertEqual(data["promo_highlights"]["summary"]["ranking_impact"], "none")
+        self.assertEqual(data["promo_highlights"]["sections"][0]["title"], "Highlights de Steam Ocean Fest")
+        self.assertEqual(len(data["promo_highlights"]["sections"][0]["items"]), 1)
+        self.assertEqual(data["top_picks"], top_picks)
+        self.assertEqual(data["deals"][0]["score"], 91.2)
+
+    def test_generate_json_omits_empty_or_invalid_promo_highlights_contract(self) -> None:
+        cases = [[], {"sections": []}, {"sections": None}, {"sections": [{"items": ["not-a-dict"]}]}]
+
+        for promo_highlights in cases:
+            with self.subTest(promo_highlights=promo_highlights):
+                payload = generate_json(
+                    deals=[],
+                    backlog_on_sale=[],
+                    have_on_sale=[],
+                    vanity="gaben",
+                    owned={},
+                    wishlist_appids=[],
+                    min_discount=50,
+                    genres=[],
+                    promo_highlights=promo_highlights,
+                )
+
+                data = json.loads(payload)
+
+                self.assertEqual(data["summary"]["promo_highlights_count"], 0)
+                self.assertNotIn("promo_highlights", data)
+
+    def test_generate_json_can_build_promo_highlights_from_existing_signals(self) -> None:
+        payload = generate_json(
+            deals=[
+                {"appid": "10", "name": "Subnautica", "score": 91.2, "discount": 80},
+                {"appid": "20", "name": "Halo", "discount": 65},
+            ],
+            backlog_on_sale=[],
+            have_on_sale=[],
+            vanity="gaben",
+            owned={},
+            wishlist_appids=["10", "20"],
+            min_discount=50,
+            genres=[],
+            top_picks=[{"appid": "10", "name": "Subnautica", "score": 91.2}],
+            active_promo_context=module_build_active_promo_context(
+                [
+                    {"type": 1, "title": "Steam Ocean Fest"},
+                    {"type": 11, "title": "Microsoft Publisher Sale"},
+                ]
+            ),
+        )
+
+        data = json.loads(payload)
+
+        self.assertEqual(data["summary"]["promo_highlights_count"], 2)
+        self.assertEqual(
+            [section["title"] for section in data["promo_highlights"]["sections"]],
+            ["Highlights de Steam Ocean Fest", "Highlights de Microsoft Publisher Sale"],
+        )
+        self.assertTrue(data["promo_highlights"]["summary"]["advisory_only"])
+        self.assertEqual(data["promo_highlights"]["summary"]["ranking_impact"], "none")
+        self.assertEqual(data["top_picks"][0]["score"], 91.2)
+
     def test_generate_json_serializes_taste_priority_contract_without_ranking_changes(self) -> None:
         taste_priority = {
             "source_signals": ["personalized_recommendations", "value", "redundancy_stub"],
