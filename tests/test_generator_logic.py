@@ -41,6 +41,9 @@ from steam_deals_alerts import (
 from steam_deals_recommendations import (
     build_taste_priority_contract as module_build_taste_priority_contract,
 )
+from steam_deals_promo_highlights import (
+    build_promo_highlights as module_build_promo_highlights,
+)
 from steam_deals_external_offers import diagnose_external_offers_contract
 from steam_deals_external_offers import normalize_external_offers
 from steam_deals_cache_policy import (
@@ -8284,6 +8287,104 @@ class SteamAdapterTests(unittest.TestCase):
         )
 
         self.assertEqual(display_name, "gaben Public")
+
+
+class PromoHighlightsTests(unittest.TestCase):
+    def test_build_promo_highlights_groups_candidates_by_active_promos(self) -> None:
+        promo_context = module_build_active_promo_context(
+            [
+                {"type": 1, "title": "Steam Ocean Fest"},
+                {"type": 11, "title": "Microsoft Publisher Sale"},
+            ]
+        )
+
+        payload = module_build_promo_highlights(
+            deals=[
+                {
+                    "appid": "10",
+                    "name": "Subnautica",
+                    "discount": 80,
+                    "price_final": "$100",
+                },
+                {
+                    "appid": "20",
+                    "name": "Halo",
+                    "discount": 65,
+                    "price_final": "$150",
+                    "recommendation": "Buena para revisar hoy",
+                },
+            ],
+            top_picks=[
+                {
+                    "appid": "10",
+                    "name": "Subnautica",
+                    "score": 94.2,
+                    "recommendation": "Comprar ahora",
+                    "score_reasons": ["reviews muy positivas"],
+                }
+            ],
+            active_promo_context=promo_context,
+        )
+
+        self.assertIsNotNone(payload)
+        assert payload is not None
+        self.assertEqual(payload["summary"]["promos_count"], 2)
+        self.assertEqual(payload["summary"]["items_count"], 4)
+        self.assertTrue(payload["summary"]["advisory_only"])
+        self.assertEqual(payload["summary"]["ranking_impact"], "none")
+        self.assertIn("no prueban pertenencia oficial", payload["advisory_note"])
+        self.assertEqual(
+            [section["title"] for section in payload["sections"]],
+            [
+                "Highlights de Steam Ocean Fest",
+                "Highlights de Microsoft Publisher Sale",
+            ],
+        )
+        self.assertEqual(payload["sections"][0]["id"], "steam-ocean-fest")
+        self.assertEqual(payload["sections"][0]["category_label"], "Fest")
+        first_item = payload["sections"][0]["items"][0]
+        self.assertEqual(first_item["name"], "Subnautica")
+        self.assertEqual(first_item["source"], "top_pick")
+        self.assertIn("active_promo_context", payload["sections"][0]["source_signals"])
+        self.assertIn("contexto local de promo activa", first_item["highlight_reasons"])
+        self.assertNotIn("score", first_item)
+
+    def test_build_promo_highlights_tolerates_unknown_or_unstable_promo_labels(self) -> None:
+        payload = module_build_promo_highlights(
+            deals=[{"appid": "30", "name": "Mystery Game", "discount": 90}],
+            active_promo_context={
+                "sale_name": "Mystery Spotlight",
+                "primary": {"title": "Mystery Spotlight", "category": "weird_event"},
+                "promos": [{"title": ""}, "not-a-dict"],
+            },
+        )
+
+        self.assertIsNotNone(payload)
+        assert payload is not None
+        section = payload["sections"][0]
+        self.assertEqual(section["title"], "Highlights de Mystery Spotlight")
+        self.assertEqual(section["category"], "weird_event")
+        self.assertEqual(section["category_label"], "Weird Event")
+        self.assertEqual(section["items"][0]["name"], "Mystery Game")
+
+    def test_build_promo_highlights_returns_none_for_empty_or_unhelpful_inputs(self) -> None:
+        promo_context = {"primary": {"title": "Steam Ocean Fest", "category": "fest"}}
+
+        self.assertIsNone(
+            module_build_promo_highlights(
+                deals=[{"appid": "10", "name": "Subnautica", "discount": 80}],
+                active_promo_context=None,
+            )
+        )
+        self.assertIsNone(
+            module_build_promo_highlights(deals=[], active_promo_context=promo_context)
+        )
+        self.assertIsNone(
+            module_build_promo_highlights(
+                deals=[{"appid": "40", "name": "Tiny Discount", "discount": 10}],
+                active_promo_context=promo_context,
+            )
+        )
 
 
 class NotificationsTests(unittest.TestCase):
