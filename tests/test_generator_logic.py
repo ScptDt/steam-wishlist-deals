@@ -1360,6 +1360,45 @@ class ExternalOffersTests(unittest.TestCase):
         self.assertEqual(diagnostic["blocked_link_count"], 1)
         self.assertEqual(diagnostic["ranking_impact"], "none")
 
+    def test_diagnose_external_offers_contract_accepts_opt_in_marketplace_review(self) -> None:
+        external_offers = normalize_external_offers(
+            [
+                {
+                    "appid": "50",
+                    "name": "Grey Market Review",
+                    "store": "G2A",
+                    "price": 1.99,
+                    "currency": "USD",
+                    "url": "https://g2a.example/deal/50",
+                    "drm": "steam",
+                    "region": "global",
+                    "confidence": "high",
+                }
+            ],
+            include_marketplaces=True,
+        )
+        report_payload = {
+            "summary": {"external_offers_count": 1},
+            "external_offers": external_offers,
+            "top_picks": [{"appid": "10", "score": 95}],
+            "wishlist_hygiene": {"items": [], "summary": {"advisory_only": True}},
+        }
+
+        diagnostic = diagnose_external_offers_contract(report_payload)
+        item = external_offers["items"][0]
+
+        self.assertEqual(item["store_type"], "marketplace_keyshop")
+        self.assertEqual(item["visibility"], "review")
+        self.assertFalse(item["eligible_for_best_external_price"])
+        self.assertIn("marketplace_keyshop", item["risk_flags"])
+        self.assertEqual(diagnostic["status"], "ok")
+        self.assertEqual(diagnostic["visibility_counts"], {"highlight": 0, "review": 1, "hidden": 0})
+        self.assertEqual(diagnostic["eligible_for_best_external_price_count"], 0)
+        self.assertEqual(diagnostic["issue_counts"], {"error": 0, "warning": 0})
+        self.assertEqual(diagnostic["risk_counts"], {"marketplace_keyshop": 1, "ownership_not_proven": 1})
+        self.assertEqual(report_payload["top_picks"], [{"appid": "10", "score": 95}])
+        self.assertEqual(report_payload["wishlist_hygiene"], {"items": [], "summary": {"advisory_only": True}})
+
     def test_diagnose_external_offers_contract_handles_absent_and_invalid_payloads(self) -> None:
         absent = diagnose_external_offers_contract({"summary": {"external_offers_count": 0}})
         invalid_json = diagnose_external_offers_contract("{not-json")
