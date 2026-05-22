@@ -191,6 +191,7 @@ from steam_deals_generator import (
     build_smart_alert_digest as generator_build_smart_alert_digest,
     build_gift_ideas,
     build_wishlist_hygiene_signals,
+    load_local_play_access_import as generator_load_local_play_access_import,
     load_wishlist_external_matches,
     compute_budget_picks,
     compute_deal_comparison,
@@ -1686,6 +1687,19 @@ class AccessLayerTests(unittest.TestCase):
 
                 self.assertEqual([record["appid"] for record in records], expected_appids)
 
+    def test_generator_load_local_play_access_import_uses_access_loader(self) -> None:
+        with TemporaryDirectory() as temp_dir:
+            path = Path(temp_dir) / "play_access.json"
+            path.write_text(
+                json.dumps({"installed_or_playable": [{"appid": "30", "name": "Installed Only"}]}),
+                encoding="utf-8",
+            )
+
+            records = generator_load_local_play_access_import(path)
+
+        self.assertEqual(records[0]["appid"], "30")
+        self.assertEqual(records[0]["name"], "Installed Only")
+
     def test_load_local_play_access_import_keeps_empty_payloads_quiet(self) -> None:
         cases = ["", "null", "{}", "[]", '{"installed_or_playable": null}']
 
@@ -2259,6 +2273,8 @@ class ConfigTests(unittest.TestCase):
                 "--free-weekend-live",
                 "--wishlist-external-matches-json",
                 "/tmp/wishlist_matches.json",
+                "--play-access-json",
+                "/tmp/play_access.json",
                 "--alert-rise-pct",
                 "12.5",
                 "--alert-global-margin-pct",
@@ -2279,6 +2295,7 @@ class ConfigTests(unittest.TestCase):
         self.assertEqual(result[11]["warm_cache"], True)
         self.assertEqual(result[11]["free_weekend_live"], True)
         self.assertEqual(result[11]["wishlist_external_matches_json"], Path("/tmp/wishlist_matches.json"))
+        self.assertEqual(result[11]["play_access_json"], Path("/tmp/play_access.json"))
         self.assertEqual(result[11]["alert_rise_pct"], 12.5)
         self.assertEqual(result[11]["alert_global_margin_pct"], 3.0)
         self.assertEqual(result[11]["alert_score_min"], 80.0)

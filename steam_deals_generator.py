@@ -137,6 +137,16 @@ except Exception:
 
 
 try:
+    from steam_deals_access import (
+        build_play_access_contract as _build_play_access_contract_impl,
+        load_local_play_access_import as _load_local_play_access_import_impl,
+    )
+except Exception:
+    _build_play_access_contract_impl = None
+    _load_local_play_access_import_impl = None
+
+
+try:
     from steam_deals_hltb import (
         cross_hltb_with_deals as _cross_hltb_with_deals_impl,
         extract_numbers as _extract_numbers_impl,
@@ -722,6 +732,20 @@ def load_wishlist_external_matches(json_path: Path | str | None) -> list[dict]:
     if _load_wishlist_external_matches_impl is None:
         raise RuntimeError("Wishlist hygiene module is not available")
     return _load_wishlist_external_matches_impl(json_path)
+
+
+def load_local_play_access_import(json_path: Path | str | None) -> list[dict]:
+    """Load explicit local installed/playable records for play_access."""
+    if _load_local_play_access_import_impl is None:
+        raise RuntimeError("Play access module is not available")
+    return _load_local_play_access_import_impl(json_path)
+
+
+def build_play_access_contract(wishlist, **kwargs):
+    """Build advisory play_access signals from local sources."""
+    if _build_play_access_contract_impl is None:
+        raise RuntimeError("Play access module is not available")
+    return _build_play_access_contract_impl(wishlist, **kwargs)
 
 
 def enrich_free_weekend_cross_signals(payload, **kwargs):
@@ -4264,6 +4288,7 @@ def main():
     WEB_EVENT_MODE = bool(WEB_RUN)
     WARM_CACHE_ONLY = bool(FILTERS.get("warm_cache"))
     WISHLIST_EXTERNAL_MATCHES_JSON = FILTERS.get("wishlist_external_matches_json")
+    PLAY_ACCESS_JSON = FILTERS.get("play_access_json")
     emit = print
     warm_cache_log_handle = None
     if WARM_CACHE_ONLY:
@@ -4345,6 +4370,17 @@ def main():
         if wishlist_external_matches:
             emit(
                 f"  {_dim(f'Matches externos wishlist: {len(wishlist_external_matches):,} registros')}"
+            )
+    local_play_access_records = []
+    if PLAY_ACCESS_JSON:
+        try:
+            local_play_access_records = load_local_play_access_import(PLAY_ACCESS_JSON)
+        except ValueError as exc:
+            emit(f"{_err(str(exc))}")
+            return 1
+        if local_play_access_records:
+            emit(
+                f"  {_dim(f'Play access local: {len(local_play_access_records):,} registros')}"
             )
 
     try:
@@ -4668,6 +4704,14 @@ def main():
         family_appids=family_renderer_kwargs.get("family_appids"),
         hltb_hours=hltb_hours,
     )
+    play_access = None
+    if local_play_access_records:
+        play_access = build_play_access_contract(
+            wishlist_appids,
+            owned=owned,
+            family_appids=family_renderer_kwargs.get("family_appids"),
+            installed_or_playable_appids=local_play_access_records,
+        )
     wishlist_hygiene = build_wishlist_hygiene_signals(
         wishlist_appids,
         owned=owned,
@@ -4675,6 +4719,7 @@ def main():
         library_games=have_on_sale,
         hltb_records=hltb_hours,
         external_matches=wishlist_external_matches,
+        play_access=play_access,
     )
     free_weekend_now = resolve_free_weekend_now(
         live_enabled=bool(FILTERS.get("free_weekend_live")),
@@ -4762,6 +4807,7 @@ def main():
         smart_alert_digest=smart_alert_digest,
         free_weekend_now=free_weekend_now,
         external_offers=external_offers,
+        play_access=play_access,
         **family_renderer_kwargs,
     )
 

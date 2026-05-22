@@ -73,6 +73,10 @@ def build_parser() -> argparse.ArgumentParser:
         help="Ruta al JSON local de matches externos para wishlist hygiene",
     )
     parser.add_argument(
+        "--play-access-json",
+        help="Ruta al JSON local de juegos instalados/jugables para play_access",
+    )
+    parser.add_argument(
         "--itad-key", help="IsThereAnyDeal API Key (para mínimo histórico)"
     )
     parser.add_argument(
@@ -350,6 +354,9 @@ def _build_filters(args, cfg: dict, *, environ=None) -> dict:
         "free_weekend_live": bool(args.free_weekend_live or cfg.get("free_weekend_live")),
         "wishlist_external_matches_json": Path(args.wishlist_external_matches_json).expanduser()
         if args.wishlist_external_matches_json
+        else None,
+        "play_access_json": Path(args.play_access_json).expanduser()
+        if args.play_access_json
         else None,
         "itad_external_offers_cache": Path(itad_external_offers_cache).expanduser()
         if itad_external_offers_cache
