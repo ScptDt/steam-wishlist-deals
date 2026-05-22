@@ -130,6 +130,11 @@ python3 steam_deals_generator.py --vanity gaben --itad-key TU_ITAD_KEY
 python3 steam_deals_generator.py --vanity gaben \
   --itad-external-offers-cache ./itad-external-offers.json
 
+# Refrescar esa caché ITAD bajo opt-in explícito
+python3 steam_deals_generator.py --vanity gaben --itad-key TU_ITAD_KEY \
+  --itad-external-offers-cache ./itad-external-offers.json \
+  --itad-refresh-external-offers-cache
+
 # Filtros
 python3 steam_deals_generator.py --vanity gaben --discount 60 --max-price 300 --deck-only --sort score
 
@@ -584,6 +589,7 @@ Flags más usados:
 | `--vanity` | Perfil Steam: vanity, Steam ID o URL completa |
 | `--key` / `--itad-key` | API keys para más datos y mínimo histórico |
 | `--itad-external-offers-cache` | Caché JSON local ITAD para `external_offers`, sin red live por defecto |
+| `--itad-refresh-external-offers-cache` | Opt-in live para poblar esa caché ITAD; requiere `--itad-key` y ruta de caché |
 | `--discount` / `--max-price` | Filtros principales de precio/oferta |
 | `--deck-only` / `--deck-verified` | Filtros Steam Deck |
 | `--top` / `--sort` | Cantidad y orden de picks destacados |

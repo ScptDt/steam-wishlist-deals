@@ -206,22 +206,26 @@ except Exception:
 
 try:
     from steam_deals_itad import (
+        build_itad_external_offers_cache as _build_itad_external_offers_cache_impl,
         itad_external_offers_from_cache as _itad_external_offers_from_cache_impl,
         itad_get_active_bundles as _itad_get_active_bundles_impl,
         itad_get_current_prices as _itad_get_current_prices_impl,
         itad_get_prices_payload as _itad_get_prices_payload_impl,
         itad_get_store_lows as _itad_get_store_lows_impl,
         itad_lookup_games as _itad_lookup_games_impl,
+        itad_lookup_games_by_appid as _itad_lookup_games_by_appid_impl,
         load_itad_external_offers_cache as _load_itad_external_offers_cache_impl,
         save_itad_external_offers_cache as _save_itad_external_offers_cache_impl,
     )
 except Exception:
+    _build_itad_external_offers_cache_impl = None
     _itad_external_offers_from_cache_impl = None
     _itad_get_active_bundles_impl = None
     _itad_get_current_prices_impl = None
     _itad_get_prices_payload_impl = None
     _itad_get_store_lows_impl = None
     _itad_lookup_games_impl = None
+    _itad_lookup_games_by_appid_impl = None
     _load_itad_external_offers_cache_impl = None
     _save_itad_external_offers_cache_impl = None
 
@@ -1052,6 +1056,19 @@ def itad_lookup_games(appids: list[str], itad_key: str) -> dict[str, str]:
     )
 
 
+def itad_lookup_games_by_appid(appids: list[str], itad_key: str) -> dict[str, str]:
+    """Resolve Steam appids to ITAD IDs with header auth for explicit refresh."""
+    if _itad_lookup_games_by_appid_impl is None:
+        raise RuntimeError("ITAD module is not available")
+    return _itad_lookup_games_by_appid_impl(
+        appids,
+        itad_key,
+        get_json=_get_json,
+        sleep_fn=time.sleep,
+        on_error=lambda message: print(f"\n  {_warn(message)}", flush=True),
+    )
+
+
 def itad_get_store_lows(
     itad_ids: dict[str, str], itad_key: str, country: str = "MX"
 ) -> dict[str, dict]:
@@ -1097,6 +1114,23 @@ def itad_get_prices_payload(
         post_json=_post_json,
         sleep_fn=time.sleep,
         on_error=lambda message: print(f"\n  {_warn(message)}", flush=True),
+    )
+
+
+def build_itad_external_offers_cache(
+    price_payload,
+    appid_to_itad_id: dict[str, str],
+    *,
+    country: str = "MX",
+    fetched_at: str = "",
+) -> dict:
+    if _build_itad_external_offers_cache_impl is None:
+        raise RuntimeError("ITAD module is not available")
+    return _build_itad_external_offers_cache_impl(
+        price_payload,
+        appid_to_itad_id,
+        country=country,
+        fetched_at=fetched_at,
     )
 
 
@@ -1149,6 +1183,95 @@ def resolve_itad_external_offers_cache(
         count = external_offers.get("summary", {}).get("items_count", 0)
         emit_fn(f"  {_dim(f'Ofertas externas ITAD desde caché local: {count:,}')}")
     return external_offers
+
+
+def _now_iso_timestamp(now_fn) -> str:
+    value = now_fn()
+    try:
+        return value.astimezone().isoformat(timespec="seconds")
+    except (AttributeError, TypeError, ValueError):
+        return str(value or "")
+
+
+def _refresh_itad_id_mapping(
+    deal_appids: list[str],
+    itad_key: str,
+    *,
+    appid_to_itad_id: dict[str, str] | None,
+    lookup_games_fn,
+) -> dict[str, str]:
+    wanted = [str(appid) for appid in deal_appids if appid]
+    wanted_set = set(wanted)
+    known = {
+        str(appid): str(itad_id)
+        for appid, itad_id in (appid_to_itad_id or {}).items()
+        if appid and itad_id and str(appid) in wanted_set
+    }
+    missing = [appid for appid in wanted if appid not in known]
+    if missing:
+        known.update(lookup_games_fn(missing, itad_key))
+    return known
+
+
+def refresh_itad_external_offers_cache(
+    cache_file: Path | None,
+    deal_appids: list[str],
+    itad_key: str | None,
+    *,
+    appid_to_itad_id: dict[str, str] | None = None,
+    country: str = "MX",
+    lookup_games_fn=None,
+    get_prices_payload_fn=None,
+    build_cache_fn=None,
+    save_cache_fn=None,
+    now_fn=datetime.now,
+    emit_fn=None,
+) -> dict | None:
+    """Explicit opt-in live refresh for the local ITAD external_offers cache."""
+    if cache_file is None:
+        if emit_fn is not None:
+            emit_fn(
+                f"  {_warn('Refresh ITAD external_offers requiere --itad-external-offers-cache')}"
+            )
+        return None
+    if not itad_key:
+        if emit_fn is not None:
+            emit_fn(f"  {_warn('Refresh ITAD external_offers requiere --itad-key')}")
+        return None
+    lookup_games = lookup_games_fn or itad_lookup_games_by_appid
+    get_prices_payload = get_prices_payload_fn or itad_get_prices_payload
+    build_cache = build_cache_fn or build_itad_external_offers_cache
+    save_cache = save_cache_fn or save_itad_external_offers_cache
+    try:
+        itad_ids = _refresh_itad_id_mapping(
+            deal_appids,
+            itad_key,
+            appid_to_itad_id=appid_to_itad_id,
+            lookup_games_fn=lookup_games,
+        )
+        if not itad_ids:
+            if emit_fn is not None:
+                emit_fn(
+                    f"  {_dim('Refresh ITAD external_offers: sin IDs ITAD para estos deals')}"
+                )
+            return None
+        price_payload = get_prices_payload(itad_ids, itad_key, country=country)
+        cache_payload = build_cache(
+            price_payload,
+            itad_ids,
+            country=country,
+            fetched_at=_now_iso_timestamp(now_fn),
+        )
+        save_cache(cache_file, cache_payload)
+    except (OSError, RuntimeError, ValueError) as exc:
+        if emit_fn is not None:
+            emit_fn(f"  {_warn(f'No se pudo refrescar caché ITAD external_offers: {exc}')}")
+        return None
+    if emit_fn is not None:
+        emit_fn(
+            f"  {_ok(f'Caché ITAD external_offers actualizada ({len(price_payload):,} juegos)')}"
+        )
+    return cache_payload
 
 
 def itad_get_active_bundles(
@@ -4409,8 +4532,17 @@ def main():
     current_prices = itad_outputs.current_prices
     active_bundles = itad_outputs.active_bundles
     itad_ids = itad_outputs.itad_ids
+    itad_external_offers_cache_file = FILTERS.get("itad_external_offers_cache")
+    if FILTERS.get("itad_refresh_external_offers_cache"):
+        refresh_itad_external_offers_cache(
+            itad_external_offers_cache_file,
+            deal_appids,
+            ITAD_KEY,
+            appid_to_itad_id=itad_ids,
+            emit_fn=emit,
+        )
     external_offers = resolve_itad_external_offers_cache(
-        FILTERS.get("itad_external_offers_cache"),
+        itad_external_offers_cache_file,
         deal_appids,
         emit_fn=emit,
     )

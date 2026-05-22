@@ -10,6 +10,7 @@ from app.steam_deals_external_offers import normalize_external_offers
 ITAD_BATCH = 50
 ITAD_PRICES_BATCH = 200
 ITAD_EXTERNAL_OFFERS_CACHE_VERSION = 1
+ITAD_EXTERNAL_OFFERS_DEFAULT_CAPACITY = 3
 _STEAM_SHOP_KEYS = {"steam", "steamstore"}
 
 
@@ -33,6 +34,8 @@ def build_itad_external_offers_cache(
     *,
     country: str = "MX",
     fetched_at: str = "",
+    deals_only: bool = True,
+    capacity: int = ITAD_EXTERNAL_OFFERS_DEFAULT_CAPACITY,
 ) -> dict:
     """Build a small local cache payload for ITAD external_offers data."""
     return {
@@ -40,6 +43,10 @@ def build_itad_external_offers_cache(
         "source": "itad",
         "country": country,
         "fetched_at": _itad_date_text(fetched_at),
+        "options": {
+            "deals_only": bool(deals_only),
+            "capacity": _non_negative_int(capacity),
+        },
         "appid_to_itad_id": {
             str(appid): str(itad_id)
             for appid, itad_id in (appid_to_itad_id or {}).items()
@@ -205,6 +212,18 @@ def _itad_date_text(value) -> str:
     return str(value or "").strip()
 
 
+def _non_negative_int(value) -> int:
+    try:
+        parsed = int(value)
+    except (TypeError, ValueError):
+        return 0
+    return max(0, parsed)
+
+
+def _itad_lookup_appids(appids: list[str]) -> list[str]:
+    return [str(appid).strip() for appid in appids if str(appid).strip().isdigit()]
+
+
 def _chunked(items: list[str], size: int = ITAD_BATCH):
     for start in range(0, len(items), size):
         yield items[start:start + size]
@@ -243,6 +262,31 @@ def itad_lookup_games(
                         result[appid] = item["game"]["id"]
         except Exception as exc:
             _emit_error(on_error, f"ITAD lookup error: {exc}")
+        _sleep_after_batch(sleep_fn)
+    return result
+
+
+def itad_lookup_games_by_appid(
+    appids: list[str],
+    itad_key: str,
+    *,
+    get_json,
+    sleep_fn=time.sleep,
+    on_error=None,
+) -> dict[str, str]:
+    """Resolve Steam appids to ITAD IDs using header-auth GET lookups."""
+    result: dict[str, str] = {}
+    for appid in _itad_lookup_appids(appids):
+        try:
+            data = get_json(
+                f"https://api.isthereanydeal.com/games/lookup/v1?appid={appid}",
+                headers={"ITAD-API-Key": itad_key},
+            )
+            game = data.get("game") if isinstance(data, dict) else None
+            if isinstance(game, dict) and data.get("found") and game.get("id"):
+                result[appid] = str(game["id"])
+        except Exception as exc:
+            _emit_error(on_error, f"ITAD appid lookup error: {exc}")
         _sleep_after_batch(sleep_fn)
     return result
 
@@ -343,23 +387,35 @@ def itad_get_prices_payload(
     post_json,
     sleep_fn=time.sleep,
     on_error=None,
+    deals_only: bool = True,
+    capacity: int = ITAD_EXTERNAL_OFFERS_DEFAULT_CAPACITY,
 ) -> list[dict]:
     """Fetch raw ITAD prices/v3 items for explicit external_offers cache refresh."""
     _id_to_appid, all_ids = _id_map(itad_ids)
     items: list[dict] = []
+    errors: list[str] = []
+    deals_param = str(bool(deals_only)).lower()
+    capacity_param = _non_negative_int(capacity)
     for batch in _chunked(all_ids, ITAD_PRICES_BATCH):
         try:
             data = post_json(
-                f"https://api.isthereanydeal.com/games/prices/v3?country={country}&deals=false",
+                "https://api.isthereanydeal.com/games/prices/v3"
+                f"?country={country}&deals={deals_param}&capacity={capacity_param}",
                 batch,
                 headers={"ITAD-API-Key": itad_key},
             )
             items.extend(_itad_price_items(data))
         except TypeError:
-            _emit_error(on_error, "ITAD external offers prices error: post_json no acepta headers")
+            message = "ITAD external offers prices error: post_json no acepta headers"
+            errors.append(message)
+            _emit_error(on_error, message)
         except Exception as exc:
-            _emit_error(on_error, f"ITAD external offers prices error: {exc}")
+            message = f"ITAD external offers prices error: {exc}"
+            errors.append(message)
+            _emit_error(on_error, message)
         _sleep_after_batch(sleep_fn)
+    if errors:
+        raise RuntimeError("; ".join(errors))
     return items
 
 

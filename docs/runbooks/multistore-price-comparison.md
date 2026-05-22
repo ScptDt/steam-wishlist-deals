@@ -2,7 +2,7 @@
 
 Track priorizado para ampliar la comparativa multi-tienda hacia Fanatical y más stores sin mezclarla con `wishlist_hygiene` ni con flujos de compra.
 
-Estado actual: Fase 0/docs, Fase 1 normalizador fixture-only, Fase 1B JSON interno opcional, Fase 1C diagnóstico JSON-consumer, primer render visible mínimo risk-gated, Share HTML, adaptador ITAD fixture-only y lectura de caché ITAD local por flag cerrados el 2026-05-21. El siguiente paso requiere elegir explícitamente si agregar refresh live opt-in acotado, exponer configuración Web o ampliar UX/superficies del render bajo los mismos gates.
+Estado actual: Fase 0/docs, Fase 1 normalizador fixture-only, Fase 1B JSON interno opcional, Fase 1C diagnóstico JSON-consumer, primer render visible mínimo risk-gated, Share HTML, adaptador ITAD fixture-only, lectura de caché ITAD local por flag, configuración Web de esa caché y refresh live opt-in/acotado cerrados entre 2026-05-21 y 2026-05-22. El siguiente paso requiere elegir explícitamente si exponer un trigger Web de refresh live o ampliar UX/superficies del render bajo los mismos gates.
 
 Enfoque de ejecución: **feature-sliced + risk-gated**. La feature avanza por cortes pequeños, pero cada corte debe pasar gates de riesgo antes de exponerse al usuario, tocar ranking o usar fuentes live.
 
@@ -402,6 +402,21 @@ Corte generator/cache/flag local cerrado 2026-05-21:
 - La caché conserva `appid_to_itad_id`, país, timestamp y payloads tipo `prices/v3`; el normalizador mantiene gates de tienda/DRM/región/checkout y `ranking_impact=none`.
 - Se agregó helper explícito para payload `prices/v3` con header `ITAD-API-Key`, pensado para un refresh futuro opt-in; no se conectó a un flujo live por defecto.
 - No se agregó Web UI, refresh live automático, scraping, credenciales Fanatical, checkout/carrito, ownership, ranking ni defaults.
+
+Corte Web UI local-cache cerrado 2026-05-22:
+
+- `Archivos opcionales` expone `Caché ITAD external_offers (JSON)` para configurar la ruta local sin escribir comandos CLI.
+- La Web UI persiste la ruta, `/api/preflight` valida existencia con mensajes públicos redactados y `/api/run` pasa `--itad-external-offers-cache` al generator solo cuando el usuario configuró el archivo.
+- El copy conserva que es import local de precios ITAD ya descargados: no hace red live por sí solo, no prueba ownership y no cambia score/ranking/wishlist hygiene.
+- No se agregó refresh live, selección automática, scraping, credenciales Fanatical, checkout/carrito, ownership, ranking ni defaults.
+
+Corte refresh live opt-in cerrado 2026-05-22:
+
+- `--itad-refresh-external-offers-cache` refresca en vivo solo bajo opt-in explícito y requiere `--itad-key` + `--itad-external-offers-cache`.
+- Reutiliza IDs ITAD ya resueltos por el flujo existente o hace lookup por Steam appid con `ITAD-API-Key` en header; no pone la key en URLs nuevas.
+- Obtiene `/games/prices/v3` con header auth, `deals=true` y `capacity=3`, y guarda una caché local con país, timestamp, opciones, `appid_to_itad_id` y payloads tipo `prices/v3`.
+- Si falta key/ruta, no hay IDs ITAD o falla fetch/429, no sobreescribe la caché existente y el reporte continúa usando lo local disponible.
+- No se agregó live smoke real, trigger Web nuevo, scraping, credenciales Fanatical, checkout/carrito, ownership, ranking ni defaults.
 
 ### Fase 3 — render visible mínimo — primer cierre 2026-05-21
 
