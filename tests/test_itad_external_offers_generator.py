@@ -53,6 +53,28 @@ class ItadExternalOffersGeneratorTests(unittest.TestCase):
 
         self.assertFalse(result[11]["itad_refresh_external_offers_cache"])
 
+    def test_get_config_resolves_itad_key_from_environment_for_explicit_refresh(self) -> None:
+        result = get_config(
+            script_path=Path("/tmp/fake_script.py"),
+            load_user_config_fn=lambda: {"itad_key": "SAVED-ITAD"},
+            save_user_config_fn=lambda _cfg: None,
+            handle_watchlist_command_fn=lambda _args: None,
+            input_fn=lambda _prompt: "",
+            stdin=FakeStdin(),
+            exit_fn=lambda _code: None,
+            environ={"STEAM_TOOLS_ITAD_API_KEY": "ENV-ITAD"},
+            argv=[
+                "--vanity",
+                "gaben",
+                "--itad-external-offers-cache",
+                "./itad-external-offers.json",
+                "--itad-refresh-external-offers-cache",
+            ],
+        )
+
+        self.assertEqual(result[10], "ENV-ITAD")
+        self.assertTrue(result[11]["itad_refresh_external_offers_cache"])
+
     def test_resolve_itad_external_offers_cache_loads_local_cache_without_network(self) -> None:
         cache_payload = build_itad_external_offers_cache(
             [

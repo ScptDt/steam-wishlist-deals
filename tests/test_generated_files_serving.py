@@ -455,6 +455,37 @@ class GeneratedFilesServingTests(unittest.TestCase):
         self.assertNotIn("ITAD API Key", payload)
         self.assertNotIn("Caché ITAD external_offers (JSON)", payload)
 
+    def test_preflight_uses_saved_itad_key_for_redacted_refresh_config(self) -> None:
+        original_load_config = web.load_config
+        original_find_hltb_csv_candidates = web.find_hltb_csv_candidates
+        web.load_config = lambda: {"itad_key": "SAVED-ITAD"}
+        web.find_hltb_csv_candidates = lambda: []
+        with TemporaryDirectory() as temp_dir:
+            cache_path = Path(temp_dir) / "itad-external-offers.json"
+            cache_path.write_text("{}", encoding="utf-8")
+            handler = _FakeJsonHandler(
+                {
+                    "config": {
+                        "vanity": "gaben",
+                        "itad_key": "********",
+                        "itad_external_offers_cache": str(cache_path),
+                    },
+                    "filters": {"itad_refresh_external_offers_cache": True},
+                }
+            )
+            try:
+                Handler._serve_preflight(handler)
+            finally:
+                web.load_config = original_load_config
+                web.find_hltb_csv_candidates = original_find_hltb_csv_candidates
+
+        payload = str(handler.json)
+        self.assertEqual(handler.status, 200)
+        self.assertTrue(handler.json["ok"])
+        self.assertNotIn("SAVED-ITAD", payload)
+        self.assertNotIn("requiere ITAD API Key", payload)
+        self.assertNotIn("Caché ITAD external_offers (JSON)", payload)
+
     def test_preflight_allows_missing_itad_cache_target_when_refreshing(self) -> None:
         original_load_config = web.load_config
         cache_path = "/private/tmp/new-itad-external-offers.json"

@@ -93,6 +93,24 @@ class ItadExternalOffersCacheTests(unittest.TestCase):
         self.assertIn("capacity=3", calls[0][0])
         self.assertEqual(calls[0][2], {"ITAD-API-Key": "SECRET-ITAD"})
 
+    def test_itad_get_prices_payload_requires_header_capable_client_without_key_url_fallback(self) -> None:
+        errors = []
+
+        def headerless_post_json(_url, _body):
+            self.fail("post_json without headers must not be retried")
+
+        with self.assertRaises(RuntimeError) as context:
+            itad_get_prices_payload(
+                {"10": "itad-10"},
+                "SECRET-ITAD",
+                post_json=headerless_post_json,
+                sleep_fn=lambda _seconds: None,
+                on_error=errors.append,
+            )
+
+        self.assertIn("post_json no acepta headers", str(context.exception))
+        self.assertIn("post_json no acepta headers", errors[0])
+
     def test_itad_lookup_games_by_appid_uses_header_auth_without_logging_key(self) -> None:
         calls = []
 
@@ -129,6 +147,71 @@ class ItadExternalOffersCacheTests(unittest.TestCase):
             )
 
         self.assertIn("ITAD external offers prices error", errors[0])
+
+    def test_cache_payload_keeps_risky_itad_offers_hidden_and_advisory_only(self) -> None:
+        cache_payload = build_itad_external_offers_cache(
+            [
+                {
+                    "id": "itad-hades",
+                    "title": "Hades",
+                    "deals": [
+                        {
+                            "shop": {"id": 35, "name": "Fanatical"},
+                            "price": {"amount": 8.99, "currency": "USD"},
+                            "regular": {"amount": 24.99, "currency": "USD"},
+                            "cut": 64,
+                            "drm": [{"name": "Steam"}],
+                            "url": "https://fanatical.example/hades",
+                        },
+                        {
+                            "shop": {"id": 99, "name": "G2A"},
+                            "price": {"amount": 7.50, "currency": "USD"},
+                            "regular": {"amount": 24.99, "currency": "USD"},
+                            "cut": 70,
+                            "drm": [{"name": "Steam"}],
+                            "url": "https://g2a.example/hades",
+                        },
+                        {
+                            "shop": {"id": 35, "name": "Fanatical"},
+                            "price": {"amount": 8.50, "currency": "USD"},
+                            "regular": {"amount": 24.99, "currency": "USD"},
+                            "cut": 66,
+                            "drm": [{"name": "Steam"}],
+                            "url": "https://fanatical.example/cart/hades",
+                        },
+                    ],
+                }
+            ],
+            {"1145360": "itad-hades"},
+            country="MX",
+        )
+
+        external_offers = itad_external_offers_from_cache(
+            cache_payload,
+            appids=["1145360"],
+        )
+
+        self.assertIsNotNone(external_offers)
+        summary = external_offers["summary"]
+        self.assertTrue(summary["advisory_only"])
+        self.assertEqual(summary["ranking_impact"], "none")
+        fanatical_highlights = [
+            item
+            for item in external_offers["items"]
+            if item["store_id"] == "fanatical" and item["visibility"] == "highlight"
+        ]
+        self.assertEqual(len(fanatical_highlights), 1)
+        g2a_offer = [item for item in external_offers["items"] if item["store_id"] == "g2a"][0]
+        self.assertEqual(g2a_offer["visibility"], "hidden")
+        self.assertFalse(g2a_offer["eligible_for_best_external_price"])
+        hidden_checkout = [
+            item for item in external_offers["items"] if "checkout_like_url" in item["risk_flags"]
+        ][0]
+        self.assertEqual(hidden_checkout["visibility"], "hidden")
+        self.assertFalse(hidden_checkout["link_allowed"])
+        for item in external_offers["items"]:
+            self.assertNotIn("wishlist_hygiene", item)
+            self.assertNotIn("owned", item)
 
 
 if __name__ == "__main__":
