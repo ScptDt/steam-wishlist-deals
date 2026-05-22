@@ -1,6 +1,7 @@
 from pathlib import Path
 import unittest
 
+from steam_deals_external_offers import normalize_external_offers
 from steam_deals_generator import generate_html, generate_md, generate_share_html
 
 
@@ -40,6 +41,70 @@ def blocked_external_offers_payload() -> dict:
 
 
 class ExternalOffersRenderingRegressionTests(unittest.TestCase):
+    def test_opt_in_marketplace_review_never_renders_as_visible_comparison(self) -> None:
+        external_offers = normalize_external_offers(
+            [
+                {
+                    "appid": "50",
+                    "name": "Grey Market Review",
+                    "store": "G2A",
+                    "price": 1.99,
+                    "currency": "USD",
+                    "url": "https://g2a.example/deal/50",
+                    "drm": "steam",
+                    "region": "global",
+                    "confidence": "high",
+                }
+            ],
+            include_marketplaces=True,
+        )
+
+        item = external_offers["items"][0]
+        self.assertEqual(item["store_type"], "marketplace_keyshop")
+        self.assertEqual(item["visibility"], "review")
+        self.assertFalse(item["eligible_for_best_external_price"])
+        self.assertIn("marketplace_keyshop", item["risk_flags"])
+        self.assertEqual(external_offers["summary"]["marketplace_count"], 1)
+        self.assertEqual(external_offers["summary"]["best_external_price_count"], 0)
+
+        md = generate_md(
+            deals=[],
+            backlog_on_sale=[],
+            have_on_sale=[],
+            vanity="gaben",
+            owned={},
+            wishlist_appids=[],
+            min_discount=50,
+            genres=[],
+            external_offers=external_offers,
+        )
+        html = generate_html(
+            deals=[],
+            backlog_on_sale=[],
+            have_on_sale=[],
+            vanity="gaben",
+            owned={},
+            wishlist_appids=[],
+            min_discount=50,
+            genres=[],
+            external_offers=external_offers,
+        )
+        share_html = generate_share_html(
+            deals=[],
+            vanity="gaben",
+            min_discount=50,
+            recommended_collections=[],
+            personalized_recommendations={"items": []},
+            external_offers=external_offers,
+        )
+
+        for rendered in (md, html, share_html):
+            self.assertNotIn("Comparativa externa", rendered)
+            self.assertNotIn("Grey Market Review", rendered)
+            self.assertNotIn("G2A", rendered)
+            self.assertNotIn("g2a.example", rendered)
+            self.assertNotIn("Ver tienda (sin carrito)", rendered)
+
     def test_blocked_external_offers_do_not_render_sections_chips_or_links(self) -> None:
         external_offers = blocked_external_offers_payload()
         md = generate_md(
