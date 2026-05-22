@@ -76,6 +76,10 @@ def build_parser() -> argparse.ArgumentParser:
         "--itad-key", help="IsThereAnyDeal API Key (para mínimo histórico)"
     )
     parser.add_argument(
+        "--itad-external-offers-cache",
+        help="Ruta a caché JSON local ITAD para external_offers (sin red live)",
+    )
+    parser.add_argument(
         "--max-price", type=float, metavar="N", help="Solo deals bajo N MXN"
     )
     parser.add_argument(
@@ -308,6 +312,9 @@ def _build_filters(args, cfg: dict, *, environ=None) -> dict:
     max_workers = (
         args.max_workers if args.max_workers is not None else cfg.get("max_workers")
     )
+    itad_external_offers_cache = (
+        args.itad_external_offers_cache or cfg.get("itad_external_offers_cache")
+    )
     alert_rise_pct = (
         args.alert_rise_pct
         if args.alert_rise_pct is not None
@@ -338,6 +345,9 @@ def _build_filters(args, cfg: dict, *, environ=None) -> dict:
         "free_weekend_live": bool(args.free_weekend_live or cfg.get("free_weekend_live")),
         "wishlist_external_matches_json": Path(args.wishlist_external_matches_json).expanduser()
         if args.wishlist_external_matches_json
+        else None,
+        "itad_external_offers_cache": Path(itad_external_offers_cache).expanduser()
+        if itad_external_offers_cache
         else None,
         "budget": args.budget,
         "compare": args.compare,

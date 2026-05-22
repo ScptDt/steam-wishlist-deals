@@ -2,11 +2,14 @@ from __future__ import annotations
 
 import re
 import time
+from pathlib import Path
 
 from app.steam_deals_external_offers import normalize_external_offers
 
 
 ITAD_BATCH = 50
+ITAD_PRICES_BATCH = 200
+ITAD_EXTERNAL_OFFERS_CACHE_VERSION = 1
 _STEAM_SHOP_KEYS = {"steam", "steamstore"}
 
 
@@ -22,6 +25,78 @@ def itad_prices_to_external_offers(
     return normalize_external_offers(
         {"offers": records}, include_marketplaces=include_marketplaces
     )
+
+
+def build_itad_external_offers_cache(
+    price_payload,
+    appid_to_itad_id: dict[str, str],
+    *,
+    country: str = "MX",
+    fetched_at: str = "",
+) -> dict:
+    """Build a small local cache payload for ITAD external_offers data."""
+    return {
+        "version": ITAD_EXTERNAL_OFFERS_CACHE_VERSION,
+        "source": "itad",
+        "country": country,
+        "fetched_at": _itad_date_text(fetched_at),
+        "appid_to_itad_id": {
+            str(appid): str(itad_id)
+            for appid, itad_id in (appid_to_itad_id or {}).items()
+            if appid and itad_id
+        },
+        "prices": _itad_price_items(price_payload),
+    }
+
+
+def itad_external_offers_from_cache(
+    cache_payload,
+    *,
+    appids: list[str] | set[str] | tuple[str, ...] | None = None,
+    include_marketplaces: bool = False,
+) -> dict | None:
+    """Return normalized external_offers from a local ITAD cache payload."""
+    if not isinstance(cache_payload, dict):
+        return None
+    mapping = cache_payload.get("appid_to_itad_id")
+    if not isinstance(mapping, dict):
+        return None
+    appid_filter = {str(appid) for appid in appids or [] if appid}
+    appid_to_itad_id = {
+        str(appid): str(itad_id)
+        for appid, itad_id in mapping.items()
+        if appid and itad_id and (not appid_filter or str(appid) in appid_filter)
+    }
+    if not appid_to_itad_id:
+        return None
+    price_payload = cache_payload.get("prices")
+    if price_payload is None:
+        price_payload = cache_payload.get("items") or cache_payload.get("data")
+    offers = itad_prices_to_external_offers(
+        price_payload,
+        appid_to_itad_id,
+        country=str(cache_payload.get("country") or "MX"),
+        include_marketplaces=include_marketplaces,
+    )
+    return offers if offers.get("items") else None
+
+
+def load_itad_external_offers_cache(
+    cache_file: Path,
+    *,
+    load_json_file,
+) -> dict:
+    payload = load_json_file(Path(cache_file), {})
+    return payload if isinstance(payload, dict) else {}
+
+
+def save_itad_external_offers_cache(
+    cache_file: Path,
+    payload: dict,
+    *,
+    write_json_file,
+) -> None:
+    write_json_file(Path(cache_file), payload, ensure_ascii=False, indent=2)
 
 
 def _itad_price_records(price_payload, appid_to_itad_id: dict[str, str], *, country: str) -> list[dict]:
@@ -258,6 +333,34 @@ def itad_get_current_prices(
             _emit_error(on_error, f"ITAD prices error: {exc}")
         _sleep_after_batch(sleep_fn)
     return result
+
+
+def itad_get_prices_payload(
+    itad_ids: dict[str, str],
+    itad_key: str,
+    country: str = "MX",
+    *,
+    post_json,
+    sleep_fn=time.sleep,
+    on_error=None,
+) -> list[dict]:
+    """Fetch raw ITAD prices/v3 items for explicit external_offers cache refresh."""
+    _id_to_appid, all_ids = _id_map(itad_ids)
+    items: list[dict] = []
+    for batch in _chunked(all_ids, ITAD_PRICES_BATCH):
+        try:
+            data = post_json(
+                f"https://api.isthereanydeal.com/games/prices/v3?country={country}&deals=false",
+                batch,
+                headers={"ITAD-API-Key": itad_key},
+            )
+            items.extend(_itad_price_items(data))
+        except TypeError:
+            _emit_error(on_error, "ITAD external offers prices error: post_json no acepta headers")
+        except Exception as exc:
+            _emit_error(on_error, f"ITAD external offers prices error: {exc}")
+        _sleep_after_batch(sleep_fn)
+    return items
 
 
 def itad_get_active_bundles(

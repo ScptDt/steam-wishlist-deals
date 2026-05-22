@@ -2,7 +2,7 @@
 
 Track priorizado para ampliar la comparativa multi-tienda hacia Fanatical y más stores sin mezclarla con `wishlist_hygiene` ni con flujos de compra.
 
-Estado actual: Fase 0/docs, Fase 1 normalizador fixture-only, Fase 1B JSON interno opcional, Fase 1C diagnóstico JSON-consumer, primer render visible mínimo risk-gated, Share HTML y adaptador ITAD fixture-only cerrados el 2026-05-21. El siguiente paso requiere elegir explícitamente si conectar ITAD al generator con cache/flag seguro o ampliar UX/superficies del render bajo los mismos gates.
+Estado actual: Fase 0/docs, Fase 1 normalizador fixture-only, Fase 1B JSON interno opcional, Fase 1C diagnóstico JSON-consumer, primer render visible mínimo risk-gated, Share HTML, adaptador ITAD fixture-only y lectura de caché ITAD local por flag cerrados el 2026-05-21. El siguiente paso requiere elegir explícitamente si agregar refresh live opt-in acotado, exponer configuración Web o ampliar UX/superficies del render bajo los mismos gates.
 
 Enfoque de ejecución: **feature-sliced + risk-gated**. La feature avanza por cortes pequeños, pero cada corte debe pasar gates de riesgo antes de exponerse al usuario, tocar ranking o usar fuentes live.
 
@@ -394,6 +394,14 @@ Corte fixture-only cerrado 2026-05-21:
 - URLs checkout-like siguen bloqueadas por el normalizador; tiendas desconocidas quedan ocultas.
 - No hay red live nueva, cache, flags CLI/Web, generator wiring ni credenciales en este corte.
 - Fanatical no tiene API pública de precios documentada para este uso; no scraping/login/private endpoints.
+
+Corte generator/cache/flag local cerrado 2026-05-21:
+
+- `--itad-external-offers-cache` habilita lectura de una caché JSON local ITAD y la convierte a `external_offers` para Markdown, HTML, Share HTML y JSON.
+- El flag no hace red live por sí solo; si la caché falta, está vacía o no mapea los deals actuales, el reporte continúa sin `external_offers`.
+- La caché conserva `appid_to_itad_id`, país, timestamp y payloads tipo `prices/v3`; el normalizador mantiene gates de tienda/DRM/región/checkout y `ranking_impact=none`.
+- Se agregó helper explícito para payload `prices/v3` con header `ITAD-API-Key`, pensado para un refresh futuro opt-in; no se conectó a un flujo live por defecto.
+- No se agregó Web UI, refresh live automático, scraping, credenciales Fanatical, checkout/carrito, ownership, ranking ni defaults.
 
 ### Fase 3 — render visible mínimo — primer cierre 2026-05-21
 

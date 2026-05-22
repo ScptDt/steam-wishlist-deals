@@ -206,16 +206,24 @@ except Exception:
 
 try:
     from steam_deals_itad import (
+        itad_external_offers_from_cache as _itad_external_offers_from_cache_impl,
         itad_get_active_bundles as _itad_get_active_bundles_impl,
         itad_get_current_prices as _itad_get_current_prices_impl,
+        itad_get_prices_payload as _itad_get_prices_payload_impl,
         itad_get_store_lows as _itad_get_store_lows_impl,
         itad_lookup_games as _itad_lookup_games_impl,
+        load_itad_external_offers_cache as _load_itad_external_offers_cache_impl,
+        save_itad_external_offers_cache as _save_itad_external_offers_cache_impl,
     )
 except Exception:
+    _itad_external_offers_from_cache_impl = None
     _itad_get_active_bundles_impl = None
     _itad_get_current_prices_impl = None
+    _itad_get_prices_payload_impl = None
     _itad_get_store_lows_impl = None
     _itad_lookup_games_impl = None
+    _load_itad_external_offers_cache_impl = None
+    _save_itad_external_offers_cache_impl = None
 
 
 try:
@@ -1074,6 +1082,73 @@ def itad_get_current_prices(
         sleep_fn=time.sleep,
         on_error=lambda message: print(f"\n  {_warn(message)}", flush=True),
     )
+
+
+def itad_get_prices_payload(
+    itad_ids: dict[str, str], itad_key: str, country: str = "MX"
+) -> list[dict]:
+    """Fetch raw ITAD prices/v3 payload for explicit external_offers cache refresh."""
+    if _itad_get_prices_payload_impl is None:
+        raise RuntimeError("ITAD module is not available")
+    return _itad_get_prices_payload_impl(
+        itad_ids,
+        itad_key,
+        country=country,
+        post_json=_post_json,
+        sleep_fn=time.sleep,
+        on_error=lambda message: print(f"\n  {_warn(message)}", flush=True),
+    )
+
+
+def load_itad_external_offers_cache(cache_file: Path) -> dict:
+    if _load_itad_external_offers_cache_impl is None:
+        raise RuntimeError("ITAD module is not available")
+    return _load_itad_external_offers_cache_impl(
+        cache_file,
+        load_json_file=load_json_file,
+    )
+
+
+def save_itad_external_offers_cache(cache_file: Path, payload: dict) -> None:
+    if _save_itad_external_offers_cache_impl is None:
+        raise RuntimeError("ITAD module is not available")
+    _save_itad_external_offers_cache_impl(
+        cache_file,
+        payload,
+        write_json_file=write_json_file,
+    )
+
+
+def itad_external_offers_from_cache(cache_payload, *, appids=None) -> dict | None:
+    if _itad_external_offers_from_cache_impl is None:
+        raise RuntimeError("ITAD module is not available")
+    return _itad_external_offers_from_cache_impl(cache_payload, appids=appids)
+
+
+def resolve_itad_external_offers_cache(
+    cache_file: Path | None,
+    deal_appids: list[str],
+    *,
+    load_cache_fn=None,
+    offers_from_cache_fn=None,
+    emit_fn=None,
+) -> dict | None:
+    """Load external_offers from local ITAD cache only; never performs network I/O."""
+    if cache_file is None:
+        return None
+    load_cache = load_cache_fn or load_itad_external_offers_cache
+    offers_from_cache = offers_from_cache_fn or itad_external_offers_from_cache
+    try:
+        cache_payload = load_cache(cache_file)
+        external_offers = offers_from_cache(cache_payload, appids=deal_appids)
+    except (OSError, ValueError) as exc:
+        if emit_fn is not None:
+            emit_fn(f"  {_warn(f'No se pudo cargar caché ITAD external_offers: {exc}')}")
+        return None
+    if external_offers and emit_fn is not None:
+        count = external_offers.get("summary", {}).get("items_count", 0)
+        emit_fn(f"  {_dim(f'Ofertas externas ITAD desde caché local: {count:,}')}")
+    return external_offers
 
 
 def itad_get_active_bundles(
@@ -3934,8 +4009,8 @@ def _get_json(url: str, headers: dict = None) -> dict:
     return http_get_json(url, headers=headers, timeout=15)
 
 
-def _post_json(url: str, body) -> dict:
-    return http_post_json(url, body, timeout=30)
+def _post_json(url: str, body, headers: dict = None) -> dict:
+    return http_post_json(url, body, headers=headers, timeout=30)
 
 
 # ─────────────────────────────────────────────
@@ -4344,6 +4419,11 @@ def main():
     current_prices = itad_outputs.current_prices
     active_bundles = itad_outputs.active_bundles
     itad_ids = itad_outputs.itad_ids
+    external_offers = resolve_itad_external_offers_cache(
+        FILTERS.get("itad_external_offers_cache"),
+        deal_appids,
+        emit_fn=emit,
+    )
 
     alert_deals = deals
     alert_global_margin_pct = _resolve_alert_global_margin_pct(
@@ -4463,6 +4543,7 @@ def main():
         active_promo_context=active_promo_context,
         smart_alert_digest=smart_alert_digest,
         free_weekend_now=free_weekend_now,
+        external_offers=external_offers,
     )
 
     # Generar HTML interactivo
@@ -4501,6 +4582,7 @@ def main():
         active_promo_context=active_promo_context,
         smart_alert_digest=smart_alert_digest,
         free_weekend_now=free_weekend_now,
+        external_offers=external_offers,
         **family_renderer_kwargs,
     )
 
@@ -4519,6 +4601,7 @@ def main():
         personalized_recommendations=personalized_recommendations,
         gift_ideas=gift_ideas,
         compare_data=compare_data,
+        external_offers=external_offers,
     )
 
     step("Generando JSON...")
@@ -4562,6 +4645,7 @@ def main():
         active_promo_context=active_promo_context,
         smart_alert_digest=smart_alert_digest,
         free_weekend_now=free_weekend_now,
+        external_offers=external_offers,
         **family_renderer_kwargs,
     )
 
