@@ -3233,6 +3233,26 @@ function latestExternalOfferStatus(source) {
   return parts.join(' · ');
 }
 
+function latestExternalOfferChipLabels(source) {
+  const visibility = String(source.visibility || '').trim();
+  const storeType = String(source.store_type || '').trim();
+  const flags = new Set(latestExternalOfferRiskFlags(source));
+  const labels = [];
+  if (visibility === 'highlight') labels.push('Mejor fuera de Steam');
+  if (storeType === 'official_store') labels.push('Tienda oficial');
+  else if (storeType === 'authorized_key_reseller') labels.push('Tienda autorizada');
+  if (visibility === 'review' || flags.has('drm_unknown') || flags.has('region_unknown')) {
+    labels.push('Revisar DRM/región');
+  }
+  return [...new Set(labels)];
+}
+
+function renderLatestExternalOfferChips(source) {
+  const labels = latestExternalOfferChipLabels(source);
+  if (!labels.length) return '';
+  return `<span class="latest-external-offer-chips">${labels.map(label => `<span class="latest-external-offer-chip">${escapeHtml(label)}</span>`).join('')}</span>`;
+}
+
 function renderLatestExternalOfferItem(item) {
   const source = item && typeof item === 'object' ? item : {};
   const title = latestExternalOfferTitle(source);
@@ -3247,6 +3267,7 @@ function renderLatestExternalOfferItem(item) {
         <strong>${title.nameHtml}</strong>
         <span class="latest-external-offer-meta">${escapeHtml(latestExternalOfferMeta(source))}</span>
         <span class="latest-external-offer-status">${escapeHtml(latestExternalOfferStatus(source))}</span>
+        ${renderLatestExternalOfferChips(source)}
         <span class="latest-external-offer-note">Comparativa informativa: no prueba ownership, no abre carrito/checkout ni verifica stock final.</span>
       </div>
       <span class="latest-external-offer-side">

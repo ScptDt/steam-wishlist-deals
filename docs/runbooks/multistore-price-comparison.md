@@ -461,6 +461,12 @@ Pulido UX/copy 2026-05-22:
 - La Web UI refuerza el link como pill accesible con foco visible sin cambiar payload, backend, endpoints, ranking ni providers.
 - No se agregó live smoke real, refresh automático, scraping, credenciales Fanatical, checkout/carrito, ownership, ranking ni defaults.
 
+Chips UX fixture-only 2026-05-22:
+
+- Markdown, HTML generado, Share HTML y Web UI del último reporte agregan chips locales como `Mejor fuera de Steam`, `Tienda autorizada` y `Revisar DRM/región` solo para ofertas ya visibles por los gates existentes.
+- Los chips no cambian payload, providers, score, ranking, defaults, ownership ni `wishlist_hygiene`; keyshops, ofertas hidden y links checkout-like siguen fuera del render visible.
+- No requiere ITAD key ni red live.
+
 ### Fase 4 — Fanatical específico
 
 Fanatical debe entrar primero por fuentes seguras:

@@ -220,6 +220,33 @@ def _render_external_offer_action(item: dict) -> str:
     return f'<a class="external-offer-link" href="{html_escape(url)}" target="_blank" rel="noopener noreferrer">Ver tienda (sin carrito)</a>'
 
 
+def _external_offer_chip_labels(item: dict) -> list[str]:
+    visibility = str(item.get("visibility") or "").strip()
+    store_type = str(item.get("store_type") or "").strip()
+    flags = _external_offer_risk_flags(item)
+    labels: list[str] = []
+    if visibility == "highlight":
+        labels.append("Mejor fuera de Steam")
+    if store_type == "official_store":
+        labels.append("Tienda oficial")
+    elif store_type == "authorized_key_reseller":
+        labels.append("Tienda autorizada")
+    if visibility == "review" or flags & {"drm_unknown", "region_unknown"}:
+        labels.append("Revisar DRM/región")
+    return list(dict.fromkeys(labels))
+
+
+def _render_external_offer_chips(item: dict) -> str:
+    labels = _external_offer_chip_labels(item)
+    if not labels:
+        return ""
+    chips = "".join(
+        f'<span class="external-offer-chip">{html_escape(label)}</span>'
+        for label in labels
+    )
+    return f'<div class="external-offer-chips">{chips}</div>'
+
+
 def _render_external_offer_item(item: dict) -> str:
     appid = str(item.get("appid") or item.get("steam_appid") or "").strip()
     data_attr = f' data-external-offer-appid="{html_escape(appid)}"' if appid.isdigit() else ""
@@ -229,6 +256,7 @@ def _render_external_offer_item(item: dict) -> str:
     <strong>{_render_external_offer_title(item)}</strong>
     <div class="external-offer-meta">{_render_external_offer_meta(item)}</div>
     <div class="external-offer-status">{_render_external_offer_status(item)}</div>
+    {_render_external_offer_chips(item)}
     <div class="external-offer-note">Comparativa informativa: no prueba ownership, no abre carrito/checkout ni verifica stock final.</div>
   </div>
   <div class="external-offer-side">
@@ -337,6 +365,8 @@ tr:hover { background: #1a3a5c; }
 .external-offer-main strong { color:#66c0f4; font-size:.92rem; }
 .external-offer-meta { color:#c7d5e0; font-size:.74rem; margin:.25rem 0 .1rem; }
 .external-offer-status, .external-offer-note, .external-offers-more { color:#8f98a0; font-size:.72rem; line-height:1.35; }
+.external-offer-chips { display:flex; flex-wrap:wrap; gap:.25rem; margin:.35rem 0 .08rem; }
+.external-offer-chip { border:1px solid rgba(102,192,244,.35); border-radius:999px; color:#66c0f4; background:rgba(102,192,244,.08); font-size:.68rem; font-weight:700; padding:.1rem .38rem; }
 .external-offer-side { display:flex; flex-direction:column; gap:.35rem; align-items:flex-end; min-width:max-content; }
 .external-offer-badge { background:rgba(108,198,68,.13); border:1px solid rgba(108,198,68,.35); border-radius:999px; color:#6cc644; font-size:.68rem; font-weight:700; padding:.14rem .38rem; }
 .external-offer-link { border:1px solid #2a475e; border-radius:6px; color:#66c0f4; font-size:.72rem; font-weight:700; padding:.25rem .45rem; }

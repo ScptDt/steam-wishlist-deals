@@ -735,6 +735,27 @@ def _external_offer_action_text(item: dict) -> str:
     return f"[Ver tienda (sin carrito)]({safe_url})"
 
 
+def _external_offer_chip_labels(item: dict) -> list[str]:
+    visibility = str(item.get("visibility") or "").strip()
+    store_type = str(item.get("store_type") or "").strip()
+    flags = _external_offer_risk_flags(item)
+    labels: list[str] = []
+    if visibility == "highlight":
+        labels.append("Mejor fuera de Steam")
+    if store_type == "official_store":
+        labels.append("Tienda oficial")
+    elif store_type == "authorized_key_reseller":
+        labels.append("Tienda autorizada")
+    if visibility == "review" or flags & {"drm_unknown", "region_unknown"}:
+        labels.append("Revisar DRM/región")
+    return list(dict.fromkeys(labels))
+
+
+def _external_offer_chips_text(item: dict) -> str:
+    labels = _external_offer_chip_labels(item)
+    return _md_esc(" · ".join(labels) if labels else "Comparativa informativa")
+
+
 def _build_external_offers_lines(payload: dict | None) -> list[str]:
     items, total_items, hidden_count = _external_offer_items(payload)
     if not items:
@@ -744,12 +765,12 @@ def _build_external_offers_lines(payload: dict | None) -> list[str]:
         "",
         f"> **{total_items:,} oferta(s) externa(s) visibles** desde el JSON local. Comparativa informativa: Steam Tools no compra, no abre carrito ni checkout, no verifica stock final, no prueba ownership y no cambia score, ranking ni wishlist hygiene.",
         "",
-        "| Juego | Tienda | Precio | Estado | Acción |",
-        "|-------|--------|--------|--------|--------|",
+        "| Juego | Tienda | Precio | Estado | Notas | Acción |",
+        "|-------|--------|--------|--------|-------|--------|",
     ]
     for item in items:
         lines.append(
-            f"| {_external_offer_title(item)} | {_external_offer_store_text(item)} | {_external_offer_price_text(item)} | {_external_offer_status_text(item)} | {_external_offer_action_text(item)} |"
+            f"| {_external_offer_title(item)} | {_external_offer_store_text(item)} | {_external_offer_price_text(item)} | {_external_offer_status_text(item)} | {_external_offer_chips_text(item)} | {_external_offer_action_text(item)} |"
         )
     if hidden_count:
         lines += ["", f"> {hidden_count:,} más en el payload completo."]

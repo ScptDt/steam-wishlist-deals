@@ -650,6 +650,33 @@ def _html_external_offer_action(item: dict) -> str:
     return f'<a class="external-offer-link" href="{_html_esc(url)}" target="_blank" rel="noopener noreferrer">Ver tienda (sin carrito)</a>'
 
 
+def _external_offer_chip_labels(item: dict) -> list[str]:
+    visibility = str(item.get("visibility") or "").strip()
+    store_type = str(item.get("store_type") or "").strip()
+    flags = _external_offer_risk_flags(item)
+    labels: list[str] = []
+    if visibility == "highlight":
+        labels.append("Mejor fuera de Steam")
+    if store_type == "official_store":
+        labels.append("Tienda oficial")
+    elif store_type == "authorized_key_reseller":
+        labels.append("Tienda autorizada")
+    if visibility == "review" or flags & {"drm_unknown", "region_unknown"}:
+        labels.append("Revisar DRM/región")
+    return list(dict.fromkeys(labels))
+
+
+def _html_external_offer_chips(item: dict) -> str:
+    labels = _external_offer_chip_labels(item)
+    if not labels:
+        return ""
+    chips = "".join(
+        f'<span class="external-offer-chip">{_html_esc(label)}</span>'
+        for label in labels
+    )
+    return f'<div class="external-offer-chips">{chips}</div>'
+
+
 def _html_external_offer_item(item: dict) -> str:
     appid = str(item.get("appid") or item.get("steam_appid") or "").strip()
     data_attr = f' data-external-offer-appid="{_html_esc(appid)}"' if appid.isdigit() else ""
@@ -659,6 +686,7 @@ def _html_external_offer_item(item: dict) -> str:
     <strong>{_html_external_offer_title(item)}</strong>
     <div class="external-offer-meta">{_html_external_offer_meta(item)}</div>
     <div class="external-offer-status">{_html_external_offer_status(item)}</div>
+    {_html_external_offer_chips(item)}
     <div class="external-offer-note">Comparativa informativa: no prueba ownership, no abre carrito/checkout ni verifica stock final.</div>
   </div>
   <div class="external-offer-side">
@@ -2212,6 +2240,8 @@ a.pick-card:hover { border-color: var(--accent-blue); transform: translateY(-2px
 .external-offer-main strong { display: block; font-size: .86rem; line-height: 1.3; margin-bottom: .35rem; }
 .external-offer-meta { color: var(--accent-blue); font-size: .74rem; line-height: 1.4; margin-bottom: .25rem; }
 .external-offer-status, .external-offer-note, .external-offers-more { color: var(--text-secondary); font-size: .74rem; line-height: 1.4; }
+.external-offer-chips { display: flex; flex-wrap: wrap; gap: .28rem; margin: .4rem 0 .1rem; }
+.external-offer-chip { border: 1px solid rgba(102,192,244,.28); border-radius: 999px; color: var(--accent-blue); background: rgba(102,192,244,.08); padding: .1rem .42rem; font-size: .7rem; font-weight: 700; }
 .external-offer-side { display: flex; flex-direction: column; align-items: flex-end; gap: .45rem; }
 .external-offer-link { color: var(--accent-blue); font-size: .74rem; font-weight: 700; text-decoration: none; }
 .external-offer-link-disabled { color: var(--text-secondary); font-weight: 600; }
