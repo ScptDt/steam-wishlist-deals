@@ -575,6 +575,9 @@ class WebAssetsTests(unittest.TestCase):
         app_js = (ROOT / "web" / "steam_deals" / "app.js").read_text(
             encoding="utf-8"
         )
+        app_css = (ROOT / "web" / "steam_deals" / "app.css").read_text(
+            encoding="utf-8"
+        )
 
         self.assertIn("function renderLatestPromoHighlights", app_js)
         self.assertIn("function latestPromoHighlightsPayload", app_js)
@@ -603,6 +606,23 @@ class WebAssetsTests(unittest.TestCase):
         self.assertIn("renderLatestReportIntentWrapper(activeReport, meta, summary, files)", app_js)
         self.assertIn("highlights por promo", app_js)
         self.assertNotIn("data-share-promo-highlights", app_js)
+        self.assertIn(".latest-promo-highlights-section", app_css)
+        self.assertIn(".latest-promo-highlights-head", app_css)
+        self.assertIn(".latest-promo-highlights-grid", app_css)
+        self.assertIn(".latest-promo-highlight-section", app_css)
+        self.assertIn(".latest-promo-highlight-section-head", app_css)
+        self.assertIn(".latest-promo-highlight-list", app_css)
+        self.assertIn(".latest-promo-highlight-item", app_css)
+        self.assertIn(".latest-promo-highlight-item-main", app_css)
+        self.assertIn(".latest-promo-highlight-item-meta", app_css)
+        self.assertIn(".latest-promo-highlight-item-reasons", app_css)
+        self.assertIn(".latest-promo-highlights-empty", app_css)
+        self.assertIn(".latest-promo-highlights-badge", app_css)
+        self.assertIn("grid-template-columns: repeat(auto-fit, minmax(210px, 1fr))", app_css)
+        self.assertIn(".latest-promo-highlight-item-main a:focus-visible", app_css)
+        self.assertIn("@media (max-width: 640px)", app_css)
+        self.assertIn(".latest-promo-highlights-grid {", app_css)
+        self.assertIn("grid-template-columns: 1fr", app_css)
 
     def test_latest_report_surfaces_free_weekend_now_inside_details(self) -> None:
         app_js = (ROOT / "web" / "steam_deals" / "app.js").read_text(
