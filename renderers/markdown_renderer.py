@@ -119,6 +119,16 @@ _EXTERNAL_OFFER_CHECKOUT_RE = re.compile(
     r"(^|[/?#&=._-])(cart|checkout|add-to-cart|addtocart|payment|purchase)s?([/?#&=._-]|$)",
     re.IGNORECASE,
 )
+_RECOMMENDATION_DIAGNOSTIC_MODE_LABELS = {
+    "behavioral": "Behavioral",
+    "mixed": "Mixto",
+    "score_fallback": "Score fallback",
+}
+_RECOMMENDATION_DIAGNOSTIC_CONFIDENCE_LABELS = {
+    "high": "Alta",
+    "medium": "Media",
+    "low": "Baja",
+}
 
 _TASTE_PRIORITY_CATEGORY_LABELS = {
     "compra_inmediata": "Prioridad alta para revisar",
@@ -853,6 +863,75 @@ def _build_taste_priority_lines(payload: dict | None) -> list[str]:
     return lines
 
 
+def _recommendation_diagnostics_payload(payload: dict | None) -> dict | None:
+    if not isinstance(payload, dict):
+        return None
+    mode = str(payload.get("recommendation_mode") or "").strip()
+    if mode not in _RECOMMENDATION_DIAGNOSTIC_MODE_LABELS:
+        return None
+    return {**payload, "recommendation_mode": mode}
+
+
+def _diagnostic_percent_text(value) -> str:
+    number = _safe_float(value)
+    return f"{number * 100:.0f}%" if number is not None else "—"
+
+
+def _diagnostic_confidence_text(payload: dict) -> str:
+    confidence = payload.get("recommendation_confidence")
+    confidence = confidence if isinstance(confidence, dict) else {}
+    level = str(confidence.get("level") or "").strip().lower()
+    label = _RECOMMENDATION_DIAGNOSTIC_CONFIDENCE_LABELS.get(level, level.title())
+    score = _safe_float(confidence.get("score"))
+    if label and score is not None:
+        return f"{label} ({score * 100:.0f}%)"
+    return label or "—"
+
+
+def _diagnostic_signal_text(payload: dict) -> str:
+    sources = payload.get("signal_sources") if isinstance(payload, dict) else []
+    labels = [str(source).strip().replace("_", " ") for source in sources if str(source).strip()]
+    return _md_esc(", ".join(labels[:5])) if labels else "—"
+
+
+def _diagnostic_improvement_lines(payload: dict) -> list[str]:
+    hints = payload.get("improve_recommendations")
+    if not isinstance(hints, list):
+        return []
+    lines = [
+        "",
+        "Sugerencias para mejorar señales locales:",
+    ]
+    for hint in [str(hint).strip() for hint in hints if str(hint).strip()][:4]:
+        lines.append(f"- {_md_esc(hint)}")
+    return lines if len(lines) > 2 else []
+
+
+def _build_recommendation_diagnostics_lines(payload: dict | None) -> list[str]:
+    diagnostics = _recommendation_diagnostics_payload(payload)
+    if not diagnostics:
+        return []
+    mode = diagnostics["recommendation_mode"]
+    mode_label = _RECOMMENDATION_DIAGNOSTIC_MODE_LABELS[mode]
+    lines = [
+        "## 🧭 Diagnóstico de recomendaciones",
+        "",
+        f"> Modo: **{_md_esc(mode_label)}** · Confianza: **{_diagnostic_confidence_text(diagnostics)}**. Advisory-only: no cambia score, ranking, Top Picks, defaults, cache ni fetching.",
+        "",
+        "| Señal | Valor |",
+        "|--------|-------|",
+        f"| Fuerza conductual | {_diagnostic_percent_text(diagnostics.get('behavioral_signal_strength'))} |",
+        f"| Dependencia score fallback | {_diagnostic_percent_text(diagnostics.get('fallback_dependence'))} |",
+        f"| Fuentes usadas | {_diagnostic_signal_text(diagnostics)} |",
+        f"| Impacto en ranking | {_md_esc(str(diagnostics.get('ranking_impact') or 'none'))} |",
+        *_diagnostic_improvement_lines(diagnostics),
+        "",
+        "---",
+        "",
+    ]
+    return lines
+
+
 def _build_frontmatter(
     *,
     vanity: str,
@@ -1170,6 +1249,7 @@ def generate_md(
     free_weekend_now: dict | None = None,
     external_offers: dict | None = None,
     taste_priority: dict | None = None,
+    recommendation_diagnostics: dict | None = None,
     *,
     group_by_tier,
     filter_by_genres,
@@ -1203,6 +1283,9 @@ def generate_md(
     smart_alert_digest = smart_alert_digest if isinstance(smart_alert_digest, dict) else None
     external_offers = external_offers if isinstance(external_offers, dict) else None
     taste_priority = taste_priority if isinstance(taste_priority, dict) else None
+    recommendation_diagnostics = (
+        recommendation_diagnostics if isinstance(recommendation_diagnostics, dict) else None
+    )
     watchlist_alerts = watchlist_alerts or []
     comp = comparison or {}
     owned_and_wishlisted = sorted(
@@ -1315,6 +1398,7 @@ def generate_md(
 
     lines += _build_recommended_collection_lines(recommended_collections)
     lines += _build_personalized_recommendation_lines(personalized_recommendations)
+    lines += _build_recommendation_diagnostics_lines(recommendation_diagnostics)
     lines += _build_taste_priority_lines(taste_priority)
     lines += _build_external_offers_lines(external_offers)
     lines += _build_free_weekend_now_lines(free_weekend_now)

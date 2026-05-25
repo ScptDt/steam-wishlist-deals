@@ -242,6 +242,25 @@ class WebAssetsTests(unittest.TestCase):
             app_js,
         )
 
+    def test_latest_report_recommendation_diagnostics_are_visible_and_advisory_only(self) -> None:
+        app_js = (ROOT / "web" / "steam_deals" / "app.js").read_text(
+            encoding="utf-8"
+        )
+        app_css = (ROOT / "web" / "steam_deals" / "app.css").read_text(
+            encoding="utf-8"
+        )
+
+        self.assertIn("function renderLatestRecommendationDiagnostics", app_js)
+        self.assertIn("latestRecommendationDiagnosticsPayload", app_js)
+        self.assertIn("data-latest-recommendation-diagnostics", app_js)
+        self.assertIn("Diagnóstico de recomendaciones", app_js)
+        self.assertIn("Advisory-only: no cambia score, ranking, Top Picks, defaults, cache ni fetching", app_js)
+        self.assertIn("Sin impacto en ranking", app_js)
+        self.assertIn("renderLatestRecommendationDiagnostics(report)", app_js)
+        self.assertIn(".latest-recommendation-diagnostics-section", app_css)
+        self.assertIn(".latest-recommendation-diagnostics-grid", app_css)
+        self.assertIn(".latest-recommendation-diagnostics-hints", app_css)
+
     def test_itad_external_offers_cache_import_is_visible_and_local_only(self) -> None:
         index_html = (ROOT / "web" / "steam_deals" / "index.html").read_text(
             encoding="utf-8"

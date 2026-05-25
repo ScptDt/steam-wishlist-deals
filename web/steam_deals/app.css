@@ -2329,6 +2329,86 @@ details .details-body .field:last-child {
   color: var(--text2);
   font-size: 0.72rem;
 }
+.latest-recommendation-diagnostics-section {
+  margin-top: 0.95rem;
+  padding-top: 0.95rem;
+  border-top: 1px solid rgba(255,255,255,0.06);
+}
+.latest-recommendation-diagnostics-head {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: flex-start;
+  justify-content: space-between;
+  gap: 0.65rem;
+  margin-bottom: 0.55rem;
+}
+.latest-recommendation-diagnostics-title {
+  color: var(--text);
+  font-size: 0.88rem;
+  font-weight: 700;
+  margin-bottom: 0.22rem;
+}
+.latest-recommendation-diagnostics-subtitle,
+.latest-recommendation-diagnostics-sources,
+.latest-recommendation-diagnostics-hints {
+  color: var(--text2);
+  font-size: 0.76rem;
+  line-height: 1.45;
+}
+.latest-recommendation-diagnostics-badge,
+.latest-recommendation-diagnostics-sources span {
+  display: inline-flex;
+  align-items: center;
+  padding: 0.16rem 0.48rem;
+  border-radius: 999px;
+  border: 1px solid rgba(102,192,244,0.28);
+  background: rgba(102,192,244,0.08);
+  color: var(--accent);
+  font-size: 0.7rem;
+  font-weight: 700;
+}
+.latest-recommendation-diagnostics-grid {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(160px, 1fr));
+  gap: 0.55rem;
+}
+.latest-recommendation-diagnostics-metric {
+  padding: 0.65rem 0.72rem;
+  border-radius: 8px;
+  border: 1px solid rgba(102,192,244,0.2);
+  background: var(--bg);
+}
+.latest-recommendation-diagnostics-metric span,
+.latest-recommendation-diagnostics-metric strong {
+  display: block;
+}
+.latest-recommendation-diagnostics-metric span {
+  color: var(--text2);
+  font-size: 0.71rem;
+  line-height: 1.35;
+}
+.latest-recommendation-diagnostics-metric strong {
+  margin-top: 0.16rem;
+  color: var(--accent);
+  font-size: 0.84rem;
+}
+.latest-recommendation-diagnostics-sources {
+  margin-top: 0.55rem;
+}
+.latest-recommendation-diagnostics-sources strong {
+  display: block;
+  margin-bottom: 0.28rem;
+  color: var(--text);
+  font-size: 0.74rem;
+}
+.latest-recommendation-diagnostics-sources div {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 0.3rem;
+}
+.latest-recommendation-diagnostics-hints {
+  margin: 0.55rem 0 0 1rem;
+}
 .latest-taste-priority-section {
   margin-top: 0.95rem;
   padding-top: 0.95rem;

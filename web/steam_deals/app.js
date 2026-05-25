@@ -2890,6 +2890,18 @@ const LATEST_TASTE_PRIORITY_CATEGORY_LABELS = Object.freeze({
   no_comprar_aun: 'No priorizar aún',
 });
 
+const LATEST_RECOMMENDATION_DIAGNOSTIC_MODE_LABELS = Object.freeze({
+  behavioral: 'Behavioral',
+  mixed: 'Mixto',
+  score_fallback: 'Score fallback',
+});
+
+const LATEST_RECOMMENDATION_DIAGNOSTIC_CONFIDENCE_LABELS = Object.freeze({
+  high: 'Alta',
+  medium: 'Media',
+  low: 'Baja',
+});
+
 function latestPromoCategoryLabel(category) {
   const key = String(category || '').trim();
   return LATEST_PROMO_CATEGORY_LABELS[key] || key || 'Otra promo';
@@ -3509,6 +3521,72 @@ function renderLatestTastePriority(report) {
       </div>
       <ol class="latest-taste-priority-list">${selectedItems.map(item => renderLatestTastePriorityItem(item, labels)).join('')}</ol>
       ${hiddenCount ? `<div class="latest-taste-priority-more">${escapeHtml(formatLatestCoverageCount(hiddenCount))} más en el JSON completo</div>` : ''}
+    </div>
+  `;
+}
+
+function latestRecommendationDiagnosticsPayload(report) {
+  const payload = report && typeof report === 'object' ? report.recommendation_diagnostics : null;
+  if (!payload || typeof payload !== 'object' || Array.isArray(payload)) return null;
+  const mode = String(payload.recommendation_mode || '').trim();
+  if (!Object.prototype.hasOwnProperty.call(LATEST_RECOMMENDATION_DIAGNOSTIC_MODE_LABELS, mode)) return null;
+  return {...payload, recommendation_mode: mode};
+}
+
+function latestRecommendationDiagnosticPercent(value) {
+  const number = Number(value);
+  return Number.isFinite(number) ? `${(number * 100).toFixed(0)}%` : '—';
+}
+
+function latestRecommendationDiagnosticConfidence(payload) {
+  const confidence = payload && payload.recommendation_confidence && typeof payload.recommendation_confidence === 'object'
+    ? payload.recommendation_confidence
+    : {};
+  const level = String(confidence.level || '').trim().toLowerCase();
+  const label = LATEST_RECOMMENDATION_DIAGNOSTIC_CONFIDENCE_LABELS[level] || (level ? level.charAt(0).toUpperCase() + level.slice(1) : '—');
+  const score = Number(confidence.score);
+  return Number.isFinite(score) && label !== '—' ? `${label} (${(score * 100).toFixed(0)}%)` : label;
+}
+
+function latestRecommendationDiagnosticSources(payload) {
+  return Array.isArray(payload && payload.signal_sources)
+    ? payload.signal_sources.map(source => String(source || '').trim().replace(/_/g, ' ')).filter(Boolean).slice(0, 5)
+    : [];
+}
+
+function renderLatestRecommendationDiagnostics(report) {
+  const payload = latestRecommendationDiagnosticsPayload(report);
+  if (!payload) return '';
+  const modeLabel = LATEST_RECOMMENDATION_DIAGNOSTIC_MODE_LABELS[payload.recommendation_mode];
+  const metrics = [
+    ['Fuerza conductual', latestRecommendationDiagnosticPercent(payload.behavioral_signal_strength)],
+    ['Dependencia score fallback', latestRecommendationDiagnosticPercent(payload.fallback_dependence)],
+    ['Impacto ranking', String(payload.ranking_impact || 'none')],
+  ];
+  const sources = latestRecommendationDiagnosticSources(payload);
+  const hints = Array.isArray(payload.improve_recommendations)
+    ? payload.improve_recommendations.map(hint => String(hint || '').trim()).filter(Boolean).slice(0, 4)
+    : [];
+  const sourcesHtml = sources.length
+    ? `<div class="latest-recommendation-diagnostics-sources"><strong>Fuentes usadas</strong><div>${sources.map(source => `<span>${escapeHtml(source)}</span>`).join('')}</div></div>`
+    : '';
+  const hintsHtml = hints.length
+    ? `<ul class="latest-recommendation-diagnostics-hints">${hints.map(hint => `<li>${escapeHtml(hint)}</li>`).join('')}</ul>`
+    : '';
+  return `
+    <div class="latest-recommendation-diagnostics-section" data-latest-recommendation-diagnostics>
+      <div class="latest-recommendation-diagnostics-head">
+        <div>
+          <div class="latest-recommendation-diagnostics-title">Diagnóstico de recomendaciones</div>
+          <div class="latest-recommendation-diagnostics-subtitle">Modo ${escapeHtml(modeLabel)} · Confianza ${escapeHtml(latestRecommendationDiagnosticConfidence(payload))}. Advisory-only: no cambia score, ranking, Top Picks, defaults, cache ni fetching.</div>
+        </div>
+        <span class="latest-recommendation-diagnostics-badge">Sin impacto en ranking</span>
+      </div>
+      <div class="latest-recommendation-diagnostics-grid">
+        ${metrics.map(([label, value]) => `<div class="latest-recommendation-diagnostics-metric"><span>${escapeHtml(label)}</span><strong>${escapeHtml(value)}</strong></div>`).join('')}
+      </div>
+      ${sourcesHtml}
+      ${hintsHtml}
     </div>
   `;
 }
@@ -4714,6 +4792,7 @@ function renderLatestRecommendationsPanel(report, files = null) {
     renderLatestSmartAlertDigest(report),
     renderLatestRecommendedCollections(report),
     renderLatestPersonalizedRecommendations(report, files),
+    renderLatestRecommendationDiagnostics(report),
     renderLatestTastePriority(report),
     renderLatestGiftIdeas(report),
     renderLatestWishlistHygiene(report),

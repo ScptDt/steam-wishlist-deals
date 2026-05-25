@@ -36,6 +36,17 @@ MESES = {
     12: "diciembre",
 }
 
+_RECOMMENDATION_DIAGNOSTIC_MODE_LABELS = {
+    "behavioral": "Behavioral",
+    "mixed": "Mixto",
+    "score_fallback": "Score fallback",
+}
+_RECOMMENDATION_DIAGNOSTIC_CONFIDENCE_LABELS = {
+    "high": "Alta",
+    "medium": "Media",
+    "low": "Baja",
+}
+
 
 def _html_esc(text: str) -> str:
     return html_escape(text)
@@ -1274,6 +1285,94 @@ def _html_personalized_recommendations(payload: dict | None) -> str:
 </section>'''
 
 
+def _html_recommendation_diagnostics_payload(payload: dict | None) -> dict | None:
+    if not isinstance(payload, dict):
+        return None
+    mode = str(payload.get("recommendation_mode") or "").strip()
+    if mode not in _RECOMMENDATION_DIAGNOSTIC_MODE_LABELS:
+        return None
+    return {**payload, "recommendation_mode": mode}
+
+
+def _html_diagnostic_float(value) -> float | None:
+    try:
+        return float(value)
+    except (TypeError, ValueError):
+        return None
+
+
+def _html_diagnostic_percent(value) -> str:
+    number = _html_diagnostic_float(value)
+    return f"{number * 100:.0f}%" if number is not None else "—"
+
+
+def _html_diagnostic_confidence(payload: dict) -> str:
+    confidence = payload.get("recommendation_confidence")
+    confidence = confidence if isinstance(confidence, dict) else {}
+    level = str(confidence.get("level") or "").strip().lower()
+    label = _RECOMMENDATION_DIAGNOSTIC_CONFIDENCE_LABELS.get(level, level.title())
+    score = _html_diagnostic_float(confidence.get("score"))
+    if label and score is not None:
+        return f"{label} ({score * 100:.0f}%)"
+    return label or "—"
+
+
+def _html_diagnostic_signal_chips(payload: dict) -> str:
+    sources = payload.get("signal_sources") if isinstance(payload, dict) else []
+    if not isinstance(sources, list):
+        return ""
+    labels = [str(source).strip().replace("_", " ") for source in sources if str(source).strip()]
+    return "".join(
+        f'<span>{_html_esc(label)}</span>'
+        for label in labels[:5]
+    )
+
+
+def _html_diagnostic_improvement_list(payload: dict) -> str:
+    hints = payload.get("improve_recommendations")
+    if not isinstance(hints, list):
+        return ""
+    items = [str(hint).strip() for hint in hints if str(hint).strip()][:4]
+    if not items:
+        return ""
+    return f'''<ul class="recommendation-diagnostics-hints">{"".join(f'<li>{_html_esc(item)}</li>' for item in items)}</ul>'''
+
+
+def _html_recommendation_diagnostics(payload: dict | None) -> str:
+    diagnostics = _html_recommendation_diagnostics_payload(payload)
+    if not diagnostics:
+        return ""
+    mode = diagnostics["recommendation_mode"]
+    mode_label = _RECOMMENDATION_DIAGNOSTIC_MODE_LABELS[mode]
+    metrics = [
+        ("Fuerza conductual", _html_diagnostic_percent(diagnostics.get("behavioral_signal_strength"))),
+        ("Dependencia score fallback", _html_diagnostic_percent(diagnostics.get("fallback_dependence"))),
+        ("Impacto ranking", str(diagnostics.get("ranking_impact") or "none")),
+    ]
+    metrics_html = "".join(
+        f'''<div class="recommendation-diagnostics-metric"><span>{_html_esc(label)}</span><strong>{_html_esc(value)}</strong></div>'''
+        for label, value in metrics
+    )
+    signals_html = _html_diagnostic_signal_chips(diagnostics)
+    signals_block = (
+        f'<div class="recommendation-diagnostics-signals"><strong>Fuentes usadas</strong><div>{signals_html}</div></div>'
+        if signals_html
+        else ""
+    )
+    return f'''<section class="recommendation-diagnostics" data-recommendation-diagnostics-section>
+  <div class="recommendation-diagnostics-head">
+    <div>
+      <h2>Diagnóstico de recomendaciones</h2>
+      <p class="section-desc">Modo <strong>{_html_esc(mode_label)}</strong> · Confianza <strong>{_html_esc(_html_diagnostic_confidence(diagnostics))}</strong>. Advisory-only: no cambia score, ranking, Top Picks, defaults, cache ni fetching.</p>
+    </div>
+    <span class="recommendation-diagnostics-badge">Sin impacto en ranking</span>
+  </div>
+  <div class="recommendation-diagnostics-grid">{metrics_html}</div>
+  {signals_block}
+  {_html_diagnostic_improvement_list(diagnostics)}
+</section>'''
+
+
 def _selection_review_appid(item: dict) -> str:
     if not isinstance(item, dict):
         return ""
@@ -2154,6 +2253,19 @@ a.pick-card:hover { border-color: var(--accent-blue); transform: translateY(-2px
 .personalized-item-meta span:first-child { color: var(--accent-green); font-weight: 700; }
 .personalized-item-main ul { margin-left: 1rem; color: var(--text-secondary); font-size: .75rem; line-height: 1.35; }
 @media (max-width: 767px) { .personalized-item-card { grid-template-columns: 1fr; } }
+.recommendation-diagnostics { margin: 0 0 1.5rem; padding: 1rem; border: 1px solid rgba(102,192,244,.25); border-radius: 10px; background: linear-gradient(135deg, rgba(102,192,244,.08), rgba(12,20,30,.25)); }
+.recommendation-diagnostics-head { display: flex; justify-content: space-between; gap: 1rem; align-items: flex-start; }
+.recommendation-diagnostics h2 { font-size: 1.2rem; margin-bottom: .3rem; }
+.recommendation-diagnostics-badge { white-space: nowrap; border: 1px solid rgba(102,192,244,.36); border-radius: 999px; color: var(--accent-blue); background: rgba(12,20,30,.32); padding: .16rem .55rem; font-size: .74rem; font-weight: 700; }
+.recommendation-diagnostics-grid { display: grid; grid-template-columns: repeat(auto-fit, minmax(180px, 1fr)); gap: .55rem; margin-top: .75rem; }
+.recommendation-diagnostics-metric { background: var(--bg-card); border: 1px solid rgba(102,192,244,.2); border-radius: 8px; padding: .65rem .75rem; }
+.recommendation-diagnostics-metric span, .recommendation-diagnostics-signals strong { display: block; color: var(--text-secondary); font-size: .72rem; line-height: 1.35; }
+.recommendation-diagnostics-metric strong { display: block; margin-top: .16rem; color: var(--accent-blue); font-size: .9rem; }
+.recommendation-diagnostics-signals { margin-top: .65rem; color: var(--text-secondary); font-size: .74rem; }
+.recommendation-diagnostics-signals div { display: flex; flex-wrap: wrap; gap: .3rem; margin-top: .3rem; }
+.recommendation-diagnostics-signals span { border: 1px solid rgba(102,192,244,.28); border-radius: 999px; color: var(--accent-blue); background: rgba(12,20,30,.28); padding: .14rem .5rem; font-size: .72rem; }
+.recommendation-diagnostics-hints { margin: .65rem 0 0 1rem; color: var(--text-secondary); font-size: .75rem; line-height: 1.4; }
+@media (max-width: 767px) { .recommendation-diagnostics-head { flex-direction: column; } .recommendation-diagnostics-badge { align-self: flex-start; } }
 .taste-priority { margin: 0 0 1.5rem; padding: 1rem; border: 1px solid rgba(240,178,50,.3); border-radius: 10px; background: linear-gradient(135deg, rgba(240,178,50,.09), rgba(12,20,30,.25)); }
 .taste-priority-head { display: flex; justify-content: space-between; gap: 1rem; align-items: flex-start; }
 .taste-priority h2 { font-size: 1.2rem; margin-bottom: .3rem; }
@@ -3239,6 +3351,7 @@ def generate_html(
     free_weekend_now: dict | None = None,
     external_offers: dict | None = None,
     taste_priority: dict | None = None,
+    recommendation_diagnostics: dict | None = None,
     *,
     group_by_tier,
     group_deals_by_tag,
@@ -3266,6 +3379,9 @@ def generate_html(
     smart_alert_digest = smart_alert_digest if isinstance(smart_alert_digest, dict) else None
     external_offers = external_offers if isinstance(external_offers, dict) else None
     taste_priority = taste_priority if isinstance(taste_priority, dict) else None
+    recommendation_diagnostics = (
+        recommendation_diagnostics if isinstance(recommendation_diagnostics, dict) else None
+    )
     achievements_data = achievements_data or {}
     watchlist_alerts = watchlist_alerts or []
     price_history_games = (price_history or {}).get("games", {})
@@ -3415,6 +3531,7 @@ def generate_html(
 
     parts.append(_html_recommended_collections(recommended_collections))
     parts.append(_html_personalized_recommendations(personalized_recommendations))
+    parts.append(_html_recommendation_diagnostics(recommendation_diagnostics))
     parts.append(_html_taste_priority(taste_priority))
     parts.append(
         _html_selection_review(

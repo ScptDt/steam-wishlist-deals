@@ -9857,6 +9857,58 @@ class RankTopPicksTests(unittest.TestCase):
         self.assertIn("encaja con tu actividad reciente: Action", md)
         self.assertIn("similar a Hades", md)
 
+    def test_generate_md_surfaces_recommendation_diagnostics_advisory_only(self) -> None:
+        md = generate_md(
+            deals=[],
+            backlog_on_sale=[],
+            have_on_sale=[],
+            vanity="gaben",
+            owned={},
+            wishlist_appids=["10"],
+            min_discount=50,
+            genres=[],
+            recommended_collections=[],
+            personalized_recommendations={"items": []},
+            recommendation_diagnostics={
+                "recommendation_mode": "mixed",
+                "recommendation_confidence": {"level": "medium", "score": 0.58},
+                "behavioral_signal_strength": 0.42,
+                "fallback_dependence": 0.5,
+                "signal_sources": ["activity", "library", "score"],
+                "improve_recommendations": [
+                    "revisa candidatos con affinity_score=0 antes de asumir personalización fuerte",
+                ],
+                "advisory_only": True,
+                "ranking_impact": "none",
+            },
+        )
+
+        self.assertIn("## 🧭 Diagnóstico de recomendaciones", md)
+        self.assertIn("Modo: **Mixto** · Confianza: **Media (58%)**", md)
+        self.assertIn("no cambia score, ranking, Top Picks, defaults, cache ni fetching", md)
+        self.assertIn("| Fuerza conductual | 42% |", md)
+        self.assertIn("| Dependencia score fallback | 50% |", md)
+        self.assertIn("activity, library, score", md)
+        self.assertIn("| Impacto en ranking | none |", md)
+        self.assertIn("revisa candidatos con affinity_score=0", md)
+
+    def test_generate_md_omits_invalid_recommendation_diagnostics(self) -> None:
+        md = generate_md(
+            deals=[],
+            backlog_on_sale=[],
+            have_on_sale=[],
+            vanity="gaben",
+            owned={},
+            wishlist_appids=[],
+            min_discount=50,
+            genres=[],
+            personalized_recommendations={"items": []},
+            recommendation_diagnostics={"recommendation_mode": "unknown"},
+        )
+
+        self.assertNotIn("Diagnóstico de recomendaciones", md)
+        self.assertNotIn("recommendation_diagnostics", md)
+
     def test_generate_md_omits_personalized_recommendations_when_empty(self) -> None:
         md = generate_md(
             deals=[],
@@ -10524,6 +10576,42 @@ class RankTopPicksTests(unittest.TestCase):
         self.assertIn("encaja con tu actividad reciente: Action", html)
         self.assertIn("similar a Hades", html)
         self.assertIn("steam/apps/10/capsule_231x87.jpg", html)
+
+    def test_generate_html_surfaces_recommendation_diagnostics_advisory_only(self) -> None:
+        html = generate_html(
+            deals=[],
+            backlog_on_sale=[],
+            have_on_sale=[],
+            vanity="gaben",
+            owned={},
+            wishlist_appids=["10"],
+            min_discount=50,
+            genres=[],
+            recommended_collections=[],
+            personalized_recommendations={"items": []},
+            recommendation_diagnostics={
+                "recommendation_mode": "behavioral",
+                "recommendation_confidence": {"level": "high", "score": 0.82},
+                "behavioral_signal_strength": 0.74,
+                "fallback_dependence": 0.1,
+                "signal_sources": ["activity", "library", "liked_appids", "score"],
+                "improve_recommendations": ["agrega más relaciones similares si quieres afinar gustos"],
+                "advisory_only": True,
+                "ranking_impact": "none",
+            },
+        )
+
+        self.assertIn("data-recommendation-diagnostics-section", html)
+        self.assertIn("Diagnóstico de recomendaciones", html)
+        self.assertIn("Modo <strong>Behavioral</strong>", html)
+        self.assertIn("Confianza <strong>Alta (82%)</strong>", html)
+        self.assertIn("no cambia score, ranking, Top Picks, defaults, cache ni fetching", html)
+        self.assertIn("Fuerza conductual", html)
+        self.assertIn("74%", html)
+        self.assertIn("Dependencia score fallback", html)
+        self.assertIn("10%", html)
+        self.assertIn("liked appids", html)
+        self.assertIn("Sin impacto en ranking", html)
 
     def test_generate_html_renders_local_selection_review_tool(self) -> None:
         html = generate_html(
@@ -11261,6 +11349,30 @@ class RankTopPicksTests(unittest.TestCase):
         self.assertNotIn("Prioridad por gustos", html)
         self.assertNotIn("data-taste-priority-section", html)
 
+    def test_generate_share_html_excludes_recommendation_diagnostics_surface(self) -> None:
+        html = generate_share_html(
+            deals=[],
+            vanity="gaben",
+            min_discount=50,
+            top_picks=[],
+            recommended_collections=[],
+            personalized_recommendations={
+                "items": [
+                    {
+                        "appid": "10",
+                        "name": "Deep Action",
+                        "personalized_score": 90,
+                        "affinity_score": 20,
+                    }
+                ],
+            },
+        )
+
+        self.assertNotIn("recommendation_diagnostics", html)
+        self.assertNotIn("recommendation-diagnostics", html)
+        self.assertNotIn("Diagnóstico de recomendaciones", html)
+        self.assertNotIn("data-recommendation-diagnostics-section", html)
+
     def test_generator_share_html_does_not_build_or_pass_taste_priority(self) -> None:
         captured_kwargs = {}
         original_renderer = generator_module._generate_share_html_renderer
@@ -11290,6 +11402,36 @@ class RankTopPicksTests(unittest.TestCase):
 
         self.assertEqual("<html>share</html>", html)
         self.assertNotIn("taste_priority", captured_kwargs)
+
+    def test_generator_share_html_does_not_build_or_pass_recommendation_diagnostics(self) -> None:
+        captured_kwargs = {}
+        original_renderer = generator_module._generate_share_html_renderer
+        original_builder = generator_module.build_recommendation_diagnostics
+
+        def fake_renderer(*args, **kwargs):
+            captured_kwargs.update(kwargs)
+            return "<html>share</html>"
+
+        def fail_builder(*args, **kwargs):
+            raise AssertionError("Share HTML must not build recommendation_diagnostics")
+
+        try:
+            generator_module._generate_share_html_renderer = fake_renderer
+            generator_module.build_recommendation_diagnostics = fail_builder
+            html = generator_module.generate_share_html(
+                deals=[],
+                vanity="gaben",
+                min_discount=50,
+                top_picks=[],
+                recommended_collections=[],
+                personalized_recommendations={"items": []},
+            )
+        finally:
+            generator_module._generate_share_html_renderer = original_renderer
+            generator_module.build_recommendation_diagnostics = original_builder
+
+        self.assertEqual("<html>share</html>", html)
+        self.assertNotIn("recommendation_diagnostics", captured_kwargs)
 
     def test_generate_share_html_labels_top_pick_score_and_metacritic(self) -> None:
         html = generate_share_html(
