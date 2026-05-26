@@ -8,6 +8,7 @@ from app.steam_deals_tags import steam_tag_key
 
 
 BEHAVIORAL_SIGNALS_SCHEMA = "behavioral_signals_v1"
+BEHAVIORAL_EXPLANATIONS_SCHEMA = "behavioral_explanations_v1"
 BEHAVIORAL_TAXONOMY_SCHEMA = "behavioral_taxonomy_v1"
 DEFAULT_BEHAVIORAL_TAXONOMY_PATH = (
     Path(__file__).resolve().parents[1] / "data" / "behavioral_taxonomy_v1.json"
@@ -146,6 +147,26 @@ def _empty_contract(status: str, reason: str, taxonomy: dict | None = None) -> d
             "families_count": 0,
             "loops_count": 0,
             "descriptors_count": 0,
+            "confidence": "unknown",
+            "advisory_only": True,
+            "ranking_impact": "none",
+            **_taxonomy_summary(taxonomy),
+        },
+        "items": [],
+    }
+
+
+def _empty_explanations(status: str, reason: str, taxonomy: dict | None = None) -> dict:
+    return {
+        "schema": BEHAVIORAL_EXPLANATIONS_SCHEMA,
+        "source_schema": BEHAVIORAL_SIGNALS_SCHEMA,
+        "status": status,
+        "reason": reason,
+        "advisory_only": True,
+        "ranking_impact": "none",
+        "summary": {
+            "items_count": 0,
+            "explanations_count": 0,
             "confidence": "unknown",
             "advisory_only": True,
             "ranking_impact": "none",
@@ -294,6 +315,149 @@ def _contract(items: list[dict], taxonomy: dict) -> dict:
     }
 
 
+def _signal_items(signals: Any) -> list[dict]:
+    if isinstance(signals, dict):
+        return _as_records(signals.get("items"))
+    return _as_records(signals)
+
+
+def _valid_signal_ids(item: dict, key: str, known_ids: Iterable[str]) -> list[str]:
+    known = set(known_ids)
+    values = item.get(key)
+    if not isinstance(values, list):
+        return []
+    return _ordered((_clean_text(value) for value in values), known_ids) if known else []
+
+
+def _taxonomy_entry(taxonomy: dict, section: str, entry_id: str) -> dict:
+    entries = taxonomy.get(section)
+    if not isinstance(entries, dict):
+        return {}
+    entry = entries.get(entry_id)
+    return entry if isinstance(entry, dict) else {}
+
+
+def _taxonomy_label(taxonomy: dict, section: str, entry_id: str) -> str:
+    entry = _taxonomy_entry(taxonomy, section, entry_id)
+    return _clean_text(entry.get("label")) or entry_id.replace("_", " ")
+
+
+def _explanation_records(
+    taxonomy: dict,
+    ids: list[str],
+    *,
+    section: str,
+    kind: str,
+    include_description: bool = False,
+) -> list[dict]:
+    records: list[dict] = []
+    for entry_id in ids:
+        entry = _taxonomy_entry(taxonomy, section, entry_id)
+        record = {
+            "kind": kind,
+            "id": entry_id,
+            "label": _taxonomy_label(taxonomy, section, entry_id),
+        }
+        description = _clean_text(entry.get("description")) if include_description else ""
+        if description:
+            record["description"] = description
+        records.append(record)
+    return records
+
+
+def _labels(records: list[dict], limit: int) -> list[str]:
+    return [_clean_text(record.get("label")) for record in records[:limit] if _clean_text(record.get("label"))]
+
+
+def _join_labels(labels: list[str]) -> str:
+    if len(labels) <= 1:
+        return labels[0] if labels else "Sin patrón principal"
+    if len(labels) == 2:
+        return f"{labels[0]} + {labels[1]}"
+    return f"{', '.join(labels[:-1])} + {labels[-1]}"
+
+
+def _explanation_reasons(primary: list[dict], loops: list[dict], descriptors: list[dict]) -> list[str]:
+    reasons: list[str] = []
+    if labels := _labels(primary, 3):
+        reasons.append(f"Patrones principales: {_join_labels(labels)}")
+    if labels := _labels(loops, 3):
+        reasons.append(f"Loops detectados: {_join_labels(labels)}")
+    if labels := _labels(descriptors, 3):
+        reasons.append(f"Contexto de decisión: {_join_labels(labels)}")
+    return reasons[:3]
+
+
+def _explanation_item(item: dict, taxonomy: dict) -> dict | None:
+    appid = _record_appid(item)
+    if not appid:
+        return None
+    families = _valid_signal_ids(item, "families", taxonomy["families"].keys())
+    loops = _valid_signal_ids(item, "behavioral_loops", taxonomy["behavioral_loops"].keys())
+    descriptors = _valid_signal_ids(item, "descriptors", taxonomy["descriptors"].keys())
+    if not (families or loops or descriptors):
+        return None
+    primary = _explanation_records(
+        taxonomy,
+        families,
+        section="families",
+        kind="family",
+        include_description=True,
+    )[:3]
+    loop_records = _explanation_records(
+        taxonomy,
+        loops,
+        section="behavioral_loops",
+        kind="behavioral_loop",
+    )[:3]
+    descriptor_records = _explanation_records(
+        taxonomy,
+        descriptors,
+        section="descriptors",
+        kind="descriptor",
+    )[:3]
+    headline_labels = _labels(primary, 2) or _labels(loop_records, 2) or _labels(descriptor_records, 2)
+    explanation = {
+        "appid": appid,
+        "headline": _join_labels(headline_labels),
+        "confidence": item.get("confidence") if item.get("confidence") in _CONFIDENCE_RANK else "unknown",
+        "reasons": _explanation_reasons(primary, loop_records, descriptor_records),
+        "primary_patterns": primary,
+        "supporting_cues": [*loop_records, *descriptor_records][:6],
+        "source_signal_ids": {
+            "families": families,
+            "behavioral_loops": loops,
+            "descriptors": descriptors,
+        },
+        "sources": _source_order(item.get("sources", [])),
+        "reason_codes": _ordered(item.get("reason_codes", []), taxonomy["reason_codes"].keys()),
+    }
+    if name := _record_name(item):
+        explanation["name"] = name
+    return explanation
+
+
+def _explanations_contract(items: list[dict], source_status: str, taxonomy: dict) -> dict:
+    status = source_status if source_status in {"available", "partial"} else "available"
+    explanations_count = sum(len(item.get("reasons", [])) for item in items)
+    return {
+        "schema": BEHAVIORAL_EXPLANATIONS_SCHEMA,
+        "source_schema": BEHAVIORAL_SIGNALS_SCHEMA,
+        "status": status,
+        "advisory_only": True,
+        "ranking_impact": "none",
+        "summary": {
+            "items_count": len(items),
+            "explanations_count": explanations_count,
+            "confidence": _summary_confidence(items),
+            "advisory_only": True,
+            "ranking_impact": "none",
+            **_taxonomy_summary(taxonomy),
+        },
+        "items": items,
+    }
+
+
 def build_behavioral_signals(
     games: Any,
     *,
@@ -314,3 +478,27 @@ def build_behavioral_signals(
     if not items:
         return _empty_contract("insufficient_signals", "insufficient_behavioral_matches", taxonomy)
     return _contract(items, taxonomy)
+
+
+def build_behavioral_explanations(
+    behavioral_signals: Any,
+    *,
+    taxonomy: dict | None = None,
+    taxonomy_path: Path | str | None = None,
+) -> dict:
+    """Build compact JSON-only explanations from behavioral signal items."""
+    taxonomy, taxonomy_error = _resolve_taxonomy(taxonomy, taxonomy_path)
+    if taxonomy_error:
+        return _empty_explanations("unavailable", taxonomy_error)
+    assert taxonomy is not None
+    if not isinstance(behavioral_signals, dict):
+        return _empty_explanations("unavailable", "no_supported_game_metadata", taxonomy)
+    source_status = str(behavioral_signals.get("status") or "available")
+    items = [
+        item
+        for item in (_explanation_item(signal, taxonomy) for signal in _signal_items(behavioral_signals))
+        if item
+    ]
+    if not items:
+        return _empty_explanations("insufficient_signals", "insufficient_behavioral_matches", taxonomy)
+    return _explanations_contract(items, source_status, taxonomy)

@@ -27,6 +27,7 @@ Mover el producto hacia un sistema de **Discovery + Decision Support**:
 |---|---|---|
 | `behavioral_taxonomy_v1` | Este slice | Lenguaje versionado: families, loops, descriptors, mappings y reason codes. |
 | `behavioral_signals_v1` | Helper puro + JSON interno | Clasifica juegos/deals usando la taxonomía y se expone como payload JSON opcional. |
+| `behavioral_explanations_v1` | JSON interno | Consume `behavioral_signals_v1` para exponer headlines, razones y cues compactos reutilizables. |
 | `player_behavior_profile_v1` | Futuro | Perfila gustos del usuario cuando existan señales suficientes y opt-in/privacy claros. |
 | Decision support | Futuro | Consume señales de juego + perfil + availability/backlog para sugerir comprar/esperar/revisar. |
 
@@ -37,7 +38,8 @@ El reporte JSON expone `behavioral_signals` como payload top-level opcional cuan
 ```json
 {
   "summary": {
-    "behavioral_signals_count": 1
+    "behavioral_signals_count": 1,
+    "behavioral_explanations_count": 1
   },
   "behavioral_signals": {
     "schema": "behavioral_signals_v1",
@@ -64,11 +66,66 @@ El reporte JSON expone `behavioral_signals` como payload top-level opcional cuan
         "reason_codes": ["coop_tags_detected", "social_tags_detected", "mission_structure_detected"]
       }
     ]
+  },
+  "behavioral_explanations": {
+    "schema": "behavioral_explanations_v1",
+    "source_schema": "behavioral_signals_v1",
+    "status": "available",
+    "advisory_only": true,
+    "ranking_impact": "none",
+    "summary": {
+      "items_count": 1,
+      "explanations_count": 3,
+      "confidence": "medium"
+    },
+    "items": [
+      {
+        "appid": "548430",
+        "name": "Deep Rock Galactic",
+        "headline": "Social + Co-op / teamwork",
+        "confidence": "medium",
+        "reasons": [
+          "Patrones principales: Social + Co-op / teamwork",
+          "Loops detectados: Emergent social chaos, High-execution co-op + Shared objective pressure",
+          "Contexto de decisión: Friends recommended, Matchmaking friendly + Mission based"
+        ],
+        "primary_patterns": [
+          {"kind": "family", "id": "social", "label": "Social"},
+          {"kind": "family", "id": "coop_teamwork", "label": "Co-op / teamwork"}
+        ],
+        "supporting_cues": [
+          {"kind": "behavioral_loop", "id": "emergent_social_chaos", "label": "Emergent social chaos"},
+          {"kind": "descriptor", "id": "friends_recommended", "label": "Friends recommended"}
+        ],
+        "source_signal_ids": {
+          "families": ["social", "coop_teamwork"],
+          "behavioral_loops": ["emergent_social_chaos", "high_execution_coop", "shared_objective_pressure"],
+          "descriptors": ["friends_recommended", "matchmaking_friendly", "mission_based"]
+        }
+      }
+    ]
   }
 }
 ```
 
-Si no hay items válidos, el payload top-level `behavioral_signals` debe omitirse o exponerse solo en diagnósticos internos con `status` no disponible. No debe romper consumidores existentes.
+Si no hay items válidos, los payloads top-level `behavioral_signals` y `behavioral_explanations` deben omitirse o exponerse solo en diagnósticos internos con `status` no disponible. No deben romper consumidores existentes.
+
+## Explicaciones JSON-only
+
+`behavioral_explanations_v1` es un consumidor interno, no una UI visible. Su rol es traducir IDs estables de la taxonomía a material compacto para futuros consumidores de Discovery/Decision:
+
+- `headline`: resumen corto con 1-2 patrones principales.
+- `reasons`: frases compactas derivadas de families, loops y descriptors.
+- `primary_patterns`: labels/descripciones de families principales.
+- `supporting_cues`: loops/descriptors etiquetados para futuros renders o decision support.
+- `source_signal_ids`: IDs originales para trazabilidad y pruebas.
+
+Reglas:
+
+- no inventar afinidad personal ni perfil de jugador;
+- omitir payload si `behavioral_signals` no tiene items válidos;
+- conservar `advisory_only=true` y `ranking_impact=none`;
+- no cambiar score, ranking, defaults, cache ni fetching.
 
 ## Estados y degradación
 
@@ -198,7 +255,7 @@ Si faltan señales personales, el perfil futuro debe usar `status=unavailable` o
 - No inferir preferencias personales sin señales.
 - No inferir ownership/play access desde precio/catálogo público.
 - No mezclar con `wishlist_hygiene`, `external_offers` ni `play_access` salvo como consumidor futuro explícito.
-- No generar UI visible ni reportes en este slice.
+- No generar UI visible en este slice; la exposición vigente es JSON interno opcional (`behavioral_signals` y `behavioral_explanations`).
 - No ejecutar `BG00G`, `--no-cache`, builds, smokes live ni reportes generados para validar este contrato.
 
 ## Slices recomendados
@@ -206,4 +263,5 @@ Si faltan señales personales, el perfil futuro debe usar `status=unavailable` o
 1. **Docs/taxonomy**: este runbook + `data/behavioral_taxonomy_v1.json`.
 2. **Helper puro**: `app/steam_deals_behavioral.py` carga/valida taxonomía y clasifica fixtures locales.
 3. **JSON-only**: `generate_json` serializa `behavioral_signals` top-level y `summary.behavioral_signals_count`.
-4. **Consumidores futuros**: recommendation explanations, discovery/decision reasons, y eventualmente `player_behavior_profile_v1`.
+4. **Explicaciones JSON-only**: `behavioral_explanations` traduce IDs a headlines/razones/cues compactos sin UI visible.
+5. **Consumidores futuros**: recommendation explanations visibles, discovery/decision reasons, y eventualmente `player_behavior_profile_v1`.

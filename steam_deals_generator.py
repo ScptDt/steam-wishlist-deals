@@ -150,9 +150,11 @@ except Exception:
 
 try:
     from steam_deals_behavioral import (
+        build_behavioral_explanations as _build_behavioral_explanations_impl,
         build_behavioral_signals as _build_behavioral_signals_impl,
     )
 except Exception:
+    _build_behavioral_explanations_impl = None
     _build_behavioral_signals_impl = None
 
 
@@ -798,6 +800,28 @@ def build_behavioral_signals(games, **kwargs):
             "items": [],
         }
     return _build_behavioral_signals_impl(games, **kwargs)
+
+
+def build_behavioral_explanations(behavioral_signals, **kwargs):
+    """Build compact advisory explanations from behavioral signal records."""
+    if _build_behavioral_explanations_impl is None:
+        return {
+            "schema": "behavioral_explanations_v1",
+            "source_schema": "behavioral_signals_v1",
+            "status": "unavailable",
+            "reason": "taxonomy_invalid",
+            "advisory_only": True,
+            "ranking_impact": "none",
+            "summary": {
+                "items_count": 0,
+                "explanations_count": 0,
+                "confidence": "unknown",
+                "advisory_only": True,
+                "ranking_impact": "none",
+            },
+            "items": [],
+        }
+    return _build_behavioral_explanations_impl(behavioral_signals, **kwargs)
 
 
 def _behavioral_signal_records(deals, tags_data=None) -> list[dict]:
@@ -3865,6 +3889,7 @@ def generate_json(
     promo_highlights: dict | None = None,
     play_access: dict | None = None,
     behavioral_signals: dict | None = None,
+    behavioral_explanations: dict | None = None,
 ) -> str:
     if _generate_json_renderer is None:
         raise RuntimeError("JSON renderer module is not available")
@@ -3938,6 +3963,8 @@ def generate_json(
         behavioral_signals = build_behavioral_signals(
             _behavioral_signal_records(deals, tags_data)
         )
+    if behavioral_explanations is None:
+        behavioral_explanations = build_behavioral_explanations(behavioral_signals)
     return _generate_json_renderer(
         deals,
         backlog_on_sale,
@@ -3986,6 +4013,7 @@ def generate_json(
         promo_highlights=promo_highlights,
         play_access=play_access,
         behavioral_signals=behavioral_signals,
+        behavioral_explanations=behavioral_explanations,
     )
 
 

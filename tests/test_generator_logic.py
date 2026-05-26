@@ -44,6 +44,7 @@ from steam_deals_access import (
     normalize_local_play_access_import,
 )
 from steam_deals_behavioral import (
+    build_behavioral_explanations as module_build_behavioral_explanations,
     build_behavioral_signals as module_build_behavioral_signals,
     load_behavioral_taxonomy as module_load_behavioral_taxonomy,
     validate_behavioral_taxonomy as module_validate_behavioral_taxonomy,
@@ -1240,6 +1241,51 @@ class BehavioralSignalsTests(unittest.TestCase):
                 {"name": "Missing AppID", "tags": ["Co-op"]},
                 {"appid": "20", "name": "No Match", "tags": ["Totally Unknown Tag"]},
             ]
+        )
+
+        self.assertEqual(payload["status"], "insufficient_signals")
+        self.assertEqual(payload["reason"], "insufficient_behavioral_matches")
+        self.assertEqual(payload["summary"]["items_count"], 0)
+        self.assertEqual(payload["items"], [])
+
+    def test_build_behavioral_explanations_labels_signal_ids_for_json_consumers(self) -> None:
+        signals = module_build_behavioral_signals(
+            [
+                {
+                    "appid": "1966720",
+                    "name": "Lethal Company",
+                    "tags": ["Co-op", "Online Co-op", "Horror"],
+                }
+            ]
+        )
+
+        payload = module_build_behavioral_explanations(signals)
+        item = payload["items"][0]
+
+        self.assertEqual(payload["schema"], "behavioral_explanations_v1")
+        self.assertEqual(payload["source_schema"], "behavioral_signals_v1")
+        self.assertEqual(payload["status"], "available")
+        self.assertTrue(payload["advisory_only"])
+        self.assertEqual(payload["ranking_impact"], "none")
+        self.assertEqual(payload["summary"]["items_count"], 1)
+        self.assertGreaterEqual(payload["summary"]["explanations_count"], 2)
+        self.assertEqual(item["appid"], "1966720")
+        self.assertIn("Co-op / teamwork", item["headline"])
+        self.assertIn("Patrones principales", item["reasons"][0])
+        self.assertEqual(item["primary_patterns"][0]["kind"], "family")
+        self.assertEqual(item["primary_patterns"][0]["id"], "social")
+        self.assertIn("description", item["primary_patterns"][0])
+        self.assertIn(
+            "shared_objective_pressure",
+            item["source_signal_ids"]["behavioral_loops"],
+        )
+        self.assertTrue(
+            any(cue["id"] == "online_required" for cue in item["supporting_cues"])
+        )
+
+    def test_build_behavioral_explanations_degrades_without_valid_signal_items(self) -> None:
+        payload = module_build_behavioral_explanations(
+            {"schema": "behavioral_signals_v1", "status": "insufficient_signals", "items": []}
         )
 
         self.assertEqual(payload["status"], "insufficient_signals")
@@ -7074,6 +7120,20 @@ class StopApiContractTests(unittest.TestCase):
         self.assertTrue(data["behavioral_signals"]["advisory_only"])
         self.assertEqual(data["behavioral_signals"]["ranking_impact"], "none")
         self.assertEqual(data["behavioral_signals"]["summary"]["items_count"], 1)
+        self.assertEqual(data["summary"]["behavioral_explanations_count"], 1)
+        self.assertEqual(data["behavioral_explanations"]["schema"], "behavioral_explanations_v1")
+        self.assertEqual(data["behavioral_explanations"]["source_schema"], "behavioral_signals_v1")
+        self.assertTrue(data["behavioral_explanations"]["advisory_only"])
+        self.assertEqual(data["behavioral_explanations"]["ranking_impact"], "none")
+        self.assertEqual(data["behavioral_explanations"]["summary"]["items_count"], 1)
+        self.assertIn(
+            "Co-op / teamwork",
+            data["behavioral_explanations"]["items"][0]["headline"],
+        )
+        self.assertIn(
+            "Patrones principales",
+            data["behavioral_explanations"]["items"][0]["reasons"][0],
+        )
         self.assertEqual(item["appid"], "1966720")
         self.assertIn("social", item["families"])
         self.assertIn("coop_teamwork", item["families"])
@@ -7098,7 +7158,9 @@ class StopApiContractTests(unittest.TestCase):
         data = json.loads(payload)
 
         self.assertEqual(data["summary"]["behavioral_signals_count"], 0)
+        self.assertEqual(data["summary"]["behavioral_explanations_count"], 0)
         self.assertNotIn("behavioral_signals", data)
+        self.assertNotIn("behavioral_explanations", data)
 
     def test_generate_json_respects_explicit_empty_wishlist_hygiene(self) -> None:
         payload = generate_json(

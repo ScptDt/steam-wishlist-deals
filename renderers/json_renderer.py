@@ -217,6 +217,47 @@ def _behavioral_signals_total(payload: dict | None) -> int:
     return len(normalized["items"]) if normalized else 0
 
 
+def _behavioral_explanations_payload(payload: dict | None) -> dict | None:
+    if not isinstance(payload, dict):
+        return None
+    if payload.get("schema") != "behavioral_explanations_v1":
+        return None
+    if payload.get("source_schema") != "behavioral_signals_v1":
+        return None
+    items = payload.get("items")
+    if not isinstance(items, list):
+        return None
+    items = [item for item in items if isinstance(item, dict)]
+    if not items:
+        return None
+    explanations_count = sum(
+        len(item.get("reasons"))
+        for item in items
+        if isinstance(item.get("reasons"), list)
+    )
+    summary = dict(payload.get("summary") if isinstance(payload.get("summary"), dict) else {})
+    summary.update(
+        {
+            "items_count": len(items),
+            "explanations_count": explanations_count,
+            "advisory_only": True,
+            "ranking_impact": "none",
+        }
+    )
+    return {
+        **payload,
+        "items": items,
+        "summary": summary,
+        "advisory_only": True,
+        "ranking_impact": "none",
+    }
+
+
+def _behavioral_explanations_total(payload: dict | None) -> int:
+    normalized = _behavioral_explanations_payload(payload)
+    return len(normalized["items"]) if normalized else 0
+
+
 RECOMMENDATION_DIAGNOSTIC_MODES = {"behavioral", "mixed", "score_fallback"}
 
 
@@ -282,6 +323,7 @@ def generate_json(
     promo_highlights: dict | None = None,
     play_access: dict | None = None,
     behavioral_signals: dict | None = None,
+    behavioral_explanations: dict | None = None,
 ) -> str:
     previous_appids = previous_appids or set()
     family_appids = family_appids or set()
@@ -314,6 +356,7 @@ def generate_json(
     promo_highlights = _promo_highlights_payload(promo_highlights)
     play_access = _play_access_payload(play_access)
     behavioral_signals = _behavioral_signals_payload(behavioral_signals)
+    behavioral_explanations = _behavioral_explanations_payload(behavioral_explanations)
 
     payload = {
         "meta": {
@@ -350,6 +393,7 @@ def generate_json(
             "promo_highlights_count": _promo_highlights_total(promo_highlights),
             "play_access_count": _play_access_total(play_access),
             "behavioral_signals_count": _behavioral_signals_total(behavioral_signals),
+            "behavioral_explanations_count": _behavioral_explanations_total(behavioral_explanations),
         },
         "comparison": _json_safe(comparison),
         "top_picks": _json_safe(top_picks),
@@ -409,4 +453,6 @@ def generate_json(
         payload["play_access"] = _json_safe(play_access)
     if behavioral_signals:
         payload["behavioral_signals"] = _json_safe(behavioral_signals)
+    if behavioral_explanations:
+        payload["behavioral_explanations"] = _json_safe(behavioral_explanations)
     return json.dumps(payload, ensure_ascii=False, indent=2)
