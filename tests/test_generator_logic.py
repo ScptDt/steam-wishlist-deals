@@ -7043,6 +7043,63 @@ class StopApiContractTests(unittest.TestCase):
         self.assertNotIn("play_access", data)
         self.assertEqual(data["wishlist_hygiene"]["items"], [])
 
+    def test_generate_json_serializes_behavioral_signals_from_local_metadata(self) -> None:
+        deals = [
+            {
+                "appid": "1966720",
+                "name": "Lethal Company",
+                "score": 85,
+                "genres": ["Action"],
+            }
+        ]
+        payload = generate_json(
+            deals=deals,
+            backlog_on_sale=[],
+            have_on_sale=[],
+            vanity="gaben",
+            owned={},
+            wishlist_appids=["1966720"],
+            min_discount=0,
+            genres=[],
+            tags_data={
+                "1966720": {"tags": {"Co-op": 500, "Online Co-op": 450, "Horror": 300}}
+            },
+        )
+
+        data = json.loads(payload)
+        item = data["behavioral_signals"]["items"][0]
+
+        self.assertEqual(data["summary"]["behavioral_signals_count"], 1)
+        self.assertEqual(data["behavioral_signals"]["schema"], "behavioral_signals_v1")
+        self.assertTrue(data["behavioral_signals"]["advisory_only"])
+        self.assertEqual(data["behavioral_signals"]["ranking_impact"], "none")
+        self.assertEqual(data["behavioral_signals"]["summary"]["items_count"], 1)
+        self.assertEqual(item["appid"], "1966720")
+        self.assertIn("social", item["families"])
+        self.assertIn("coop_teamwork", item["families"])
+        self.assertIn("horror_tension", item["families"])
+        self.assertIn("shared_objective_pressure", item["behavioral_loops"])
+        self.assertIn("horror_vulnerability", item["behavioral_loops"])
+        self.assertIn("online_required", item["descriptors"])
+        self.assertEqual(data["deals"], deals)
+
+    def test_generate_json_omits_insufficient_behavioral_signals_payload(self) -> None:
+        payload = generate_json(
+            deals=[{"appid": "20", "name": "Unknown Loop", "tags": ["Unmapped Tag"]}],
+            backlog_on_sale=[],
+            have_on_sale=[],
+            vanity="gaben",
+            owned={},
+            wishlist_appids=["20"],
+            min_discount=0,
+            genres=[],
+        )
+
+        data = json.loads(payload)
+
+        self.assertEqual(data["summary"]["behavioral_signals_count"], 0)
+        self.assertNotIn("behavioral_signals", data)
+
     def test_generate_json_respects_explicit_empty_wishlist_hygiene(self) -> None:
         payload = generate_json(
             deals=[{"appid": "10", "name": "Portal 2", "score": 95.4}],

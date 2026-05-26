@@ -26,13 +26,13 @@ Mover el producto hacia un sistema de **Discovery + Decision Support**:
 | Capa | Estado | Rol |
 |---|---|---|
 | `behavioral_taxonomy_v1` | Este slice | Lenguaje versionado: families, loops, descriptors, mappings y reason codes. |
-| `behavioral_signals_v1` | Próximo slice de código | Clasifica juegos/deals usando la taxonomía. |
+| `behavioral_signals_v1` | Helper puro + JSON interno | Clasifica juegos/deals usando la taxonomía y se expone como payload JSON opcional. |
 | `player_behavior_profile_v1` | Futuro | Perfila gustos del usuario cuando existan señales suficientes y opt-in/privacy claros. |
 | Decision support | Futuro | Consume señales de juego + perfil + availability/backlog para sugerir comprar/esperar/revisar. |
 
-## Contrato JSON futuro
+## Contrato JSON
 
-Cuando se conecte al reporte JSON, la forma esperada será:
+El reporte JSON expone `behavioral_signals` como payload top-level opcional cuando hay items válidos:
 
 ```json
 {

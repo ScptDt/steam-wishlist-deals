@@ -149,6 +149,14 @@ except Exception:
 
 
 try:
+    from steam_deals_behavioral import (
+        build_behavioral_signals as _build_behavioral_signals_impl,
+    )
+except Exception:
+    _build_behavioral_signals_impl = None
+
+
+try:
     from steam_deals_hltb import (
         cross_hltb_with_deals as _cross_hltb_with_deals_impl,
         extract_numbers as _extract_numbers_impl,
@@ -767,6 +775,46 @@ def build_play_access_contract(wishlist, **kwargs):
     if _build_play_access_contract_impl is None:
         raise RuntimeError("Play access module is not available")
     return _build_play_access_contract_impl(wishlist, **kwargs)
+
+
+def build_behavioral_signals(games, **kwargs):
+    """Build advisory behavioral signals from local game metadata."""
+    if _build_behavioral_signals_impl is None:
+        return {
+            "schema": "behavioral_signals_v1",
+            "status": "unavailable",
+            "reason": "taxonomy_invalid",
+            "advisory_only": True,
+            "ranking_impact": "none",
+            "summary": {
+                "items_count": 0,
+                "families_count": 0,
+                "loops_count": 0,
+                "descriptors_count": 0,
+                "confidence": "unknown",
+                "advisory_only": True,
+                "ranking_impact": "none",
+            },
+            "items": [],
+        }
+    return _build_behavioral_signals_impl(games, **kwargs)
+
+
+def _behavioral_signal_records(deals, tags_data=None) -> list[dict]:
+    tags_data = tags_data or {}
+    records: list[dict] = []
+    for deal in deals or []:
+        if not isinstance(deal, dict):
+            continue
+        record = dict(deal)
+        appid = str(record.get("appid") or record.get("steam_appid") or "").strip()
+        tags_entry = tags_data.get(appid) if isinstance(tags_data, dict) and appid else None
+        if isinstance(tags_entry, dict) and "tags" not in record and "steam_tags" not in record:
+            tags = tags_entry.get("tags", tags_entry)
+            if isinstance(tags, dict):
+                record["tags"] = list(tags.keys())
+        records.append(record)
+    return records
 
 
 def enrich_free_weekend_cross_signals(payload, **kwargs):
@@ -3816,6 +3864,7 @@ def generate_json(
     recommendation_diagnostics: dict | None = None,
     promo_highlights: dict | None = None,
     play_access: dict | None = None,
+    behavioral_signals: dict | None = None,
 ) -> str:
     if _generate_json_renderer is None:
         raise RuntimeError("JSON renderer module is not available")
@@ -3885,6 +3934,10 @@ def generate_json(
             top_picks=top_picks,
             active_promo_context=active_promo_context,
         )
+    if behavioral_signals is None:
+        behavioral_signals = build_behavioral_signals(
+            _behavioral_signal_records(deals, tags_data)
+        )
     return _generate_json_renderer(
         deals,
         backlog_on_sale,
@@ -3932,6 +3985,7 @@ def generate_json(
         recommendation_diagnostics=recommendation_diagnostics,
         promo_highlights=promo_highlights,
         play_access=play_access,
+        behavioral_signals=behavioral_signals,
     )
 
 
