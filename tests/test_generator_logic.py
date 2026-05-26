@@ -187,6 +187,7 @@ from steam_deals_generator import (
     analyze_trends,
     build_warm_cache_emit,
     build_final_summary as generator_build_final_summary,
+    build_multi_profile_gift_contract,
     build_price_cache_completion_message,
     build_price_cache_coverage,
     build_personalized_recommendations,
@@ -6502,6 +6503,72 @@ class StopApiContractTests(unittest.TestCase):
         self.assertEqual(data["comparison"]["new_deals"], ["10"])
         self.assertEqual(data["top_picks"][0]["score"], 95.4)
 
+    def test_generate_json_serializes_multi_profile_contract_fields(self) -> None:
+        payload = generate_json(
+            deals=[{"appid": "30", "name": "Group Gift", "discount": 70}],
+            backlog_on_sale=[],
+            have_on_sale=[],
+            vanity="gaben",
+            owned={},
+            wishlist_appids=["10"],
+            min_discount=50,
+            genres=[],
+            compare_data={"friend_vanity": "legacy", "overlap": {"10"}},
+            gift_ideas=[{"appid": "30", "name": "Legacy Gift"}],
+            compare_profiles=[
+                {"friend_key": "ada", "friend_label": "Ada", "overlap_appids": ["10"]}
+            ],
+            gift_ideas_by_friend=[
+                {
+                    "friend_key": "ada",
+                    "friend_label": "Ada",
+                    "items": [{"appid": "30", "name": "Group Gift"}],
+                }
+            ],
+            shared_gift_ideas=[
+                {
+                    "appid": "30",
+                    "name": "Group Gift",
+                    "wanted_by_count": 2,
+                    "advisory_only": True,
+                    "ranking_impact": "none",
+                }
+            ],
+        )
+
+        data = json.loads(payload)
+
+        self.assertEqual(data["compare_data"]["friend_vanity"], "legacy")
+        self.assertEqual(data["gift_ideas"][0]["appid"], "30")
+        self.assertEqual(data["compare_profiles"][0]["friend_key"], "ada")
+        self.assertEqual(data["gift_ideas_by_friend"][0]["items"][0]["appid"], "30")
+        self.assertEqual(data["shared_gift_ideas"][0]["ranking_impact"], "none")
+        self.assertEqual(data["summary"]["compare_profiles_count"], 1)
+        self.assertEqual(data["summary"]["gift_ideas_by_friend_count"], 1)
+        self.assertEqual(data["summary"]["shared_gift_ideas_count"], 1)
+
+    def test_generate_json_omits_empty_multi_profile_contract_fields(self) -> None:
+        payload = generate_json(
+            deals=[],
+            backlog_on_sale=[],
+            have_on_sale=[],
+            vanity="gaben",
+            owned={},
+            wishlist_appids=[],
+            min_discount=50,
+            genres=[],
+            compare_profiles=[],
+            gift_ideas_by_friend=[],
+            shared_gift_ideas=[],
+        )
+
+        data = json.loads(payload)
+
+        self.assertNotIn("compare_profiles", data)
+        self.assertNotIn("gift_ideas_by_friend", data)
+        self.assertNotIn("shared_gift_ideas", data)
+        self.assertNotIn("compare_profiles_count", data["summary"])
+
     def test_generate_json_serializes_smart_alert_digest_preview(self) -> None:
         digest = {
             "mode": "preview",
@@ -9288,6 +9355,95 @@ class MatchingAndRecommendationTests(unittest.TestCase):
         )
 
         self.assertEqual([deal["appid"] for deal in ideas], ["10"])
+
+    def test_build_multi_profile_gift_contract_handles_group_fixtures(self) -> None:
+        contract = build_multi_profile_gift_contract(
+            my_wishlist_appids=["10", "20"],
+            friend_profiles=[
+                {
+                    "friend_id": "ada",
+                    "friend_name": "Ada <script>",
+                    "friend_appids": ["10", "30", "50"],
+                    "friend_activity_games": [
+                        {"appid": "900", "genres": ["Co-op"], "playtime_2weeks": 90}
+                    ],
+                },
+                {
+                    "friend_id": "bea",
+                    "friend_name": "Bea",
+                    "friend_appids": ["20", "40", "50"],
+                },
+                {
+                    "friend_id": "private",
+                    "friend_name": "<script>Bad</script>",
+                    "status": "private",
+                },
+            ],
+            deals=[
+                {"appid": "10", "discount": 90, "name": "Shared With Me"},
+                {"appid": "20", "discount": 80, "name": "Also Shared With Me"},
+                {"appid": "30", "discount": 60, "name": "Ada Only", "score": 85},
+                {"appid": "40", "discount": 70, "name": "Owned By Me"},
+                {"appid": "50", "discount": 75, "name": "Group Gift", "score": 88},
+            ],
+            owned={"40": "Owned By Me"},
+            max_reasons=3,
+        )
+
+        self.assertEqual(contract["summary"]["profiles_count"], 3)
+        self.assertEqual(contract["summary"]["valid_profiles_count"], 2)
+        self.assertEqual(contract["summary"]["invalid_profiles_count"], 1)
+        self.assertTrue(contract["advisory_only"])
+        self.assertEqual(contract["ranking_impact"], "none")
+
+        labels = [profile["friend_label"] for profile in contract["compare_profiles"]]
+        self.assertTrue(all("<" not in label and ">" not in label for label in labels))
+        unavailable = contract["compare_profiles"][2]
+        self.assertEqual(unavailable["status"], "unavailable")
+        self.assertEqual(unavailable["issue"], "private")
+
+        gifts_by_friend = {
+            group["friend_key"]: group["items"]
+            for group in contract["gift_ideas_by_friend"]
+        }
+        self.assertEqual(
+            [item["appid"] for item in gifts_by_friend["ada"]],
+            ["50", "30"],
+        )
+        self.assertEqual(
+            [item["appid"] for item in gifts_by_friend["bea"]],
+            ["50"],
+        )
+        self.assertTrue(
+            all(item["ranking_impact"] == "none" for item in gifts_by_friend["ada"])
+        )
+
+        shared = contract["shared_gift_ideas"]
+        self.assertEqual([item["appid"] for item in shared], ["50"])
+        self.assertEqual(shared[0]["wanted_by_count"], 2)
+        self.assertEqual(
+            [friend["friend_key"] for friend in shared[0]["wanted_by"]],
+            ["ada", "bea"],
+        )
+        self.assertIn("group_wishlist", shared[0]["social_signals"])
+
+    def test_build_multi_profile_gift_contract_falls_back_to_overlap_when_needed(self) -> None:
+        contract = build_multi_profile_gift_contract(
+            my_wishlist_appids=["70"],
+            friend_profiles=[
+                {"friend_id": "ada", "friend_appids": ["70"]},
+                {"friend_id": "bea", "friend_appids": ["70"]},
+            ],
+            deals=[{"appid": "70", "discount": 55, "name": "Only Shared"}],
+            owned={},
+            max_reasons=3,
+        )
+
+        self.assertEqual([item["appid"] for item in contract["shared_gift_ideas"]], ["70"])
+        self.assertIn(
+            "lo quieren 2 amigos",
+            contract["shared_gift_ideas"][0]["social_reasons"][0],
+        )
 
     def test_parse_hltb_uses_main_story_as_fallback_and_groups_statuses(self) -> None:
         csv_content = (

@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import re
 from datetime import date
 
 from app.steam_deals_tags import canonical_steam_tag_key, normalize_steam_tag_terms
@@ -195,6 +196,307 @@ def build_gift_ideas(
             str(deal.get("name") or "").lower(),
         ),
     )
+
+
+GROUP_GIFT_ADVISORY_COPY = "Idea para revisar; no abre carrito ni compra nada."
+PROFILE_UNAVAILABLE_STATUSES = {
+    "error",
+    "invalid",
+    "private",
+    "unavailable",
+    "not_public",
+}
+
+
+def build_multi_profile_gift_contract(
+    my_wishlist_appids,
+    friend_profiles,
+    deals,
+    owned,
+    *,
+    max_reasons: int = 2,
+):
+    """Build a local, advisory-only multi-friend gift contract."""
+    my_set = _normalize_appid_set(my_wishlist_appids)
+    compare_profiles = _compare_profile_entries(friend_profiles, my_set)
+    valid_profiles = [profile for profile in compare_profiles if profile["status"] == "ok"]
+    gift_ideas_by_friend = _build_gift_ideas_by_friend(
+        valid_profiles,
+        deals,
+        owned,
+        max_reasons=max_reasons,
+    )
+    shared_gift_ideas = _build_shared_gift_ideas(
+        valid_profiles,
+        deals,
+        owned,
+        max_reasons=max_reasons,
+    )
+    return {
+        "compare_profiles": compare_profiles,
+        "gift_ideas_by_friend": gift_ideas_by_friend,
+        "shared_gift_ideas": shared_gift_ideas,
+        "summary": {
+            "profiles_count": len(compare_profiles),
+            "valid_profiles_count": len(valid_profiles),
+            "invalid_profiles_count": len(compare_profiles) - len(valid_profiles),
+            "gift_ideas_by_friend_count": len(gift_ideas_by_friend),
+            "shared_gift_ideas_count": len(shared_gift_ideas),
+        },
+        "advisory_only": True,
+        "ranking_impact": "none",
+        "advisory_copy": GROUP_GIFT_ADVISORY_COPY,
+    }
+
+
+def _compare_profile_entries(friend_profiles, my_set: set[str]) -> list[dict]:
+    entries: list[dict] = []
+    seen_keys: dict[str, int] = {}
+    for index, profile in enumerate(_profile_records(friend_profiles), 1):
+        entry = _compare_profile_entry(profile, my_set, index)
+        key = entry["friend_key"]
+        duplicate_count = seen_keys.get(key, 0)
+        seen_keys[key] = duplicate_count + 1
+        if duplicate_count:
+            entry = {**entry, "friend_key": f"{key}-{duplicate_count + 1}"}
+        entries.append(entry)
+    return entries
+
+
+def _profile_records(friend_profiles) -> list[dict]:
+    if isinstance(friend_profiles, dict):
+        return [dict(friend_profiles)]
+    if isinstance(friend_profiles, (list, tuple, set)):
+        return [dict(profile) for profile in friend_profiles if isinstance(profile, dict)]
+    return []
+
+
+def _compare_profile_entry(profile: dict, my_set: set[str], index: int) -> dict:
+    label = _safe_friend_label(profile, index)
+    base = {
+        "friend_key": _safe_friend_key(profile, label, index),
+        "friend_label": label,
+        "friend_id": _safe_profile_text(profile.get("friend_id") or profile.get("steam_id")),
+        "friend_vanity": _safe_profile_text(profile.get("friend_vanity") or profile.get("vanity")),
+        "advisory_only": True,
+        "ranking_impact": "none",
+    }
+    issue = _profile_issue(profile)
+    friend_appids = _profile_appids(profile)
+    if issue or not friend_appids:
+        return {
+            **base,
+            "status": "unavailable",
+            "issue": issue or "missing_public_wishlist",
+            "friend_appids": [],
+            "wishlist_count": 0,
+            "overlap_appids": [],
+            "overlap_count": 0,
+        }
+    overlap_appids = _sort_appids(set(friend_appids) & my_set)
+    entry = {
+        **base,
+        "status": "ok",
+        "friend_appids": friend_appids,
+        "wishlist_count": len(friend_appids),
+        "overlap_appids": overlap_appids,
+        "overlap_count": len(overlap_appids),
+    }
+    activity = profile.get("friend_activity_games", profile.get("friend_activity"))
+    if activity is not None:
+        entry["friend_activity_games"] = activity
+    return entry
+
+
+def _profile_issue(profile: dict) -> str:
+    if profile.get("private") is True or profile.get("is_public") is False:
+        return "private_or_not_public"
+    status = str(profile.get("status") or "").strip().lower()
+    if status in PROFILE_UNAVAILABLE_STATUSES:
+        return status
+    if profile.get("error"):
+        return _safe_profile_text(profile.get("error"), fallback="profile_error")
+    return ""
+
+
+def _profile_appids(profile: dict) -> list[str]:
+    for key in ("friend_appids", "wishlist_appids", "appids", "friend_set", "wishlist"):
+        appids = _normalized_appid_list(profile.get(key))
+        if appids:
+            return appids
+    return []
+
+
+def _normalized_appid_list(values) -> list[str]:
+    appids = _normalize_appid_set(values)
+    return _sort_appids(appids)
+
+
+def _sort_appids(appids) -> list[str]:
+    return sorted((str(appid) for appid in appids if str(appid).strip()), key=_appid_sort_key)
+
+
+def _appid_sort_key(appid: str) -> tuple[int, int | str]:
+    return (0, int(appid)) if str(appid).isdigit() else (1, str(appid))
+
+
+def _safe_friend_label(profile: dict, index: int) -> str:
+    for key in ("friend_name", "display_name", "name", "friend_vanity", "vanity", "friend_id", "steam_id"):
+        label = _safe_profile_text(profile.get(key))
+        if label:
+            return label
+    return f"Friend {index}"
+
+
+def _safe_friend_key(profile: dict, label: str, index: int) -> str:
+    raw = profile.get("friend_id") or profile.get("steam_id") or profile.get("friend_vanity") or label
+    slug = re.sub(r"[^a-z0-9_-]+", "-", str(raw or "").strip().lower()).strip("-_")
+    return slug[:64] or f"friend-{index}"
+
+
+def _safe_profile_text(value, *, fallback: str = "", max_length: int = 80) -> str:
+    text = str(value or "").strip()
+    text = re.sub(r"[\x00-\x1f\x7f<>]+", " ", text)
+    text = " ".join(text.split())
+    return (text[:max_length].strip() or fallback).strip()
+
+
+def _build_gift_ideas_by_friend(
+    profiles: list[dict],
+    deals,
+    owned,
+    *,
+    max_reasons: int,
+) -> list[dict]:
+    groups: list[dict] = []
+    for profile in profiles:
+        ideas = build_gift_ideas(
+            profile.get("friend_appids", []),
+            deals,
+            owned,
+            overlap_appids=profile.get("overlap_appids", []),
+            friend_activity_games=profile.get("friend_activity_games"),
+            max_reasons=max_reasons,
+        )
+        items = [_with_friend_gift_metadata(item, profile) for item in ideas]
+        if items:
+            groups.append(
+                {
+                    "friend_key": profile["friend_key"],
+                    "friend_label": profile["friend_label"],
+                    "items": items,
+                    "items_count": len(items),
+                    "advisory_only": True,
+                    "ranking_impact": "none",
+                }
+            )
+    return groups
+
+
+def _with_friend_gift_metadata(item: dict, profile: dict) -> dict:
+    return {
+        **dict(item),
+        "friend_key": profile["friend_key"],
+        "friend_label": profile["friend_label"],
+        "advisory_only": True,
+        "ranking_impact": "none",
+        "advisory_copy": GROUP_GIFT_ADVISORY_COPY,
+    }
+
+
+def _build_shared_gift_ideas(
+    profiles: list[dict],
+    deals,
+    owned,
+    *,
+    max_reasons: int,
+) -> list[dict]:
+    deals_by_appid = _records_by_appid(_record_list(deals))
+    owned_set = _normalize_appid_set(owned)
+    wanted_by = _shared_wishlist_appids(profiles, deals_by_appid, owned_set)
+    overlap_appids = {
+        appid for profile in profiles for appid in profile.get("overlap_appids", [])
+    }
+    candidates = [
+        (appid, friends)
+        for appid, friends in wanted_by.items()
+        if len(friends) >= 2 and appid in deals_by_appid
+    ]
+    non_overlap = [(appid, friends) for appid, friends in candidates if appid not in overlap_appids]
+    selected = non_overlap if non_overlap else candidates
+    return [
+        _shared_gift_item(appid, friends, deals_by_appid[appid], max_reasons=max_reasons)
+        for appid, friends in sorted(selected, key=lambda item: _shared_gift_sort_key(deals_by_appid[item[0]]))
+    ]
+
+
+def _shared_wishlist_appids(
+    profiles: list[dict],
+    deals_by_appid: dict[str, dict],
+    owned_set: set[str],
+) -> dict[str, list[dict]]:
+    wanted_by: dict[str, list[dict]] = {}
+    for profile in profiles:
+        for appid in profile.get("friend_appids", []):
+            if appid in owned_set or appid not in deals_by_appid:
+                continue
+            wanted_by.setdefault(appid, []).append(profile)
+    return wanted_by
+
+
+def _shared_gift_sort_key(deal: dict) -> tuple[float, float, str]:
+    return (
+        -_safe_number(deal.get("discount")),
+        -_safe_number(deal.get("score")),
+        str(deal.get("name") or "").lower(),
+    )
+
+
+def _shared_gift_item(
+    appid: str,
+    friends: list[dict],
+    deal: dict,
+    *,
+    max_reasons: int,
+) -> dict:
+    wanted_by = [
+        {"friend_key": friend["friend_key"], "friend_label": friend["friend_label"]}
+        for friend in friends
+    ]
+    labels = [friend["friend_label"] for friend in friends]
+    reasons, signals = _shared_gift_reasons(deal, labels, max_reasons=max_reasons)
+    return {
+        **dict(deal),
+        "appid": appid,
+        "wanted_by": wanted_by,
+        "wanted_by_count": len(wanted_by),
+        "social_reasons": reasons,
+        "social_signals": signals,
+        "advisory_only": True,
+        "ranking_impact": "none",
+        "advisory_copy": GROUP_GIFT_ADVISORY_COPY,
+    }
+
+
+def _shared_gift_reasons(
+    deal: dict,
+    labels: list[str],
+    *,
+    max_reasons: int,
+) -> tuple[list[str], list[str]]:
+    visible_labels = ", ".join(labels[:3])
+    extra = len(labels) - 3
+    if extra > 0:
+        visible_labels = f"{visible_labels} +{extra} más"
+    reasons = [f"lo quieren {len(labels)} amigos: {visible_labels}"]
+    signals = ["group_wishlist"]
+    if _safe_number(deal.get("score")) >= 80:
+        reasons.append(f"score alto del reporte: {_safe_number(deal.get('score')):.0f}")
+        signals.append("report_score")
+    if _safe_number(deal.get("discount")) >= 50:
+        reasons.append(f"descuento fuerte: {int(_safe_number(deal.get('discount')))}%")
+        signals.append("discount")
+    return reasons[:_gift_reason_limit(max_reasons)], signals
 
 
 def _safe_number(value, default: float = 0.0) -> float:

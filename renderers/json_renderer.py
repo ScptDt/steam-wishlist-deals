@@ -58,6 +58,14 @@ def _external_offers_total(payload: dict | None) -> int:
     return len(items) if isinstance(items, list) else 0
 
 
+def _optional_dict_list(value) -> list[dict]:
+    if isinstance(value, dict):
+        return [value]
+    if isinstance(value, list):
+        return [item for item in value if isinstance(item, dict)]
+    return []
+
+
 TASTE_PRIORITY_CATEGORY_LABELS = {
     "compra_inmediata": "Prioridad alta para revisar",
     "espera_oferta": "Esperar mejor oferta",
@@ -224,6 +232,9 @@ def generate_json(
     budget_result: dict | None = None,
     compare_data: dict | None = None,
     gift_ideas: list[dict] | None = None,
+    compare_profiles: list[dict] | None = None,
+    gift_ideas_by_friend: list[dict] | None = None,
+    shared_gift_ideas: list[dict] | None = None,
     recommended_collections: list[dict] | None = None,
     personalized_recommendations: dict | None = None,
     wishlist_hygiene: dict | None = None,
@@ -255,6 +266,9 @@ def generate_json(
     achievements_data = achievements_data or {}
     watchlist_alerts = watchlist_alerts or []
     gift_ideas = gift_ideas or []
+    compare_profiles = _optional_dict_list(compare_profiles)
+    gift_ideas_by_friend = _optional_dict_list(gift_ideas_by_friend)
+    shared_gift_ideas = _optional_dict_list(shared_gift_ideas)
     recommended_collections = recommended_collections or []
     personalized_recommendations = personalized_recommendations or {"items": []}
     wishlist_hygiene = wishlist_hygiene or {"items": [], "summary": {}}
@@ -325,6 +339,20 @@ def generate_json(
         "anticheat_data": _json_safe(anticheat_data),
         "achievements_data": _json_safe(achievements_data),
     }
+    if compare_profiles or gift_ideas_by_friend or shared_gift_ideas:
+        payload["summary"].update(
+            {
+                "compare_profiles_count": len(compare_profiles),
+                "gift_ideas_by_friend_count": len(gift_ideas_by_friend),
+                "shared_gift_ideas_count": len(shared_gift_ideas),
+            }
+        )
+    if compare_profiles:
+        payload["compare_profiles"] = _json_safe(compare_profiles)
+    if gift_ideas_by_friend:
+        payload["gift_ideas_by_friend"] = _json_safe(gift_ideas_by_friend)
+    if shared_gift_ideas:
+        payload["shared_gift_ideas"] = _json_safe(shared_gift_ideas)
     if cache_coverage:
         payload["cache_coverage"] = _json_safe(cache_coverage)
     if active_promo_context:

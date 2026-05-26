@@ -1,6 +1,6 @@
 # Bitácora Operativa
 
-Ultima actualizacion: 2026-05-22
+Ultima actualizacion: 2026-05-26
 
 ## Proposito
 
@@ -79,6 +79,8 @@ La nota de inicio puede omitirse en `BITACORA.md` para cambios triviales que no 
 | 2026-04-16 | macOS | validado en CI (parcial) | Workflow `Desktop Cross-Platform Validation` OK en `macos-latest` (run `24487556896`): install deps, build desktop, `py_compile`, check fallback local y artifact `dist-macos-latest` publicado. Falta validacion manual en host macOS para apertura de `.app`, quarantine/codesign/notarizacion segun distribucion. | Ejecutar checklist manual macOS (apertura local, quarantine, codesign) y registrar incidencias/workarounds. |
 
 ## Bitacora
+
+- 2026-05-26: Cierre Quick Win contrato fixture-only comparación multi-perfil de amigos/regalos grupales. Autor/ejecutor: OpenCoder. Resultado: se agregó `build_multi_profile_gift_contract` para construir `compare_profiles`, `gift_ideas_by_friend` y `shared_gift_ideas` con 2+ perfiles, perfiles privados/invalidos como `unavailable` sin tumbar el contrato, labels seguros, dedupe de AppIDs entre overlap/regalos cuando hay alternativas y payloads advisory-only con `ranking_impact=none`; `generate_json` expone los campos opcionales sin romper `compare_data`/`gift_ideas`. Evidencia: `.venv/bin/python -m py_compile app/steam_deals_recommendations.py steam_deals_generator.py renderers/json_renderer.py tests/test_generator_logic.py`, validación inicial con targets incorrectos de tests JSON (2 errores de carga), reintento aprobado con `MatchingAndRecommendationTests` + tests JSON dirigidos en `StopApiContractTests` (13 OK), y `git diff --check` OK. Incidencias: solo error de target de unittest; no hubo fallo de código tras corregir el comando. Siguiente seguimiento: superficies futuras Wizard/Web UI/Markdown/HTML/Web latest report para entrada multi-línea/comas y secciones visibles `Ideas para {amigo}`/`Ideas compartidas`. Sin red real, scraping/login, perfiles privados obligatorios, checkout/carrito/compras, tiendas externas, score/ranking/Top Picks/defaults/cache/fetching, `BG00G`, `--no-cache`, builds ni reportes generados.
 
 - 2026-05-26: Docs-only backlog comparación multi-perfil de amigos/regalos. Autor/ejecutor: AudPen. Resultado: se refinó y agregó en `PENDIENTES.md` un track para que el flujo `Wishlist Comparison` / `Gift Ideas` evolucione a varios perfiles, con contrato fixture-only/backward-compatible (`compare_profiles`, `gift_ideas_by_friend`, `shared_gift_ideas`), wizard por líneas/comas y guardrails advisory-only. Evidencia: revisión documental + `git diff --check` OK. Incidencias: ninguna. Siguiente seguimiento: diseñar el contrato/payload local antes de tocar UI, renderers o red live.
 

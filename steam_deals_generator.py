@@ -97,6 +97,7 @@ except Exception:
 try:
     from steam_deals_recommendations import (
         build_gift_ideas as _build_gift_ideas_impl,
+        build_multi_profile_gift_contract as _build_multi_profile_gift_contract_impl,
         build_personalized_recommendations as _build_personalized_recommendations_impl,
         build_recommendation_diagnostics as _build_recommendation_diagnostics_impl,
         build_recommended_collections as _build_recommended_collections_impl,
@@ -108,6 +109,7 @@ try:
     )
 except Exception:
     _build_gift_ideas_impl = None
+    _build_multi_profile_gift_contract_impl = None
     _build_personalized_recommendations_impl = None
     _build_recommendation_diagnostics_impl = None
     _build_recommended_collections_impl = None
@@ -718,6 +720,25 @@ def build_gift_ideas(friend_set, deals, owned, **kwargs):
     if _build_gift_ideas_impl is None:
         raise RuntimeError("Recommendations module is not available")
     return _build_gift_ideas_impl(friend_set, deals, owned, **kwargs)
+
+
+def build_multi_profile_gift_contract(
+    my_wishlist_appids,
+    friend_profiles,
+    deals,
+    owned,
+    **kwargs,
+):
+    """Build an advisory-only contract for multi-profile gift ideas."""
+    if _build_multi_profile_gift_contract_impl is None:
+        raise RuntimeError("Recommendations module is not available")
+    return _build_multi_profile_gift_contract_impl(
+        my_wishlist_appids,
+        friend_profiles,
+        deals,
+        owned,
+        **kwargs,
+    )
 
 
 def build_wishlist_hygiene_signals(wishlist, **kwargs):
@@ -3774,6 +3795,9 @@ def generate_json(
     budget_result=None,
     compare_data=None,
     gift_ideas=None,
+    compare_profiles=None,
+    gift_ideas_by_friend=None,
+    shared_gift_ideas=None,
     recommended_collections=None,
     personalized_recommendations=None,
     wishlist_hygiene=None,
@@ -3892,6 +3916,9 @@ def generate_json(
         budget_result=budget_result,
         compare_data=compare_data,
         gift_ideas=gift_ideas,
+        compare_profiles=compare_profiles,
+        gift_ideas_by_friend=gift_ideas_by_friend,
+        shared_gift_ideas=shared_gift_ideas,
         recommended_collections=recommended_collections,
         personalized_recommendations=personalized_recommendations,
         wishlist_hygiene=wishlist_hygiene,
