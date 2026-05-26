@@ -43,6 +43,11 @@ from steam_deals_access import (
     load_local_play_access_import,
     normalize_local_play_access_import,
 )
+from steam_deals_behavioral import (
+    build_behavioral_signals as module_build_behavioral_signals,
+    load_behavioral_taxonomy as module_load_behavioral_taxonomy,
+    validate_behavioral_taxonomy as module_validate_behavioral_taxonomy,
+)
 from steam_deals_recommendations import (
     build_recommendation_diagnostics as module_build_recommendation_diagnostics,
     build_taste_priority_contract as module_build_taste_priority_contract,
@@ -1164,6 +1169,82 @@ class SelectionReviewTests(unittest.TestCase):
         self.assertEqual(item["decision"], "conservar")
         self.assertGreater(item["affinity_score"], 24)
         self.assertIn("encaja con tu actividad reciente", " ".join(item["reasons"]))
+
+
+class BehavioralSignalsTests(unittest.TestCase):
+    def test_load_behavioral_taxonomy_validates_versioned_json(self) -> None:
+        taxonomy = module_load_behavioral_taxonomy()
+
+        self.assertEqual(taxonomy["schema"], "behavioral_taxonomy_v1")
+        self.assertIn("social", taxonomy["families"])
+        self.assertIn("emergent_social_chaos", taxonomy["behavioral_loops"])
+        self.assertIn("short_session", taxonomy["descriptors"])
+
+    def test_validate_behavioral_taxonomy_rejects_bad_references(self) -> None:
+        taxonomy = json.loads(json.dumps(module_load_behavioral_taxonomy()))
+        taxonomy["tag_mappings"]["co-op"]["behavioral_loops"].append("missing_loop")
+
+        with self.assertRaises(ValueError):
+            module_validate_behavioral_taxonomy(taxonomy)
+
+    def test_build_behavioral_signals_classifies_local_game_tags(self) -> None:
+        payload = module_build_behavioral_signals(
+            [
+                {
+                    "appid": "1966720",
+                    "name": "Lethal Company",
+                    "tags": ["Co-op", "Online Co-op", "Horror", "Survival", "Funny"],
+                    "genres": ["Action"],
+                }
+            ]
+        )
+
+        item = payload["items"][0]
+
+        self.assertEqual(payload["schema"], "behavioral_signals_v1")
+        self.assertEqual(payload["status"], "available")
+        self.assertTrue(payload["advisory_only"])
+        self.assertEqual(payload["ranking_impact"], "none")
+        self.assertEqual(payload["summary"]["items_count"], 1)
+        self.assertEqual(payload["summary"]["confidence"], "medium")
+        self.assertIn("social", item["families"])
+        self.assertIn("coop_teamwork", item["families"])
+        self.assertIn("horror_tension", item["families"])
+        self.assertIn("survival_pressure", item["families"])
+        self.assertIn("emergent_social_chaos", item["behavioral_loops"])
+        self.assertIn("shared_objective_pressure", item["behavioral_loops"])
+        self.assertIn("horror_vulnerability", item["behavioral_loops"])
+        self.assertIn("friends_recommended", item["descriptors"])
+        self.assertIn("online_required", item["descriptors"])
+        self.assertEqual(item["sources"], ["steam_tags", "genre_mapping"])
+        self.assertIn("coop_tags_detected", item["reason_codes"])
+        self.assertIn("horror_tags_detected", item["reason_codes"])
+        self.assertNotIn("player_behavior_profile", payload)
+
+    def test_build_behavioral_signals_degrades_on_invalid_taxonomy(self) -> None:
+        payload = module_build_behavioral_signals(
+            [{"appid": "10", "tags": ["Co-op"]}],
+            taxonomy={"schema": "behavioral_taxonomy_v1"},
+        )
+
+        self.assertEqual(payload["status"], "unavailable")
+        self.assertEqual(payload["reason"], "taxonomy_invalid")
+        self.assertEqual(payload["items"], [])
+        self.assertTrue(payload["summary"]["advisory_only"])
+        self.assertEqual(payload["summary"]["ranking_impact"], "none")
+
+    def test_build_behavioral_signals_omits_items_without_supported_metadata(self) -> None:
+        payload = module_build_behavioral_signals(
+            [
+                {"name": "Missing AppID", "tags": ["Co-op"]},
+                {"appid": "20", "name": "No Match", "tags": ["Totally Unknown Tag"]},
+            ]
+        )
+
+        self.assertEqual(payload["status"], "insufficient_signals")
+        self.assertEqual(payload["reason"], "insufficient_behavioral_matches")
+        self.assertEqual(payload["summary"]["items_count"], 0)
+        self.assertEqual(payload["items"], [])
 
 
 class ExternalOffersTests(unittest.TestCase):

@@ -113,6 +113,7 @@ social
 coop_teamwork
 competition
 mastery_skill
+action_arcade
 optimization
 strategy_planning
 management_simulation
