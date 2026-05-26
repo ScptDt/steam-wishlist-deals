@@ -3343,6 +3343,7 @@ def generate_html(
     recommended_collections: list[dict] | None = None,
     personalized_recommendations: dict | None = None,
     wishlist_hygiene: dict | None = None,
+    play_access: dict | None = None,
     local_trends: dict[str, dict] | None = None,
     price_history: dict | None = None,
     profile_display_name: str | None = None,
@@ -3362,6 +3363,7 @@ def generate_html(
         genres,
         hltb_used,
         local_trends,
+        play_access,
     )
 
     today_obj = date.today()

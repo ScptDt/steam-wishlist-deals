@@ -3461,6 +3461,7 @@ def generate_html(
     recommended_collections: list[dict] | None = None,
     personalized_recommendations: dict | None = None,
     wishlist_hygiene=None,
+    play_access: dict | None = None,
     activity_games=None,
     library_games=None,
     liked_appids=None,
@@ -3493,6 +3494,7 @@ def generate_html(
             family_appids=family_appids,
             library_games=library_games if library_games is not None else have_on_sale,
             hltb_records=hltb_hours,
+            play_access=play_access,
         )
     free_weekend_now = enrich_free_weekend_cross_signals(
         free_weekend_now,
@@ -3556,6 +3558,7 @@ def generate_html(
             recommended_collections=recommended_collections,
             personalized_recommendations=personalized_recommendations,
             wishlist_hygiene=wishlist_hygiene,
+            play_access=play_access,
             local_trends=local_trends,
             price_history=price_history,
             profile_display_name=profile_display_name,
@@ -3599,6 +3602,7 @@ def generate_html(
         recommended_collections=recommended_collections,
         personalized_recommendations=personalized_recommendations,
         wishlist_hygiene=wishlist_hygiene,
+        play_access=play_access,
         local_trends=local_trends,
         price_history=price_history,
         profile_display_name=profile_display_name,

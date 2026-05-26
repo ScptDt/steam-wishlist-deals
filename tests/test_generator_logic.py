@@ -7051,6 +7051,29 @@ class StopApiContractTests(unittest.TestCase):
         self.assertIn("Solo revisión", html)
         self.assertNotIn("Owned <Game> & Co", html)
 
+    def test_generate_html_accepts_play_access_for_wishlist_hygiene(self) -> None:
+        play_access = build_play_access_contract(
+            [{"appid": "30", "name": "Installed Only"}],
+            installed_or_playable_appids=["30"],
+        )
+
+        html = generate_html(
+            deals=[],
+            backlog_on_sale=[],
+            have_on_sale=[],
+            vanity="gaben",
+            owned={},
+            wishlist_appids=["30"],
+            min_discount=50,
+            genres=[],
+            play_access=play_access,
+        )
+
+        self.assertIn('data-wishlist-hygiene-section', html)
+        self.assertIn("Installed Only", html)
+        self.assertIn("probablemente ya puedes jugarlo sin comprarlo", html)
+        self.assertIn("Solo revisión", html)
+
     def test_generated_reports_render_smart_alert_digest_preview(self) -> None:
         digest = {
             "mode": "preview",
