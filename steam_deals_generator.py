@@ -751,6 +751,81 @@ def build_multi_profile_gift_contract(
     )
 
 
+def parse_compare_targets(raw_value) -> list[str]:
+    """Normalize comma/newline separated compare profile input."""
+    if raw_value is None:
+        return []
+    values = raw_value if isinstance(raw_value, (list, tuple, set)) else [raw_value]
+    targets: list[str] = []
+    seen: set[str] = set()
+    for value in values:
+        for item in re.split(r"[\n,]+", str(value or "")):
+            target = item.strip()
+            if not target:
+                continue
+            dedupe_key = target.lower()
+            if dedupe_key in seen:
+                continue
+            seen.add(dedupe_key)
+            targets.append(target)
+    return targets
+
+
+def _compare_profile_source_from_data(compare_data: dict) -> dict:
+    return {
+        "status": "ok",
+        "friend_id": compare_data.get("friend_id"),
+        "friend_vanity": compare_data.get("friend_vanity"),
+        "friend_name": compare_data.get("friend_name"),
+        "friend_appids": compare_data.get("friend_appids", []),
+        "friend_priorities": compare_data.get("friend_priorities", {}),
+        "overlap_appids": compare_data.get("overlap", []),
+    }
+
+
+def _compare_profile_source_from_error(target: str) -> dict:
+    return {
+        "status": "compare_failed",
+        "friend_vanity": target,
+        "friend_name": target,
+        "error": "compare_failed",
+    }
+
+
+def compare_wishlist_targets(
+    api_key,
+    steam_id,
+    compare_targets: list[str],
+    wishlist_appids,
+    *,
+    compare_wishlists_fn=compare_wishlists,
+    emit_fn=None,
+    ok_fn=lambda text: text,
+    err_fn=lambda text: text,
+) -> dict:
+    """Compare one or more targets while preserving legacy single-target shape."""
+    compare_data = None
+    profile_sources: list[dict] = []
+    my_set = set(str(appid) for appid in wishlist_appids or [])
+    legacy_mode = len(compare_targets) == 1
+    for target in compare_targets:
+        try:
+            data = compare_wishlists_fn(api_key, steam_id, target)
+            data["overlap"] = my_set & set(data.get("friend_set", set()))
+            profile_sources.append(_compare_profile_source_from_data(data))
+            if legacy_mode:
+                compare_data = data
+            if emit_fn is not None:
+                label = data.get("friend_name") or data.get("friend_vanity", "Friend")
+                emit_fn(ok_fn(f"{label}: {len(data.get('friend_appids', [])):,} juegos en wishlist"))
+                emit_fn(ok_fn(f"{len(data['overlap'])} en común"))
+        except Exception as exc:
+            profile_sources.append(_compare_profile_source_from_error(target))
+            if emit_fn is not None:
+                emit_fn(err_fn(f"No se pudo comparar {target}: {exc}"))
+    return {"compare_data": compare_data, "profile_sources": profile_sources}
+
+
 def build_wishlist_hygiene_signals(wishlist, **kwargs):
     """Build advisory-only wishlist hygiene hints from local signals."""
     if _build_wishlist_hygiene_signals_impl is None:
@@ -4423,6 +4498,7 @@ def main():
     MAX_WORKERS = _resolve_max_workers(FILTERS.get("max_workers"), MAX_WORKERS)
     WEB_EVENT_MODE = bool(WEB_RUN)
     WARM_CACHE_ONLY = bool(FILTERS.get("warm_cache"))
+    COMPARE_TARGETS = parse_compare_targets(FILTERS.get("compare"))
     WISHLIST_EXTERNAL_MATCHES_JSON = FILTERS.get("wishlist_external_matches_json")
     PLAY_ACCESS_JSON = FILTERS.get("play_access_json")
     emit = print
@@ -4462,7 +4538,7 @@ def main():
                 if FILTERS.get("telegram_token") or FILTERS.get("discord_webhook")
                 else 0
             )
-            + (1 if FILTERS.get("compare") else 0)
+            + (1 if COMPARE_TARGETS else 0)
         )
     )
 
@@ -4573,25 +4649,21 @@ def main():
 
     # Compare wishlists (optional)
     compare_data = None
+    compare_profile_sources: list[dict] = []
     gift_ideas = []
-    if FILTERS.get("compare"):
+    if COMPARE_TARGETS:
         step("Comparando wishlists...")
-        try:
-            compare_data = compare_wishlists(KEY, steam_id, FILTERS["compare"])
-            friend_set = compare_data["friend_set"]
-            my_set = set(wishlist_appids)
-            overlap = my_set & friend_set
-            compare_data["overlap"] = overlap
-            friend_label = compare_data.get("friend_name") or compare_data.get(
-                "friend_vanity", "Friend"
-            )
-            print(
-                f"  {_ok(f'{friend_label}: {len(compare_data['friend_appids']):,} juegos en wishlist')}"
-            )
-            print(f"  {_ok(f'{len(overlap)} en común')}")
-        except Exception as e:
-            print(f"  {_err(f'No se pudo comparar: {e}')}")
-            compare_data = None
+        comparison_targets = compare_wishlist_targets(
+            KEY,
+            steam_id,
+            COMPARE_TARGETS,
+            wishlist_appids,
+            emit_fn=lambda text: print(f"  {text}"),
+            ok_fn=_ok,
+            err_fn=_err,
+        )
+        compare_data = comparison_targets["compare_data"]
+        compare_profile_sources = comparison_targets["profile_sources"]
 
     # [4] Detectar oferta activa
     step("Detectando oferta activa de Steam...")
@@ -4825,6 +4897,24 @@ def main():
     watchlist_alerts = engagement_outputs.watchlist_alerts
     budget_result = engagement_outputs.budget_result
     gift_ideas = engagement_outputs.gift_ideas
+    compare_profiles: list[dict] = []
+    gift_ideas_by_friend: list[dict] = []
+    shared_gift_ideas: list[dict] = []
+    if len(COMPARE_TARGETS) > 1:
+        multi_profile_gifts = build_multi_profile_gift_contract(
+            wishlist_appids,
+            compare_profile_sources,
+            deals,
+            owned,
+        )
+        compare_profiles = multi_profile_gifts.get("compare_profiles", [])
+        gift_ideas_by_friend = multi_profile_gifts.get("gift_ideas_by_friend", [])
+        shared_gift_ideas = multi_profile_gifts.get("shared_gift_ideas", [])
+        summary = multi_profile_gifts.get("summary", {})
+        valid_profiles_count = summary.get("valid_profiles_count", 0)
+        print(
+            f"  {_ok(f'{valid_profiles_count} perfiles comparados · {len(shared_gift_ideas)} regalos compartidos')}"
+        )
     recommended_collections = build_recommended_collections(
         deals,
         top_picks=top_picks,
@@ -5004,6 +5094,9 @@ def main():
         budget_result=budget_result,
         compare_data=compare_data,
         gift_ideas=gift_ideas,
+        compare_profiles=compare_profiles,
+        gift_ideas_by_friend=gift_ideas_by_friend,
+        shared_gift_ideas=shared_gift_ideas,
         recommended_collections=recommended_collections,
         personalized_recommendations=personalized_recommendations,
         wishlist_hygiene=wishlist_hygiene,

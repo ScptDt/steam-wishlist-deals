@@ -203,6 +203,7 @@ from steam_deals_generator import (
     compute_budget_picks,
     compute_deal_comparison,
     compute_value_score,
+    compare_wishlist_targets,
     cross_hltb_with_deals,
     filter_by_genres,
     format_trend,
@@ -212,6 +213,7 @@ from steam_deals_generator import (
     generate_share_html,
     is_same_game,
     load_previous_deal_appids,
+    parse_compare_targets,
     parse_hltb,
     resolve_free_weekend_now,
     resolve_price_fetch_tuning,
@@ -2523,6 +2525,15 @@ class ConfigTests(unittest.TestCase):
         )
 
         self.assertEqual(action.help, "Workers de fetch paralelo para enrichment (default: 16)")
+
+    def test_build_parser_documents_multi_profile_compare_input(self) -> None:
+        parser = module_build_parser()
+        action = next(
+            action for action in parser._actions if "--compare" in action.option_strings
+        )
+
+        self.assertIn("uno o varios perfiles", action.help)
+        self.assertEqual(action.metavar, "PROFILE[,PROFILE...]")
 
     def test_resolve_max_workers_falls_back_to_new_default_of_16(self) -> None:
         self.assertEqual(_resolve_max_workers(None, 16), 16)
@@ -8897,6 +8908,55 @@ class SteamAdapterTests(unittest.TestCase):
         self.assertEqual(comparison["friend_id"], "friend-id")
         self.assertEqual(comparison["friend_name"], "Johnny")
         self.assertEqual(comparison["friend_set"], {"10", "20"})
+
+    def test_parse_compare_targets_accepts_commas_newlines_and_dedupes(self) -> None:
+        self.assertEqual(
+            parse_compare_targets("ada, bea\nADA\nhttps://steamcommunity.com/id/cyd/"),
+            ["ada", "bea", "https://steamcommunity.com/id/cyd/"],
+        )
+
+    def test_compare_wishlist_targets_preserves_single_friend_legacy_payload(self) -> None:
+        def fake_compare(_api_key, _steam_id, target):
+            return {
+                "friend_vanity": target,
+                "friend_appids": ["10", "30"],
+                "friend_set": {"10", "30"},
+            }
+
+        result = compare_wishlist_targets(
+            "key",
+            "me",
+            ["ada"],
+            ["10", "20"],
+            compare_wishlists_fn=fake_compare,
+        )
+
+        self.assertEqual(result["compare_data"]["friend_vanity"], "ada")
+        self.assertEqual(result["compare_data"]["overlap"], {"10"})
+        self.assertEqual(result["profile_sources"][0]["overlap_appids"], {"10"})
+
+    def test_compare_wishlist_targets_keeps_multi_profile_errors_partial(self) -> None:
+        def fake_compare(_api_key, _steam_id, target):
+            if target == "bad":
+                raise ValueError("private wishlist")
+            return {
+                "friend_vanity": target,
+                "friend_appids": ["10", "40"],
+                "friend_set": {"10", "40"},
+            }
+
+        result = compare_wishlist_targets(
+            "key",
+            "me",
+            ["ada", "bad"],
+            ["10", "20"],
+            compare_wishlists_fn=fake_compare,
+        )
+
+        self.assertIsNone(result["compare_data"])
+        self.assertEqual(result["profile_sources"][0]["friend_vanity"], "ada")
+        self.assertEqual(result["profile_sources"][1]["status"], "compare_failed")
+        self.assertEqual(result["profile_sources"][1]["error"], "compare_failed")
 
     def test_load_family_games_supports_dict_shape(self) -> None:
         with TemporaryDirectory() as temp_dir:

@@ -167,6 +167,13 @@ function isLikelySteamProfileInput(value) {
   return /^[A-Za-z0-9_-]+$/.test(raw);
 }
 
+function parseCompareProfileInputs(value) {
+  return String(value || '')
+    .split(/[\n,]+/)
+    .map(item => item.trim())
+    .filter(Boolean);
+}
+
 function validateDealsFormBeforeRun() {
   const vanityInput = $('vanity');
   const compareInput = $('compare');
@@ -186,8 +193,10 @@ function validateDealsFormBeforeRun() {
   }
 
   clearFieldError(compareInput);
-  if (compareInput && compareInput.value.trim() && !isLikelySteamProfileInput(compareInput.value)) {
-    const msg = 'Comparar con: usa Vanity URL, Steam ID o URL de perfil valida.';
+  const compareProfiles = parseCompareProfileInputs(compareInput && compareInput.value);
+  const invalidCompareProfile = compareProfiles.find(item => !isLikelySteamProfileInput(item));
+  if (compareInput && invalidCompareProfile) {
+    const msg = 'Comparar con: usa Vanity URL, Steam ID o URL valida; separa varios perfiles con coma o línea.';
     setFieldError(compareInput, msg);
     errors.push({message: msg, fieldId: 'compare'});
     compareInput.focus();
@@ -294,6 +303,7 @@ function getConfig() {
     const el = $(f);
     if (!el) return;
     if (f === 'discount') c[f] = parseInt(el.value);
+    else if (f === 'compare') c[f] = parseCompareProfileInputs(el.value).join(', ') || null;
     else c[f] = el.value.trim() || null;
   });
   const pd2Output = $('pd2_output');
@@ -4176,26 +4186,53 @@ function renderLatestGiftIdeaItem(item, index) {
   `;
 }
 
+function latestGiftItems(value) {
+  return Array.isArray(value) ? value.filter(item => item && typeof item === 'object') : [];
+}
+
+function renderLatestGiftGroup(title, items, options = {}) {
+  const visibleItems = latestGiftItems(items).slice(0, options.limit || 3);
+  if (!visibleItems.length) return '';
+  const hiddenCount = Math.max(0, latestGiftItems(items).length - visibleItems.length);
+  return `
+    <div class="latest-gift-group"${options.shared ? ' data-latest-shared-gift-ideas' : ' data-latest-gift-group'}>
+      <div class="latest-gift-group-title">${escapeHtml(title)}</div>
+      <ol class="latest-gift-list">
+        ${visibleItems.map((item, index) => renderLatestGiftIdeaItem(item, index + 1)).join('')}
+      </ol>
+      ${hiddenCount ? `<div class="latest-gift-more">${escapeHtml(hiddenCount)} más en el reporte completo</div>` : ''}
+    </div>
+  `;
+}
+
 function renderLatestGiftIdeas(report) {
-  const items = Array.isArray(report && report.gift_ideas)
-    ? report.gift_ideas.filter(item => item && typeof item === 'object')
+  const sharedItems = latestGiftItems(report && report.shared_gift_ideas);
+  const friendGroups = Array.isArray(report && report.gift_ideas_by_friend)
+    ? report.gift_ideas_by_friend.filter(group => group && typeof group === 'object' && latestGiftItems(group.items).length)
     : [];
-  if (!items.length) return '';
+  const items = latestGiftItems(report && report.gift_ideas);
+  if (!items.length && !sharedItems.length && !friendGroups.length) return '';
   const compareData = report && typeof report === 'object' ? (report.compare_data || {}) : {};
   const friend = String((compareData && (compareData.friend_name || compareData.friend_vanity)) || '').trim();
   const selectedItems = items.slice(0, 3);
   const hiddenCount = Math.max(0, items.length - selectedItems.length);
   const friendCopy = friend ? ` para ${friend}` : '';
+  const multiProfileHtml = [
+    renderLatestGiftGroup('Ideas compartidas', sharedItems, {shared: true, limit: 3}),
+    ...friendGroups.slice(0, 3).map(group => {
+      const label = String(group.friend_label || group.friend_key || 'amigo').trim();
+      return renderLatestGiftGroup(`Ideas para ${label}`, group.items, {limit: 2});
+    }),
+  ].join('');
   return `
     <div class="latest-gift-section" data-latest-gift-ideas>
       <div class="latest-gift-head">
-        <div class="latest-gift-title">Regalos${escapeHtml(friendCopy)}</div>
+        <div class="latest-gift-title">${multiProfileHtml ? 'Regalos grupales' : `Regalos${escapeHtml(friendCopy)}`}</div>
         <div class="latest-gift-subtitle">Hasta 3 ideas desde la wishlist comparada, con razones sociales compactas. No abre carrito ni compra nada.</div>
       </div>
-      <ol class="latest-gift-list">
+      ${multiProfileHtml || `<ol class="latest-gift-list">
         ${selectedItems.map((item, index) => renderLatestGiftIdeaItem(item, index + 1)).join('')}
-      </ol>
-      ${hiddenCount ? `<div class="latest-gift-more">${escapeHtml(hiddenCount)} más en el reporte completo</div>` : ''}
+      </ol>${hiddenCount ? `<div class="latest-gift-more">${escapeHtml(hiddenCount)} más en el reporte completo</div>` : ''}`}
     </div>
   `;
 }

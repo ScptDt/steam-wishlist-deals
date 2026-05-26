@@ -580,7 +580,12 @@ El flujo share debe funcionar desde Web UI, HTML interactivo y Share HTML, mante
 ```bash
 # Ver overlap y gift ideas con un amigo
 python3 steam_deals_generator.py --vanity gaben --compare VANITY_AMIGO
+
+# Comparar varios amigos y exponer regalos grupales en JSON
+python3 steam_deals_generator.py --vanity gaben --compare "AMIGO_1,AMIGO_2"
 ```
+
+En Web/Desktop, el campo **Comparar con** acepta un perfil por línea o separados por coma. Con varios perfiles, el JSON agrega `compare_profiles`, `gift_ideas_by_friend` y `shared_gift_ideas` sin cambiar el ranking ni abrir carrito/checkout.
 
 ## Notificaciones
 

@@ -141,8 +141,8 @@ def build_parser() -> argparse.ArgumentParser:
     )
     parser.add_argument(
         "--compare",
-        metavar="VANITY2",
-        help="Comparar tu wishlist con otro perfil de Steam",
+        metavar="PROFILE[,PROFILE...]",
+        help="Comparar tu wishlist con uno o varios perfiles de Steam (coma o líneas)",
     )
     parser.add_argument(
         "--telegram-token", help="Telegram Bot API token para notificaciones"

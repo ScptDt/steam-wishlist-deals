@@ -423,13 +423,14 @@ a:hover { text-decoration: underline; }
   opacity: 1 !important;
 }
 .optional { color: var(--text2); font-weight: 400; font-size: 0.75rem; }
-input[type="text"], input[type="number"], input[type="password"], select {
+input[type="text"], input[type="number"], input[type="password"], textarea, select {
   width: 100%; padding: 0.55rem 0.75rem; font-size: 0.9rem;
   background: var(--bg); border: 1px solid var(--card-border); border-radius: 6px;
   color: var(--text); outline: none; transition: border-color 0.2s;
 }
-input:focus, select:focus { border-color: var(--accent); }
-input::placeholder { color: var(--text2); opacity: 0.5; }
+textarea { min-height: 4.2rem; resize: vertical; line-height: 1.35; }
+input:focus, textarea:focus, select:focus { border-color: var(--accent); }
+input::placeholder, textarea::placeholder { color: var(--text2); opacity: 0.5; }
 
 .input-error {
   border-color: var(--red) !important;
@@ -2527,6 +2528,15 @@ details .details-body .field:last-child {
   display: grid;
   grid-template-columns: repeat(auto-fit, minmax(190px, 1fr));
   gap: 0.55rem;
+}
+.latest-gift-group {
+  margin-top: 0.75rem;
+}
+.latest-gift-group-title {
+  color: var(--yellow);
+  font-size: 0.78rem;
+  font-weight: 700;
+  margin-bottom: 0.42rem;
 }
 .latest-gift-item {
   display: flex;

@@ -514,8 +514,12 @@ class WebAssetsTests(unittest.TestCase):
         )
 
         self.assertIn("function renderLatestGiftIdeas", app_js)
+        self.assertIn("function renderLatestGiftGroup", app_js)
         self.assertIn("report.gift_ideas", app_js)
+        self.assertIn("report.gift_ideas_by_friend", app_js)
+        self.assertIn("report.shared_gift_ideas", app_js)
         self.assertIn("data-latest-gift-ideas", app_js)
+        self.assertIn("data-latest-shared-gift-ideas", app_js)
         self.assertIn("data-latest-gift-idea", app_js)
         self.assertIn("function latestGiftIdeaReasons", app_js)
         self.assertIn("source.social_reasons", app_js)
@@ -524,12 +528,37 @@ class WebAssetsTests(unittest.TestCase):
         self.assertIn("No abre carrito ni compra nada", app_js)
         self.assertIn("compareData.friend_name || compareData.friend_vanity", app_js)
         self.assertIn("items.slice(0, 3)", app_js)
+        self.assertIn("Regalos grupales", app_js)
+        self.assertIn("Ideas compartidas", app_js)
+        self.assertIn("Ideas para", app_js)
         self.assertIn("renderLatestGiftIdeas(report)", app_js)
         self.assertIn("renderLatestReportIntentWrapper(activeReport, meta, summary, files)", app_js)
         self.assertIn(".latest-gift-section", app_css)
+        self.assertIn(".latest-gift-group", app_css)
         self.assertIn(".latest-gift-list", app_css)
         self.assertIn(".latest-gift-item", app_css)
         self.assertIn(".latest-gift-item-reasons", app_css)
+
+    def test_compare_input_accepts_multiple_profiles(self) -> None:
+        index_html = (ROOT / "web" / "steam_deals" / "index.html").read_text(
+            encoding="utf-8"
+        )
+        app_js = (ROOT / "web" / "steam_deals" / "app.js").read_text(
+            encoding="utf-8"
+        )
+        app_css = (ROOT / "web" / "steam_deals" / "app.css").read_text(
+            encoding="utf-8"
+        )
+
+        self.assertIn('<textarea id="compare"', index_html)
+        self.assertIn("Un perfil por línea o separado por coma", index_html)
+        self.assertIn("varios activan regalos grupales en JSON", index_html)
+        self.assertIn("function parseCompareProfileInputs", app_js)
+        self.assertIn(".split(/[\\n,]+/)", app_js)
+        self.assertIn("parseCompareProfileInputs(el.value).join(', ')", app_js)
+        self.assertIn("separa varios perfiles con coma o línea", app_js)
+        self.assertIn('textarea, select', app_css)
+        self.assertIn('textarea::placeholder', app_css)
 
     def test_latest_report_renders_wishlist_hygiene_inside_details(self) -> None:
         app_js = (ROOT / "web" / "steam_deals" / "app.js").read_text(
