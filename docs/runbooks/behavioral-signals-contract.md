@@ -227,7 +227,7 @@ Ejemplo:
 
 ## Normalización esperada
 
-El futuro helper debe:
+El helper debe:
 
 - normalizar tags/géneros a minúsculas, espacios simples y sin guiones irrelevantes;
 - deduplicar families, loops, descriptors, sources y reason codes;
