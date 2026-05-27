@@ -2557,6 +2557,8 @@ a.pick-card:hover { border-color: var(--accent-blue); transform: translateY(-2px
 
 _HTML_JS = """
 const sortState = {};
+const DEAL_FILTER_TABLE_SELECTOR = '[data-deals-filter-table]';
+const DEAL_FILTER_ROW_SELECTOR = '[data-deal-row]';
 function parseFiniteNumber(value) {
   const number = Number.parseFloat(value);
   return Number.isFinite(number) ? number : null;
@@ -2599,7 +2601,7 @@ function applyFilters() {
   const search = document.getElementById('f-search').value.toLowerCase();
   const newOnly = document.getElementById('f-new-only').checked;
   let totalV = 0, totalD = 0, totalP = 0, discountCount = 0, priceCount = 0;
-  document.querySelectorAll('.deals-table tbody tr').forEach(row => {
+  document.querySelectorAll(DEAL_FILTER_ROW_SELECTOR).forEach(row => {
     const d = row.dataset;
     const discount = parseFiniteNumber(d.discount);
     const price = parseFiniteNumber(d.price);
@@ -2622,7 +2624,7 @@ function applyFilters() {
   setAverageStat('stat-avg-disc', 'Promedio', totalD, discountCount, value => '-' + value + '%');
   setAverageStat('stat-avg-price', 'Precio medio', totalP, priceCount, value => '$' + value);
   document.querySelectorAll('.tier-section').forEach(s => {
-    const t = s.querySelector('.deals-table');
+    const t = s.querySelector(DEAL_FILTER_TABLE_SELECTOR);
     if (t) { const v = t.querySelectorAll('tbody tr:not([style*=\"display: none\"])').length; const c = s.querySelector('.visible-count'); if (c) c.textContent = v; }
   });
 }
@@ -3043,7 +3045,7 @@ document.addEventListener('DOMContentLoaded', () => {
 });
 function copyForSheets() {
   const rows = [];
-  document.querySelectorAll('.deals-table').forEach(table => {
+  document.querySelectorAll(DEAL_FILTER_TABLE_SELECTOR).forEach(table => {
     if (!rows.length) {
       const ths = Array.from(table.querySelectorAll('th')).map(th => th.textContent.replace(/[▲▼]/g,'').trim());
       rows.push(ths.join('\\t'));
@@ -3921,7 +3923,7 @@ def generate_html(
             cells.append(f"<td>{name_html}</td>")
 
             data_attrs = f'data-discount="{d["discount"]}" data-price="{price_num}" data-deck="{dk}" data-review="{rev_pct}" data-name="{_html_esc(d["name"].lower())}" data-new="{"1" if is_new else "0"}"'
-            rows.append(f"<tr {data_attrs}>{''.join(cells)}</tr>")
+            rows.append(f"<tr data-deal-row {data_attrs}>{''.join(cells)}</tr>")
 
         note_parts = []
         if has_sparklines:
@@ -3948,7 +3950,7 @@ def generate_html(
         parts.append(f"""<details open class="tier-section">
   <summary class="tier-header">{_html_esc(tier_name)} de Descuento <span class="tier-count">(<span class="visible-count">{len(tier_deals)}</span> juegos)</span></summary>
   {note_html}
-  <div class="table-wrap"><table class="deals-table" id="t-{tid}"><thead><tr>{ths}</tr></thead><tbody>{"".join(rows)}</tbody></table></div>
+  <div class="table-wrap"><table class="deals-table" id="t-{tid}" data-deals-filter-table><thead><tr>{ths}</tr></thead><tbody>{"".join(rows)}</tbody></table></div>
 </details>""")
 
     return f"""<!DOCTYPE html>

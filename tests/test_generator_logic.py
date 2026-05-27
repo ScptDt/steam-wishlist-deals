@@ -11448,6 +11448,59 @@ class RankTopPicksTests(unittest.TestCase):
         social_section = html.split('<details open class="filter-panel"', 1)[0]
         self.assertNotIn("<tbody></tbody>", social_section)
 
+    def test_generate_html_scopes_filters_to_primary_deal_tables(self) -> None:
+        html = generate_html(
+            deals=[
+                {
+                    "appid": "20",
+                    "name": "Shared Deal",
+                    "discount": 70,
+                    "price_final": "$30",
+                    "price_original": "$100",
+                    "categories": [2],
+                }
+            ],
+            backlog_on_sale=[],
+            have_on_sale=[],
+            vanity="gaben",
+            owned={},
+            wishlist_appids=["20", "30"],
+            min_discount=50,
+            genres=[],
+            compare_data={"friend_vanity": "friend", "overlap": {"20"}},
+            gift_ideas=[{"steam_appid": "30", "steam_name": "Gift", "price": "$5"}],
+            budget_result={
+                "budget": 500,
+                "selected": [
+                    {
+                        "appid": "20",
+                        "name": "Shared Deal",
+                        "discount": 70,
+                        "price_final": "$30",
+                        "score": 80,
+                    }
+                ],
+                "total_spent": 30,
+                "total_savings": 70,
+                "remaining": 470,
+                "games_count": 1,
+            },
+            recommended_collections=[],
+            personalized_recommendations={"items": []},
+        )
+
+        self.assertIn("const DEAL_FILTER_ROW_SELECTOR = '[data-deal-row]'", html)
+        self.assertIn("document.querySelectorAll(DEAL_FILTER_ROW_SELECTOR)", html)
+        self.assertNotIn("document.querySelectorAll('.deals-table tbody tr')", html)
+        secondary_sections = html.split('<details open class="filter-panel"', 1)[0]
+        self.assertIn("Tu Presupuesto Ideal", secondary_sections)
+        self.assertIn("Wishlist Comparison", secondary_sections)
+        self.assertNotIn("data-deal-row", secondary_sections)
+        self.assertNotIn("data-deals-filter-table", secondary_sections)
+        filtered_deals_section = html.split('<details open class="filter-panel"', 1)[1]
+        self.assertIn("data-deals-filter-table", filtered_deals_section)
+        self.assertIn("data-deal-row", filtered_deals_section)
+
     def test_generate_html_escapes_personalized_recommendation_data(self) -> None:
         html = generate_html(
             deals=[],
