@@ -11522,6 +11522,24 @@ class RankTopPicksTests(unittest.TestCase):
         self.assertIn("o.textContent = defaults.discount + '%'", html)
         self.assertNotIn("document.getElementById('f-discount').value = 50", html)
 
+    def test_generate_html_discount_slider_accepts_lower_report_minimum(self) -> None:
+        html = generate_html(
+            deals=[],
+            backlog_on_sale=[],
+            have_on_sale=[],
+            vanity="gaben",
+            owned={},
+            wishlist_appids=[],
+            min_discount=30,
+            genres=[],
+            recommended_collections=[],
+            personalized_recommendations={"items": []},
+        )
+
+        self.assertIn('data-default-discount="30"', html)
+        self.assertIn('id="f-discount" min="30" max="100" value="30"', html)
+        self.assertNotIn('id="f-discount" min="50" max="100" value="30"', html)
+
     def test_generate_html_escapes_personalized_recommendation_data(self) -> None:
         html = generate_html(
             deals=[],
