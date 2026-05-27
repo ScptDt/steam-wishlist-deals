@@ -7,10 +7,13 @@ from urllib.parse import urlsplit
 
 from .common import markdown_escape
 from .social_rows import (
+    compare_profile_counts,
     compare_overlap_count,
     is_numeric_appid,
+    normalize_gift_idea_groups,
     normalize_gift_idea_rows,
     normalize_overlap_deal_rows,
+    normalize_shared_gift_idea_rows,
 )
 
 
@@ -56,6 +59,129 @@ def _compact_social_reasons(item: dict, *, limit: int = 2) -> str:
         if len(compact) >= limit:
             break
     return " · ".join(compact)
+
+
+def _md_profile_summary(compare_profiles: list[dict] | None) -> str:
+    counts = compare_profile_counts(compare_profiles)
+    if not counts["total"]:
+        return ""
+    summary = f"{counts['available']} perfiles disponibles"
+    if counts["unavailable"]:
+        summary += f" · {counts['unavailable']} no disponibles"
+    return summary
+
+
+def _md_gift_table_lines(gift_rows: list[dict]) -> list[str]:
+    has_social_reasons = any(row.get("reason") for row in gift_rows)
+    lines = [
+        "| % | Precio | Juego | Por qué |"
+        if has_social_reasons
+        else "| % | Precio | Juego |",
+        "|---|--------|-------|--------|"
+        if has_social_reasons
+        else "|---|--------|-------|",
+    ]
+    for gift_row in gift_rows:
+        line = (
+            f"| -{int(gift_row['discount'])}% | "
+            f"{_md_esc(str(gift_row['price_final']))} | "
+            f"{_optional_link(str(gift_row['name']), str(gift_row['appid']))} |"
+        )
+        if has_social_reasons:
+            reason = str(gift_row.get("reason") or "—")
+            line += f" {_md_esc(reason)} |"
+        lines.append(line)
+    return lines
+
+
+def _md_shared_gift_table_lines(shared_rows: list[dict]) -> list[str]:
+    has_social_reasons = any(row.get("reason") for row in shared_rows)
+    lines = [
+        "| Amigos | % | Precio | Juego | Por qué |"
+        if has_social_reasons
+        else "| Amigos | % | Precio | Juego |",
+        "|---|---|--------|-------|--------|"
+        if has_social_reasons
+        else "|---|---|--------|-------|",
+    ]
+    for row in shared_rows:
+        labels = row.get("friend_labels") or []
+        wanted_by_count = int(row.get("wanted_by_count") or 0)
+        friends = (
+            ", ".join(labels) if labels else f"{wanted_by_count or 'Varios'} amigos"
+        )
+        line = (
+            f"| {_md_esc(str(friends))} | -{int(row['discount'])}% | "
+            f"{_md_esc(str(row['price_final']))} | "
+            f"{_optional_link(str(row['name']), str(row['appid']))} |"
+        )
+        if has_social_reasons:
+            reason = str(row.get("reason") or "—")
+            line += f" {_md_esc(reason)} |"
+        lines.append(line)
+    return lines
+
+
+def _build_multi_profile_gift_lines(
+    compare_profiles: list[dict] | None,
+    gift_ideas_by_friend: list[dict] | None,
+    shared_gift_ideas: list[dict] | None,
+) -> list[str]:
+    sections: list[str] = []
+    shared_rows = normalize_shared_gift_idea_rows(shared_gift_ideas)
+    if shared_rows:
+        sections += [
+            f"### 🎁 Ideas compartidas ({len(shared_rows)} juegos)",
+            "",
+            "> Juegos en oferta que quieren 2+ amigos. Advisory-only: no cambia ranking ni abre compras.",
+            "",
+            *_md_shared_gift_table_lines(shared_rows),
+            "",
+        ]
+    elif shared_gift_ideas:
+        sections += [
+            "### 🎁 Ideas compartidas",
+            "",
+            "> Hay datos de regalos compartidos, pero no hay items concretos para mostrar.",
+            "",
+        ]
+
+    friend_groups = normalize_gift_idea_groups(gift_ideas_by_friend)
+    for group in friend_groups:
+        friend_label = _md_esc(str(group["friend_label"]))
+        rows = group.get("rows") or []
+        sections += [f"### 🎁 Ideas para {friend_label}", ""]
+        if rows:
+            sections += [
+                f"> Juegos que {friend_label} quiere, están en oferta, y tú no los tienes.",
+                "",
+                *_md_gift_table_lines(rows),
+                "",
+            ]
+        else:
+            sections += [
+                f"> Hay datos de regalos para {friend_label}, pero no hay items concretos para mostrar.",
+                "",
+            ]
+    if gift_ideas_by_friend and not friend_groups:
+        sections += [
+            "### 🎁 Ideas por amigo",
+            "",
+            "> Hay datos multi-perfil, pero no hay grupos renderizables para mostrar.",
+            "",
+        ]
+    if not sections:
+        return []
+
+    profile_summary = _md_profile_summary(compare_profiles)
+    intro = [
+        "## 👥 Regalos grupales",
+        "",
+        "> Sugerencias locales y advisory-only para comparar múltiples amigos.",
+    ]
+    if profile_summary:
+        intro.append(f"> {profile_summary}.")
+    return [*intro, "", *sections, "---", ""]
 
 
 def _yaml_quote(text: str) -> str:
@@ -1240,6 +1366,9 @@ def generate_md(
     budget_result: dict | None = None,
     compare_data: dict | None = None,
     gift_ideas: list[dict] | None = None,
+    compare_profiles: list[dict] | None = None,
+    gift_ideas_by_friend: list[dict] | None = None,
+    shared_gift_ideas: list[dict] | None = None,
     recommended_collections: list[dict] | None = None,
     personalized_recommendations: dict | None = None,
     wishlist_hygiene: dict | None = None,
@@ -1476,33 +1605,13 @@ def generate_md(
             ]
         gift_rows = normalize_gift_idea_rows(gift_ideas or [])
         if gift_rows:
-            has_social_reasons = any(row.get("reason") for row in gift_rows)
-            header = (
-                "| % | Precio | Juego | Por qué |"
-                if has_social_reasons
-                else "| % | Precio | Juego |"
-            )
-            separator = (
-                "|---|--------|-------|--------|"
-                if has_social_reasons
-                else "|---|--------|-------|"
-            )
             lines += [
                 f"### 🎁 Gift Ideas para {friend_label} ({len(gift_rows)} juegos)",
                 "",
                 f"> Juegos que {friend_label} quiere, están en oferta, y tú no los tienes.",
                 "",
-                header,
-                separator,
+                *_md_gift_table_lines(gift_rows),
             ]
-            for gift_row in gift_rows:
-                line = (
-                    f"| -{int(gift_row['discount'])}% | {_md_esc(str(gift_row['price_final']))} | {_optional_link(str(gift_row['name']), str(gift_row['appid']))} |"
-                )
-                if has_social_reasons:
-                    reason = str(gift_row.get("reason") or "—")
-                    line += f" {_md_esc(reason)} |"
-                lines.append(line)
         elif gift_ideas:
             lines += [
                 f"### 🎁 Gift Ideas para {friend_label}",
@@ -1511,6 +1620,12 @@ def generate_md(
                 "",
             ]
         lines += ["", "---", ""]
+
+    lines += _build_multi_profile_gift_lines(
+        compare_profiles,
+        gift_ideas_by_friend,
+        shared_gift_ideas,
+    )
 
     if active_bundles_data:
         bundles_grouped: dict[str, dict] = {}

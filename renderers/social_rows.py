@@ -169,6 +169,91 @@ def normalize_gift_idea_rows(
     return rows
 
 
+def _friend_label(record: dict, *, fallback: str = "Amigo") -> str:
+    for key in (
+        "friend_label",
+        "friend_name",
+        "display_name",
+        "friend_vanity",
+        "friend_key",
+    ):
+        label = str(record.get(key) or "").strip()
+        if label:
+            return label
+    return fallback
+
+
+def normalize_gift_idea_groups(
+    gift_ideas_by_friend: list[dict] | None, *, limit_per_friend: int = 20
+) -> list[dict]:
+    groups: list[dict] = []
+    for index, group in enumerate(_record_list(gift_ideas_by_friend), 1):
+        raw_items = group.get("items")
+        items = _record_list(raw_items)
+        rows = normalize_gift_idea_rows(items, limit=limit_per_friend)
+        has_payload = (
+            bool(raw_items) or bool(items) or safe_int(group.get("items_count")) > 0
+        )
+        if not rows and not has_payload:
+            continue
+        groups.append(
+            {
+                "friend_label": _friend_label(group, fallback=f"Amigo {index}"),
+                "rows": rows,
+                "has_payload": has_payload,
+            }
+        )
+    return groups
+
+
+def _wanted_by_labels(item: dict) -> list[str]:
+    labels: list[str] = []
+    for friend in _record_list(item.get("wanted_by")):
+        label = _friend_label(friend, fallback="").strip()
+        if label and label not in labels:
+            labels.append(label)
+    return labels
+
+
+def normalize_shared_gift_idea_rows(
+    shared_gift_ideas: list[dict] | None, *, limit: int = 20
+) -> list[dict]:
+    rows: list[dict] = []
+    seen: set[str] = set()
+    for item in _record_list(shared_gift_ideas):
+        row = _normalized_social_row(item)
+        if not row:
+            continue
+        key = row["appid"] or row["name"].lower()
+        if key in seen:
+            continue
+        friend_labels = _wanted_by_labels(item)
+        wanted_by_count = max(safe_int(item.get("wanted_by_count")), len(friend_labels))
+        rows.append(
+            {
+                **row,
+                "friend_labels": friend_labels,
+                "wanted_by_count": wanted_by_count,
+            }
+        )
+        seen.add(key)
+        if len(rows) >= limit:
+            break
+    return rows
+
+
+def compare_profile_counts(compare_profiles: list[dict] | None) -> dict[str, int]:
+    records = _record_list(compare_profiles)
+    available = sum(
+        1 for profile in records if str(profile.get("status") or "ok").lower() == "ok"
+    )
+    return {
+        "total": len(records),
+        "available": available,
+        "unavailable": len(records) - available,
+    }
+
+
 def normalize_overlap_deal_rows(
     deals: list[dict], compare_data: dict | None, *, limit: int = 20
 ) -> list[dict]:

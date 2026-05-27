@@ -10,10 +10,13 @@ from share_payload import normalize_share_payload
 
 from .common import html_escape
 from .social_rows import (
+    compare_profile_counts,
     compare_overlap_count,
     is_numeric_appid,
+    normalize_gift_idea_groups,
     normalize_gift_idea_rows,
     normalize_overlap_deal_rows,
+    normalize_shared_gift_idea_rows,
 )
 
 
@@ -74,6 +77,136 @@ def _html_social_game_cell(row: dict) -> str:
 
 def _html_social_empty(message: str) -> str:
     return f'<p class="section-desc social-empty">{_html_esc(message)}</p>'
+
+
+def _html_profile_summary(compare_profiles: list[dict] | None) -> str:
+    counts = compare_profile_counts(compare_profiles)
+    if not counts["total"]:
+        return ""
+    summary = f"{counts['available']} perfiles disponibles"
+    if counts["unavailable"]:
+        summary += f" &middot; {counts['unavailable']} no disponibles"
+    return summary
+
+
+def _html_gift_table(gift_rows: list[dict]) -> str:
+    has_social_reasons = any(row.get("reason") for row in gift_rows)
+    reason_header = "<th>Por qu&eacute;</th>" if has_social_reasons else ""
+    rows = ""
+    for row in gift_rows:
+        reason_cell = ""
+        if has_social_reasons:
+            reason = str(row.get("reason") or "—")
+            reason_cell = (
+                f'<td><span class="gift-reason">{_html_esc(reason)}</span></td>'
+            )
+        rows += (
+            f'<tr><td>-{int(row["discount"])}%</td>'
+            f'<td>{_html_esc(str(row["price_final"]))}</td>'
+            f'<td>{_html_social_game_cell(row)}</td>{reason_cell}</tr>'
+        )
+    return (
+        '<div class="table-wrap"><table class="deals-table"><thead><tr>'
+        f'<th>%</th><th>Precio</th><th>Juego</th>{reason_header}'
+        f'</tr></thead><tbody>{rows}</tbody></table></div>'
+    )
+
+
+def _html_shared_gift_table(shared_rows: list[dict]) -> str:
+    has_social_reasons = any(row.get("reason") for row in shared_rows)
+    reason_header = "<th>Por qu&eacute;</th>" if has_social_reasons else ""
+    rows = ""
+    for row in shared_rows:
+        labels = row.get("friend_labels") or []
+        wanted_by_count = int(row.get("wanted_by_count") or 0)
+        friends = (
+            ", ".join(labels) if labels else f"{wanted_by_count or 'Varios'} amigos"
+        )
+        reason_cell = ""
+        if has_social_reasons:
+            reason = str(row.get("reason") or "—")
+            reason_cell = (
+                f'<td><span class="gift-reason">{_html_esc(reason)}</span></td>'
+            )
+        rows += (
+            f'<tr><td>{_html_esc(str(friends))}</td>'
+            f'<td>-{int(row["discount"])}%</td>'
+            f'<td>{_html_esc(str(row["price_final"]))}</td>'
+            f'<td>{_html_social_game_cell(row)}</td>{reason_cell}</tr>'
+        )
+    return (
+        '<div class="table-wrap"><table class="deals-table"><thead><tr>'
+        f'<th>Amigos</th><th>%</th><th>Precio</th><th>Juego</th>{reason_header}'
+        f'</tr></thead><tbody>{rows}</tbody></table></div>'
+    )
+
+
+def _html_multi_profile_gifts(
+    compare_profiles: list[dict] | None,
+    gift_ideas_by_friend: list[dict] | None,
+    shared_gift_ideas: list[dict] | None,
+) -> str:
+    sections: list[str] = []
+    shared_rows = normalize_shared_gift_idea_rows(shared_gift_ideas)
+    if shared_rows:
+        sections.append(
+            '<h3 style="font-size:.95rem;margin:.8rem 0 .4rem">'
+            f'&#127873; Ideas compartidas ({len(shared_rows)} juegos)</h3>'
+            '<p class="section-desc">Juegos en oferta que quieren 2+ amigos. '
+            'Advisory-only: no cambia ranking ni abre compras.</p>'
+            f'{_html_shared_gift_table(shared_rows)}'
+        )
+    elif shared_gift_ideas:
+        sections.append(
+            '<h3 style="font-size:.95rem;margin:.8rem 0 .4rem">&#127873; Ideas compartidas</h3>'
+            + _html_social_empty(
+                "Hay datos de regalos compartidos, pero no hay items concretos para mostrar."
+            )
+        )
+
+    friend_groups = normalize_gift_idea_groups(gift_ideas_by_friend)
+    for group in friend_groups:
+        friend_label = str(group["friend_label"])
+        safe_label = _html_esc(friend_label)
+        rows = group.get("rows") or []
+        heading = (
+            '<h3 style="font-size:.95rem;margin:.8rem 0 .4rem">'
+            f'&#127873; Ideas para {safe_label}</h3>'
+        )
+        if rows:
+            sections.append(
+                heading
+                + f'<p class="section-desc">Juegos que {safe_label} quiere, '
+                + 'est&aacute;n en oferta, y t&uacute; no los tienes.</p>'
+                + _html_gift_table(rows)
+            )
+        else:
+            sections.append(
+                heading
+                + _html_social_empty(
+                    f"Hay datos de regalos para {friend_label}, pero no hay items concretos para mostrar."
+                )
+            )
+    if gift_ideas_by_friend and not friend_groups:
+        sections.append(
+            '<h3 style="font-size:.95rem;margin:.8rem 0 .4rem">&#127873; Ideas por amigo</h3>'
+            + _html_social_empty(
+                "Hay datos multi-perfil, pero no hay grupos renderizables para mostrar."
+            )
+        )
+    if not sections:
+        return ""
+
+    profile_summary = _html_profile_summary(compare_profiles)
+    summary_html = (
+        f'<p class="section-desc">{profile_summary}</p>' if profile_summary else ""
+    )
+    return f'''<section style="margin-bottom:1.5rem" data-multi-profile-gift-section>
+  <h2>&#128101; Regalos grupales</h2>
+  <p class="section-desc">Sugerencias locales y advisory-only para comparar m&uacute;ltiples amigos.</p>
+  {summary_html}
+  {"".join(sections)}
+</section>'''
 
 
 def _compact_social_reasons(item: dict, *, limit: int = 2) -> str:
@@ -3340,6 +3473,9 @@ def generate_html(
     budget_result: dict | None = None,
     compare_data: dict | None = None,
     gift_ideas: list[dict] | None = None,
+    compare_profiles: list[dict] | None = None,
+    gift_ideas_by_friend: list[dict] | None = None,
+    shared_gift_ideas: list[dict] | None = None,
     recommended_collections: list[dict] | None = None,
     personalized_recommendations: dict | None = None,
     wishlist_hygiene: dict | None = None,
@@ -3639,16 +3775,7 @@ def generate_html(
         gift_ideas_list = gift_ideas or []
         gift_rows = normalize_gift_idea_rows(gift_ideas_list)
         if gift_rows:
-            gi_rows = ""
-            has_social_reasons = any(row.get("reason") for row in gift_rows)
-            for row in gift_rows:
-                reason_cell = ""
-                if has_social_reasons:
-                    reason = str(row.get("reason") or "—")
-                    reason_cell = f'<td><span class="gift-reason">{_html_esc(reason)}</span></td>'
-                gi_rows += f'<tr><td>-{int(row["discount"])}%</td><td>{_html_esc(str(row["price_final"]))}</td><td>{_html_social_game_cell(row)}</td>{reason_cell}</tr>'
-            reason_header = "<th>Por qu&eacute;</th>" if has_social_reasons else ""
-            comp_html += f'<h3 style="font-size:.95rem;margin:.8rem 0 .4rem">&#127873; Gift Ideas para {_html_esc(friend)}</h3><div class="table-wrap"><table class="deals-table"><thead><tr><th>%</th><th>Precio</th><th>Juego</th>{reason_header}</tr></thead><tbody>{gi_rows}</tbody></table></div>'
+            comp_html += f'<h3 style="font-size:.95rem;margin:.8rem 0 .4rem">&#127873; Gift Ideas para {_html_esc(friend)}</h3>{_html_gift_table(gift_rows)}'
         elif gift_ideas_list:
             comp_html += '<h3 style="font-size:.95rem;margin:.8rem 0 .4rem">&#127873; Gift Ideas para ' + _html_esc(friend) + '</h3>'
             comp_html += _html_social_empty(
@@ -3656,6 +3783,14 @@ def generate_html(
             )
         comp_html += "</section>"
         parts.append(comp_html)
+
+    multi_profile_gifts_html = _html_multi_profile_gifts(
+        compare_profiles,
+        gift_ideas_by_friend,
+        shared_gift_ideas,
+    )
+    if multi_profile_gifts_html:
+        parts.append(multi_profile_gifts_html)
 
     parts.append(f'''<details open class="filter-panel">
   <summary>&#128269; Filtros</summary>

@@ -10398,6 +10398,80 @@ class RankTopPicksTests(unittest.TestCase):
             md,
         )
 
+    def test_generate_md_renders_multi_profile_gift_sections(self) -> None:
+        md = generate_md(
+            deals=[],
+            backlog_on_sale=[],
+            have_on_sale=[],
+            vanity="gaben",
+            owned={},
+            wishlist_appids=["30", "40", "50"],
+            min_discount=50,
+            genres=[],
+            compare_profiles=[
+                {"friend_label": "Ada", "status": "ok"},
+                {"friend_label": "Bea", "status": "ok"},
+                {"friend_label": "Private", "status": "unavailable"},
+            ],
+            shared_gift_ideas=[
+                {
+                    "appid": "50",
+                    "name": "Group Gift",
+                    "discount": 70,
+                    "price_final": "$120",
+                    "wanted_by_count": 2,
+                    "wanted_by": [
+                        {"friend_label": "Ada"},
+                        {"friend_label": "Bea"},
+                    ],
+                    "social_reasons": [
+                        "lo quieren 2 amigos: Ada, Bea",
+                        "descuento fuerte: 70%",
+                    ],
+                }
+            ],
+            gift_ideas_by_friend=[
+                {
+                    "friend_label": "Ada",
+                    "items": [
+                        {
+                            "appid": "30",
+                            "name": "Ada Gift",
+                            "discount": 60,
+                            "price_final": "$99",
+                            "social_reasons": ["lo tiene en wishlist"],
+                        }
+                    ],
+                },
+                {
+                    "friend_label": "Bea",
+                    "items": [
+                        {
+                            "steam_appid": "40",
+                            "steam_name": "Bea Gift",
+                            "discount": "55",
+                            "price": "$80",
+                            "reasons": ["se parece a Co-op"],
+                        }
+                    ],
+                },
+            ],
+            recommended_collections=[],
+            personalized_recommendations={"items": []},
+        )
+
+        self.assertIn("## 👥 Regalos grupales", md)
+        self.assertIn("> 2 perfiles disponibles · 1 no disponibles.", md)
+        self.assertIn("### 🎁 Ideas compartidas (1 juegos)", md)
+        self.assertIn(
+            "| Ada, Bea | -70% | $120 | [Group Gift](https://store.steampowered.com/app/50/) |",
+            md,
+        )
+        self.assertIn("lo quieren 2 amigos: Ada, Bea · descuento fuerte: 70%", md)
+        self.assertIn("### 🎁 Ideas para Ada", md)
+        self.assertIn("### 🎁 Ideas para Bea", md)
+        self.assertIn("| -55% | $80 | [Bea Gift](https://store.steampowered.com/app/40/) |", md)
+
     def test_generate_md_renders_overlap_rows_with_normalized_appids(self) -> None:
         md = generate_md(
             deals=[
@@ -10450,6 +10524,31 @@ class RankTopPicksTests(unittest.TestCase):
         self.assertIn(
             "Hay datos de regalos, pero no hay items concretos para mostrar", md
         )
+        self.assertNotIn("| % | Precio | Juego |", md)
+
+    def test_generate_md_multi_profile_empty_states_without_tables(self) -> None:
+        md = generate_md(
+            deals=[],
+            backlog_on_sale=[],
+            have_on_sale=[],
+            vanity="gaben",
+            owned={},
+            wishlist_appids=[],
+            min_discount=50,
+            genres=[],
+            compare_profiles=[{"friend_label": "Private", "status": "unavailable"}],
+            shared_gift_ideas=[{}, "invalid"],
+            gift_ideas_by_friend=[
+                {"friend_label": "Ada", "items": [{}, "invalid"]},
+                "invalid",
+            ],
+            recommended_collections=[],
+            personalized_recommendations={"items": []},
+        )
+
+        self.assertIn("Hay datos de regalos compartidos", md)
+        self.assertIn("Hay datos de regalos para Ada", md)
+        self.assertNotIn("| Amigos | % | Precio | Juego |", md)
         self.assertNotIn("| % | Precio | Juego |", md)
 
     def test_generate_md_surfaces_active_promo_context(self) -> None:
@@ -11204,6 +11303,62 @@ class RankTopPicksTests(unittest.TestCase):
         )
         self.assertNotIn("lo tiene en wishlist · <script>alert(1)</script>", html)
 
+    def test_generate_html_renders_multi_profile_gift_sections(self) -> None:
+        html = generate_html(
+            deals=[],
+            backlog_on_sale=[],
+            have_on_sale=[],
+            vanity="gaben",
+            owned={},
+            wishlist_appids=["30", "50"],
+            min_discount=50,
+            genres=[],
+            compare_profiles=[
+                {"friend_label": "Ada <One>", "status": "ok"},
+                {"friend_label": "Bea", "status": "ok"},
+            ],
+            shared_gift_ideas=[
+                {
+                    "appid": "50",
+                    "name": "Group <Gift>",
+                    "discount": 70,
+                    "price_final": "$120",
+                    "wanted_by_count": 2,
+                    "wanted_by": [
+                        {"friend_label": "Ada <One>"},
+                        {"friend_label": "Bea"},
+                    ],
+                    "social_reasons": ["<script>alert(1)</script>"],
+                }
+            ],
+            gift_ideas_by_friend=[
+                {
+                    "friend_label": "Ada <One>",
+                    "items": [
+                        {
+                            "appid": "30",
+                            "name": "Ada Gift",
+                            "discount": 60,
+                            "price_final": "$99",
+                            "social_reasons": ["lo tiene en wishlist"],
+                        }
+                    ],
+                }
+            ],
+            recommended_collections=[],
+            personalized_recommendations={"items": []},
+        )
+
+        self.assertIn("data-multi-profile-gift-section", html)
+        self.assertIn("Regalos grupales", html)
+        self.assertIn("Ideas compartidas", html)
+        self.assertIn("Ada &lt;One&gt;, Bea", html)
+        self.assertIn("Group &lt;Gift&gt;", html)
+        self.assertIn("Ideas para Ada &lt;One&gt;", html)
+        self.assertIn("&lt;script&gt;alert(1)&lt;/script&gt;", html)
+        self.assertNotIn("<script>alert(1)</script>", html)
+        self.assertNotIn("Group <Gift>", html)
+
     def test_generate_html_renders_social_rows_from_alternate_shapes(self) -> None:
         html = generate_html(
             deals=[
@@ -11265,6 +11420,31 @@ class RankTopPicksTests(unittest.TestCase):
         self.assertIn(
             "Hay datos de regalos, pero no hay items concretos para mostrar", html
         )
+        social_section = html.split('<details open class="filter-panel"', 1)[0]
+        self.assertNotIn("<tbody></tbody>", social_section)
+
+    def test_generate_html_multi_profile_empty_states_without_tables(self) -> None:
+        html = generate_html(
+            deals=[],
+            backlog_on_sale=[],
+            have_on_sale=[],
+            vanity="gaben",
+            owned={},
+            wishlist_appids=[],
+            min_discount=50,
+            genres=[],
+            compare_profiles=[{"friend_label": "Private", "status": "unavailable"}],
+            shared_gift_ideas=[{}, "invalid"],
+            gift_ideas_by_friend=[
+                {"friend_label": "Ada", "items": [{}, "invalid"]},
+                "invalid",
+            ],
+            recommended_collections=[],
+            personalized_recommendations={"items": []},
+        )
+
+        self.assertIn("Hay datos de regalos compartidos", html)
+        self.assertIn("Hay datos de regalos para Ada", html)
         social_section = html.split('<details open class="filter-panel"', 1)[0]
         self.assertNotIn("<tbody></tbody>", social_section)
 

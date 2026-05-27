@@ -84,16 +84,20 @@ Validar que las secciones sociales no muestren solo títulos/headers cuando exis
    - Si no hay items concretos, se muestra un estado vacío claro en vez de una tabla con headers solos.
 3. Mantener el flujo advisory-only: no carrito, checkout, compras ni tiendas externas.
 4. Para multi-perfil, usar el campo **Comparar con** con perfiles por línea o coma y confirmar en JSON:
-   - `compare_profiles` lista perfiles válidos y perfiles no públicos/invalidos como estado no disponible sin tumbar el reporte.
-   - `gift_ideas_by_friend` agrupa candidatos por amigo.
-   - `shared_gift_ideas` muestra candidatos que quieren 2+ amigos y conserva `ranking_impact=none`.
+    - `compare_profiles` lista perfiles válidos y perfiles no públicos/invalidos como estado no disponible sin tumbar el reporte.
+    - `gift_ideas_by_friend` agrupa candidatos por amigo.
+    - `shared_gift_ideas` muestra candidatos que quieren 2+ amigos y conserva `ranking_impact=none`.
+5. En reportes Markdown/HTML generados con payload multi-perfil, confirmar:
+   - `Ideas compartidas` muestra candidatos con amigos, precio/descuento y razones compactas cuando `shared_gift_ideas` trae items.
+   - `Ideas para {amigo}` muestra candidatos por persona desde `gift_ideas_by_friend`.
+   - Payloads vacíos o malformados muestran estado vacío claro o se omiten, sin tablas con headers solos.
 
 ### Cobertura automatizada mínima
 
 - Fixtures de `tests/test_generator_logic.py` para comparación con una oferta común.
 - Fixtures de `gift_ideas` con `social_reasons` y fallback de razón cuando falten razones.
 - Regresión de caso vacío para evitar tablas sin filas.
-- Fixtures multi-perfil con dedupe, perfil no disponible y JSON opcional backward-compatible.
+- Fixtures multi-perfil con dedupe, perfil no disponible, JSON opcional backward-compatible y render Markdown/HTML de `Ideas compartidas` / `Ideas para {amigo}`.
 
 ## Share / Compartir deals
 
