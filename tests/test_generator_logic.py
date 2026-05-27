@@ -11501,6 +11501,27 @@ class RankTopPicksTests(unittest.TestCase):
         self.assertIn("data-deals-filter-table", filtered_deals_section)
         self.assertIn("data-deal-row", filtered_deals_section)
 
+    def test_generate_html_reset_filters_uses_report_min_discount(self) -> None:
+        html = generate_html(
+            deals=[],
+            backlog_on_sale=[],
+            have_on_sale=[],
+            vanity="gaben",
+            owned={},
+            wishlist_appids=[],
+            min_discount=70,
+            genres=[],
+            recommended_collections=[],
+            personalized_recommendations={"items": []},
+        )
+
+        self.assertIn('data-filter-defaults data-default-discount="70"', html)
+        self.assertIn("function getFilterDefaults()", html)
+        self.assertIn("const defaults = getFilterDefaults();", html)
+        self.assertIn("document.getElementById('f-discount').value = defaults.discount", html)
+        self.assertIn("o.textContent = defaults.discount + '%'", html)
+        self.assertNotIn("document.getElementById('f-discount').value = 50", html)
+
     def test_generate_html_escapes_personalized_recommendation_data(self) -> None:
         html = generate_html(
             deals=[],

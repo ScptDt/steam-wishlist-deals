@@ -2563,6 +2563,11 @@ function parseFiniteNumber(value) {
   const number = Number.parseFloat(value);
   return Number.isFinite(number) ? number : null;
 }
+function getFilterDefaults() {
+  const panel = document.querySelector('[data-filter-defaults]');
+  const discount = parseFiniteNumber(panel ? panel.dataset.defaultDiscount : null);
+  return { discount: discount === null ? 50 : discount };
+}
 function setAverageStat(id, label, total, count, formatter) {
   const el = document.getElementById(id);
   if (!el) return;
@@ -2629,13 +2634,14 @@ function applyFilters() {
   });
 }
 function resetFilters() {
+  const defaults = getFilterDefaults();
   document.getElementById('f-search').value = '';
-  document.getElementById('f-discount').value = 50;
+  document.getElementById('f-discount').value = defaults.discount;
   document.getElementById('f-price-max').value = 2000;
   document.getElementById('f-deck').value = 'all';
   document.getElementById('f-reviews').value = 0;
   document.getElementById('f-new-only').checked = false;
-  document.querySelectorAll('.filter-group output').forEach(o => { if (o.id === 'f-disc-val') o.textContent = '50%'; else if (o.id === 'f-price-val') o.textContent = 'Sin limite'; else if (o.id === 'f-rev-val') o.textContent = '0%'; });
+  document.querySelectorAll('.filter-group output').forEach(o => { if (o.id === 'f-disc-val') o.textContent = defaults.discount + '%'; else if (o.id === 'f-price-val') o.textContent = 'Sin limite'; else if (o.id === 'f-rev-val') o.textContent = '0%'; });
   applyFilters();
 }
 function applyTopPickRecommendationFilter(section, selectedRecommendation) {
@@ -3794,7 +3800,7 @@ def generate_html(
     if multi_profile_gifts_html:
         parts.append(multi_profile_gifts_html)
 
-    parts.append(f'''<details open class="filter-panel">
+    parts.append(f'''<details open class="filter-panel" data-filter-defaults data-default-discount="{min_discount}">
   <summary>&#128269; Filtros</summary>
   <div class="filter-grid">
     <div class="filter-group"><label>Buscar juego</label><input type="text" id="f-search" placeholder="Nombre..." oninput="applyFilters()"></div>
