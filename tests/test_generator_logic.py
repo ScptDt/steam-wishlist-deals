@@ -13046,6 +13046,73 @@ class RankTopPicksTests(unittest.TestCase):
         self.assertIn('data-budget-row="balanced::a"', html)
         self.assertNotIn("budget-empty-state", html)
 
+    def test_generate_html_uses_first_budget_variant_when_selected_missing(self) -> None:
+        html = generate_html(
+            deals=[],
+            backlog_on_sale=[],
+            have_on_sale=[],
+            vanity="gaben",
+            owned={},
+            wishlist_appids=["a"],
+            min_discount=50,
+            genres=[],
+            budget_result={
+                "budget": 500,
+                "selected": [],
+                "total_spent": 10,
+                "total_savings": 90,
+                "remaining": 490,
+                "games_count": 1,
+                "variants": [
+                    {
+                        "id": "small",
+                        "label": "Lista chica",
+                        "description": "Pocos juegos",
+                        "budget": 500,
+                        "total_spent": 10,
+                        "total_savings": 90,
+                        "remaining": 490,
+                        "games_count": 1,
+                        "items": [
+                            {
+                                "appid": "a",
+                                "name": "Alpha",
+                                "discount": 90,
+                                "price_final": "$10",
+                                "score": 95,
+                            }
+                        ],
+                    },
+                    {
+                        "id": "large",
+                        "label": "Lista grande",
+                        "description": "Más juegos",
+                        "budget": 500,
+                        "total_spent": 20,
+                        "total_savings": 80,
+                        "remaining": 480,
+                        "games_count": 2,
+                        "items": [
+                            {
+                                "appid": "b",
+                                "name": "Bravo",
+                                "discount": 80,
+                                "price_final": "$20",
+                                "score": 80,
+                            }
+                        ],
+                    },
+                ],
+            },
+        )
+
+        self.assertIn('class="btn-reset budget-variant-btn is-active"', html)
+        self.assertIn('data-budget-variant-btn="small"', html)
+        self.assertIn('data-budget-panel="small"', html)
+        self.assertIn('class="budget-variant-panel" data-budget-panel="small"', html)
+        self.assertIn('class="budget-variant-panel hidden" data-budget-panel="large"', html)
+        self.assertIn('Variante activa: <strong id="budget-current-variant">Lista chica</strong>', html)
+
     def test_generate_html_renders_budget_variant_items_rows(self) -> None:
         html = generate_html(
             deals=[],

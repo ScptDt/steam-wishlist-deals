@@ -3722,9 +3722,9 @@ def generate_html(
         budget_data = budget_result
         variants = budget_data.get("variants") or []
         panel_variants = _html_budget_variants_with_fallback_rows(budget_data)
-        selected_variant = budget_data.get("selected_variant")
-        if not selected_variant and len(panel_variants) == 1:
-            selected_variant = panel_variants[0].get("id")
+        selected_variant = str(budget_data.get("selected_variant") or "").strip()
+        if not selected_variant and panel_variants:
+            selected_variant = str(panel_variants[0].get("id") or "").strip()
         pct_used = (
             budget_data["total_spent"] / budget_data["budget"] * 100
             if budget_data["budget"] > 0
