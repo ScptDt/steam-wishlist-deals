@@ -12105,6 +12105,39 @@ class RankTopPicksTests(unittest.TestCase):
         self.assertEqual("<html>share</html>", html)
         self.assertNotIn("recommendation_diagnostics", captured_kwargs)
 
+    def test_generator_share_html_forwards_multi_profile_gift_fields(self) -> None:
+        captured_kwargs = {}
+        original_renderer = generator_module._generate_share_html_renderer
+
+        def fake_renderer(*args, **kwargs):
+            captured_kwargs.update(kwargs)
+            return "<html>share</html>"
+
+        compare_profiles = [{"friend_label": "Ada", "status": "ok"}]
+        gift_ideas_by_friend = [{"friend_label": "Ada", "items": []}]
+        shared_gift_ideas = [{"appid": "50", "name": "Group Gift"}]
+
+        try:
+            generator_module._generate_share_html_renderer = fake_renderer
+            html = generator_module.generate_share_html(
+                deals=[],
+                vanity="gaben",
+                min_discount=50,
+                top_picks=[],
+                recommended_collections=[],
+                personalized_recommendations={"items": []},
+                compare_profiles=compare_profiles,
+                gift_ideas_by_friend=gift_ideas_by_friend,
+                shared_gift_ideas=shared_gift_ideas,
+            )
+        finally:
+            generator_module._generate_share_html_renderer = original_renderer
+
+        self.assertEqual("<html>share</html>", html)
+        self.assertIs(captured_kwargs["compare_profiles"], compare_profiles)
+        self.assertIs(captured_kwargs["gift_ideas_by_friend"], gift_ideas_by_friend)
+        self.assertIs(captured_kwargs["shared_gift_ideas"], shared_gift_ideas)
+
     def test_generate_share_html_labels_top_pick_score_and_metacritic(self) -> None:
         html = generate_share_html(
             deals=[],
@@ -12280,6 +12313,149 @@ class RankTopPicksTests(unittest.TestCase):
         self.assertIn("No abre carrito ni compra nada", html)
         self.assertIn('class="gift-share"', html)
         self.assertIn("data-share-game=", html)
+
+    def test_generate_share_html_renders_multi_profile_gift_sections(self) -> None:
+        html = generate_share_html(
+            deals=[],
+            vanity="gaben",
+            min_discount=50,
+            recommended_collections=[],
+            personalized_recommendations={"items": []},
+            compare_profiles=[
+                {"friend_label": "Ada", "status": "ok"},
+                {"friend_label": "Bea", "status": "ok"},
+                {"friend_label": "Private", "status": "unavailable"},
+            ],
+            shared_gift_ideas=[
+                {
+                    "appid": "50",
+                    "name": "Group Gift",
+                    "discount": 70,
+                    "price_final": "$120",
+                    "wanted_by_count": 2,
+                    "wanted_by": [
+                        {"friend_label": "Ada"},
+                        {"friend_label": "Bea"},
+                    ],
+                    "social_reasons": [
+                        "lo quieren 2 amigos: Ada, Bea",
+                        "descuento fuerte: 70%",
+                    ],
+                }
+            ],
+            gift_ideas_by_friend=[
+                {
+                    "friend_label": "Ada",
+                    "items": [
+                        {
+                            "appid": "30",
+                            "name": "Ada Gift",
+                            "discount": 60,
+                            "price_final": "$99",
+                            "social_reasons": ["lo tiene en wishlist"],
+                        }
+                    ],
+                },
+                {
+                    "friend_label": "Bea",
+                    "items": [
+                        {
+                            "steam_appid": "40",
+                            "steam_name": "Bea Gift",
+                            "discount": "55",
+                            "price": "$80",
+                            "reasons": ["se parece a Co-op"],
+                        }
+                    ],
+                },
+            ],
+        )
+
+        self.assertIn("data-multi-profile-gift-section", html)
+        self.assertIn("Regalos grupales", html)
+        self.assertIn("2 perfiles disponibles · 1 no disponibles", html)
+        self.assertIn("Ideas compartidas", html)
+        self.assertIn("Ideas para Ada", html)
+        self.assertIn("Ideas para Bea", html)
+        self.assertIn("Ada, Bea", html)
+        self.assertIn("Group Gift", html)
+        self.assertIn("lo quieren 2 amigos: Ada, Bea", html)
+        self.assertIn("se parece a Co-op", html)
+        self.assertIn('data-gift-idea="50"', html)
+        self.assertIn('href="https://store.steampowered.com/app/40/"', html)
+        self.assertIn("data-share-game=", html)
+
+    def test_generate_share_html_multi_profile_empty_states_without_cards(self) -> None:
+        html = generate_share_html(
+            deals=[],
+            vanity="gaben",
+            min_discount=50,
+            recommended_collections=[],
+            personalized_recommendations={"items": []},
+            compare_profiles=[{"friend_label": "Private", "status": "unavailable"}],
+            shared_gift_ideas=[{}, "invalid"],
+            gift_ideas_by_friend=[
+                {"friend_label": "Ada", "items": [{}, "invalid"]},
+                "invalid",
+            ],
+        )
+
+        self.assertIn("data-multi-profile-gift-section", html)
+        self.assertIn("Hay datos de regalos compartidos", html)
+        self.assertIn("Hay datos de regalos para Ada", html)
+        multi_section = html.split("data-multi-profile-gift-section", 1)[1]
+        multi_section = multi_section.split("</section>", 1)[0]
+        self.assertNotIn("gift-idea-card", multi_section)
+        self.assertNotIn("data-share-game=", multi_section)
+
+    def test_generate_share_html_escapes_multi_profile_gift_data(self) -> None:
+        html = generate_share_html(
+            deals=[],
+            vanity="gaben",
+            min_discount=50,
+            recommended_collections=[],
+            personalized_recommendations={"items": []},
+            compare_profiles=[{"friend_label": "Ada <One>", "status": "ok"}],
+            shared_gift_ideas=[
+                {
+                    "appid": '50" onclick="alert(1)',
+                    "name": "Group <Gift>",
+                    "discount": 70,
+                    "price_final": '" onmouseover="alert(2)',
+                    "wanted_by": [{"friend_label": "Ada <One>"}],
+                    "social_reasons": ["<script>alert(3)</script>"],
+                }
+            ],
+            gift_ideas_by_friend=[
+                {
+                    "friend_label": "Ada <One>",
+                    "items": [
+                        {
+                            "appid": '30" onclick="alert(4)',
+                            "name": "Ada <Gift>",
+                            "discount": 60,
+                            "price_final": "$99",
+                            "social_reasons": ["<script>alert(5)</script>"],
+                        }
+                    ],
+                }
+            ],
+        )
+
+        self.assertIn("data-multi-profile-gift-section", html)
+        self.assertIn("Ada &lt;One&gt;", html)
+        self.assertIn("Group &lt;Gift&gt;", html)
+        self.assertIn("Ada &lt;Gift&gt;", html)
+        self.assertIn("&lt;script&gt;alert(3)&lt;/script&gt;", html)
+        self.assertIn("&lt;script&gt;alert(5)&lt;/script&gt;", html)
+        self.assertNotIn("<script>alert(3)</script>", html)
+        self.assertNotIn("<script>alert(5)</script>", html)
+        self.assertNotIn("Group <Gift>", html)
+        self.assertNotIn("Ada <Gift>", html)
+        self.assertNotIn('/app/50" onclick=', html)
+        self.assertNotIn('/app/30" onclick=', html)
+        self.assertNotIn('data-gift-idea="50" onclick=', html)
+        self.assertNotIn('data-gift-idea="30" onclick=', html)
 
     def test_generate_share_html_omits_gift_ideas_when_empty(self) -> None:
         html = generate_share_html(

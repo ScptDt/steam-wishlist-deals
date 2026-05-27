@@ -9,6 +9,11 @@ from urllib.parse import urlsplit
 from share_payload import normalize_share_payload
 
 from .common import html_escape
+from .social_rows import (
+    compare_profile_counts,
+    normalize_gift_idea_groups,
+    normalize_shared_gift_idea_rows,
+)
 
 
 STORE_URL = "https://store.steampowered.com/app/{appid}/"
@@ -349,11 +354,15 @@ tr:hover { background: #1a3a5c; }
 .gift-ideas { margin: 1rem 0 .5rem; }
 .gift-ideas > p { color:#8f98a0; font-size:.78rem; margin:0 0 .55rem; }
 .gift-ideas-grid { display:grid; grid-template-columns:repeat(auto-fill,minmax(220px,1fr)); gap:.5rem; }
+.gift-group { border-top:1px solid #2a475e; padding-top:.65rem; margin-top:.65rem; }
+.gift-group h3 { color:#f0b232; font-size:.98rem; margin-bottom:.22rem; }
+.gift-group > p, .gift-group-summary, .gift-empty, .gift-group-more { color:#8f98a0; font-size:.76rem; margin:0 0 .5rem; }
 .gift-idea-card { background:#16202d; border:1px solid rgba(240,178,50,.35); border-radius:8px; padding:.65rem; }
 .gift-idea-card h3 { color:#66c0f4; font-size:.95rem; margin-bottom:.25rem; }
 .gift-rank { color:#f0b232; font-size:.78rem; font-weight:700; margin-bottom:.25rem; }
 .gift-meta { display:flex; flex-wrap:wrap; gap:.35rem; color:#c7d5e0; font-size:.72rem; margin:.25rem 0; }
 .gift-meta span:first-child { color:#6cc644; }
+.gift-friends { color:#c7d5e0; font-size:.73rem; margin:.25rem 0; }
 .gift-reasons { color:#8f98a0; font-size:.74rem; margin:.35rem 0 0; padding-left:1rem; }
 .gift-share { display:flex; justify-content:flex-end; margin-top:.45rem; }
 .external-offers { margin:1rem 0 .5rem; }
@@ -907,7 +916,10 @@ def _render_personalized_recommendations(payload: dict | None) -> str:
 def _gift_social_reasons(item: dict, *, limit: int = 2) -> list[str]:
     reasons = item.get("social_reasons") if isinstance(item, dict) else None
     if not isinstance(reasons, list):
-        return []
+        reasons = item.get("reasons") if isinstance(item, dict) else None
+    if not isinstance(reasons, list):
+        reason = str(item.get("reason") or "").strip() if isinstance(item, dict) else ""
+        return [reason] if reason else []
     compact: list[str] = []
     for reason in reasons:
         text = str(reason or "").strip()
@@ -995,6 +1007,107 @@ def _render_gift_ideas(gift_ideas: list[dict] | None, compare_data: dict | None)
 </section>'''
 
 
+def _render_shared_gift_idea_item(item: dict, index: int) -> str:
+    friend_labels = item.get("friend_labels") or []
+    wanted_by_count = _safe_int(item.get("wanted_by_count"))
+    if friend_labels:
+        friend_copy = ", ".join(str(label) for label in friend_labels)
+    else:
+        friend_copy = f"{wanted_by_count or 'Varios'} amigos"
+    return _render_gift_idea_item(
+        {**item, "social_reasons": _gift_social_reasons(item)}, index
+    ).replace(
+        '<ul class="gift-reasons">',
+        f'<div class="gift-friends">{html_escape(friend_copy)}</div><ul class="gift-reasons">',
+        1,
+    )
+
+
+def _render_multi_profile_summary(compare_profiles: list[dict] | None) -> str:
+    counts = compare_profile_counts(compare_profiles)
+    if not counts["total"]:
+        return ""
+    summary = f"{counts['available']} perfiles disponibles"
+    if counts["unavailable"]:
+        summary += f" · {counts['unavailable']} no disponibles"
+    return f'<p class="gift-group-summary">{html_escape(summary)}</p>'
+
+
+def _render_gift_group(
+    *,
+    title: str,
+    description: str,
+    rows: list[dict],
+    empty_message: str,
+    shared: bool = False,
+) -> str:
+    if rows:
+        renderer = _render_shared_gift_idea_item if shared else _render_gift_idea_item
+        cards = "".join(renderer(row, index) for index, row in enumerate(rows[:6], 1))
+        hidden_count = max(0, len(rows) - 6)
+        hidden_html = (
+            f'<p class="gift-group-more">{hidden_count} idea(s) más en el reporte completo.</p>'
+            if hidden_count
+            else ""
+        )
+        body = f'<div class="gift-ideas-grid">{cards}</div>{hidden_html}'
+    else:
+        body = f'<p class="gift-empty">{html_escape(empty_message)}</p>'
+    return f'''<div class="gift-group">
+  <h3>{html_escape(title)}</h3>
+  <p>{html_escape(description)}</p>
+  {body}
+</div>'''
+
+
+def _render_multi_profile_gifts(
+    compare_profiles: list[dict] | None,
+    gift_ideas_by_friend: list[dict] | None,
+    shared_gift_ideas: list[dict] | None,
+) -> str:
+    sections: list[str] = []
+    shared_rows = normalize_shared_gift_idea_rows(shared_gift_ideas)
+    if shared_rows or shared_gift_ideas:
+        sections.append(
+            _render_gift_group(
+                title="Ideas compartidas",
+                description="Juegos en oferta que quieren 2+ amigos.",
+                rows=shared_rows,
+                empty_message="Hay datos de regalos compartidos, pero no hay items concretos para mostrar.",
+                shared=True,
+            )
+        )
+
+    friend_groups = normalize_gift_idea_groups(gift_ideas_by_friend)
+    for group in friend_groups:
+        friend_label = str(group["friend_label"])
+        sections.append(
+            _render_gift_group(
+                title=f"Ideas para {friend_label}",
+                description=f"Juegos que {friend_label} quiere, están en oferta, y tú no los tienes.",
+                rows=group.get("rows") or [],
+                empty_message=f"Hay datos de regalos para {friend_label}, pero no hay items concretos para mostrar.",
+            )
+        )
+    if gift_ideas_by_friend and not friend_groups:
+        sections.append(
+            _render_gift_group(
+                title="Ideas por amigo",
+                description="Datos multi-perfil recibidos.",
+                rows=[],
+                empty_message="Hay datos multi-perfil, pero no hay grupos renderizables para mostrar.",
+            )
+        )
+    if not sections:
+        return ""
+    return f'''<section class="gift-ideas multi-profile-gifts" data-multi-profile-gift-section>
+  <h2 style="margin:1rem 0 .35rem">Regalos grupales</h2>
+  <p>Sugerencias locales y advisory-only para comparar múltiples amigos. No abre carrito ni compra nada.</p>
+  {_render_multi_profile_summary(compare_profiles)}
+  {"".join(sections)}
+</section>'''
+
+
 def generate_share_html(
     deals,
     vanity,
@@ -1009,6 +1122,9 @@ def generate_share_html(
     personalized_recommendations: dict | None = None,
     gift_ideas: list[dict] | None = None,
     compare_data: dict | None = None,
+    compare_profiles: list[dict] | None = None,
+    gift_ideas_by_friend: list[dict] | None = None,
+    shared_gift_ideas: list[dict] | None = None,
     external_offers: dict | None = None,
 ):
     """Generate a lightweight shareable HTML page with the deals list."""
@@ -1050,6 +1166,11 @@ def generate_share_html(
         personalized_recommendations
     )
     gift_html = _render_gift_ideas(gift_ideas, compare_data)
+    multi_profile_gifts_html = _render_multi_profile_gifts(
+        compare_profiles,
+        gift_ideas_by_friend,
+        shared_gift_ideas,
+    )
     external_offers_html = _render_external_offers(external_offers)
 
     sale_line = f" — {html_escape(sale_name)}" if sale_name else ""
@@ -1063,6 +1184,7 @@ def generate_share_html(
 {picks_html}
 {personalized_html}
 {gift_html}
+{multi_profile_gifts_html}
 {external_offers_html}
 {collections_html}
 <h2 style="margin:1rem 0 .5rem">Todos los Deals</h2>

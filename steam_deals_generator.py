@@ -3814,6 +3814,9 @@ def generate_share_html(
     personalized_recommendations: dict | None = None,
     gift_ideas: list[dict] | None = None,
     compare_data: dict | None = None,
+    compare_profiles: list[dict] | None = None,
+    gift_ideas_by_friend: list[dict] | None = None,
+    shared_gift_ideas: list[dict] | None = None,
     external_offers: dict | None = None,
 ):
     """Generate a lightweight shareable HTML page with the deals list."""
@@ -3843,6 +3846,9 @@ def generate_share_html(
             personalized_recommendations=personalized_recommendations,
             gift_ideas=gift_ideas,
             compare_data=compare_data,
+            compare_profiles=compare_profiles,
+            gift_ideas_by_friend=gift_ideas_by_friend,
+            shared_gift_ideas=shared_gift_ideas,
             external_offers=external_offers,
         )
     if _generate_share_html_fallback_renderer is None:
@@ -3861,6 +3867,9 @@ def generate_share_html(
         personalized_recommendations=personalized_recommendations,
         gift_ideas=gift_ideas,
         compare_data=compare_data,
+        compare_profiles=compare_profiles,
+        gift_ideas_by_friend=gift_ideas_by_friend,
+        shared_gift_ideas=shared_gift_ideas,
         external_offers=external_offers,
     )
 
@@ -5081,6 +5090,9 @@ def main():
         personalized_recommendations=personalized_recommendations,
         gift_ideas=gift_ideas,
         compare_data=compare_data,
+        compare_profiles=compare_profiles,
+        gift_ideas_by_friend=gift_ideas_by_friend,
+        shared_gift_ideas=shared_gift_ideas,
         external_offers=external_offers,
     )
 

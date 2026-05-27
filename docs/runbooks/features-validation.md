@@ -122,6 +122,7 @@ Cerrar el flujo E2E de compartir desde Web UI, HTML interactivo y Share HTML, ma
 4. **Share HTML generado**
    - Abrir `Steam Deals Share <fecha>.html`.
    - Confirmar que top picks y filas de deals exponen botón share.
+   - Si el JSON trae regalos multi-perfil, confirmar `Regalos grupales`, `Ideas compartidas` e `Ideas para {amigo}` sin cards vacías y con copy advisory-only/no carrito.
    - Verificar que `Copiar link steamtools://`, `Copiar link de Steam` y `Abrir en Steam` funcionan o caen al fallback esperado.
 5. **Compatibilidad de payload**
     - Revisar que el mismo deal mantenga campos clave entre superficies: `appid`, `name` / `steam_name`, `price` / `price_final`, `price_original` / `original_price`, `min_hist` / `min_historical`, `discount` y `url`.
