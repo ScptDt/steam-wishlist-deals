@@ -1,6 +1,6 @@
 # Bitácora Operativa
 
-Ultima actualizacion: 2026-05-26
+Ultima actualizacion: 2026-05-27
 
 ## Proposito
 
@@ -79,6 +79,8 @@ La nota de inicio puede omitirse en `BITACORA.md` para cambios triviales que no 
 | 2026-04-16 | macOS | validado en CI (parcial) | Workflow `Desktop Cross-Platform Validation` OK en `macos-latest` (run `24487556896`): install deps, build desktop, `py_compile`, check fallback local y artifact `dist-macos-latest` publicado. Falta validacion manual en host macOS para apertura de `.app`, quarantine/codesign/notarizacion segun distribucion. | Ejecutar checklist manual macOS (apertura local, quarantine, codesign) y registrar incidencias/workarounds. |
 
 ## Bitacora
+
+- 2026-05-27: Docs-only refinamiento planes UX/App/Reportes. Autor/ejecutor: AudPen. Resultado: el bloque de observaciones `[Image 1]`-`[Image 12]` en `PENDIENTES.md` se dividió en planes A-F con objetivo, alcance futuro, archivos probables, validación y guardrails; se priorizó corregir secciones/filtros rotos antes de pulidos visuales. Evidencia: revisión documental + `git diff --check` OK. Incidencias: ninguna. Siguiente seguimiento: abrir Plan D o Plan A como slice aprobado separado antes de tocar código/UI/renderers.
 
 - 2026-05-26: Docs-only backlog observaciones UX/App/Reportes. Autor/ejecutor: AudPen. Resultado: se capturó en `PENDIENTES.md` un bloque de observaciones del usuario sobre App post-wizard y reportes para refinamiento posterior, sin convertirlo aún en slices ni tocar UI/renderers/backend. Evidencia: revisión documental + `git diff --check` OK. Incidencias: cambios concurrentes no relacionados siguen preservados. Siguiente seguimiento: refinar después cada grupo visual/funcional y separar slices verificables.
 
