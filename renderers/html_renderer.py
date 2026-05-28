@@ -3271,6 +3271,33 @@ function renderBudgetPreview(option) {
   if (!option || option.is_original) return '';
   return `Preview · Nuevo total: ${escapeBudgetHtml(formatBudgetCurrency(option.swap_total_spent))} · Restante: ${escapeBudgetHtml(formatBudgetCurrency(option.swap_remaining))}`;
 }
+function getActiveBudgetSummaryData() {
+  const activeButton = document.querySelector('[data-budget-variant-btn].is-active') || document.querySelector('[data-budget-variant-btn]');
+  if (activeButton) return activeButton.dataset;
+  const root = document.querySelector('[data-budget-summary]');
+  return root ? root.dataset : null;
+}
+function updateBudgetSummaryDisplay(data, overrides = {}) {
+  if (!data) return;
+  const summaryCopy = document.getElementById('budget-summary-copy');
+  const progressFill = document.getElementById('budget-progress-fill');
+  const progressText = document.getElementById('budget-progress-text');
+  const budget = Number(data.budgetBudget || 0);
+  const total = Number(overrides.total ?? data.budgetTotal ?? 0);
+  const remaining = Number(overrides.remaining ?? data.budgetRemaining ?? 0);
+  const savings = Number(data.budgetSavings || 0);
+  const games = Number(data.budgetGames || 0);
+  const pct = budget > 0 ? Math.round((total / budget) * 100) : 0;
+  if (summaryCopy) summaryCopy.innerHTML = `Con ${escapeBudgetHtml(formatBudgetCurrency(budget))} MXN puedes comprar ${escapeBudgetHtml(games)} juegos &middot; Ahorro: ${escapeBudgetHtml(formatBudgetCurrency(savings))} &middot; Restante: ${escapeBudgetHtml(formatBudgetCurrency(remaining))}`;
+  if (progressFill) progressFill.style.width = pct + '%';
+  if (progressText) progressText.textContent = `${formatBudgetCurrency(total)} / ${formatBudgetCurrency(budget)} (${pct}%)`;
+}
+function updateBudgetSummaryFromOption(option) {
+  const total = Number(option && option.swap_total_spent);
+  const remaining = Number(option && option.swap_remaining);
+  if (!Number.isFinite(total) || !Number.isFinite(remaining)) return;
+  updateBudgetSummaryDisplay(getActiveBudgetSummaryData(), {total, remaining});
+}
 function applyBudgetOption(row, option) {
   if (!row || !option) return;
   const scoreEl = row.querySelector('.budget-value-score');
@@ -3297,6 +3324,7 @@ function applyBudgetOption(row, option) {
     previewEl.innerHTML = previewText;
     previewEl.classList.toggle('hidden', !previewText);
   }
+  updateBudgetSummaryFromOption(option);
 }
 function activateBudgetVariant(variantId) {
   const buttons = Array.from(document.querySelectorAll('[data-budget-variant-btn]'));
@@ -3305,19 +3333,8 @@ function activateBudgetVariant(variantId) {
   if (!activeButton) return;
   buttons.forEach((btn) => btn.classList.toggle('is-active', btn === activeButton));
   panels.forEach((panel) => panel.classList.toggle('hidden', panel.dataset.budgetPanel !== activeButton.dataset.budgetVariantBtn));
-  const summaryCopy = document.getElementById('budget-summary-copy');
-  const progressFill = document.getElementById('budget-progress-fill');
-  const progressText = document.getElementById('budget-progress-text');
   const badge = document.getElementById('budget-current-variant');
-  const budget = Number(activeButton.dataset.budgetBudget || 0);
-  const total = Number(activeButton.dataset.budgetTotal || 0);
-  const remaining = Number(activeButton.dataset.budgetRemaining || 0);
-  const savings = Number(activeButton.dataset.budgetSavings || 0);
-  const games = Number(activeButton.dataset.budgetGames || 0);
-  const pct = budget > 0 ? Math.round((total / budget) * 100) : 0;
-  if (summaryCopy) summaryCopy.innerHTML = `Con ${escapeBudgetHtml(formatBudgetCurrency(budget))} MXN puedes comprar ${escapeBudgetHtml(games)} juegos &middot; Ahorro: ${escapeBudgetHtml(formatBudgetCurrency(savings))} &middot; Restante: ${escapeBudgetHtml(formatBudgetCurrency(remaining))}`;
-  if (progressFill) progressFill.style.width = pct + '%';
-  if (progressText) progressText.textContent = `${formatBudgetCurrency(total)} / ${formatBudgetCurrency(budget)} (${pct}%)`;
+  updateBudgetSummaryDisplay(activeButton.dataset);
   if (badge) badge.textContent = activeButton.dataset.budgetLabel || 'Lista actual';
 }
 function bindBudgetRowRerolls() {
@@ -3769,7 +3786,12 @@ def generate_html(
         current_variant_label = _html_esc(
             (current_variant or {}).get("label") or "Lista actual"
         )
-        parts.append(f"""<section style="margin-bottom:1.5rem">
+        parts.append(f"""<section style="margin-bottom:1.5rem" data-budget-summary
+  data-budget-budget="{float(budget_data['budget']):.2f}"
+  data-budget-games="{int(budget_data['games_count'])}"
+  data-budget-total="{float(budget_data['total_spent']):.2f}"
+  data-budget-remaining="{float(budget_data['remaining']):.2f}"
+  data-budget-savings="{float(budget_data['total_savings']):.2f}">
   <h2>&#128176; Tu Presupuesto Ideal &mdash; ${budget_data["budget"]:.0f} MXN</h2>
   <p class="section-desc" id="budget-summary-copy">Con ${budget_data["budget"]:.0f} MXN puedes comprar {budget_data["games_count"]} juegos &middot; Ahorro: ${budget_data["total_savings"]:.0f} &middot; Restante: ${budget_data["remaining"]:.0f}</p>
   <div style="background:var(--bg-secondary);border-radius:6px;height:24px;margin-bottom:.8rem;overflow:hidden;position:relative">

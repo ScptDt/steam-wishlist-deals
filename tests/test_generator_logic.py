@@ -13248,6 +13248,72 @@ class RankTopPicksTests(unittest.TestCase):
         self.assertIn("imageEl.src = option.image_url;", html)
         self.assertIn("share-btn-close", html)
 
+    def test_generate_html_budget_reroll_updates_visible_totals(self) -> None:
+        html = generate_html(
+            deals=[],
+            backlog_on_sale=[],
+            have_on_sale=[],
+            vanity="gaben",
+            owned={},
+            wishlist_appids=["a"],
+            min_discount=50,
+            genres=[],
+            budget_result={
+                "budget": 100,
+                "selected_variant": "balanced",
+                "selected": [],
+                "total_spent": 50,
+                "total_savings": 50,
+                "remaining": 50,
+                "games_count": 1,
+                "variants": [
+                    {
+                        "id": "balanced",
+                        "label": "Lista media",
+                        "description": "Balance recomendado",
+                        "budget": 100,
+                        "total_spent": 50,
+                        "total_savings": 50,
+                        "remaining": 50,
+                        "games_count": 1,
+                        "items": [
+                            {
+                                "appid": "a",
+                                "name": "Alpha",
+                                "discount": 50,
+                                "price_final": "$50",
+                                "score": 80,
+                                "replacement_candidates": [
+                                    {
+                                        "appid": "b",
+                                        "name": "Bravo",
+                                        "discount": 60,
+                                        "price_final": "$40",
+                                        "score": 82,
+                                        "swap_total_spent": 40,
+                                        "swap_remaining": 60,
+                                    }
+                                ],
+                            }
+                        ],
+                    }
+                ],
+            },
+        )
+
+        self.assertIn("data-budget-summary", html)
+        self.assertIn('data-budget-budget="100.00"', html)
+        self.assertIn('data-budget-total="50.00"', html)
+        self.assertIn('data-budget-remaining="50.00"', html)
+        self.assertIn("&quot;swap_total_spent&quot;: 40.0", html)
+        self.assertIn("&quot;swap_remaining&quot;: 60.0", html)
+        self.assertIn("function updateBudgetSummaryDisplay(data, overrides = {})", html)
+        self.assertIn("function updateBudgetSummaryFromOption(option)", html)
+        self.assertIn("updateBudgetSummaryFromOption(option);", html)
+        self.assertIn("updateBudgetSummaryDisplay(activeButton.dataset);", html)
+        self.assertIn("overrides.total ?? data.budgetTotal ?? 0", html)
+        self.assertIn("overrides.remaining ?? data.budgetRemaining ?? 0", html)
+
     def test_generate_html_uses_root_budget_selection_when_variant_rows_missing(self) -> None:
         html = generate_html(
             deals=[],
