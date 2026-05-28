@@ -13652,6 +13652,42 @@ class RankTopPicksTests(unittest.TestCase):
         self.assertIn("Comprar ahora", html)
         self.assertIn("1/2", html)
 
+    def test_generate_html_shuffle_updates_name_link_on_reroll(self) -> None:
+        html = generate_html(
+            deals=[],
+            backlog_on_sale=[],
+            have_on_sale=[],
+            vanity="gaben",
+            owned={},
+            wishlist_appids=["10", "20"],
+            min_discount=50,
+            genres=[],
+            top_picks=[
+                {
+                    "appid": "10",
+                    "name": "Alpha",
+                    "discount": 90,
+                    "price_final": "$10",
+                    "score": 95.0,
+                    "recommendation": "Comprar ahora",
+                    "categories": [],
+                },
+                {
+                    "appid": "20",
+                    "name": "Bravo",
+                    "discount": 80,
+                    "price_final": "$12",
+                    "score": 82.0,
+                    "recommendation": "Muy buena oferta",
+                    "categories": [],
+                },
+            ],
+        )
+
+        self.assertIn("section.querySelectorAll('[data-shuffle-link]')", html)
+        self.assertIn("name.href = candidate.url || '#'", html)
+        self.assertIn('data-shuffle-name href="https://store.steampowered.com/app/10/"', html)
+
     def test_generate_html_shuffle_prefers_personalized_recommendations(self) -> None:
         html = generate_html(
             deals=[

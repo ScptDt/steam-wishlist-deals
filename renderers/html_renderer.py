@@ -2689,7 +2689,10 @@ function applyShuffleCandidate(section, candidate, index, total) {
     image.src = candidate.image_url;
   }
   const name = section.querySelector('[data-shuffle-name]');
-  if (name) name.textContent = candidate.name || 'Juego';
+  if (name) {
+    name.textContent = candidate.name || 'Juego';
+    name.href = candidate.url || '#';
+  }
   const score = section.querySelector('[data-shuffle-score]');
   if (score) score.textContent = candidate.score_text || 'Sin score';
   const discount = section.querySelector('[data-shuffle-discount]');
