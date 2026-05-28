@@ -2604,7 +2604,8 @@ function applyFilters() {
   const priceMax = priceMaxRaw === null ? 2000 : priceMaxRaw;
   const revMin = revMinRaw === null ? 0 : revMinRaw;
   const search = document.getElementById('f-search').value.toLowerCase();
-  const newOnly = document.getElementById('f-new-only').checked;
+  const newOnlyInput = document.getElementById('f-new-only');
+  const newOnly = newOnlyInput.checked && !newOnlyInput.disabled;
   let totalV = 0, totalD = 0, totalP = 0, discountCount = 0, priceCount = 0;
   document.querySelectorAll(DEAL_FILTER_ROW_SELECTOR).forEach(row => {
     const d = row.dataset;
@@ -3801,6 +3802,12 @@ def generate_html(
         parts.append(multi_profile_gifts_html)
 
     filter_min_discount = min(50, int(min_discount if min_discount is not None else 50))
+    has_previous_baseline = bool(previous_appids)
+    new_only_input = '<input type="checkbox" id="f-new-only" onchange="applyFilters()">'
+    new_only_note = ""
+    if not has_previous_baseline:
+        new_only_input = '<input type="checkbox" id="f-new-only" onchange="applyFilters()" disabled aria-disabled="true" title="Disponible cuando existe una corrida previa">'
+        new_only_note = ' <span class="review-na">(requiere corrida previa)</span>'
     parts.append(f'''<details open class="filter-panel" data-filter-defaults data-default-discount="{min_discount}">
   <summary>&#128269; Filtros</summary>
   <div class="filter-grid">
@@ -3809,7 +3816,7 @@ def generate_html(
     <div class="filter-group"><label>Precio max: <output id="f-price-val">Sin limite</output></label><input type="range" id="f-price-max" min="0" max="2000" value="2000" step="10" oninput="document.getElementById('f-price-val').textContent=this.value>=2000?'Sin limite':'$'+this.value;applyFilters()"></div>
     <div class="filter-group"><label>Steam Deck</label><select id="f-deck" onchange="applyFilters()"><option value="all">Todos</option><option value="3">Verificado</option><option value="2">Jugable</option><option value="1">No compatible</option></select></div>
     <div class="filter-group"><label>Reseñas mín.: <output id="f-rev-val">0%</output></label><input type="range" id="f-reviews" min="0" max="100" value="0" oninput="document.getElementById('f-rev-val').textContent=this.value+'%';applyFilters()"></div>
-    <div class="filter-group"><label><input type="checkbox" id="f-new-only" onchange="applyFilters()"> Solo nuevos</label></div>
+    <div class="filter-group"><label>{new_only_input} Solo nuevos{new_only_note}</label></div>
     <div class="filter-group"><button onclick="resetFilters()" class="btn-reset">Limpiar filtros</button> <button onclick="copyForSheets()" class="btn-reset" title="Copiar datos visibles como TSV para pegar en Google Sheets/Excel">&#128203; Copiar para Sheets</button></div>
   </div>
 </details>''')

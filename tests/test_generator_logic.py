@@ -11610,6 +11610,80 @@ class RankTopPicksTests(unittest.TestCase):
         )
         self.assertNotIn("rv !== null && rv >= 0 && rv < revMin", html)
 
+    def test_generate_html_disables_new_only_filter_without_previous_baseline(self) -> None:
+        html = generate_html(
+            deals=[
+                {
+                    "appid": "10",
+                    "name": "Only Deal",
+                    "discount": 60,
+                    "price_final": "$6",
+                    "price_original": "$10",
+                    "categories": [2],
+                }
+            ],
+            backlog_on_sale=[],
+            have_on_sale=[],
+            vanity="gaben",
+            owned={},
+            wishlist_appids=["10"],
+            min_discount=50,
+            genres=[],
+            previous_appids=set(),
+            recommended_collections=[],
+            personalized_recommendations={"items": []},
+        )
+
+        self.assertIn(
+            'id="f-new-only" onchange="applyFilters()" disabled aria-disabled="true"',
+            html,
+        )
+        self.assertIn("requiere corrida previa", html)
+        self.assertIn("const newOnlyInput = document.getElementById('f-new-only');", html)
+        self.assertIn(
+            "const newOnly = newOnlyInput.checked && !newOnlyInput.disabled;",
+            html,
+        )
+
+    def test_generate_html_keeps_new_only_filter_enabled_with_previous_baseline(self) -> None:
+        html = generate_html(
+            deals=[
+                {
+                    "appid": "10",
+                    "name": "Known Deal",
+                    "discount": 60,
+                    "price_final": "$6",
+                    "price_original": "$10",
+                    "categories": [2],
+                },
+                {
+                    "appid": "20",
+                    "name": "New Deal",
+                    "discount": 70,
+                    "price_final": "$7",
+                    "price_original": "$20",
+                    "categories": [2],
+                },
+            ],
+            backlog_on_sale=[],
+            have_on_sale=[],
+            vanity="gaben",
+            owned={},
+            wishlist_appids=["10", "20"],
+            min_discount=50,
+            genres=[],
+            previous_appids={"10"},
+            recommended_collections=[],
+            personalized_recommendations={"items": []},
+        )
+
+        self.assertIn('id="f-new-only" onchange="applyFilters()">', html)
+        self.assertNotIn('id="f-new-only" onchange="applyFilters()" disabled', html)
+        self.assertNotIn("requiere corrida previa", html)
+        self.assertIn('data-new="0"', html)
+        self.assertIn('data-new="1"', html)
+        self.assertIn("new-badge", html)
+
     def test_generate_html_escapes_personalized_recommendation_data(self) -> None:
         html = generate_html(
             deals=[],
