@@ -3050,26 +3050,39 @@ document.addEventListener('DOMContentLoaded', () => {
   bindShareModalInteractions();
   bindBudgetHtmlInteractions();
 });
+function setCopyForSheetsFeedback(message) {
+  const btn = document.querySelector('[data-copy-sheets-btn]');
+  if (!btn) return;
+  const originalLabel = btn.dataset.copyOriginal || btn.innerHTML;
+  btn.dataset.copyOriginal = originalLabel;
+  btn.innerHTML = message;
+  setTimeout(() => { btn.innerHTML = btn.dataset.copyOriginal || originalLabel; }, 2000);
+}
 function copyForSheets() {
   const rows = [];
+  let visibleDataRows = 0;
   document.querySelectorAll(DEAL_FILTER_TABLE_SELECTOR).forEach(table => {
+    const tableRows = [];
+    table.querySelectorAll('tbody tr').forEach(tr => {
+      if (tr.style.display === 'none') return;
+      const cells = Array.from(tr.querySelectorAll('td')).map(td => td.textContent.trim().replace(/\\t/g,' '));
+      tableRows.push(cells.join('\\t'));
+    });
+    if (!tableRows.length) return;
     if (!rows.length) {
       const ths = Array.from(table.querySelectorAll('th')).map(th => th.textContent.replace(/[▲▼]/g,'').trim());
       rows.push(ths.join('\\t'));
     }
-    table.querySelectorAll('tbody tr').forEach(tr => {
-      if (tr.style.display === 'none') return;
-      const cells = Array.from(tr.querySelectorAll('td')).map(td => td.textContent.trim().replace(/\\t/g,' '));
-      rows.push(cells.join('\\t'));
-    });
+    tableRows.forEach(row => rows.push(row));
+    visibleDataRows += tableRows.length;
   });
+  if (!visibleDataRows) { setCopyForSheetsFeedback('Sin filas visibles'); return; }
   const tsv = rows.join('\\n');
-  navigator.clipboard.writeText(tsv).then(() => {
-    const btn = document.querySelector('[onclick*=copyForSheets]');
-    const orig = btn.innerHTML;
-    btn.innerHTML = '&#9989; ¡Copiado!';
-    setTimeout(() => btn.innerHTML = orig, 2000);
-  }).catch(() => alert('No se pudo copiar al clipboard'));
+  const clipboard = navigator.clipboard;
+  if (!clipboard || typeof clipboard.writeText !== 'function') { setCopyForSheetsFeedback('Clipboard no disponible'); return; }
+  clipboard.writeText(tsv)
+    .then(() => setCopyForSheetsFeedback('&#9989; ¡Copiado!'))
+    .catch(() => setCopyForSheetsFeedback('No se pudo copiar'));
 }
 let currentShareData = null;
 let currentSteamUrl = '';
@@ -3817,7 +3830,7 @@ def generate_html(
     <div class="filter-group"><label>Steam Deck</label><select id="f-deck" onchange="applyFilters()"><option value="all">Todos</option><option value="3">Verificado</option><option value="2">Jugable</option><option value="1">No compatible</option></select></div>
     <div class="filter-group"><label>Reseñas mín.: <output id="f-rev-val">0%</output></label><input type="range" id="f-reviews" min="0" max="100" value="0" oninput="document.getElementById('f-rev-val').textContent=this.value+'%';applyFilters()"></div>
     <div class="filter-group"><label>{new_only_input} Solo nuevos{new_only_note}</label></div>
-    <div class="filter-group"><button onclick="resetFilters()" class="btn-reset">Limpiar filtros</button> <button onclick="copyForSheets()" class="btn-reset" title="Copiar datos visibles como TSV para pegar en Google Sheets/Excel">&#128203; Copiar para Sheets</button></div>
+    <div class="filter-group"><button onclick="resetFilters()" class="btn-reset">Limpiar filtros</button> <button onclick="copyForSheets()" class="btn-reset" data-copy-sheets-btn title="Copiar datos visibles como TSV para pegar en Google Sheets/Excel">&#128203; Copiar para Sheets</button></div>
   </div>
 </details>''')
 

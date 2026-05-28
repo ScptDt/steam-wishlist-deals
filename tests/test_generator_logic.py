@@ -11684,6 +11684,48 @@ class RankTopPicksTests(unittest.TestCase):
         self.assertIn('data-new="1"', html)
         self.assertIn("new-badge", html)
 
+    def test_generate_html_copy_for_sheets_handles_empty_and_clipboard_unavailable(self) -> None:
+        html = generate_html(
+            deals=[
+                {
+                    "appid": "10",
+                    "name": "Visible Deal",
+                    "discount": 60,
+                    "price_final": "$6",
+                    "price_original": "$10",
+                    "categories": [2],
+                }
+            ],
+            backlog_on_sale=[],
+            have_on_sale=[],
+            vanity="gaben",
+            owned={},
+            wishlist_appids=["10"],
+            min_discount=50,
+            genres=[],
+            recommended_collections=[],
+            personalized_recommendations={"items": []},
+        )
+
+        self.assertIn("function setCopyForSheetsFeedback(message)", html)
+        self.assertIn("document.querySelector('[data-copy-sheets-btn]')", html)
+        self.assertIn("if (!btn) return;", html)
+        self.assertIn("let visibleDataRows = 0;", html)
+        self.assertIn(
+            "if (!visibleDataRows) { setCopyForSheetsFeedback('Sin filas visibles'); return; }",
+            html,
+        )
+        self.assertIn("const clipboard = navigator.clipboard;", html)
+        self.assertIn(
+            "if (!clipboard || typeof clipboard.writeText !== 'function') { setCopyForSheetsFeedback('Clipboard no disponible'); return; }",
+            html,
+        )
+        self.assertIn("clipboard.writeText(tsv)", html)
+        self.assertIn(".catch(() => setCopyForSheetsFeedback('No se pudo copiar'))", html)
+        self.assertIn("data-copy-sheets-btn", html)
+        self.assertIn("document.querySelectorAll(DEAL_FILTER_TABLE_SELECTOR)", html)
+        self.assertNotIn("navigator.clipboard.writeText(tsv)", html)
+
     def test_generate_html_escapes_personalized_recommendation_data(self) -> None:
         html = generate_html(
             deals=[],
