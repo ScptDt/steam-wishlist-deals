@@ -326,14 +326,6 @@ _TASTE_PRIORITY_CATEGORY_LABELS = {
 }
 _EXTERNAL_OFFER_CURRENCY_RE = re.compile(r"^[A-Z]{3}$")
 
-_TOP_PICK_RECOMMENDATION_FILTERS = (
-    "Comprar ahora",
-    "Muy buena oferta",
-    "Vale la pena",
-    "Solo si ya lo traías en radar",
-)
-
-
 def _promo_category_label(category: str) -> str:
     return _PROMO_CATEGORY_LABELS.get(str(category or ""), str(category or "Otra promo"))
 
@@ -955,13 +947,26 @@ def _html_taste_priority(payload: dict | None) -> str:
 </section>'''
 
 
-def _html_top_pick_filter_controls() -> str:
+def _top_pick_recommendation_filter_labels(top_picks: list[dict]) -> list[str]:
+    labels: list[str] = []
+    seen: set[str] = set()
+    for pick in top_picks:
+        label = str((pick or {}).get("recommendation") or "").strip() or "Sin recomendación"
+        key = label.casefold()
+        if key in seen:
+            continue
+        seen.add(key)
+        labels.append(label)
+    return labels
+
+
+def _html_top_pick_filter_controls(labels: list[str]) -> str:
     buttons = [
         '<button type="button" class="top-pick-filter-btn is-active" data-top-pick-filter="all" aria-pressed="true">Todos</button>'
     ]
     buttons.extend(
         f'<button type="button" class="top-pick-filter-btn" data-top-pick-filter="{_html_esc(label)}" aria-pressed="false">{_html_esc(label)}</button>'
-        for label in _TOP_PICK_RECOMMENDATION_FILTERS
+        for label in labels
     )
     return f'''<div class="top-pick-filters" aria-label="Filtrar Top Picks por recomendación">
   <div class="top-pick-filter-head">
@@ -3684,7 +3689,7 @@ def generate_html(
         parts.append(f"""<section class="top-picks" data-top-picks-section>
   <h2>&#127942; {len(top_picks)} juegos destacados</h2>
   <p class="section-desc">Score = recomendación compuesta para priorizar qué revisar primero. Combina reviews (26%) + descuento (22%) + prioridad (18%) + $/hora HLTB (14%) + Deck (10%) + Metacritic (5%) + antigüedad (5%).</p>
-  {_html_top_pick_filter_controls()}
+  {_html_top_pick_filter_controls(_top_pick_recommendation_filter_labels(top_picks))}
   {_html_recommendation_guide()}
   <div class="picks-grid">{"".join(cards)}</div>
 </section>""")

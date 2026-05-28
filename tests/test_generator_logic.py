@@ -10885,11 +10885,57 @@ class RankTopPicksTests(unittest.TestCase):
         self.assertIn('data-top-picks-section', html)
         self.assertIn('data-top-pick-filter="all" aria-pressed="true"', html)
         self.assertIn('data-top-pick-filter="Comprar ahora" aria-pressed="false"', html)
-        self.assertIn('data-top-pick-filter="Muy buena oferta" aria-pressed="false"', html)
+        self.assertNotIn('data-top-pick-filter="Muy buena oferta" aria-pressed="false"', html)
         self.assertIn('data-recommendation="Comprar ahora"', html)
         self.assertIn("applyTopPickRecommendationFilter", html)
         self.assertIn("data-top-pick-filter-count", html)
         self.assertIn("No hay Top Picks con esa recomendación.", html)
+
+    def test_generate_html_top_pick_filters_use_rendered_recommendations(self) -> None:
+        html = generate_html(
+            deals=[],
+            backlog_on_sale=[],
+            have_on_sale=[],
+            vanity="gaben",
+            owned={},
+            wishlist_appids=["a", "b", "c"],
+            min_discount=50,
+            genres=[],
+            top_picks=[
+                {
+                    "appid": "a",
+                    "name": "Alpha",
+                    "discount": 90,
+                    "price_final": "$10",
+                    "score": 95.4,
+                    "recommendation": "Comprar ahora",
+                },
+                {
+                    "appid": "b",
+                    "name": "Bravo",
+                    "discount": 75,
+                    "price_final": "$12",
+                    "score": 82.0,
+                    "recommendation": "Revisar cooperativo",
+                },
+                {
+                    "appid": "c",
+                    "name": "Charlie",
+                    "discount": 60,
+                    "price_final": "$8",
+                    "score": 70.0,
+                },
+            ],
+        )
+
+        self.assertIn('data-top-pick-filter="all" aria-pressed="true"', html)
+        self.assertIn('data-top-pick-filter="Comprar ahora" aria-pressed="false"', html)
+        self.assertIn('data-top-pick-filter="Revisar cooperativo" aria-pressed="false"', html)
+        self.assertIn('data-top-pick-filter="Sin recomendación" aria-pressed="false"', html)
+        self.assertIn('data-recommendation="Revisar cooperativo"', html)
+        self.assertIn('data-recommendation="Sin recomendación"', html)
+        self.assertNotIn('data-top-pick-filter="Muy buena oferta" aria-pressed="false"', html)
+        self.assertNotIn('data-top-pick-filter="Vale la pena" aria-pressed="false"', html)
 
     def test_generate_html_renders_advisory_offer_highlights(self) -> None:
         html = generate_html(
