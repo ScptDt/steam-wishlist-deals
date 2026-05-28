@@ -11558,6 +11558,58 @@ class RankTopPicksTests(unittest.TestCase):
         self.assertIn('id="f-discount" min="0" max="100" value="0"', html)
         self.assertNotIn('id="f-discount" min="50" max="100" value="0"', html)
 
+    def test_generate_html_review_filter_hides_unrated_only_above_zero(self) -> None:
+        html = generate_html(
+            deals=[
+                {
+                    "appid": "10",
+                    "name": "Unrated Game",
+                    "discount": 60,
+                    "price_final": "$6",
+                    "price_original": "$10",
+                    "categories": [2],
+                },
+                {
+                    "appid": "20",
+                    "name": "Mixed Game",
+                    "discount": 70,
+                    "price_final": "$7",
+                    "price_original": "$20",
+                    "categories": [2],
+                },
+                {
+                    "appid": "30",
+                    "name": "Loved Game",
+                    "discount": 80,
+                    "price_final": "$8",
+                    "price_original": "$40",
+                    "categories": [2],
+                },
+            ],
+            backlog_on_sale=[],
+            have_on_sale=[],
+            vanity="gaben",
+            owned={},
+            wishlist_appids=["10", "20", "30"],
+            min_discount=50,
+            genres=[],
+            reviews={
+                "20": {"pct": 65, "desc": "Mixed", "total": 20},
+                "30": {"pct": 90, "desc": "Very Positive", "total": 100},
+            },
+            recommended_collections=[],
+            personalized_recommendations={"items": []},
+        )
+
+        self.assertIn('data-review="-1"', html)
+        self.assertIn('data-review="65"', html)
+        self.assertIn('data-review="90"', html)
+        self.assertIn(
+            "if (revMin > 0 && (rv === null || rv < revMin)) show = false;",
+            html,
+        )
+        self.assertNotIn("rv !== null && rv >= 0 && rv < revMin", html)
+
     def test_generate_html_escapes_personalized_recommendation_data(self) -> None:
         html = generate_html(
             deals=[],

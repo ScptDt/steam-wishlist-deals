@@ -2615,7 +2615,7 @@ function applyFilters() {
     if (priceMax < 2000 && (price === null || price > priceMax)) show = false;
     if (deck !== 'all' && d.deck !== deck) show = false;
     const rv = parseFiniteNumber(d.review);
-    if (rv !== null && rv >= 0 && rv < revMin) show = false;
+    if (revMin > 0 && (rv === null || rv < revMin)) show = false;
     if (search && !d.name.includes(search)) show = false;
     if (newOnly && d.new !== '1') show = false;
     row.style.display = show ? '' : 'none';
