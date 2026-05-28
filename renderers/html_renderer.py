@@ -3800,7 +3800,7 @@ def generate_html(
     if multi_profile_gifts_html:
         parts.append(multi_profile_gifts_html)
 
-    filter_min_discount = min(50, int(min_discount or 50))
+    filter_min_discount = min(50, int(min_discount if min_discount is not None else 50))
     parts.append(f'''<details open class="filter-panel" data-filter-defaults data-default-discount="{min_discount}">
   <summary>&#128269; Filtros</summary>
   <div class="filter-grid">
