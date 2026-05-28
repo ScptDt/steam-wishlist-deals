@@ -2162,6 +2162,16 @@ def _html_budget_variant_panels(variants: list[dict], *, selected_variant: str |
     )
 
 
+def _html_budget_selected_variant_id(
+    variants: list[dict], selected_variant: str | None
+) -> str:
+    normalized = str(selected_variant or "").strip()
+    variant_ids = [str(variant.get("id") or "").strip() for variant in variants]
+    if normalized in variant_ids:
+        return normalized
+    return variant_ids[0] if variant_ids else ""
+
+
 def _html_budget_variants_with_fallback_rows(budget_data: dict) -> list[dict]:
     variants = budget_data.get("variants") or []
     if not variants:
@@ -2171,13 +2181,14 @@ def _html_budget_variants_with_fallback_rows(budget_data: dict) -> list[dict]:
     if not isinstance(root_selection, list) or not root_selection:
         return variants
 
-    selected_variant = str(budget_data.get("selected_variant") or "").strip()
-    single_variant_without_selection = not selected_variant and len(variants) == 1
+    requested_variant = str(budget_data.get("selected_variant") or "").strip()
+    selected_variant = _html_budget_selected_variant_id(variants, requested_variant)
+    single_variant_without_selection = not requested_variant and len(variants) == 1
     return [
         {**variant, "selected": root_selection}
         if not _budget_variant_rows(variant)
         and (
-            (selected_variant and str(variant.get("id") or "").strip() == selected_variant)
+            (requested_variant and str(variant.get("id") or "").strip() == selected_variant)
             or single_variant_without_selection
         )
         else variant
@@ -3761,12 +3772,9 @@ def generate_html(
         budget_data = budget_result
         variants = budget_data.get("variants") or []
         panel_variants = _html_budget_variants_with_fallback_rows(budget_data)
-        selected_variant = str(budget_data.get("selected_variant") or "").strip()
-        rendered_variant_ids = {
-            str(variant.get("id") or "").strip() for variant in panel_variants
-        }
-        if selected_variant not in rendered_variant_ids and panel_variants:
-            selected_variant = str(panel_variants[0].get("id") or "").strip()
+        selected_variant = _html_budget_selected_variant_id(
+            panel_variants, budget_data.get("selected_variant")
+        )
         pct_used = (
             budget_data["total_spent"] / budget_data["budget"] * 100
             if budget_data["budget"] > 0
