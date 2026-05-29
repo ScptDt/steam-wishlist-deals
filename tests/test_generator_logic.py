@@ -2363,6 +2363,74 @@ class WishlistHygieneTests(unittest.TestCase):
         self.assertEqual(external_matches[0]["store_id"], "epic")
         self.assertEqual(external_matches[0]["external_name"], "Café™ Racer: Deluxe")
 
+    def test_normalize_manual_external_library_export_accepts_multistore_local_templates(self) -> None:
+        external_matches = []
+        for payload in (
+            {
+                "store": "GOG.com",
+                "games": [{"title": "GOG Owned", "steam_appid": "10"}],
+            },
+            {
+                "storefront": "Epic Games Store",
+                "library": [{"name": "Epic Owned", "appid": "20"}],
+            },
+            {
+                "store": "Fanatical",
+                "bundles": [{"title": "Fanatical Bundle", "appid": "30"}],
+            },
+            {
+                "store": "Humble Bundle",
+                "purchases": [{"title": "Humble Purchase", "steam_appid": "40"}],
+            },
+        ):
+            external_matches.extend(normalize_manual_external_library_export(payload))
+
+        hygiene = build_wishlist_hygiene_signals(
+            [
+                {"appid": "10", "name": "GOG Owned"},
+                {"appid": "20", "name": "Epic Owned"},
+                {"appid": "30", "name": "Fanatical Bundle"},
+                {"appid": "40", "name": "Humble Purchase"},
+            ],
+            external_matches=external_matches,
+        )
+
+        by_appid = {item["appid"]: item for item in hygiene["items"]}
+
+        self.assertEqual(external_matches[0]["store_id"], "gog")
+        self.assertEqual(external_matches[1]["store_id"], "epic")
+        self.assertEqual(external_matches[2]["store_type"], "bundle_export")
+        self.assertEqual(external_matches[3]["store_id"], "humble")
+        self.assertEqual(external_matches[3]["store_type"], "order_export")
+        self.assertEqual(by_appid["10"]["signals"], ["external_owned"])
+        self.assertEqual(by_appid["20"]["signals"], ["external_owned"])
+        self.assertEqual(by_appid["30"]["signals"], ["external_bundle_owned"])
+        self.assertEqual(by_appid["40"]["signals"], ["external_bundle_owned"])
+
+    def test_manual_external_import_templates_reject_public_context_as_ownership(self) -> None:
+        external_matches = normalize_manual_external_library_export(
+            {
+                "store": "Fanatical",
+                "bundles": [
+                    {
+                        "title": "Public Bundle Context",
+                        "appid": "50",
+                        "evidence": "public_bundle",
+                        "confidence": "high",
+                    }
+                ],
+            }
+        )
+
+        hygiene = build_wishlist_hygiene_signals(
+            [{"appid": "50", "name": "Public Bundle Context"}],
+            external_matches=external_matches,
+        )
+
+        self.assertEqual(external_matches[0]["store_type"], "bundle_export")
+        self.assertEqual(external_matches[0]["evidence"], "public_bundle")
+        self.assertEqual(hygiene["items"], [])
+
     def test_load_wishlist_external_matches_keeps_empty_payloads_quiet(self) -> None:
         cases = ["", "null", "{}", "[]", '{"external_matches": null}', '{"matches": null}']
 

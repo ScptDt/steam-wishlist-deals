@@ -81,6 +81,49 @@ Ejemplo de export manual multi-store:
 }
 ```
 
+## Plantillas locales soportadas
+
+Estas plantillas son **fixture-only/locales**: el usuario las arma desde un export propio o una lista manual. No implican API real, scraping, login ni verificación live.
+
+Bibliotecas GOG/Epic:
+
+```json
+{
+  "store": "GOG.com",
+  "games": [{"title": "Hades", "steam_appid": "1145360"}]
+}
+```
+
+```json
+{
+  "storefront": "Epic Games Store",
+  "library": [{"name": "Celeste", "appid": "504230"}]
+}
+```
+
+Órdenes/bundles Fanatical y compras/bundles Humble:
+
+```json
+{
+  "store": "Fanatical",
+  "orders": [{"title": "Bundle Game", "appid": "200"}]
+}
+```
+
+```json
+{
+  "store": "Humble Bundle",
+  "purchases": [{"title": "Humble Game", "steam_appid": "300"}]
+}
+```
+
+Reglas de estas plantillas:
+
+- `games` y `library` se normalizan como biblioteca local (`external_owned` si hay confianza alta).
+- `orders`, `purchases` y `bundles` se normalizan como orden/bundle propio (`external_bundle_owned` si hay confianza alta).
+- Tiendas comunes se canonicalizan de forma conservadora: `GOG.com` → `gog`, `Epic Games Store` → `epic`, `Humble Store`/`Humble Bundle` → `humble`.
+- Si el registro solo representa precio, catálogo público o bundle público, usar `evidence=price_only`, `public_catalog` o `public_bundle`; no debe generar higiene por ownership.
+
 Reglas de interpretación del import:
 
 - `owned=true`, `store_type=library` o evidencia `owned_in_user_export` puede generar `external_owned` si la confianza queda alta.
@@ -237,6 +280,7 @@ Estas señales pueden usarse en otra feature de comparación/precio, pero no com
 | GOG library export/manual import | Señal de propiedad si el usuario provee export local | Scraping o login automático |
 | Epic library export/manual import | Señal de propiedad si el usuario provee export local | Credenciales, scraping o launcher automation |
 | Fanatical order/bundle export | Señal de propiedad si el usuario provee order/bundle export | Inferir ownership desde bundles públicos |
+| Humble purchases/bundles/manual import | Señal de propiedad si el usuario provee export/lista local | Inferir ownership desde bundles públicos o catálogo |
 | ITAD lookup/prices | Contexto de tienda/precio o IDs cruzados en feature separada | Afirmar que el usuario posee el juego |
 | HLTB local | Señal secundaria si ya existe en datos locales del usuario | Fuente única para borrar o auto-excluir |
 
@@ -269,7 +313,7 @@ Antes de implementar una fuente externa:
 
 Primer corte seguro ya implementado:
 
-> Parser local de export manual GOG/Epic/Fanatical → normaliza listas locales a `external_matches` → `build_wishlist_hygiene_signals` lo consume como señal opcional.
+> Parser local de export manual GOG/Epic/Fanatical/Humble → normaliza listas locales a `external_matches` → `build_wishlist_hygiene_signals` lo consume como señal opcional.
 
 Siguiente corte solo si aparece un export concreto:
 

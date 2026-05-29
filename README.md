@@ -192,6 +192,14 @@ Shapes aceptadas:
 
 También acepta lista directa, `{ "matches": [...] }` y exports manuales simples con `games`, `library`, `orders`, `purchases` o `bundles`. Los imports de biblioteca/órdenes pueden generar `external_owned` o `external_bundle_owned`; matches medios quedan como `external_review_needed`; precio/catálogo público o `confidence=low` no cuentan como higiene.
 
+Plantillas locales mínimas soportadas, siempre desde archivos que tú exportas/armas localmente:
+
+- GOG/Epic biblioteca: `{ "store": "GOG.com", "games": [{"title": "Hades", "steam_appid": "1145360"}] }` o `{ "storefront": "Epic Games Store", "library": [...] }`.
+- Fanatical órdenes/bundles: `{ "store": "Fanatical", "orders": [...] }` o `{ "store": "Fanatical", "bundles": [...] }`.
+- Humble compras/bundles: `{ "store": "Humble Bundle", "purchases": [...] }` o `{ "store": "Humble Store", "bundles": [...] }`.
+
+En esas plantillas, `orders`, `purchases` y `bundles` se tratan como evidencia local de orden/bundle propio. Si un registro representa solo precio, catálogo público o bundle público, marca `evidence` como `price_only`, `public_catalog` o `public_bundle`: seguirá siendo contexto y no sugerirá ownership.
+
 Si quieres sumar señales locales de juegos instalados o jugables sin compra nueva, usa `--play-access-json`. Es otro import **local y explícito**: no escanea carpetas de Steam, no usa SteamKit2, no llama APIs externas y no cambia score/ranking.
 
 ```bash

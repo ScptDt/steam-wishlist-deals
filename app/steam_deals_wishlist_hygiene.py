@@ -9,9 +9,22 @@ _STORE_NAMES = {
     "epic": "Epic",
     "fanatical": "Fanatical",
     "gog": "GOG",
+    "humble": "Humble Store",
     "itad": "ITAD",
     "steam": "Steam",
     "unknown": "Unknown",
+}
+_STORE_ID_ALIASES = {
+    "epic_games": "epic",
+    "epic_games_store": "epic",
+    "fanatical_com": "fanatical",
+    "gog_com": "gog",
+    "humble_bundle": "humble",
+    "humble_bundle_store": "humble",
+    "humble_store": "humble",
+    "isthereanydeal": "itad",
+    "is_there_any_deal": "itad",
+    "steam_store": "steam",
 }
 _STORE_TYPES = {"library", "order_export", "bundle_export", "price_index", "catalog", "manual"}
 _MATCH_METHODS = {"steam_appid", "external_id", "normalized_title", "manual"}
@@ -54,6 +67,11 @@ def _clean_text(value) -> str:
 def _slug(value) -> str:
     normalized = re.sub(r"[^a-z0-9]+", "_", _clean_text(value).lower()).strip("_")
     return normalized or "unknown"
+
+
+def _store_id(value) -> str:
+    slug = _slug(value)
+    return _STORE_ID_ALIASES.get(slug, slug)
 
 
 def _enum(value, allowed: set[str], default: str) -> str:
@@ -104,10 +122,10 @@ def _manual_export_records(payload) -> tuple[list[dict], dict]:
         if key in payload:
             records = payload[key]
             if records is None:
-                return [], payload
+                return [], {**payload, "_collection_key": key}
             if not isinstance(records, list):
                 raise ValueError(f"{key} debe ser una lista")
-            return _records(records), payload
+            return _records(records), {**payload, "_collection_key": key}
     raise ValueError(
         "export manual debe incluir una lista en 'games', 'items', 'library', "
         "'orders', 'purchases' o 'bundles'"
@@ -119,7 +137,14 @@ def _manual_export_store_type(record: dict, defaults: dict) -> str:
         return "bundle_export"
     raw_type = record.get("store_type") or record.get("type") or defaults.get("store_type")
     source = _slug(record.get("source") or defaults.get("source"))
+    collection_key = _clean_text(defaults.get("_collection_key"))
     if not raw_type and any(token in source for token in ("order", "purchase", "bundle")):
+        if "bundle" in source:
+            return "bundle_export"
+        return "order_export"
+    if not raw_type and collection_key == "bundles":
+        return "bundle_export"
+    if not raw_type and collection_key in {"orders", "purchases"}:
         return "order_export"
     return _enum(raw_type, _STORE_TYPES, "library")
 
@@ -147,7 +172,7 @@ def _manual_export_record_to_external_match(record: dict, defaults: dict) -> dic
     appid = _external_target_appid(record)
     if not external_name and not appid:
         return None
-    store_id = _slug(
+    store_id = _store_id(
         record.get("store_id")
         or record.get("store")
         or record.get("storefront")
@@ -355,7 +380,7 @@ def _normalized_external_match(record: dict) -> dict | None:
     external_name = _external_name(record)
     if not appid and not external_name:
         return None
-    store_id = _slug(record.get("store_id") or record.get("store") or record.get("storefront"))
+    store_id = _store_id(record.get("store_id") or record.get("store") or record.get("storefront"))
     store_type = _enum(record.get("store_type") or record.get("type"), _STORE_TYPES, "manual")
     evidence = _external_evidence(record, store_type)
     normalized = {

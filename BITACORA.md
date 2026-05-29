@@ -1,6 +1,6 @@
 # Bitácora Operativa
 
-Ultima actualizacion: 2026-05-27
+Ultima actualizacion: 2026-05-29
 
 ## Proposito
 
@@ -79,6 +79,8 @@ La nota de inicio puede omitirse en `BITACORA.md` para cambios triviales que no 
 | 2026-04-16 | macOS | validado en CI (parcial) | Workflow `Desktop Cross-Platform Validation` OK en `macos-latest` (run `24487556896`): install deps, build desktop, `py_compile`, check fallback local y artifact `dist-macos-latest` publicado. Falta validacion manual en host macOS para apertura de `.app`, quarantine/codesign/notarizacion segun distribucion. | Ejecutar checklist manual macOS (apertura local, quarantine, codesign) y registrar incidencias/workarounds. |
 
 ## Bitacora
+
+- 2026-05-29: Cierre Quick Win plantillas locales multi-tienda para `external_matches`. Autor/ejecutor: OpenCoder. Resultado: el import manual de wishlist hygiene canonicaliza aliases comunes de tienda (`GOG.com`, `Epic Games Store`, `Humble Store`/`Humble Bundle`), infiere `order_export`/`bundle_export` desde `orders`/`purchases`/`bundles` sin requerir `source`, conserva `public_bundle`/`price_only` como contexto no ownership, y README/runbook documentan plantillas locales GOG/Epic/Fanatical/Humble. Evidencia: `.venv/bin/python -m py_compile app/steam_deals_wishlist_hygiene.py steam_deals_wishlist_hygiene.py tests/test_generator_logic.py`, `.venv/bin/python -m unittest tests.test_generator_logic.WishlistHygieneTests` (18 OK) y `git diff --check` OK. Incidencias: ninguna. Siguiente seguimiento: parsers específicos solo si aparece un export real concreto; sin ITAD key, red live, APIs reales, scraping/login, credenciales, ownership por precio/catálogo/bundles públicos, score/ranking/defaults, checkout/carrito/pagos, `BG00G`, `--no-cache`, builds ni reportes generados.
 
 - 2026-05-29: Cierre Plan D slice omitir Free Weekend ausente en HTML generado. Autor/ejecutor: OpenCoder. Resultado: `generate_html()` ya no agrega la sección `Free Weekend ahora` cuando `free_weekend_now` no fue provisto (`None`/ausente), evitando un bloque vacío/irrelevante en reportes sin datos; payload explícito inválido/vacío sigue mostrando el empty state actual y payload válido mantiene candidatos. No cambia resolver Free Weekend, fetching/cache, JSON, score ni ranking. Evidencia: `.venv/bin/python -m py_compile renderers/html_renderer.py tests/test_generator_logic.py`, tests dirigidos `RankTopPicksTests.test_generate_html_omits_free_weekend_now_when_payload_absent` + regresiones Free Weekend HTML (3 OK) y `git diff --check` OK. Incidencias: ninguna. Siguiente seguimiento Plan D: aislar otra sección/filtro roto de `[Image 10]`-`[Image 12]` con fixture mínima antes de corregir. Sin tocar Plan A/F ni scopes sin definición, red real, `BG00G`, `--no-cache`, builds ni reportes generados.
 
