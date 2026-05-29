@@ -13314,6 +13314,69 @@ class RankTopPicksTests(unittest.TestCase):
         self.assertIn("overrides.total ?? data.budgetTotal ?? 0", html)
         self.assertIn("overrides.remaining ?? data.budgetRemaining ?? 0", html)
 
+    def test_generate_html_budget_reroll_handles_malformed_options(self) -> None:
+        html = generate_html(
+            deals=[],
+            backlog_on_sale=[],
+            have_on_sale=[],
+            vanity="gaben",
+            owned={},
+            wishlist_appids=["a"],
+            min_discount=50,
+            genres=[],
+            budget_result={
+                "budget": 100,
+                "selected_variant": "balanced",
+                "selected": [],
+                "total_spent": 50,
+                "total_savings": 50,
+                "remaining": 50,
+                "games_count": 1,
+                "variants": [
+                    {
+                        "id": "balanced",
+                        "label": "Lista media",
+                        "description": "Balance recomendado",
+                        "budget": 100,
+                        "total_spent": 50,
+                        "total_savings": 50,
+                        "remaining": 50,
+                        "games_count": 1,
+                        "items": [
+                            {
+                                "appid": "a",
+                                "name": "Alpha",
+                                "discount": 50,
+                                "price_final": "$50",
+                                "score": 80,
+                                "replacement_candidates": [
+                                    {
+                                        "appid": "b",
+                                        "name": "Bravo",
+                                        "discount": 60,
+                                        "price_final": "$40",
+                                        "score": 82,
+                                        "swap_total_spent": 40,
+                                        "swap_remaining": 60,
+                                    }
+                                ],
+                            }
+                        ],
+                    }
+                ],
+            },
+        )
+
+        self.assertIn("function parseBudgetOptions(btn) {", html)
+        self.assertIn("try {", html)
+        self.assertIn("JSON.parse(btn.dataset.budgetOptions || '[]')", html)
+        self.assertIn("return Array.isArray(options) ? options : [];", html)
+        self.assertIn("catch (error)", html)
+        self.assertIn("function showBudgetRerollUnavailable(btn) {", html)
+        self.assertIn("Reroll no disponible", html)
+        self.assertIn("const options = parseBudgetOptions(btn);", html)
+        self.assertIn("if (!options.length) { showBudgetRerollUnavailable(btn); return; }", html)
+
     def test_generate_html_uses_root_budget_selection_when_variant_rows_missing(self) -> None:
         html = generate_html(
             deals=[],

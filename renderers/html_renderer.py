@@ -3348,14 +3348,32 @@ function activateBudgetVariant(variantId) {
   updateBudgetSummaryDisplay(activeButton.dataset);
   if (badge) badge.textContent = activeButton.dataset.budgetLabel || 'Lista actual';
 }
+function parseBudgetOptions(btn) {
+  try {
+    const options = JSON.parse(btn.dataset.budgetOptions || '[]');
+    return Array.isArray(options) ? options : [];
+  } catch (error) {
+    return [];
+  }
+}
+function showBudgetRerollUnavailable(btn) {
+  if (!btn) return;
+  const originalLabel = btn.dataset.rerollLabel || btn.textContent || 'Reroll';
+  btn.dataset.rerollLabel = originalLabel;
+  btn.textContent = 'Reroll no disponible';
+  setTimeout(() => {
+    btn.textContent = btn.dataset.rerollLabel || originalLabel;
+    delete btn.dataset.rerollLabel;
+  }, 1600);
+}
 function bindBudgetRowRerolls() {
   document.querySelectorAll('[data-budget-options]').forEach((btn) => {
     if (btn.dataset.bound === '1') return;
     btn.dataset.bound = '1';
     btn.dataset.currentIndex = '0';
     btn.addEventListener('click', () => {
-      const options = JSON.parse(btn.dataset.budgetOptions || '[]');
-      if (!options.length) return;
+      const options = parseBudgetOptions(btn);
+      if (!options.length) { showBudgetRerollUnavailable(btn); return; }
       const nextIndex = (Number(btn.dataset.currentIndex || '0') + 1) % options.length;
       btn.dataset.currentIndex = String(nextIndex);
       const row = document.querySelector(`[data-budget-row="${btn.dataset.budgetRowKey}"]`);
