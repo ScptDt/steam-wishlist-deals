@@ -3792,7 +3792,8 @@ def generate_html(
             family_appids,
         )
     )
-    parts.append(_html_free_weekend_now(free_weekend_now))
+    if free_weekend_now is not None:
+        parts.append(_html_free_weekend_now(free_weekend_now))
     parts.append(_html_external_offers(external_offers))
     parts.append(_html_wishlist_hygiene(wishlist_hygiene))
     parts.append(_html_smart_alert_digest(smart_alert_digest))

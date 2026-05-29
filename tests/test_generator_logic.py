@@ -11996,6 +11996,22 @@ class RankTopPicksTests(unittest.TestCase):
         self.assertNotIn("Weekend <Candidate>", html)
         self.assertIn("no cambia score, ranking ni caché de precios", html)
 
+    def test_generate_html_omits_free_weekend_now_when_payload_absent(self) -> None:
+        html = generate_html(
+            deals=[],
+            backlog_on_sale=[],
+            have_on_sale=[],
+            vanity="gaben",
+            owned={},
+            wishlist_appids=[],
+            min_discount=50,
+            genres=[],
+        )
+
+        self.assertNotIn("data-free-weekend-now-section", html)
+        self.assertNotIn("Free Weekend ahora", html)
+        self.assertNotIn("Sin candidatos locales de Free Weekend en el JSON actual", html)
+
     def test_generate_html_shows_free_weekend_now_empty_state_for_invalid_payload(self) -> None:
         html = generate_html(
             deals=[],
