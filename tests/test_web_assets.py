@@ -1108,15 +1108,22 @@ class WebAssetsTests(unittest.TestCase):
 
         run_button_index = index_html.index('id="btn-run"')
         utility_actions_index = index_html.index('id="btn-preflight"')
+        run_intro_index = index_html.index('class="run-actions-intro"')
         watchlist_index = index_html.index("Alertas de precio")
         history_index = index_html.index('id="history-card"')
         pd2_panel_index = index_html.index('id="panel-pd2"')
 
         self.assertIn('id="panel-deals-secondary"', index_html)
         self.assertLess(pd2_panel_index, run_button_index)
+        self.assertLess(run_intro_index, run_button_index)
+        self.assertLess(run_button_index, utility_actions_index)
         self.assertLess(utility_actions_index, watchlist_index)
         self.assertLess(run_button_index, watchlist_index)
         self.assertLess(run_button_index, history_index)
+        self.assertIn("Siguiente paso recomendado", index_html)
+        self.assertIn("Acción principal", index_html)
+        self.assertIn("Ayuda y accesos secundarios", index_html)
+        self.assertIn("sin modificar tu wishlist ni comprar nada", index_html)
         self.assertIn("const dealsSecondaryPanel = $('panel-deals-secondary');", app_js)
         self.assertIn(
             "if (dealsSecondaryPanel) dealsSecondaryPanel.style.display = isPd2 ? 'none' : 'block';",

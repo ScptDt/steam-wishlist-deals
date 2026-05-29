@@ -451,7 +451,23 @@
 
   <div class="form-error-summary hidden" id="form-error-summary" role="alert" aria-live="polite" tabindex="-1"></div>
 
-  <div class="actions actions-utility actions-margin-sm">
+  <div class="run-actions-intro" aria-label="Acciones principales de Steam Deals">
+    <div>
+      <strong>Siguiente paso recomendado</strong>
+      <span>Genera un reporte nuevo cuando ya revisaste perfil y filtros rápidos.</span>
+    </div>
+    <span class="run-actions-intro-badge">Acción principal</span>
+  </div>
+
+  <div class="actions actions-margin-sm actions-primary-run">
+    <button class="btn btn-primary" id="btn-run">&#128640; Generar reportes</button>
+    <button class="btn btn-primary btn-primary-pd2" id="btn-run-pd2" style="display:none">&#127918; Ejecutar PAYDAY 2</button>
+    <button class="btn btn-danger" id="btn-stop" disabled>&#9209; Detener</button>
+  </div>
+  <div class="hint hint-compact run-actions-hint">Crea HTML interactivo, Share, JSON técnico, Markdown y CSV sin modificar tu wishlist ni comprar nada.</div>
+
+  <div class="actions-secondary-label">Ayuda y accesos secundarios</div>
+  <div class="actions actions-utility actions-margin-sm" aria-label="Acciones secundarias y utilidades">
     <button class="btn btn-ghost" id="btn-preflight" title="Revisa si tu perfil, rutas y claves están listas antes de ejecutar">&#129514; Probar config</button>
     <button class="btn btn-ghost" id="btn-desktop-doctor" title="Diagnostica si el modo desktop está listo en este equipo">&#129658; Doctor desktop</button>
     <button class="btn btn-ghost" id="btn-desktop-autofix" title="Intenta aplicar arreglos seguros del entorno desktop">&#128295; Autofix desktop</button>
@@ -491,12 +507,6 @@
       </div>
     </div>
   </details>
-
-  <div class="actions actions-margin-md">
-    <button class="btn btn-primary" id="btn-run">&#128640; Generar reportes</button>
-    <button class="btn btn-primary btn-primary-pd2" id="btn-run-pd2" style="display:none">&#127918; Ejecutar PAYDAY 2</button>
-    <button class="btn btn-danger" id="btn-stop" disabled>&#9209; Detener</button>
-  </div>
 
   <!-- Output panel -->
   <div class="card" id="output-card">
