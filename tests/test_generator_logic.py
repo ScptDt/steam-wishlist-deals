@@ -14231,7 +14231,8 @@ class RankTopPicksTests(unittest.TestCase):
         self.assertIn("Shuffle 1 juego", html)
         self.assertIn("data-shuffle-one", html)
         self.assertIn("data-shuffle-candidates", html)
-        self.assertIn("Dame otro", html)
+        self.assertIn("No recalcula ni cambia el ranking", html)
+        self.assertIn("Ver otro destacado", html)
         self.assertIn("bindShuffleOneGame", html)
         self.assertIn("Alpha", html)
         self.assertIn("Bravo", html)
@@ -14325,8 +14326,8 @@ class RankTopPicksTests(unittest.TestCase):
         self.assertIn("Personal Pick", html)
         self.assertIn("Personal 99.0", html)
         self.assertIn("encaja con tu actividad reciente", html)
-        self.assertIn("Único candidato destacado", html)
-        self.assertNotIn("Dame otro", html)
+        self.assertIn("Único destacado disponible", html)
+        self.assertNotIn("Ver otro destacado", html)
 
     def test_generate_html_adds_shuffle_one_game_from_deals_without_top_picks(self) -> None:
         html = generate_html(
@@ -14402,7 +14403,7 @@ class RankTopPicksTests(unittest.TestCase):
         self.assertIn("Top Pick", html)
         self.assertIn("Score 91.0", html)
         self.assertIn("Muy buena oferta", html)
-        self.assertIn("Único candidato destacado", html)
+        self.assertIn("Único destacado disponible", html)
 
     def test_generate_html_fallback_adds_shuffle_one_game(self) -> None:
         original_renderer = generate_html.__globals__.get("_generate_html_renderer")

@@ -1184,14 +1184,14 @@ def _html_shuffle_one_game(candidates: list[dict]) -> str:
         return ""
     first = candidates[0]
     action_html = (
-        '<button type="button" class="btn-reset shuffle-next-btn" data-shuffle-next>Dame otro</button>'
+        '<button type="button" class="btn-reset shuffle-next-btn" data-shuffle-next>Ver otro destacado</button>'
         if len(candidates) > 1
-        else '<span class="shuffle-single-note">Único candidato destacado</span>'
+        else '<span class="shuffle-single-note">Único destacado disponible</span>'
     )
     return f'''<section class="shuffle-one" data-shuffle-one data-shuffle-index="0" data-shuffle-candidates="{_share_payload_attr(candidates)}">
   <div class="shuffle-copy">
     <h2>&#127922; Shuffle 1 juego</h2>
-    <p class="section-desc">Si no quieres revisar toda la tabla, empieza por esta recomendación. El botón rota entre candidatos ya calculados del reporte.</p>
+    <p class="section-desc">No recalcula ni cambia el ranking: solo rota entre destacados ya calculados del reporte para elegir por dónde empezar.</p>
   </div>
   <div class="shuffle-card">
     <a class="shuffle-image-link" data-shuffle-link href="{_html_esc(first['url'])}" target="_blank" rel="noopener noreferrer">
