@@ -7357,6 +7357,18 @@ class StopApiContractTests(unittest.TestCase):
                             "name": "Portal 2",
                             "change_pct": 15.0,
                             "reason": "subió frente al run anterior",
+                        },
+                        {
+                            "appid": "20",
+                            "name": "Half-Life 2",
+                            "change_pct": -16.67,
+                            "reason": "bajó frente al run anterior",
+                        },
+                        {
+                            "appid": "30",
+                            "name": "Zero Change",
+                            "change_pct": 0,
+                            "reason": "sin cambio frente al run anterior",
                         }
                     ],
                     "hidden_count": 1,
@@ -7397,6 +7409,12 @@ class StopApiContractTests(unittest.TestCase):
         self.assertIn("Alertas inteligentes — preview local", html)
         self.assertIn("No envía Telegram/Discord", html)
         self.assertIn("Portal 2", html)
+        self.assertIn("+15%", html)
+        self.assertIn("Half-Life 2", html)
+        self.assertIn("-17%", html)
+        self.assertNotIn("+-17%", html)
+        self.assertIn("Zero Change", html)
+        self.assertIn("0%", html)
         self.assertIn("Dry-run", html)
 
     def test_generate_reports_explain_appid_only_wishlist_hygiene_items(self) -> None:

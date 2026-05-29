@@ -1907,6 +1907,13 @@ def _safe_float(value) -> float | None:
         return None
 
 
+def _format_signed_percent(value: float) -> str:
+    rounded = int(round(value))
+    if rounded > 0:
+        return f"+{rounded}%"
+    return f"{rounded}%"
+
+
 def _smart_alert_digest_sections(payload: dict | None) -> list[dict]:
     if not isinstance(payload, dict):
         return []
@@ -1933,7 +1940,7 @@ def _html_smart_alert_item_meta(item: dict) -> str:
     current_price = _safe_float(item.get("current_price"))
     historical_low = _safe_float(item.get("historical_low"))
     if change_pct is not None:
-        details.append(f"+{change_pct:.0f}%")
+        details.append(_format_signed_percent(change_pct))
     if current_price is not None:
         details.append(f"actual ${current_price:.0f}")
     if historical_low is not None:
