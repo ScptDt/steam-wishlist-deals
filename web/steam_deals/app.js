@@ -3973,9 +3973,18 @@ function latestRecommendedCollectionItemKey(item) {
   return name ? `name:${name}` : '';
 }
 
+function latestSteamStoreUrl(appid) {
+  return `https://store.steampowered.com/app/${escapeHtml(appid)}/`;
+}
+
+function latestSteamCapsuleUrl(appid) {
+  return `https://cdn.akamai.steamstatic.com/steam/apps/${escapeHtml(appid)}/capsule_231x87.jpg`;
+}
+
 function renderLatestRecommendedCollectionItem(item) {
   const source = item && typeof item === 'object' ? item : {};
   const appid = String(source.appid || source.steam_appid || '').trim();
+  const safeAppid = /^\d+$/.test(appid) ? appid : '';
   const name = source.name || source.steam_name || 'Juego desconocido';
   const reason = source.reason || 'Recomendado por las señales del último reporte.';
   const score = source.score;
@@ -3985,11 +3994,15 @@ function renderLatestRecommendedCollectionItem(item) {
   if (score !== null && score !== undefined && score !== '') meta.push(`Score ${score}`);
   if (discount > 0) meta.push(`-${discount}%`);
   if (price) meta.push(price);
-  const nameHtml = /^\d+$/.test(appid)
-    ? `<a href="https://store.steampowered.com/app/${escapeHtml(appid)}/" target="_blank" rel="noopener noreferrer">${escapeHtml(name)}</a>`
+  const nameHtml = safeAppid
+    ? `<a href="${latestSteamStoreUrl(safeAppid)}" target="_blank" rel="noopener noreferrer">${escapeHtml(name)}</a>`
     : `<span>${escapeHtml(name)}</span>`;
+  const thumbHtml = safeAppid
+    ? `<a class="latest-game-thumb latest-collection-item-thumb" href="${latestSteamStoreUrl(safeAppid)}" target="_blank" rel="noopener noreferrer" aria-label="Abrir ${escapeHtml(name)} en Steam"><img src="${latestSteamCapsuleUrl(safeAppid)}" alt="" loading="lazy" onerror="this.style.display='none'"></a>`
+    : '';
   return `
     <li class="latest-collection-item">
+      ${thumbHtml}
       <div class="latest-collection-item-main">
         <strong>${nameHtml}</strong>
         <span>${escapeHtml(reason)}</span>
@@ -4060,11 +4073,15 @@ function renderLatestPersonalizedRecommendationItem(item, index, report = null) 
   const price = source.price_final || source.price || '';
   if (price) meta.push(price);
   const nameHtml = safeAppid
-    ? `<a href="https://store.steampowered.com/app/${escapeHtml(safeAppid)}/" target="_blank" rel="noopener noreferrer">${escapeHtml(name)}</a>`
+    ? `<a href="${latestSteamStoreUrl(safeAppid)}" target="_blank" rel="noopener noreferrer">${escapeHtml(name)}</a>`
     : `<span>${escapeHtml(name)}</span>`;
+  const thumbHtml = safeAppid
+    ? `<a class="latest-game-thumb latest-personalized-item-thumb" href="${latestSteamStoreUrl(safeAppid)}" target="_blank" rel="noopener noreferrer" aria-label="Abrir ${escapeHtml(name)} en Steam"><img src="${latestSteamCapsuleUrl(safeAppid)}" alt="" loading="lazy" onerror="this.style.display='none'"></a>`
+    : '';
   return `
     <li class="latest-personalized-item"${safeAppid ? ` data-latest-personalized-recommendation="${escapeHtml(safeAppid)}"` : ''}>
       <div class="latest-personalized-item-rank">#${escapeHtml(index)}</div>
+      ${thumbHtml}
       <div class="latest-personalized-item-main">
         <strong>${nameHtml}</strong>
         ${meta.length ? `<span class="latest-personalized-item-meta">${escapeHtml(meta.join(' · '))}</span>` : ''}

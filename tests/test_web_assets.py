@@ -418,11 +418,16 @@ class WebAssetsTests(unittest.TestCase):
         self.assertIn("Colecciones recomendadas", app_js)
         self.assertIn("Atajos curados desde el último reporte", app_js)
         self.assertIn("latestRecommendedCollectionItemKey", app_js)
+        self.assertIn("function latestSteamCapsuleUrl", app_js)
+        self.assertIn("cdn.akamai.steamstatic.com/steam/apps", app_js)
+        self.assertIn("latest-collection-item-thumb", app_js)
         self.assertIn("renderLatestReportIntentWrapper(activeReport, meta, summary, files)", app_js)
         self.assertIn("renderLatestRecommendedCollections(report)", app_js)
         self.assertIn(".latest-collections-section", app_css)
         self.assertIn(".latest-collections-grid", app_css)
         self.assertIn(".latest-collection-card", app_css)
+        self.assertIn(".latest-game-thumb", app_css)
+        self.assertIn(".latest-collection-item-thumb", app_css)
         self.assertIn(".latest-collection-item-meta", app_css)
 
     def test_latest_report_renders_personalized_recommendations_inside_details(self) -> None:
@@ -442,6 +447,8 @@ class WebAssetsTests(unittest.TestCase):
         self.assertIn("Actividad local", app_js)
         self.assertIn("Más jugado", app_js)
         self.assertIn("items.slice(0, 3)", app_js)
+        self.assertIn("latest-personalized-item-thumb", app_js)
+        self.assertIn("onerror=\"this.style.display='none'\"", app_js)
         self.assertIn("renderLatestPersonalizedRecommendations(report, files)", app_js)
         self.assertIn("renderLatestReportIntentWrapper(activeReport, meta, summary, files)", app_js)
         self.assertIn("Recomendaciones personalizadas", app_js)
@@ -450,6 +457,7 @@ class WebAssetsTests(unittest.TestCase):
         self.assertIn(".latest-personalized-section", app_css)
         self.assertIn(".latest-personalized-list", app_css)
         self.assertIn(".latest-personalized-item", app_css)
+        self.assertIn(".latest-personalized-item-thumb", app_css)
         self.assertIn(".latest-personalized-footer", app_css)
 
     def test_latest_report_renders_taste_priority_advisory_inside_details(self) -> None:
