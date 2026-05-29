@@ -11296,6 +11296,25 @@ class RankTopPicksTests(unittest.TestCase):
         self.assertIn("bindSelectionReviewActions", html)
         self.assertNotIn("/api/selection-review", html)
 
+    def test_generate_html_selection_review_clears_results_when_empty(self) -> None:
+        html = generate_html(
+            deals=[],
+            backlog_on_sale=[],
+            have_on_sale=[],
+            vanity="gaben",
+            owned={},
+            wishlist_appids=[],
+            min_discount=50,
+            genres=[],
+        )
+
+        self.assertIn("function clearSelectionReviewResults(panel) {", html)
+        self.assertIn("const resultsEl = panel.querySelector('[data-selection-results]');", html)
+        self.assertIn("No hay juegos seleccionados para evaluar.", html)
+        self.assertIn("clearSelectionReviewResults(panel);", html)
+        self.assertIn("if (!records.length) {", html)
+        self.assertIn("Marca al menos un juego o pega un AppID/URL.", html)
+
     def test_generate_html_omits_personalized_recommendations_when_empty(self) -> None:
         html = generate_html(
             deals=[],

@@ -3033,10 +3033,15 @@ function renderSelectionReviewResults(panel, review) {
     <div class="selection-review-result-list">${items.map(renderSelectionReviewItem).join('')}</div>
   `;
 }
+function clearSelectionReviewResults(panel) {
+  const resultsEl = panel.querySelector('[data-selection-results]');
+  if (resultsEl) resultsEl.innerHTML = '<div class="selection-review-empty">No hay juegos seleccionados para evaluar.</div>';
+}
 function evaluateSelectionReview(panel, button) {
   const statusEl = panel.querySelector('[data-selection-status]');
   const records = selectionReviewRecordsFromPanel(panel);
   if (!records.length) {
+    clearSelectionReviewResults(panel);
     if (statusEl) statusEl.textContent = 'Marca al menos un juego o pega un AppID/URL.';
     return;
   }
