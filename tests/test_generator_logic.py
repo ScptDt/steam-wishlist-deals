@@ -11122,6 +11122,41 @@ class RankTopPicksTests(unittest.TestCase):
         self.assertIn("-90%", html)
         self.assertIn("$10", html)
 
+    def test_generate_html_renders_recommended_collection_steam_appid_thumb(self) -> None:
+        html = generate_html(
+            deals=[],
+            backlog_on_sale=[],
+            have_on_sale=[],
+            vanity="gaben",
+            owned={},
+            wishlist_appids=[],
+            min_discount=50,
+            genres=[],
+            recommended_collections=[
+                {
+                    "id": "steam_appid_collection",
+                    "title": "Steam AppID collection",
+                    "items": [
+                        {
+                            "steam_appid": "40",
+                            "name": "Steam AppID Pick",
+                            "reason": "fixture local con steam_appid",
+                            "score": 88,
+                            "discount": 75,
+                            "price_final": "$5",
+                        }
+                    ],
+                }
+            ],
+        )
+
+        self.assertIn("data-recommended-collections-section", html)
+        self.assertIn('data-recommended-collection="steam_appid_collection"', html)
+        self.assertIn('href="https://store.steampowered.com/app/40/"', html)
+        self.assertIn('class="collection-item-thumb"', html)
+        self.assertIn("steam/apps/40/capsule_231x87.jpg", html)
+        self.assertIn("Steam AppID Pick", html)
+
     def test_generate_html_dedupes_recommended_collection_items_across_cards(self) -> None:
         html = generate_html(
             deals=[],

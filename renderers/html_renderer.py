@@ -1212,6 +1212,8 @@ def _html_shuffle_one_game(candidates: list[dict]) -> str:
 
 def _html_recommended_collection_item(item: dict, *, featured: bool = False) -> str:
     appid = str(item.get("appid") or "").strip()
+    if not appid:
+        appid = str(item.get("steam_appid") or "").strip()
     name = str(item.get("name") or "Juego desconocido")
     reason = str(item.get("reason") or "Recomendado por las señales del reporte.")
     score = item.get("score")
@@ -1254,6 +1256,8 @@ def _html_recommended_collection_item(item: dict, *, featured: bool = False) -> 
 
 def _recommended_collection_item_key(item: dict) -> str:
     appid = str(item.get("appid") or "").strip()
+    if not appid:
+        appid = str(item.get("steam_appid") or "").strip()
     if appid:
         return f"appid:{appid}"
     name = str(item.get("name") or "").strip().casefold()
