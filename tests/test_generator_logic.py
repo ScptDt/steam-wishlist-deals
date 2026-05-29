@@ -13484,6 +13484,15 @@ class RankTopPicksTests(unittest.TestCase):
         self.assertIn("updateBudgetSummaryDisplay(activeButton.dataset);", html)
         self.assertIn("overrides.total ?? data.budgetTotal ?? 0", html)
         self.assertIn("overrides.remaining ?? data.budgetRemaining ?? 0", html)
+        self.assertIn("const panel = btn.closest('[data-budget-panel]');", html)
+        self.assertIn(
+            "const row = findBudgetRowInPanel(panel || document, btn.dataset.budgetRowKey);",
+            html,
+        )
+        self.assertNotIn(
+            'document.querySelector(`[data-budget-row="${btn.dataset.budgetRowKey}"]`)',
+            html,
+        )
 
     def test_generate_html_budget_variant_activation_resets_inline_rerolls(self) -> None:
         html = generate_html(

@@ -3418,7 +3418,8 @@ function bindBudgetRowRerolls() {
       if (!options.length) { showBudgetRerollUnavailable(btn); return; }
       const nextIndex = (Number(btn.dataset.currentIndex || '0') + 1) % options.length;
       btn.dataset.currentIndex = String(nextIndex);
-      const row = document.querySelector(`[data-budget-row="${btn.dataset.budgetRowKey}"]`);
+      const panel = btn.closest('[data-budget-panel]');
+      const row = findBudgetRowInPanel(panel || document, btn.dataset.budgetRowKey);
       applyBudgetOption(row, options[nextIndex]);
       btn.textContent = nextIndex === 0 ? 'Reroll' : `Reroll ${nextIndex}/${options.length - 1}`;
     });
