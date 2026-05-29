@@ -3355,6 +3355,21 @@ function applyBudgetOption(row, option) {
   }
   updateBudgetSummaryFromOption(option);
 }
+function findBudgetRowInPanel(panel, rowKey) {
+  if (!panel || !rowKey) return null;
+  return Array.from(panel.querySelectorAll('[data-budget-row]')).find((row) => row.dataset.budgetRow === rowKey) || null;
+}
+function resetBudgetRerollsInPanel(panel) {
+  if (!panel) return;
+  panel.querySelectorAll('[data-budget-options]').forEach((btn) => {
+    const options = parseBudgetOptions(btn);
+    if (!options.length) return;
+    const row = findBudgetRowInPanel(panel, btn.dataset.budgetRowKey);
+    if (row) applyBudgetOption(row, options[0]);
+    btn.dataset.currentIndex = '0';
+    btn.textContent = 'Reroll';
+  });
+}
 function activateBudgetVariant(variantId) {
   const buttons = Array.from(document.querySelectorAll('[data-budget-variant-btn]'));
   const panels = Array.from(document.querySelectorAll('[data-budget-panel]'));
@@ -3362,6 +3377,8 @@ function activateBudgetVariant(variantId) {
   if (!activeButton) return;
   buttons.forEach((btn) => btn.classList.toggle('is-active', btn === activeButton));
   panels.forEach((panel) => panel.classList.toggle('hidden', panel.dataset.budgetPanel !== activeButton.dataset.budgetVariantBtn));
+  const activePanel = panels.find((panel) => panel.dataset.budgetPanel === activeButton.dataset.budgetVariantBtn);
+  resetBudgetRerollsInPanel(activePanel);
   const badge = document.getElementById('budget-current-variant');
   updateBudgetSummaryDisplay(activeButton.dataset);
   if (badge) badge.textContent = activeButton.dataset.budgetLabel || 'Lista actual';

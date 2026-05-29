@@ -13377,6 +13377,89 @@ class RankTopPicksTests(unittest.TestCase):
         self.assertIn("overrides.total ?? data.budgetTotal ?? 0", html)
         self.assertIn("overrides.remaining ?? data.budgetRemaining ?? 0", html)
 
+    def test_generate_html_budget_variant_activation_resets_inline_rerolls(self) -> None:
+        html = generate_html(
+            deals=[],
+            backlog_on_sale=[],
+            have_on_sale=[],
+            vanity="gaben",
+            owned={},
+            wishlist_appids=["a"],
+            min_discount=50,
+            genres=[],
+            budget_result={
+                "budget": 100,
+                "selected_variant": "balanced",
+                "selected": [],
+                "total_spent": 50,
+                "total_savings": 50,
+                "remaining": 50,
+                "games_count": 1,
+                "variants": [
+                    {
+                        "id": "balanced",
+                        "label": "Lista media",
+                        "description": "Balance recomendado",
+                        "budget": 100,
+                        "total_spent": 50,
+                        "total_savings": 50,
+                        "remaining": 50,
+                        "games_count": 1,
+                        "items": [
+                            {
+                                "appid": "a",
+                                "name": "Alpha",
+                                "discount": 50,
+                                "price_final": "$50",
+                                "score": 80,
+                                "replacement_candidates": [
+                                    {
+                                        "appid": "b",
+                                        "name": "Bravo",
+                                        "discount": 60,
+                                        "price_final": "$40",
+                                        "score": 82,
+                                        "swap_total_spent": 40,
+                                        "swap_remaining": 60,
+                                    }
+                                ],
+                            }
+                        ],
+                    },
+                    {
+                        "id": "large",
+                        "label": "Lista grande",
+                        "description": "Más juegos",
+                        "budget": 100,
+                        "total_spent": 70,
+                        "total_savings": 30,
+                        "remaining": 30,
+                        "games_count": 2,
+                        "items": [
+                            {
+                                "appid": "c",
+                                "name": "Charlie",
+                                "discount": 40,
+                                "price_final": "$70",
+                                "score": 70,
+                            }
+                        ],
+                    },
+                ],
+            },
+        )
+
+        self.assertIn("function resetBudgetRerollsInPanel(panel) {", html)
+        self.assertIn("panel.querySelectorAll('[data-budget-options]')", html)
+        self.assertIn("const row = findBudgetRowInPanel(panel, btn.dataset.budgetRowKey);", html)
+        self.assertIn("if (row) applyBudgetOption(row, options[0]);", html)
+        self.assertIn("btn.dataset.currentIndex = '0';", html)
+        self.assertIn("btn.textContent = 'Reroll';", html)
+        activate_start = html.index("function activateBudgetVariant(variantId)")
+        reset_call = html.index("resetBudgetRerollsInPanel(activePanel);", activate_start)
+        summary_call = html.index("updateBudgetSummaryDisplay(activeButton.dataset);", activate_start)
+        self.assertLess(reset_call, summary_call)
+
     def test_generate_html_budget_reroll_handles_malformed_options(self) -> None:
         html = generate_html(
             deals=[],
