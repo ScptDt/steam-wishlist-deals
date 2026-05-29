@@ -1099,7 +1099,7 @@ def _html_share_button(
     return (
         f'<button class="{class_name}" type="button" '
         f'data-share-game="{_share_payload_attr(payload)}" '
-        f'onclick="openShareModal(JSON.parse(this.dataset.shareGame))" '
+        f'onclick="openShareButton(this)" '
         f'title="{_html_esc(title)}"{style_attr}>{label}</button>'
     )
 
@@ -3201,6 +3201,19 @@ function flashShareButton(button, successLabel, defaultLabel) {
   setTimeout(() => {
     button.textContent = defaultLabel;
   }, 2000);
+}
+function parseShareGamePayload(button) {
+  try {
+    const payload = JSON.parse(button && button.dataset ? (button.dataset.shareGame || '{}') : '{}');
+    return payload && typeof payload === 'object' && !Array.isArray(payload) ? payload : null;
+  } catch (error) {
+    return null;
+  }
+}
+function openShareButton(button) {
+  const payload = parseShareGamePayload(button);
+  if (!payload) return;
+  openShareModal(payload);
 }
 function openShareModal(game) {
   const shareGame = buildShareGamePayload(game);

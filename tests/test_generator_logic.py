@@ -13028,6 +13028,50 @@ class RankTopPicksTests(unittest.TestCase):
             ),
         )
 
+    def test_generate_html_share_button_uses_defensive_payload_parser(self) -> None:
+        html = generate_html(
+            deals=[
+                {
+                    "appid": "a",
+                    "name": "Alpha",
+                    "discount": 90,
+                    "price_final": "$10",
+                    "price_original": "$20",
+                    "price_raw": 1000,
+                    "metacritic_score": 90,
+                    "categories": [2],
+                }
+            ],
+            backlog_on_sale=[],
+            have_on_sale=[],
+            vanity="gaben",
+            owned={},
+            wishlist_appids=["a"],
+            min_discount=50,
+            genres=[],
+            top_picks=[
+                {
+                    "appid": "a",
+                    "name": "Alpha",
+                    "discount": 90,
+                    "price_final": "$10",
+                    "score": 95.4,
+                }
+            ],
+        )
+
+        self.assertIn("data-share-game=", html)
+        self.assertIn('onclick="openShareButton(this)"', html)
+        self.assertNotIn("openShareModal(JSON.parse(this.dataset.shareGame))", html)
+        self.assertIn("function parseShareGamePayload(button) {", html)
+        self.assertIn("JSON.parse(button && button.dataset", html)
+        self.assertIn("!Array.isArray(payload) ? payload : null", html)
+        self.assertIn("catch (error)", html)
+        self.assertIn("function openShareButton(button) {", html)
+        self.assertIn("const payload = parseShareGamePayload(button);", html)
+        self.assertIn("if (!payload) return;", html)
+        self.assertIn("openShareModal(payload);", html)
+
     def test_generate_share_html_surfaces_include_modal_and_share_actions(self) -> None:
         html = generate_share_html(
             deals=[
