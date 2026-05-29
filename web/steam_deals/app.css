@@ -151,14 +151,50 @@ a:hover { text-decoration: underline; }
   margin-top: 0.35rem;
 }
 
+.pre-run-config-card h2 {
+  margin-bottom: 0.35rem;
+}
+
+.pre-run-config-intro {
+  margin-bottom: 0.85rem;
+  color: var(--text2);
+  font-size: 0.8rem;
+  line-height: 1.45;
+}
+
+.pre-run-panel,
+.advanced-filters-panel {
+  margin-top: 0.65rem;
+  border: 1px solid var(--card-border);
+  border-radius: 9px;
+  background: rgba(12, 20, 30, 0.12);
+  overflow: hidden;
+}
+
+.pre-run-panel:first-of-type,
+.advanced-filters-panel:first-of-type {
+  margin-top: 0;
+}
+
+.pre-run-panel-summary,
 .advanced-filters-summary {
   display: flex;
   flex-wrap: wrap;
   align-items: center;
   justify-content: space-between;
   gap: 0.45rem;
+  padding: 0.7rem 0.8rem;
+  color: var(--accent);
+  font-size: 0.86rem;
+  font-weight: 700;
 }
 
+.pre-run-panel[open] .pre-run-panel-summary,
+.advanced-filters-panel[open] .advanced-filters-summary {
+  border-bottom: 1px solid var(--card-border);
+}
+
+.pre-run-panel-summary-hint,
 .advanced-filters-summary-hint {
   color: var(--text2);
   font-size: 0.74rem;

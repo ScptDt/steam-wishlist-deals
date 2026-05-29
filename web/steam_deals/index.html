@@ -279,9 +279,14 @@
     </div>
   </div>
 
-  <div class="card">
-    <details>
-      <summary>Archivos opcionales</summary>
+  <div class="card pre-run-config-card">
+    <h2>Configuración opcional antes de generar</h2>
+    <p class="pre-run-config-intro">Estos bloques afinan el próximo reporte. Puedes dejarlos cerrados y usar el flujo normal si no necesitas imports locales, filtros finos o avisos.</p>
+    <details class="pre-run-panel optional-files-panel">
+      <summary class="pre-run-panel-summary">
+        <span>Archivos opcionales</span>
+        <span class="pre-run-panel-summary-hint">Imports locales y carpeta de salida</span>
+      </summary>
       <div class="details-body">
         <div class="field">
           <label>CSV de HowLongToBeat <span class="optional">(opcional)</span></label>
@@ -320,7 +325,7 @@
     <details class="advanced-filters-panel">
       <summary class="advanced-filters-summary">
         <span>Filtros avanzados</span>
-        <span class="advanced-filters-summary-hint">Opcional: precio, reseñas, Deck, CSV/cache</span>
+        <span class="advanced-filters-summary-hint">Ajustes finos del próximo run</span>
       </summary>
       <div class="details-body">
         <div class="advanced-filters-intro">Déjalos vacíos para usar el flujo normal. Abre la ayuda solo si quieres ajustar fino este run.</div>
@@ -381,8 +386,11 @@
       </div>
     </details>
 
-    <details>
-      <summary>Notificaciones automáticas</summary>
+    <details class="pre-run-panel notifications-panel">
+      <summary class="pre-run-panel-summary">
+        <span>Notificaciones automáticas</span>
+        <span class="pre-run-panel-summary-hint">Canales externos opcionales</span>
+      </summary>
       <div class="details-body">
         <div class="field">
           <label>Token del bot de Telegram <span class="optional">(opcional)</span></label>
