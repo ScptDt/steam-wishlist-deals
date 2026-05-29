@@ -11253,6 +11253,35 @@ class RankTopPicksTests(unittest.TestCase):
         self.assertIn("similar a Hades", html)
         self.assertIn("steam/apps/10/capsule_231x87.jpg", html)
 
+    def test_generate_html_renders_personalized_recommendation_steam_appid_image(self) -> None:
+        html = generate_html(
+            deals=[],
+            backlog_on_sale=[],
+            have_on_sale=[],
+            vanity="gaben",
+            owned={},
+            wishlist_appids=["20"],
+            min_discount=50,
+            genres=[],
+            recommended_collections=[],
+            personalized_recommendations={
+                "items": [
+                    {
+                        "steam_appid": "20",
+                        "name": "Steam AppID Pick",
+                        "personalized_score": 91.0,
+                        "reasons": ["score base del reporte"],
+                    }
+                ],
+                "profile": {},
+            },
+        )
+
+        self.assertIn('data-personalized-recommendation="20"', html)
+        self.assertIn('href="https://store.steampowered.com/app/20/"', html)
+        self.assertIn("steam/apps/20/capsule_231x87.jpg", html)
+        self.assertIn("Steam AppID Pick", html)
+
     def test_generate_html_surfaces_recommendation_diagnostics_advisory_only(self) -> None:
         html = generate_html(
             deals=[],

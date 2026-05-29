@@ -1366,7 +1366,7 @@ def _html_activity_summary_chips(summary: dict) -> list[str]:
 
 
 def _html_personalized_item(item: dict, index: int) -> str:
-    appid = str(item.get("appid") or "").strip()
+    appid = str(item.get("appid") or item.get("steam_appid") or "").strip()
     safe_appid = appid if appid.isdigit() else ""
     name = str(item.get("name") or "Juego desconocido")
     title_html = _html_link(name, safe_appid) if safe_appid else _html_esc(name)
