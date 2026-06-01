@@ -1106,7 +1106,7 @@ def _html_share_button(
 
 def _shuffle_candidate_payload(game: dict, *, source_deal: dict | None = None) -> dict | None:
     source_deal = source_deal or {}
-    appid = str(game.get("appid") or source_deal.get("appid") or "").strip()
+    appid = _shuffle_game_appid(game) or _shuffle_game_appid(source_deal)
     name = str(game.get("name") or source_deal.get("name") or "").strip()
     if not appid.isdigit() or not name:
         return None
@@ -1145,6 +1145,12 @@ def _shuffle_personalized_items(personalized_recommendations: dict | None) -> li
     return [item for item in personalized_recommendations.get("items", []) if isinstance(item, dict)]
 
 
+def _shuffle_game_appid(game: dict | None) -> str:
+    if not isinstance(game, dict):
+        return ""
+    return str(game.get("appid") or game.get("steam_appid") or "").strip()
+
+
 def _build_shuffle_candidates(
     top_picks: list[dict],
     deals: list[dict],
@@ -1152,7 +1158,11 @@ def _build_shuffle_candidates(
     personalized_recommendations: dict | None = None,
     limit: int = 12,
 ) -> list[dict]:
-    deals_by_appid = {str(deal.get("appid")): deal for deal in deals if deal.get("appid")}
+    deals_by_appid = {}
+    for deal in deals:
+        appid = _shuffle_game_appid(deal)
+        if appid:
+            deals_by_appid[appid] = deal
     personalized_items = _shuffle_personalized_items(personalized_recommendations)
     source_games = personalized_items or top_picks or sorted(
         deals,
@@ -1168,7 +1178,7 @@ def _build_shuffle_candidates(
     for game in source_games:
         candidate = _shuffle_candidate_payload(
             game,
-            source_deal=deals_by_appid.get(str(game.get("appid") or "")),
+            source_deal=deals_by_appid.get(_shuffle_game_appid(game)),
         )
         if not candidate or candidate["appid"] in seen:
             continue

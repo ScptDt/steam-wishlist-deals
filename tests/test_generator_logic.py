@@ -14329,6 +14329,47 @@ class RankTopPicksTests(unittest.TestCase):
         self.assertIn("Único destacado disponible", html)
         self.assertNotIn("Ver otro destacado", html)
 
+    def test_generate_html_shuffle_accepts_personalized_steam_appid(self) -> None:
+        html = generate_html(
+            deals=[
+                {
+                    "appid": "30",
+                    "steam_appid": "30",
+                    "name": "Deal fallback",
+                    "discount": 55,
+                    "price_final": "$7",
+                    "price_original": "$14",
+                    "price_raw": 700,
+                    "categories": [],
+                }
+            ],
+            backlog_on_sale=[],
+            have_on_sale=[],
+            vanity="gaben",
+            owned={},
+            wishlist_appids=["30"],
+            min_discount=50,
+            genres=[],
+            personalized_recommendations={
+                "items": [
+                    {
+                        "steam_appid": "30",
+                        "name": "Steam AppID Personal Pick",
+                        "personalized_score": 99.0,
+                        "reasons": ["encaja con tu actividad reciente"],
+                    }
+                ]
+            },
+        )
+
+        self.assertIn("Shuffle 1 juego", html)
+        self.assertIn('href="https://store.steampowered.com/app/30/"', html)
+        self.assertIn("steam/apps/30/header.jpg", html)
+        self.assertIn("Steam AppID Personal Pick", html)
+        self.assertIn("Personal 99.0", html)
+        self.assertIn("-55%", html)
+        self.assertIn("$7", html)
+
     def test_generate_html_adds_shuffle_one_game_from_deals_without_top_picks(self) -> None:
         html = generate_html(
             deals=[
