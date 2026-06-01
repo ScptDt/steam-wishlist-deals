@@ -1431,7 +1431,60 @@ def _html_activity_summary_chips(summary: dict) -> list[str]:
     return chips
 
 
-def _html_personalized_item(item: dict, index: int) -> str:
+def _html_behavioral_explanation_appid(item: dict | None) -> str:
+    if not isinstance(item, dict):
+        return ""
+    appid = str(item.get("appid") or item.get("steam_appid") or "").strip()
+    return appid if appid.isdigit() else ""
+
+
+def _html_behavioral_explanations_by_appid(payload: dict | None) -> dict[str, dict]:
+    if not isinstance(payload, dict) or payload.get("schema") != "behavioral_explanations_v1":
+        return {}
+    items = payload.get("items") if isinstance(payload.get("items"), list) else []
+    explanations: dict[str, dict] = {}
+    for item in (entry for entry in items if isinstance(entry, dict)):
+        appid = _html_behavioral_explanation_appid(item)
+        if appid and appid not in explanations:
+            explanations[appid] = item
+    return explanations
+
+
+def _html_personalized_behavioral_explanation(explanation: dict | None) -> str:
+    if not isinstance(explanation, dict):
+        return ""
+    confidence = str(explanation.get("confidence") or "").strip().lower()
+    title = "Por qué podría gustarte" if confidence in {"medium", "high"} else "Señales de estilo del juego"
+    headline = str(explanation.get("headline") or "").strip()
+    reason_items = explanation.get("reasons") if isinstance(explanation.get("reasons"), list) else []
+    supporting_cues = (
+        explanation.get("supporting_cues")
+        if isinstance(explanation.get("supporting_cues"), list)
+        else []
+    )
+    reasons = [str(reason).strip() for reason in reason_items if str(reason).strip()][:2]
+    cue_labels = [
+        str(cue.get("label") or "").strip()
+        for cue in supporting_cues
+        if isinstance(cue, dict) and str(cue.get("label") or "").strip()
+    ][:3]
+    if not headline and not reasons and not cue_labels:
+        return ""
+    headline_html = f"<p>{_html_esc(headline)}</p>" if headline else ""
+    reasons_html = "".join(f"<li>{_html_esc(reason)}</li>" for reason in reasons)
+    reasons_block = f"<ul>{reasons_html}</ul>" if reasons_html else ""
+    cues_html = "".join(f"<span>{_html_esc(label)}</span>" for label in cue_labels)
+    cues_block = f'<div class="personalized-behavioral-cues">{cues_html}</div>' if cues_html else ""
+    return f'''<div class="personalized-behavioral-note">
+      <strong>{_html_esc(title)}</strong>
+      {headline_html}
+      {reasons_block}
+      {cues_block}
+      <small>Señal advisory: no cambia score ni ranking.</small>
+    </div>'''
+
+
+def _html_personalized_item(item: dict, index: int, behavioral_explanation: dict | None = None) -> str:
     appid = str(item.get("appid") or item.get("steam_appid") or "").strip()
     safe_appid = appid if appid.isdigit() else ""
     name = str(item.get("name") or "Juego desconocido")
@@ -1463,6 +1516,7 @@ def _html_personalized_item(item: dict, index: int) -> str:
       <img src="{CAPSULE_URL.format(appid=safe_appid)}" alt="" loading="lazy" onerror="this.style.display='none'">
     </a>'''
     data_attr = f' data-personalized-recommendation="{_html_esc(safe_appid)}"' if safe_appid else ""
+    behavioral_html = _html_personalized_behavioral_explanation(behavioral_explanation)
     return f'''<article class="personalized-item-card"{data_attr}>
   <div class="personalized-item-rank">#{index}</div>
   {image_html}
@@ -1470,17 +1524,26 @@ def _html_personalized_item(item: dict, index: int) -> str:
     <h3>{title_html}</h3>
     {meta_html}
     <ul>{reasons_html}</ul>
+    {behavioral_html}
   </div>
 </article>'''
 
 
-def _html_personalized_recommendations(payload: dict | None) -> str:
+def _html_personalized_recommendations(payload: dict | None, behavioral_explanations: dict | None = None) -> str:
     if not isinstance(payload, dict):
         return ""
     items = [item for item in payload.get("items", []) if isinstance(item, dict)]
     if not items:
         return ""
-    cards = "".join(_html_personalized_item(item, index) for index, item in enumerate(items, 1))
+    explanations_by_appid = _html_behavioral_explanations_by_appid(behavioral_explanations)
+    cards = "".join(
+        _html_personalized_item(
+            item,
+            index,
+            explanations_by_appid.get(_html_behavioral_explanation_appid(item)),
+        )
+        for index, item in enumerate(items, 1)
+    )
     return f'''<section class="personalized-recommendations" data-personalized-recommendations-section>
   <h2>Recomendaciones personalizadas</h2>
   <p class="section-desc">Ranking explicable construido con score del reporte y señales opcionales de actividad, biblioteca y preferencias. No cambia el score global.</p>
@@ -2491,6 +2554,13 @@ a.pick-card:hover { border-color: var(--accent-blue); transform: translateY(-2px
 .personalized-item-meta { display: flex; flex-wrap: wrap; gap: .3rem; color: var(--text-secondary); font-size: .72rem; margin-bottom: .35rem; }
 .personalized-item-meta span:first-child { color: var(--accent-green); font-weight: 700; }
 .personalized-item-main ul { margin-left: 1rem; color: var(--text-secondary); font-size: .75rem; line-height: 1.35; }
+.personalized-behavioral-note { margin-top: .6rem; padding: .55rem .65rem; border: 1px solid rgba(102,192,244,.2); border-left: 3px solid var(--accent-blue); border-radius: 6px; background: rgba(102,192,244,.06); color: var(--text-secondary); font-size: .74rem; line-height: 1.35; }
+.personalized-behavioral-note strong { display: block; color: var(--accent-blue); font-size: .76rem; margin-bottom: .22rem; }
+.personalized-behavioral-note p { margin-bottom: .3rem; }
+.personalized-behavioral-note ul { margin-left: 1rem; }
+.personalized-behavioral-cues { display: flex; flex-wrap: wrap; gap: .25rem; margin-top: .35rem; }
+.personalized-behavioral-cues span { border: 1px solid rgba(102,192,244,.22); border-radius: 999px; padding: .12rem .45rem; background: rgba(12,20,30,.28); }
+.personalized-behavioral-note small { display: block; margin-top: .4rem; color: var(--text-secondary); opacity: .82; }
 @media (max-width: 767px) { .personalized-item-card { grid-template-columns: 1fr; } }
 .recommendation-diagnostics { margin: 0 0 1.5rem; padding: 1rem; border: 1px solid rgba(102,192,244,.25); border-radius: 10px; background: linear-gradient(135deg, rgba(102,192,244,.08), rgba(12,20,30,.25)); }
 .recommendation-diagnostics-head { display: flex; justify-content: space-between; gap: 1rem; align-items: flex-start; }
@@ -3691,6 +3761,7 @@ def generate_html(
     external_offers: dict | None = None,
     taste_priority: dict | None = None,
     recommendation_diagnostics: dict | None = None,
+    behavioral_explanations: dict | None = None,
     *,
     group_by_tier,
     group_deals_by_tag,
@@ -3722,6 +3793,7 @@ def generate_html(
     recommendation_diagnostics = (
         recommendation_diagnostics if isinstance(recommendation_diagnostics, dict) else None
     )
+    behavioral_explanations = behavioral_explanations if isinstance(behavioral_explanations, dict) else None
     achievements_data = achievements_data or {}
     watchlist_alerts = watchlist_alerts or []
     price_history_games = (price_history or {}).get("games", {})
@@ -3871,7 +3943,7 @@ def generate_html(
 </section>""")
 
     parts.append(_html_recommended_collections(recommended_collections))
-    parts.append(_html_personalized_recommendations(personalized_recommendations))
+    parts.append(_html_personalized_recommendations(personalized_recommendations, behavioral_explanations))
     parts.append(_html_recommendation_diagnostics(recommendation_diagnostics))
     parts.append(_html_taste_priority(taste_priority))
     parts.append(

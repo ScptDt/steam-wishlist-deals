@@ -3635,6 +3635,7 @@ def generate_html(
     external_offers: dict | None = None,
     taste_priority: dict | None = None,
     recommendation_diagnostics: dict | None = None,
+    behavioral_explanations: dict | None = None,
     recommended_collections: list[dict] | None = None,
     personalized_recommendations: dict | None = None,
     wishlist_hygiene=None,
@@ -3748,6 +3749,7 @@ def generate_html(
             external_offers=external_offers,
             taste_priority=taste_priority,
             recommendation_diagnostics=recommendation_diagnostics,
+            behavioral_explanations=behavioral_explanations,
             group_by_tier=group_by_tier,
             group_deals_by_tag=group_deals_by_tag,
         )
@@ -3795,6 +3797,7 @@ def generate_html(
         external_offers=external_offers,
         taste_priority=taste_priority,
         recommendation_diagnostics=recommendation_diagnostics,
+        behavioral_explanations=behavioral_explanations,
         group_by_tier=group_by_tier,
         group_deals_by_tag=group_deals_by_tag,
     )
@@ -4960,6 +4963,8 @@ def main():
         library_games=have_on_sale,
         owned=owned,
     )
+    behavioral_signals = build_behavioral_signals(_behavioral_signal_records(deals, tags_data))
+    behavioral_explanations = build_behavioral_explanations(behavioral_signals)
     play_access = None
     if local_play_access_records:
         play_access = build_play_access_contract(
@@ -5071,6 +5076,7 @@ def main():
         free_weekend_now=free_weekend_now,
         external_offers=external_offers,
         recommendation_diagnostics=recommendation_diagnostics,
+        behavioral_explanations=behavioral_explanations,
         play_access=play_access,
         **family_renderer_kwargs,
     )
@@ -5142,6 +5148,8 @@ def main():
         free_weekend_now=free_weekend_now,
         external_offers=external_offers,
         recommendation_diagnostics=recommendation_diagnostics,
+        behavioral_signals=behavioral_signals,
+        behavioral_explanations=behavioral_explanations,
         **family_renderer_kwargs,
     )
 
