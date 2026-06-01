@@ -331,7 +331,10 @@ tr:hover { background: #1a3a5c; }
 .recommended-collection-card h3 { color:#66c0f4; font-size:.95rem; margin-bottom:.25rem; }
 .recommended-collection-card p { color:#8f98a0; font-size:.76rem; margin-bottom:.45rem; }
 .recommended-collection-card ol { list-style:none; display:flex; flex-direction:column; gap:.45rem; }
-.recommended-collection-item { border-top:1px solid #2a475e; padding-top:.45rem; }
+.recommended-collection-item { border-top:1px solid #2a475e; padding-top:.45rem; display:flex; gap:.5rem; align-items:flex-start; }
+.collection-item-thumb { flex:0 0 92px; width:92px; height:35px; border-radius:4px; overflow:hidden; border:1px solid #2a475e; background:#1b2838; }
+.collection-item-thumb img { width:100%; height:100%; object-fit:cover; display:block; }
+.collection-item-body { flex:1; min-width:0; }
 .collection-item-main { display:flex; justify-content:space-between; gap:.5rem; align-items:flex-start; }
 .collection-item-reason { color:#8f98a0; font-size:.74rem; margin-top:.12rem; }
 .collection-item-meta { display:flex; gap:.35rem; flex-wrap:wrap; justify-content:flex-end; font-size:.72rem; color:#c7d5e0; }
@@ -347,6 +350,8 @@ tr:hover { background: #1a3a5c; }
 .personalized-recommendation-card { background:#16202d; border:1px solid rgba(108,198,68,.35); border-radius:8px; padding:.65rem; }
 .personalized-recommendation-card h3 { color:#66c0f4; font-size:.95rem; margin-bottom:.25rem; }
 .personalized-rank { color:#6cc644; font-size:.78rem; font-weight:700; margin-bottom:.25rem; }
+.personalized-item-thumb { display:block; width:100%; aspect-ratio:231/87; border-radius:5px; overflow:hidden; border:1px solid #2a475e; background:#1b2838; margin-bottom:.45rem; }
+.personalized-item-thumb img { width:100%; height:100%; object-fit:cover; display:block; }
 .personalized-meta { display:flex; flex-wrap:wrap; gap:.35rem; color:#c7d5e0; font-size:.72rem; margin:.25rem 0; }
 .personalized-meta span:first-child { color:#f0b232; }
 .personalized-reasons { color:#8f98a0; font-size:.74rem; margin:.35rem 0 0; padding-left:1rem; }
@@ -687,6 +692,19 @@ def _render_top_pick_card(
     )
 
 
+def _render_steam_capsule_thumb(appid: str, name: str, class_name: str) -> str:
+    if not appid.isdigit():
+        return ""
+    safe_name = html_escape(name)
+    return (
+        f'<a class="{class_name}" href="{STORE_URL.format(appid=appid)}" '
+        f'target="_blank" rel="noopener noreferrer" aria-label="Abrir {safe_name} en Steam">'
+        f'<img src="{CAPSULE_URL.format(appid=appid)}" alt="" loading="lazy" '
+        'onerror="this.style.display=\'none\'">'
+        '</a>'
+    )
+
+
 def _render_collection_item(item: dict) -> str:
     appid = str(item.get("appid") or item.get("steam_appid") or "").strip()
     name = str(item.get("name") or item.get("steam_name") or "Juego desconocido")
@@ -731,12 +749,16 @@ def _render_collection_item(item: dict) -> str:
         f'<div><strong>{name_html}</strong>'
         f'<div class="collection-item-reason">{html_escape(reason)}</div></div>'
     )
+    thumb_html = _render_steam_capsule_thumb(appid, name, "collection-item-thumb")
     return f'''<li class="recommended-collection-item">
-  <div class="collection-item-main">
-    {item_main}
-    <div class="collection-item-meta">{meta_html}</div>
+  {thumb_html}
+  <div class="collection-item-body">
+    <div class="collection-item-main">
+      {item_main}
+      <div class="collection-item-meta">{meta_html}</div>
+    </div>
+    {share_html}
   </div>
-  {share_html}
 </li>'''
 
 
@@ -887,8 +909,10 @@ def _render_personalized_item(item: dict, index: int) -> str:
         if safe_appid
         else ""
     )
+    thumb_html = _render_steam_capsule_thumb(safe_appid, name, "personalized-item-thumb")
     return f'''<article class="personalized-recommendation-card"{data_attr}>
   <div class="personalized-rank">#{index}</div>
+  {thumb_html}
   <h3>{name_html}</h3>
   {_render_personalized_meta(item)}
   <ul class="personalized-reasons">{reasons_html}</ul>

@@ -12652,6 +12652,8 @@ class RankTopPicksTests(unittest.TestCase):
         self.assertIn("-90%", html)
         self.assertIn("$10", html)
         self.assertIn('href="https://store.steampowered.com/app/10/"', html)
+        self.assertIn('class="collection-item-thumb"', html)
+        self.assertIn("steam/apps/10/capsule_231x87.jpg", html)
         self.assertIn('class="collection-share"', html)
 
     def test_generate_share_html_omits_recommended_collections_when_empty(self) -> None:
@@ -12726,8 +12728,69 @@ class RankTopPicksTests(unittest.TestCase):
         self.assertIn("Afinidad +18.5", html)
         self.assertIn("encaja con tu actividad reciente", html)
         self.assertIn("similar a Dead Cells", html)
+        self.assertIn('class="personalized-item-thumb"', html)
+        self.assertIn("steam/apps/10/capsule_231x87.jpg", html)
         self.assertIn('class="personalized-share"', html)
         self.assertIn("data-share-game=", html)
+
+    def test_generate_share_html_renders_recommendation_thumbnails_from_steam_appid(self) -> None:
+        html = generate_share_html(
+            deals=[],
+            vanity="gaben",
+            min_discount=50,
+            recommended_collections=[
+                {
+                    "id": "steam_appid_collection",
+                    "title": "Steam AppID collection",
+                    "items": [
+                        {
+                            "steam_appid": "40",
+                            "name": "Steam AppID Collection Pick",
+                            "reason": "fixture local con steam_appid",
+                            "score": 88,
+                            "discount": 75,
+                            "price_final": "$5",
+                        },
+                        {
+                            "steam_appid": "not-numeric",
+                            "name": "Invalid Collection Pick",
+                            "reason": "sin ID numérico",
+                        },
+                    ],
+                }
+            ],
+            personalized_recommendations={
+                "items": [
+                    {
+                        "steam_appid": "50",
+                        "name": "Steam AppID Personal Pick",
+                        "personalized_score": 91.0,
+                        "reasons": ["score base del reporte"],
+                    },
+                    {
+                        "steam_appid": "bad-id",
+                        "name": "Invalid Personal Pick",
+                        "reasons": ["sin ID numérico"],
+                    },
+                ],
+                "profile": {},
+            },
+        )
+
+        self.assertIn("Steam AppID Collection Pick", html)
+        self.assertIn("Steam AppID Personal Pick", html)
+        self.assertIn('class="collection-item-thumb"', html)
+        self.assertIn('class="personalized-item-thumb"', html)
+        self.assertIn('href="https://store.steampowered.com/app/40/"', html)
+        self.assertIn('href="https://store.steampowered.com/app/50/"', html)
+        self.assertIn("steam/apps/40/capsule_231x87.jpg", html)
+        self.assertIn("steam/apps/50/capsule_231x87.jpg", html)
+        self.assertIn("Invalid Collection Pick", html)
+        self.assertIn("Invalid Personal Pick", html)
+        self.assertNotIn("https://store.steampowered.com/app/not-numeric/", html)
+        self.assertNotIn("https://store.steampowered.com/app/bad-id/", html)
+        self.assertNotIn("steam/apps/not-numeric/capsule_231x87.jpg", html)
+        self.assertNotIn("steam/apps/bad-id/capsule_231x87.jpg", html)
 
     def test_generate_share_html_omits_personalized_recommendations_when_empty(self) -> None:
         html = generate_share_html(
