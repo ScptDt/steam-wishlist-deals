@@ -2021,8 +2021,16 @@ def _html_budget_pick_context(pick: dict) -> str:
     )
 
 
+def _budget_item_appid(item: dict) -> str:
+    appid = str(item.get("appid") or "").strip()
+    if appid:
+        return appid
+    steam_appid = str(item.get("steam_appid") or "").strip()
+    return steam_appid if steam_appid.isdigit() else ""
+
+
 def _budget_option_payload(pick: dict, *, total_spent: float, remaining: float) -> dict:
-    appid = str(pick.get("appid", ""))
+    appid = _budget_item_appid(pick)
     return {
         "appid": appid,
         "name": str(pick.get("name", "")),
@@ -2040,7 +2048,7 @@ def _budget_option_payload(pick: dict, *, total_spent: float, remaining: float) 
 
 
 def _budget_replacement_payload(replacement: dict) -> dict:
-    appid = str(replacement.get("appid", ""))
+    appid = _budget_item_appid(replacement)
     return {
         "appid": appid,
         "name": str(replacement.get("name", "")),

@@ -13483,6 +13483,66 @@ class RankTopPicksTests(unittest.TestCase):
         self.assertIn("imageEl.src = option.image_url;", html)
         self.assertIn("share-btn-close", html)
 
+    def test_generate_html_budget_reroll_accepts_steam_appid_replacement(self) -> None:
+        html = generate_html(
+            deals=[],
+            backlog_on_sale=[],
+            have_on_sale=[],
+            vanity="gaben",
+            owned={},
+            wishlist_appids=["a"],
+            min_discount=50,
+            genres=[],
+            budget_result={
+                "budget": 100,
+                "selected_variant": "balanced",
+                "selected": [],
+                "total_spent": 50,
+                "total_savings": 50,
+                "remaining": 50,
+                "games_count": 1,
+                "variants": [
+                    {
+                        "id": "balanced",
+                        "label": "Lista media",
+                        "description": "Balance recomendado",
+                        "budget": 100,
+                        "total_spent": 50,
+                        "total_savings": 50,
+                        "remaining": 50,
+                        "games_count": 1,
+                        "items": [
+                            {
+                                "appid": "a",
+                                "name": "Alpha",
+                                "discount": 50,
+                                "price_final": "$50",
+                                "score": 80,
+                                "replacement_candidates": [
+                                    {
+                                        "steam_appid": "30",
+                                        "name": "Steam AppID Swap",
+                                        "discount": 60,
+                                        "price_final": "$40",
+                                        "score": 82,
+                                        "swap_total_spent": 40,
+                                        "swap_remaining": 60,
+                                    }
+                                ],
+                            }
+                        ],
+                    }
+                ],
+            },
+        )
+
+        self.assertIn("Steam AppID Swap", html)
+        self.assertIn("https://store.steampowered.com/app/30/", html)
+        self.assertIn("steam/apps/30/capsule_231x87.jpg", html)
+        self.assertIn("&quot;appid&quot;: &quot;30&quot;", html)
+        self.assertNotIn("https://store.steampowered.com/app//", html)
+        self.assertNotIn("steam/apps//capsule_231x87.jpg", html)
+
     def test_generate_html_budget_reroll_updates_visible_totals(self) -> None:
         html = generate_html(
             deals=[],
