@@ -3618,6 +3618,14 @@ function latestSmartAlertItemTitle(item) {
   return {label: name, appid: /^\d+$/.test(appid) ? appid : ''};
 }
 
+function formatLatestSignedPercent(value) {
+  const number = Number(value);
+  if (!Number.isFinite(number)) return '';
+  const rounded = Math.round(number);
+  if (rounded > 0) return `+${rounded}%`;
+  return `${rounded}%`;
+}
+
 function latestSmartAlertItemMeta(item) {
   const source = item && typeof item === 'object' ? item : {};
   const parts = [];
@@ -3625,7 +3633,7 @@ function latestSmartAlertItemMeta(item) {
   const currentPrice = Number(source.current_price);
   const historicalLow = Number(source.historical_low);
   const gamesCount = Number(source.games_count);
-  if (Number.isFinite(changePct)) parts.push(`+${changePct.toFixed(0)}%`);
+  if (Number.isFinite(changePct)) parts.push(formatLatestSignedPercent(changePct));
   if (Number.isFinite(currentPrice)) parts.push(`actual $${currentPrice.toFixed(0)}`);
   if (Number.isFinite(historicalLow)) parts.push(`mín. $${historicalLow.toFixed(0)}`);
   if (Number.isFinite(gamesCount)) parts.push(`${gamesCount.toFixed(0)} juegos`);
