@@ -1151,20 +1151,8 @@ def _shuffle_game_appid(game: dict | None) -> str:
     return str(game.get("appid") or game.get("steam_appid") or "").strip()
 
 
-def _build_shuffle_candidates(
-    top_picks: list[dict],
-    deals: list[dict],
-    *,
-    personalized_recommendations: dict | None = None,
-    limit: int = 12,
-) -> list[dict]:
-    deals_by_appid = {}
-    for deal in deals:
-        appid = _shuffle_game_appid(deal)
-        if appid:
-            deals_by_appid[appid] = deal
-    personalized_items = _shuffle_personalized_items(personalized_recommendations)
-    source_games = personalized_items or top_picks or sorted(
+def _shuffle_sorted_deals(deals: list[dict]) -> list[dict]:
+    return sorted(
         deals,
         key=lambda deal: (
             -float(deal.get("score") or 0),
@@ -1173,20 +1161,84 @@ def _build_shuffle_candidates(
             str(deal.get("name") or "").lower(),
         ),
     )
+
+
+def _shuffle_visible_recommendation_appids(
+    top_picks: list[dict],
+    personalized_recommendations: dict | None,
+    recommended_collections: list[dict] | None,
+) -> set[str]:
+    visible: set[str] = set()
+
+    def add_items(items) -> None:
+        for item in (entry for entry in items or [] if isinstance(entry, dict)):
+            appid = _shuffle_game_appid(item)
+            if appid.isdigit():
+                visible.add(appid)
+
+    add_items(top_picks)
+    add_items(_shuffle_personalized_items(personalized_recommendations))
+    for collection in (entry for entry in recommended_collections or [] if isinstance(entry, dict)):
+        items = collection.get("items") if isinstance(collection.get("items"), list) else []
+        add_items(items)
+    return visible
+
+
+def _collect_shuffle_candidates(
+    source_games: list[dict],
+    deals_by_appid: dict[str, dict],
+    *,
+    limit: int,
+    exclude_appids: set[str] | None = None,
+) -> list[dict]:
     candidates = []
     seen: set[str] = set()
+    excluded = exclude_appids or set()
     for game in source_games:
         candidate = _shuffle_candidate_payload(
             game,
             source_deal=deals_by_appid.get(_shuffle_game_appid(game)),
         )
-        if not candidate or candidate["appid"] in seen:
+        if not candidate or candidate["appid"] in seen or candidate["appid"] in excluded:
             continue
         candidates.append(candidate)
         seen.add(candidate["appid"])
         if len(candidates) >= limit:
             break
     return candidates
+
+
+def _build_shuffle_candidates(
+    top_picks: list[dict],
+    deals: list[dict],
+    *,
+    personalized_recommendations: dict | None = None,
+    recommended_collections: list[dict] | None = None,
+    limit: int = 12,
+) -> list[dict]:
+    deals_by_appid = {}
+    for deal in deals:
+        appid = _shuffle_game_appid(deal)
+        if appid:
+            deals_by_appid[appid] = deal
+    personalized_items = _shuffle_personalized_items(personalized_recommendations)
+    sorted_deals = _shuffle_sorted_deals(deals)
+    visible_appids = _shuffle_visible_recommendation_appids(
+        top_picks,
+        personalized_recommendations,
+        recommended_collections,
+    )
+    if visible_appids:
+        non_visible_candidates = _collect_shuffle_candidates(
+            sorted_deals,
+            deals_by_appid,
+            limit=limit,
+            exclude_appids=visible_appids,
+        )
+        if non_visible_candidates:
+            return non_visible_candidates
+    source_games = personalized_items or top_picks or sorted_deals
+    return _collect_shuffle_candidates(source_games, deals_by_appid, limit=limit)
 
 
 def _html_shuffle_one_game(candidates: list[dict]) -> str:
@@ -3736,6 +3788,7 @@ def generate_html(
                 top_picks,
                 deals,
                 personalized_recommendations=personalized_recommendations,
+                recommended_collections=recommended_collections,
             )
         )
     )

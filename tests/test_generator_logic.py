@@ -230,6 +230,13 @@ def _first_share_payload_from_html(html_text: str) -> dict:
     return json.loads(html_module.unescape(html_text[start:end]))
 
 
+def _shuffle_candidates_from_html(html_text: str) -> list[dict]:
+    marker = 'data-shuffle-candidates="'
+    start = html_text.index(marker) + len(marker)
+    end = html_text.index('"', start)
+    return json.loads(html_module.unescape(html_text[start:end]))
+
+
 class ComputeValueScoreTests(unittest.TestCase):
     def test_uses_expected_defaults_when_optional_signals_are_missing(self) -> None:
         score = compute_value_score(
@@ -14555,6 +14562,170 @@ class RankTopPicksTests(unittest.TestCase):
         self.assertIn("-55%", html)
         self.assertIn("$7", html)
 
+    def test_generate_html_shuffle_prefers_candidates_not_already_recommended(self) -> None:
+        html = generate_html(
+            deals=[
+                {
+                    "appid": "10",
+                    "name": "Top Visible",
+                    "discount": 90,
+                    "price_final": "$10",
+                    "price_original": "$100",
+                    "price_raw": 1000,
+                    "score": 99.0,
+                    "categories": [],
+                },
+                {
+                    "appid": "20",
+                    "name": "Personal Visible",
+                    "discount": 80,
+                    "price_final": "$8",
+                    "price_original": "$40",
+                    "price_raw": 800,
+                    "score": 98.0,
+                    "categories": [],
+                },
+                {
+                    "appid": "30",
+                    "name": "Collection Visible",
+                    "discount": 70,
+                    "price_final": "$7",
+                    "price_original": "$23",
+                    "price_raw": 700,
+                    "score": 97.0,
+                    "categories": [],
+                },
+                {
+                    "appid": "40",
+                    "name": "Hidden Gem",
+                    "discount": 65,
+                    "price_final": "$6",
+                    "price_original": "$17",
+                    "price_raw": 600,
+                    "score": 88.0,
+                    "categories": [],
+                },
+                {
+                    "appid": "50",
+                    "name": "Second Hidden Gem",
+                    "discount": 60,
+                    "price_final": "$5",
+                    "price_original": "$12",
+                    "price_raw": 500,
+                    "score": 75.0,
+                    "categories": [],
+                },
+            ],
+            backlog_on_sale=[],
+            have_on_sale=[],
+            vanity="gaben",
+            owned={},
+            wishlist_appids=["10", "20", "30", "40", "50"],
+            min_discount=50,
+            genres=[],
+            top_picks=[
+                {
+                    "appid": "10",
+                    "name": "Top Visible",
+                    "discount": 90,
+                    "price_final": "$10",
+                    "score": 99.0,
+                    "recommendation": "Comprar ahora",
+                    "categories": [],
+                }
+            ],
+            recommended_collections=[
+                {
+                    "id": "visible",
+                    "title": "Colección visible",
+                    "description": "Ya está destacada abajo.",
+                    "items": [
+                        {
+                            "appid": "30",
+                            "name": "Collection Visible",
+                            "discount": 70,
+                            "price_final": "$7",
+                            "score": 97.0,
+                        }
+                    ],
+                }
+            ],
+            personalized_recommendations={
+                "items": [
+                    {
+                        "appid": "20",
+                        "name": "Personal Visible",
+                        "discount": 80,
+                        "price_final": "$8",
+                        "personalized_score": 98.0,
+                        "reasons": ["ya aparece como recomendación personalizada"],
+                    }
+                ]
+            },
+        )
+
+        candidates = _shuffle_candidates_from_html(html)
+        self.assertEqual(["40", "50"], [candidate["appid"] for candidate in candidates])
+        self.assertEqual("Hidden Gem", candidates[0]["name"])
+        self.assertIn("1/2", html)
+
+    def test_generate_html_shuffle_falls_back_when_all_candidates_are_visible(self) -> None:
+        html = generate_html(
+            deals=[
+                {
+                    "appid": "10",
+                    "name": "Alpha",
+                    "discount": 90,
+                    "price_final": "$10",
+                    "price_original": "$100",
+                    "price_raw": 1000,
+                    "score": 95.0,
+                    "categories": [],
+                },
+                {
+                    "appid": "20",
+                    "name": "Bravo",
+                    "discount": 80,
+                    "price_final": "$12",
+                    "price_original": "$60",
+                    "price_raw": 1200,
+                    "score": 82.0,
+                    "categories": [],
+                },
+            ],
+            backlog_on_sale=[],
+            have_on_sale=[],
+            vanity="gaben",
+            owned={},
+            wishlist_appids=["10", "20"],
+            min_discount=50,
+            genres=[],
+            top_picks=[
+                {
+                    "appid": "10",
+                    "name": "Alpha",
+                    "discount": 90,
+                    "price_final": "$10",
+                    "score": 95.0,
+                    "recommendation": "Comprar ahora",
+                    "categories": [],
+                },
+                {
+                    "appid": "20",
+                    "name": "Bravo",
+                    "discount": 80,
+                    "price_final": "$12",
+                    "score": 82.0,
+                    "recommendation": "Muy buena oferta",
+                    "categories": [],
+                },
+            ],
+        )
+
+        candidates = _shuffle_candidates_from_html(html)
+        self.assertEqual(["10", "20"], [candidate["appid"] for candidate in candidates])
+        self.assertIn("Ver otro destacado", html)
+
     def test_generate_html_adds_shuffle_one_game_from_deals_without_top_picks(self) -> None:
         html = generate_html(
             deals=[
@@ -14663,7 +14834,7 @@ class RankTopPicksTests(unittest.TestCase):
         self.assertIn("Shuffle 1 juego", html)
         self.assertIn("data-shuffle-one", html)
         self.assertNotIn("Dame otro", html)
-        self.assertIn("Único candidato destacado", html)
+        self.assertIn("Único destacado disponible", html)
         self.assertIn("bindShuffleOneGame", html)
         self.assertIn("Alpha", html)
 
