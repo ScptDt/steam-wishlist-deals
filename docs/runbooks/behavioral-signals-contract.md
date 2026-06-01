@@ -127,6 +127,34 @@ Reglas:
 - conservar `advisory_only=true` y `ranking_impact=none`;
 - no cambiar score, ranking, defaults, cache ni fetching.
 
+## Plan F — definición de producto para consumidor visible
+
+Plan F desbloquea un consumidor visible futuro sin cambiar el contrato JSON. El objetivo no es decidir compras ni recalibrar el ranking, sino explicar de forma compacta **por qué un juego podría valer la pena revisar** usando señales ya calculadas.
+
+### Primer slice implementable aprobado para planificar
+
+- **Superficie**: HTML interactivo generado, dentro de `Recomendaciones personalizadas`, un juego por card cuando exista match por `appid`/`steam_appid`.
+- **Título/copy base**: `Por qué podría gustarte` para confianza `medium`/`high`; usar `Señales de estilo del juego` si la confianza es `low` para no prometer afinidad personal.
+- **Fuente única**: `behavioral_explanations.items` existente. No leer red, no recalcular preferencias y no crear payloads nuevos.
+- **Campos permitidos**: `headline`, hasta 2 frases de `reasons`, y hasta 3 labels de `supporting_cues` si aportan claridad.
+- **Fallback**: si el payload falta, está inválido, no tiene appid numérico o no matchea la recomendación visible, omitir el bloque sin empty state.
+- **Nota obligatoria**: indicar cerca del bloque que es advisory-only y que no cambia score/ranking.
+
+### No objetivos de Plan F v1
+
+- No construir `player_behavior_profile_v1`.
+- No inferir gustos personales sin señales explícitas.
+- No cambiar Top Picks, score, ranking, defaults, cache, fetching ni orden de recomendaciones.
+- No mover la señal a Web UI, Markdown o Share HTML en el mismo slice; esas superficies requieren slices separados.
+- No mostrar behavioral signals crudos si no pasan por `behavioral_explanations_v1`.
+
+### Validación requerida para el primer slice visible
+
+- Fixture con recomendación personalizada que sí tenga explicación behavioral y renderice el bloque compacto.
+- Fixture con recomendación sin explicación/mismatch que omita el bloque sin romper la card.
+- Fixture con payload malformado o appid inválido que degrade sin excepción.
+- Validación dirigida de renderer y `git diff --check`; sin reportes generados, red real, `BG00G`, `--no-cache` ni builds.
+
 ## Estados y degradación
 
 Estados permitidos:
@@ -255,7 +283,7 @@ Si faltan señales personales, el perfil futuro debe usar `status=unavailable` o
 - No inferir preferencias personales sin señales.
 - No inferir ownership/play access desde precio/catálogo público.
 - No mezclar con `wishlist_hygiene`, `external_offers` ni `play_access` salvo como consumidor futuro explícito.
-- No generar UI visible en este slice; la exposición vigente es JSON interno opcional (`behavioral_signals` y `behavioral_explanations`).
+- No generar UI visible en los slices de contrato/JSON-only; cualquier consumidor visible debe seguir la definición Plan F y aprobarse como slice separado.
 - No ejecutar `BG00G`, `--no-cache`, builds, smokes live ni reportes generados para validar este contrato.
 
 ## Slices recomendados
@@ -264,4 +292,6 @@ Si faltan señales personales, el perfil futuro debe usar `status=unavailable` o
 2. **Helper puro**: `app/steam_deals_behavioral.py` carga/valida taxonomía y clasifica fixtures locales.
 3. **JSON-only**: `generate_json` serializa `behavioral_signals` top-level y `summary.behavioral_signals_count`.
 4. **Explicaciones JSON-only**: `behavioral_explanations` traduce IDs a headlines/razones/cues compactos sin UI visible.
-5. **Consumidores futuros**: recommendation explanations visibles, discovery/decision reasons, y eventualmente `player_behavior_profile_v1`.
+5. **Plan F definición**: documentar copy, fuente única, superficies y no-objetivos antes de cualquier UI visible.
+6. **Plan F primer consumidor visible**: explicación compacta en `Recomendaciones personalizadas` del HTML generado, usando solo `behavioral_explanations_v1` y con `ranking_impact=none`.
+7. **Consumidores futuros**: discovery/decision reasons en otras superficies aprobadas por slice y eventualmente `player_behavior_profile_v1`.
