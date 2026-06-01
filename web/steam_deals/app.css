@@ -376,34 +376,36 @@ a:hover { text-decoration: underline; }
   opacity: 1 !important;
 }
 
-.wiz-next-actions {
-  display: grid;
-  gap: 0.55rem;
-  margin: 0.8rem 0;
-}
-
-.wiz-next-action {
-  padding: 0.65rem 0.75rem;
+.wiz-finish-card {
+  padding: 0.75rem 0.85rem;
   border-radius: 8px;
-  border: 1px solid rgba(102, 192, 244, 0.18);
+  border: 1px solid rgba(102, 192, 244, 0.22);
   background: rgba(42, 71, 94, 0.32);
+  margin: 0.75rem 0 0.6rem;
 }
 
-.wiz-next-action strong,
-.wiz-next-action span {
+.wiz-finish-card strong,
+.wiz-finish-card span {
   display: block;
 }
 
-.wiz-next-action strong {
+.wiz-finish-card strong {
   color: var(--text);
   font-size: 0.84rem;
   margin-bottom: 0.16rem;
 }
 
-.wiz-next-action span {
+.wiz-finish-card span {
   color: var(--text2);
   font-size: 0.76rem;
   line-height: 1.4;
+}
+
+.wiz-finish-note {
+  color: var(--text2) !important;
+  font-size: 0.78rem !important;
+  line-height: 1.45 !important;
+  margin: 0.35rem 0 0 !important;
 }
 
 .wiz-summary-panel {

@@ -1168,16 +1168,20 @@ class WebAssetsTests(unittest.TestCase):
         wizard_end = index_html.index('</div>\n</div>\n\n<div class="header">', wizard_start)
         wizard_markup = index_html[wizard_start:wizard_end]
 
-        self.assertIn("Listo para volver a la pantalla principal", wizard_markup)
+        self.assertIn("Listo: ya puedes generar reportes", wizard_markup)
+        self.assertIn("Guardaremos la configuración", wizard_markup)
         self.assertIn("El asistente no inicia una corrida automática", wizard_markup)
-        self.assertIn("Revisa filtros rápidos", wizard_markup)
-        self.assertIn("Pulsa Generar reportes", wizard_markup)
-        self.assertIn("Abre el último reporte si existe", wizard_markup)
-        self.assertIn("Ver configuración que se guardará", wizard_markup)
+        self.assertIn("Siguiente paso recomendado", wizard_markup)
+        self.assertIn("Generar reportes</b> como acción principal", wizard_markup)
+        self.assertIn("Ver datos guardados", wizard_markup)
         self.assertIn("Guardar y ver pantalla principal", wizard_markup)
+        self.assertIn('class="wiz-finish-card"', wizard_markup)
         self.assertIn('class="wiz-summary-panel"', wizard_markup)
         self.assertIn('id="wiz-summary-vanity"', wizard_markup)
-        self.assertIn(".wiz-next-actions", app_css)
+        self.assertNotIn("1. Revisa filtros rápidos", wizard_markup)
+        self.assertNotIn("3. Abre el último reporte si existe", wizard_markup)
+        self.assertIn(".wiz-finish-card", app_css)
+        self.assertIn(".wiz-finish-note", app_css)
         self.assertIn(".wiz-summary-panel", app_css)
 
     def test_payday2_dashboard_has_themed_branding_hooks(self) -> None:
