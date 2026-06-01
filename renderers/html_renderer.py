@@ -2081,7 +2081,7 @@ def _html_budget_reroll_button(pick: dict, *, variant: dict) -> str:
         )
     ]
     options.extend(_budget_replacement_payload(replacement) for replacement in replacements)
-    row_key = f'{variant.get("id", "variant")}::{pick.get("appid", "")}'
+    row_key = f'{variant.get("id", "variant")}::{_budget_item_appid(pick)}'
     return (
         f'<button type="button" class="btn-reset budget-reroll-inline" '
         f'data-budget-row-key="{_html_esc(row_key)}" '
@@ -2140,12 +2140,21 @@ def _html_budget_variant_panel(variant: dict, *, is_selected: bool) -> str:
     variant_rows = _budget_variant_rows(variant)
     for idx, pick in enumerate(variant_rows, 1):
         pick_data = pick if isinstance(pick, dict) else {}
-        appid = str(pick_data.get("appid") or "")
+        appid = _budget_item_appid(pick_data)
         pick_name = str(pick_data.get("name") or appid or "Juego sin nombre")
-        capsule = CAPSULE_URL.format(appid=appid)
         pick_context = _html_budget_pick_context(pick_data)
         reroll_button = _html_budget_reroll_button(pick_data, variant=variant)
         row_key = f'{variant.get("id", "variant")}::{appid}'
+        thumb_html = (
+            f'<img class="game-thumb" src="{CAPSULE_URL.format(appid=appid)}" alt="" loading="lazy" onerror="this.style.display=\'none\'">'
+            if appid
+            else ""
+        )
+        name_html = (
+            f'<a class="budget-value-link" href="{STORE_URL.format(appid=appid)}" target="_blank" rel="noopener noreferrer">{_html_esc(pick_name)}</a>'
+            if appid
+            else f'<span class="budget-value-link">{_html_esc(pick_name)}</span>'
+        )
         budget_rows += f'''<tr data-budget-row="{_html_esc(row_key)}">
   <td><div class="budget-row-index"><span>{idx}</span>{reroll_button}</div></td>
   <td class="budget-value-score">{_html_esc(str(pick_data.get("score", "—")))}</td>
@@ -2153,9 +2162,9 @@ def _html_budget_variant_panel(variant: dict, *, is_selected: bool) -> str:
   <td class="budget-value-price">{_html_esc(str(pick_data.get("price_final", "—")))}</td>
   <td>
     <div class="game-cell">
-      <img class="game-thumb" src="{capsule}" alt="" loading="lazy" onerror="this.style.display='none'">
+      {thumb_html}
       <span>
-        <a class="budget-value-link" href="{STORE_URL.format(appid=appid)}" target="_blank" rel="noopener noreferrer">{_html_esc(pick_name)}</a>
+        {name_html}
         <span class="budget-value-context">{pick_context}</span>
         <div class="budget-reroll-preview hidden"></div>
       </span>
