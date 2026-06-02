@@ -447,6 +447,16 @@ except Exception:
     _warn_text_impl = None
 
 
+try:
+    from steam_deals_warm_cache_summary import (
+        FULL_WARM_CACHE_STOP_SAFETY_CAP,
+        decide_full_warm_cache_next_action,
+    )
+except Exception:
+    FULL_WARM_CACHE_STOP_SAFETY_CAP = "stop_safety_cap"
+    decide_full_warm_cache_next_action = None
+
+
 # ─────────────────────────────────────────────
 # COLORES ANSI
 # ─────────────────────────────────────────────
@@ -2748,6 +2758,106 @@ def run_warm_cache_mode(
     return cache_result
 
 
+DEFAULT_FULL_WARM_CACHE_MAX_PASSES = 5
+
+
+def _resolve_full_warm_cache_max_passes(
+    value,
+    default: int = DEFAULT_FULL_WARM_CACHE_MAX_PASSES,
+) -> int:
+    try:
+        parsed = int(value)
+    except (TypeError, ValueError):
+        parsed = default
+    return max(1, parsed)
+
+
+def _build_full_warm_cache_result(
+    cache_result: dict,
+    *,
+    pass_number: int,
+    max_passes: int,
+    decision,
+) -> dict:
+    result = dict(cache_result)
+    result["full_warm_cache"] = {
+        "passes": pass_number,
+        "max_passes": max_passes,
+        "decision": decision.action,
+        "should_continue": bool(decision.should_continue),
+        "reason_codes": list(decision.reason_codes),
+        "messages": list(decision.messages),
+        "next_resume_hint": decision.next_resume_hint,
+    }
+    return result
+
+
+def run_full_warm_cache_mode(
+    wishlist_appids: list[str],
+    steam_id: str,
+    *,
+    no_cache: bool,
+    min_discount: int,
+    rate_limit: float,
+    started_at: float,
+    step_fn,
+    emit_fn=print,
+    run_warm_cache_mode_fn=run_warm_cache_mode,
+    decide_next_action_fn=decide_full_warm_cache_next_action,
+    max_passes=None,
+) -> dict:
+    if decide_next_action_fn is None:
+        raise RuntimeError("Full warm-cache decision helper is not available")
+
+    safe_max_passes = _resolve_full_warm_cache_max_passes(max_passes)
+    if no_cache:
+        emit_fn(
+            f"  {_warn('Full warm-cache ignora --no-cache: reutiliza siempre la misma caché.')}"
+        )
+    emit_fn(
+        f"  {_dim(f'Full warm-cache: máximo {safe_max_passes} pasadas, misma caché, sin --no-cache.')}"
+    )
+
+    last_result: dict = {}
+    for pass_number in range(1, safe_max_passes + 1):
+        emit_fn(f"\n  {_bold(f'Full warm-cache pasada {pass_number}/{safe_max_passes}')}")
+        last_result = run_warm_cache_mode_fn(
+            wishlist_appids,
+            steam_id,
+            no_cache=False,
+            min_discount=min_discount,
+            rate_limit=rate_limit,
+            started_at=time.monotonic(),
+            step_fn=step_fn,
+            emit_fn=emit_fn,
+        )
+        decision = decide_next_action_fn(
+            last_result,
+            completed_passes=pass_number,
+            max_passes=safe_max_passes,
+        )
+        for message in decision.messages:
+            emit_fn(f"  {_dim(message)}")
+        if decision.should_continue:
+            emit_fn(
+                f"  {_dim('Continuando full warm-cache con la misma caché...')}"
+            )
+            continue
+
+        if decision.action == FULL_WARM_CACHE_STOP_SAFETY_CAP:
+            emit_fn(f"  {_warn('Full warm-cache detenido por cap de seguridad.')}")
+        else:
+            emit_fn(f"  {_ok('Full warm-cache suficientemente completo.')}")
+        return _build_full_warm_cache_result(
+            last_result,
+            pass_number=pass_number,
+            max_passes=safe_max_passes,
+            decision=decision,
+        )
+
+    return last_result
+
+
 # ─────────────────────────────────────────────
 # FETCH DE PRECIOS (batched con fallback)
 # ─────────────────────────────────────────────
@@ -4580,6 +4690,10 @@ def main():
     MAX_WORKERS = _resolve_max_workers(FILTERS.get("max_workers"), MAX_WORKERS)
     WEB_EVENT_MODE = bool(WEB_RUN)
     WARM_CACHE_ONLY = bool(FILTERS.get("warm_cache"))
+    WARM_CACHE_FULL = bool(FILTERS.get("warm_cache_full"))
+    WARM_CACHE_FULL_MAX_PASSES = _resolve_full_warm_cache_max_passes(
+        FILTERS.get("warm_cache_full_max_passes")
+    )
     COMPARE_TARGETS = parse_compare_targets(FILTERS.get("compare"))
     WISHLIST_EXTERNAL_MATCHES_JSON = FILTERS.get("wishlist_external_matches_json")
     PLAY_ACCESS_JSON = FILTERS.get("play_access_json")
@@ -4606,7 +4720,7 @@ def main():
 
     # Calcular total de pasos dinámicamente (+2 reviews/deck, +1 protondb/ac, +1 tags, +1 HTML, owned solo con key)
     TOTAL = (
-        3
+        2 + (WARM_CACHE_FULL_MAX_PASSES if WARM_CACHE_FULL else 1)
         if WARM_CACHE_ONLY
         else (
             11
@@ -4691,16 +4805,29 @@ def main():
         emit(f"  {_ok(f'{len(wishlist_appids):,} juegos ({ranked:,} con prioridad)')}")
 
         if WARM_CACHE_ONLY:
-            run_warm_cache_mode(
-                wishlist_appids,
-                steam_id,
-                no_cache=no_cache,
-                min_discount=MIN_DISCOUNT,
-                rate_limit=RATE_LIMIT,
-                started_at=t0,
-                step_fn=step,
-                emit_fn=emit,
-            )
+            if WARM_CACHE_FULL:
+                run_full_warm_cache_mode(
+                    wishlist_appids,
+                    steam_id,
+                    no_cache=no_cache,
+                    min_discount=MIN_DISCOUNT,
+                    rate_limit=RATE_LIMIT,
+                    started_at=t0,
+                    step_fn=step,
+                    emit_fn=emit,
+                    max_passes=WARM_CACHE_FULL_MAX_PASSES,
+                )
+            else:
+                run_warm_cache_mode(
+                    wishlist_appids,
+                    steam_id,
+                    no_cache=no_cache,
+                    min_discount=MIN_DISCOUNT,
+                    rate_limit=RATE_LIMIT,
+                    started_at=t0,
+                    step_fn=step,
+                    emit_fn=emit,
+                )
             return
     except ValueError as exc:
         return _handle_cli_value_error(

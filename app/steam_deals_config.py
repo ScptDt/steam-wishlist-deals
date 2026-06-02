@@ -26,7 +26,16 @@ def save_user_config(
 
 
 def build_parser() -> argparse.ArgumentParser:
-    parser = argparse.ArgumentParser(description="Steam Wishlist Deals Generator")
+    parser = argparse.ArgumentParser(
+        description="Steam Wishlist Deals Generator",
+        formatter_class=argparse.RawDescriptionHelpFormatter,
+        epilog=(
+            "Warm-cache modes:\n"
+            "  --warm-cache       una pasada: precalienta caché y sale sin generar reportes.\n"
+            "  --warm-cache-full  varias pasadas resumibles con la misma caché; no usa --no-cache ni genera reportes.\n"
+            "  --no-cache         fuerza re-fetch; úsalo solo para refresh/benchmark explícito, no para completar warm-cache."
+        ),
+    )
     parser.add_argument("--web-run", action="store_true", help=argparse.SUPPRESS)
     parser.add_argument(
         "--interactive",
@@ -60,6 +69,17 @@ def build_parser() -> argparse.ArgumentParser:
         "--warm-cache",
         action="store_true",
         help="Precalienta caché de precios y sale sin generar reportes",
+    )
+    parser.add_argument(
+        "--warm-cache-full",
+        action="store_true",
+        help="Repite pasadas warm-cache con la misma caché hasta agotar pendientes importantes o llegar al cap",
+    )
+    parser.add_argument(
+        "--warm-cache-full-max-passes",
+        type=int,
+        metavar="N",
+        help="Máximo de pasadas para --warm-cache-full (default seguro: 5)",
     )
     parser.add_argument(
         "--family-json",
@@ -350,7 +370,9 @@ def _build_filters(args, cfg: dict, *, environ=None) -> dict:
         "sort": args.sort,
         "new_only": args.new_only,
         "csv": args.csv,
-        "warm_cache": args.warm_cache,
+        "warm_cache": bool(args.warm_cache or args.warm_cache_full),
+        "warm_cache_full": bool(args.warm_cache_full),
+        "warm_cache_full_max_passes": args.warm_cache_full_max_passes,
         "free_weekend_live": bool(args.free_weekend_live or cfg.get("free_weekend_live")),
         "wishlist_external_matches_json": Path(args.wishlist_external_matches_json).expanduser()
         if args.wishlist_external_matches_json

@@ -31,6 +31,15 @@ source .venv/bin/activate
 STEAM_DEALS_CACHE_DIR="$HOME/.cache/steam_deals" python3 steam_deals_generator.py --vanity gaben --warm-cache
 ```
 
+Para completar pendientes importantes con pasadas resumibles y cap seguro:
+
+```bash
+STEAM_DEALS_CACHE_DIR="$HOME/.cache/steam_deals" \
+python3 steam_deals_generator.py --vanity gaben --warm-cache-full --warm-cache-full-max-passes 5
+```
+
+`--warm-cache-full` reutiliza la misma caché, ignora `--no-cache` si se combinan por error, se detiene con advisory si solo quedan cooldown/fallidos finales/sin oferta-datos y no genera reportes; genera el reporte después con una corrida normal.
+
 Validación automática corta del frente performance:
 
 ```bash
@@ -128,7 +137,7 @@ python3 steam_deals_warm_cache_summary.py \
 - Si `Stale-while-revalidate` difiere stale no crítico, confirma que `missing` sigue en refresh y que los datos viejos útiles se conservan; no lo trates como error si baja el refresh masivo.
 - Si `Refresh budget resumible` marca `exhausted=true`, conserva el mismo cache y repite warm-cache normal para continuar desde `next_resume_hint`; no fuerces `--no-cache` salvo benchmark explícito. Los deals de esa corrida son “deals encontrados con la cobertura disponible”, no cobertura completa si `deferred` es mayor que `0`.
 - Evita copy como “deals actuales” o “caché actualizada” sin matiz cuando hay diferidos; usa “deals encontrados con la cobertura disponible” y “caché actualizada parcialmente”.
-- Contrato futuro `--warm-cache-full`: repetir pasadas solo mientras queden señales importantes (`deferred_by_time_budget`, `next_resume_hint`, stale refresh diferido o fallback diferido por presupuesto) y no se alcance el cap de seguridad. Si solo quedan cooldown/fallidos finales/sin oferta-datos, detener con advisory; el reporte final se genera después como corrida normal separada, no dentro del warm-cache.
+- Contrato `--warm-cache-full`: repetir pasadas solo mientras queden señales importantes (`deferred_by_time_budget`, `next_resume_hint`, stale refresh diferido o fallback diferido por presupuesto) y no se alcance el cap de seguridad. Si solo quedan cooldown/fallidos finales/sin oferta-datos, detener con advisory; el reporte final se genera después como corrida normal separada, no dentro del warm-cache.
 - Si `Fallback individual total` sigue alto con cache caliente, revisar primero batch sizing y distribución de fallos/no-data.
 - Si aparece `Fallback individual directo por HTTP 400 repetido`, compara duración y `Batches degradados HTTP 400` contra una corrida previa: debe reducir splits fallidos, aunque el fallback individual siga siendo el costo dominante.
 - Si un batch menor (`STEAM_DEALS_PRICE_BATCH_SIZE`) sube `Batches degradados HTTP 400` o activa esperas de rate-limit, vuelve al default/base y no sigas bajando el batch global; el siguiente paso debe ser analizar circuito/fallback directo o instrumentar appids/batches de forma acotada antes de otro benchmark.

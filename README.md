@@ -234,6 +234,12 @@ Si quieres dejar una corrida de preparación en segundo plano sin abrir la Web U
 python3 steam_deals_generator.py --vanity gaben --warm-cache
 ```
 
+Para intentar completar la cola resumible en varias pasadas conservando la misma caché, usa el modo opcional:
+
+```bash
+python3 steam_deals_generator.py --vanity gaben --warm-cache-full --warm-cache-full-max-passes 5
+```
+
 > Usa tu vanity real, la URL completa de tu perfil o tu Steam ID. Si copias el ejemplo, cambia `gaben` por tu dato real antes de ejecutar.
 
 Este modo:
@@ -243,6 +249,8 @@ Este modo:
 - actualiza `prices_cache.json`
 - guarda un log legible de la corrida headless
 - sale sin generar `.md`, `.html`, `.json` ni `.csv`
+
+`--warm-cache` hace una pasada. `--warm-cache-full` repite pasadas con la misma caché hasta que no queden pendientes importantes o hasta `--warm-cache-full-max-passes`; no borra caché, no fuerza `--no-cache` y no genera reportes automáticamente. Cuando termine, genera el reporte como una corrida normal separada para usar la caché ya actualizada.
 
 En runs desde source, el caché queda en `./.cache/steam_deals`. En desktop empaquetado/frozen, el caché persistente vive en `~/.cache/steam_deals` (o `XDG_CACHE_HOME/steam_deals` si está definido).
 
@@ -648,6 +656,8 @@ Flags más usados:
 | `--wishlist-external-matches-json` | Import local advisory-only para sugerencias `Revisar wishlist` |
 | `--max-workers` | Paralelismo de enrichment; default actual: 16 |
 | `--warm-cache` | Precalentar caché de precios sin generar reportes |
+| `--warm-cache-full` | Repetir warm-cache en pasadas resumibles con la misma caché |
+| `--warm-cache-full-max-passes` | Cap seguro de pasadas para `--warm-cache-full` |
 | `--interactive` | Habilitar prompts de configuración en terminal |
 | `--no-cache` | Forzar re-fetch cuando haga falta |
 
@@ -690,4 +700,4 @@ Si un DLC nuevo no aparece, primero usa **Forzar catálogo** en `payday2_web.py`
 - Caché desktop/frozen: ruta persistente de usuario (`~/.cache/steam_deals` o equivalente XDG).
 - PAYDAY 2 usa subcarpeta propia bajo `.cache/steam_deals/payday2/`: catálogo/nombres/bundles hasta 7 días, precios 24h, ownership manual sin TTL e historial hasta 365 días.
 
-Usa `--no-cache` solo cuando quieras forzar re-fetch. Para wishlists grandes, prefiere `--warm-cache`; el flujo de medición y evidencia vive en `docs/runbooks/performance-warm-cache.md`.
+Usa `--no-cache` solo cuando quieras forzar re-fetch. Para wishlists grandes, prefiere `--warm-cache` o `--warm-cache-full`; el flujo de medición y evidencia vive en `docs/runbooks/performance-warm-cache.md`.

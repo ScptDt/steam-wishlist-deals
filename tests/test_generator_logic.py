@@ -184,6 +184,7 @@ from steam_deals_generator import (
     _format_cli_user_error,
     _handle_cli_value_error,
     _looks_like_placeholder_vanity,
+    _resolve_full_warm_cache_max_passes,
     _resolve_max_workers,
     _run_entrypoint,
     apply_filters,
@@ -219,6 +220,7 @@ from steam_deals_generator import (
     parse_hltb,
     resolve_free_weekend_now,
     resolve_price_fetch_tuning,
+    run_full_warm_cache_mode,
     run_price_cache_stage,
     run_warm_cache_mode,
     rank_top_picks,
@@ -2749,12 +2751,40 @@ class ConfigTests(unittest.TestCase):
         self.assertEqual(result[11]["max_workers"], 16)
         self.assertEqual(result[11]["md_frontmatter"], True)
         self.assertEqual(result[11]["warm_cache"], True)
+        self.assertEqual(result[11]["warm_cache_full"], False)
+        self.assertIsNone(result[11]["warm_cache_full_max_passes"])
         self.assertEqual(result[11]["free_weekend_live"], True)
         self.assertEqual(result[11]["wishlist_external_matches_json"], Path("/tmp/wishlist_matches.json"))
         self.assertEqual(result[11]["play_access_json"], Path("/tmp/play_access.json"))
         self.assertEqual(result[11]["alert_rise_pct"], 12.5)
         self.assertEqual(result[11]["alert_global_margin_pct"], 3.0)
         self.assertEqual(result[11]["alert_score_min"], 80.0)
+
+    def test_get_config_enables_full_warm_cache_with_max_passes(self) -> None:
+        class FakeStdin:
+            def isatty(self):
+                return False
+
+        result = module_get_config(
+            script_path=Path("/tmp/fake_script.py"),
+            load_user_config_fn=lambda: {},
+            save_user_config_fn=lambda _cfg: None,
+            handle_watchlist_command_fn=lambda _args: None,
+            input_fn=lambda _prompt: "",
+            stdin=FakeStdin(),
+            exit_fn=lambda _code: None,
+            argv=[
+                "--vanity",
+                "gaben",
+                "--warm-cache-full",
+                "--warm-cache-full-max-passes",
+                "4",
+            ],
+        )
+
+        self.assertEqual(result[11]["warm_cache"], True)
+        self.assertEqual(result[11]["warm_cache_full"], True)
+        self.assertEqual(result[11]["warm_cache_full_max_passes"], 4)
 
     def test_build_parser_documents_max_workers_default_as_16(self) -> None:
         parser = module_build_parser()
@@ -2763,6 +2793,15 @@ class ConfigTests(unittest.TestCase):
         )
 
         self.assertEqual(action.help, "Workers de fetch paralelo para enrichment (default: 16)")
+
+    def test_build_parser_documents_warm_cache_modes(self) -> None:
+        help_text = module_build_parser().format_help()
+
+        self.assertIn("Warm-cache modes", help_text)
+        self.assertIn("--warm-cache", help_text)
+        self.assertIn("--warm-cache-full", help_text)
+        self.assertIn("misma caché", help_text)
+        self.assertIn("no usa --no-cache", help_text)
 
     def test_build_parser_documents_multi_profile_compare_input(self) -> None:
         parser = module_build_parser()
@@ -2777,6 +2816,12 @@ class ConfigTests(unittest.TestCase):
         self.assertEqual(_resolve_max_workers(None, 16), 16)
         self.assertEqual(_resolve_max_workers("0", 16), 16)
         self.assertEqual(_resolve_max_workers("bad", 16), 16)
+
+    def test_resolve_full_warm_cache_max_passes_keeps_safe_minimum(self) -> None:
+        self.assertEqual(_resolve_full_warm_cache_max_passes(None), 5)
+        self.assertEqual(_resolve_full_warm_cache_max_passes("bad"), 5)
+        self.assertEqual(_resolve_full_warm_cache_max_passes(0), 1)
+        self.assertEqual(_resolve_full_warm_cache_max_passes(3), 3)
 
     def test_get_config_handles_watchlist_and_exits_early(self) -> None:
         calls = []
@@ -3073,6 +3118,84 @@ class WarmCacheTests(unittest.TestCase):
                 for line in emitted
             )
         )
+
+    def test_run_full_warm_cache_mode_repeats_until_advisory_stop(self) -> None:
+        steps = []
+        emitted = []
+        pass_results = [
+            {
+                "deals": [],
+                "cache_path": Path("/tmp/cache/prices_cache.json"),
+                "deferred_by_time_budget": 2,
+                "next_resume_hint": "20",
+            },
+            {
+                "deals": [],
+                "cache_path": Path("/tmp/cache/prices_cache.json"),
+                "deferred_by_time_budget": 0,
+                "deferred_failure_count": 1,
+            },
+        ]
+        received_no_cache = []
+
+        def fake_warm_cache(*_args, **kwargs):
+            received_no_cache.append(kwargs.get("no_cache"))
+            kwargs["step_fn"]("Precalentando caché fake...")
+            return pass_results.pop(0)
+
+        result = run_full_warm_cache_mode(
+            ["10", "20"],
+            "steam-id",
+            no_cache=True,
+            min_discount=50,
+            rate_limit=1.5,
+            started_at=0.0,
+            step_fn=steps.append,
+            emit_fn=emitted.append,
+            run_warm_cache_mode_fn=fake_warm_cache,
+            max_passes=5,
+        )
+
+        self.assertEqual(received_no_cache, [False, False])
+        self.assertEqual(steps, ["Precalentando caché fake...", "Precalentando caché fake..."])
+        self.assertEqual(result["full_warm_cache"]["passes"], 2)
+        self.assertEqual(result["full_warm_cache"]["decision"], "stop_with_advisory")
+        self.assertIn("cooldown_advisory", result["full_warm_cache"]["reason_codes"])
+        self.assertTrue(any("ignora --no-cache" in line for line in emitted))
+        self.assertTrue(any("pasada 1/5" in line for line in emitted))
+        self.assertTrue(any("suficientemente completo" in line for line in emitted))
+
+    def test_run_full_warm_cache_mode_stops_at_safety_cap(self) -> None:
+        emitted = []
+        calls = []
+
+        def fake_warm_cache(*_args, **kwargs):
+            calls.append(kwargs.get("no_cache"))
+            return {
+                "deals": [],
+                "cache_path": Path("/tmp/cache/prices_cache.json"),
+                "deferred_by_time_budget": 2,
+                "next_resume_hint": "20",
+            }
+
+        result = run_full_warm_cache_mode(
+            ["10", "20"],
+            "steam-id",
+            no_cache=False,
+            min_discount=50,
+            rate_limit=1.5,
+            started_at=0.0,
+            step_fn=lambda _msg: None,
+            emit_fn=emitted.append,
+            run_warm_cache_mode_fn=fake_warm_cache,
+            max_passes=2,
+        )
+
+        self.assertEqual(calls, [False, False])
+        self.assertEqual(result["full_warm_cache"]["passes"], 2)
+        self.assertEqual(result["full_warm_cache"]["decision"], "stop_safety_cap")
+        self.assertEqual(result["full_warm_cache"]["reason_codes"][0], "safety_cap")
+        self.assertTrue(any("cap de seguridad" in line for line in emitted))
 
     def test_run_price_cache_stage_reports_refresh_count_and_hands_off_ids(self) -> None:
         emitted = []
