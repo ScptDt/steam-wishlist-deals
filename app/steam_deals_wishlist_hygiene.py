@@ -416,6 +416,119 @@ def _external_signal(match: dict) -> str:
     return "external_review_needed"
 
 
+def _external_rejection(match: dict) -> tuple[str, str]:
+    if match["evidence"] in _CONTEXT_ONLY_EVIDENCE:
+        return "context_only_evidence", "evidencia contextual; no prueba ownership"
+    if match["store_type"] in {"price_index", "catalog"}:
+        return "context_only_store_type", "precio o catálogo público; no prueba ownership"
+    if match["confidence"] == "low":
+        return "low_confidence", "confianza baja; no genera sugerencia de wishlist"
+    return "no_actionable_signal", "sin evidencia suficiente para sugerir revisión"
+
+
+def _external_diagnostic_item(index: int, status: str, code: str, message: str, match: dict | None = None) -> dict:
+    item = {"index": index, "status": status, "code": code, "message": message}
+    if not match:
+        return item
+    for key in ("store_id", "store_name", "store_type", "source", "external_name", "confidence", "evidence"):
+        if value := match.get(key):
+            item[key] = value
+    if target_appid := _clean_text(match.get("_target_appid")):
+        item["wishlist_appid"] = target_appid
+    if external_id := _clean_text(match.get("external_id")):
+        item["external_id"] = external_id
+    return item
+
+
+def _diagnose_normalized_external_match(index: int, match: dict | None) -> dict:
+    if not match:
+        return _external_diagnostic_item(
+            index,
+            "rejected",
+            "missing_match_target",
+            "registro sin AppID/nombre para asociar a la wishlist",
+        )
+    signal = _external_signal(match)
+    if signal:
+        item = _external_diagnostic_item(index, "accepted", signal, _external_reason(match, signal), match)
+        item["signal"] = signal
+        return item
+    code, message = _external_rejection(match)
+    return _external_diagnostic_item(index, "rejected", code, message, match)
+
+
+def _diagnose_external_records(records: list, *, defaults: dict | None = None) -> list[dict]:
+    items: list[dict] = []
+    for index, record in enumerate(records):
+        if not isinstance(record, dict):
+            items.append(
+                _external_diagnostic_item(index, "malformed", "record_not_object", "registro no es un objeto JSON")
+            )
+            continue
+        normalized = (
+            _manual_export_record_to_external_match(record, defaults)
+            if defaults is not None
+            else record
+        )
+        items.append(_diagnose_normalized_external_match(index, _normalized_external_match(normalized or {})))
+    return items
+
+
+def _external_diagnostic_summary(items: list[dict]) -> dict:
+    signal_counts: dict[str, int] = {}
+    for item in items:
+        if item.get("status") != "accepted":
+            continue
+        signal = item.get("signal") or item.get("code")
+        signal_counts[signal] = signal_counts.get(signal, 0) + 1
+    return {
+        "records_count": len(items),
+        "accepted_count": sum(1 for item in items if item.get("status") == "accepted"),
+        "rejected_count": sum(1 for item in items if item.get("status") == "rejected"),
+        "malformed_count": sum(1 for item in items if item.get("status") == "malformed"),
+        "signal_counts": signal_counts,
+        "advisory_only": True,
+        "ranking_impact": "none",
+    }
+
+
+def diagnose_wishlist_external_matches(payload) -> dict:
+    """Diagnose local external_matches payloads without reading files or mutating ranking."""
+    try:
+        if payload is None or payload == [] or payload == {}:
+            items: list[dict] = []
+        elif isinstance(payload, list):
+            items = _diagnose_external_records(payload)
+        elif isinstance(payload, dict):
+            if "external_matches" in payload or "matches" in payload:
+                key = "external_matches" if "external_matches" in payload else "matches"
+                records = payload.get(key)
+                if records is None:
+                    items = []
+                elif not isinstance(records, list):
+                    raise ValueError(f"{key} debe ser una lista")
+                else:
+                    items = _diagnose_external_records(records)
+            elif any(key in payload for key in _MANUAL_EXPORT_COLLECTION_KEYS):
+                records, defaults = _manual_export_records(payload)
+                items = _diagnose_external_records(records, defaults=defaults)
+            else:
+                raise ValueError("debe incluir 'external_matches', 'matches' o un export manual soportado")
+        else:
+            raise ValueError("debe ser una lista o un objeto JSON")
+    except ValueError as exc:
+        summary = _external_diagnostic_summary([])
+        return {
+            "status": "error",
+            "items": [],
+            "issues": [{"code": "invalid_external_matches_payload", "message": str(exc)}],
+            "summary": summary,
+        }
+    summary = _external_diagnostic_summary(items)
+    status = "warning" if summary["rejected_count"] or summary["malformed_count"] else "ok"
+    return {"status": status, "items": items, "issues": [], "summary": summary}
+
+
 def _external_reason(match: dict, signal: str) -> str:
     if match.get("reason"):
         return match["reason"]

@@ -177,6 +177,7 @@ from steam_deals_watchlist import (
     load_watchlist as module_load_watchlist,
     save_watchlist as module_save_watchlist,
 )
+from steam_deals_wishlist_hygiene import diagnose_wishlist_external_matches
 from steam_deals_wishlist_hygiene import normalize_manual_external_library_export
 from steam_deals_generator import (
     _format_cli_user_error,
@@ -2519,6 +2520,104 @@ class WishlistHygieneTests(unittest.TestCase):
         self.assertEqual(by_appid["30"]["signals"], ["external_review_needed"])
         self.assertTrue(all(item["advisory_only"] for item in hygiene["items"]))
         self.assertTrue(all(item["action"] == "review" for item in hygiene["items"]))
+
+    def test_diagnose_wishlist_external_matches_explains_accepted_rejected_and_malformed_records(self) -> None:
+        diagnostic = diagnose_wishlist_external_matches(
+            {
+                "external_matches": [
+                    {
+                        "store": "GOG",
+                        "store_type": "library",
+                        "external_name": "Owned Elsewhere",
+                        "wishlist_appid": "10",
+                        "confidence": "high",
+                        "evidence": "owned_in_user_export",
+                    },
+                    {
+                        "store": "Fanatical",
+                        "store_type": "bundle_export",
+                        "external_name": "Bundle Game",
+                        "wishlist_appid": "20",
+                        "confidence": "high",
+                    },
+                    {
+                        "store": "Epic",
+                        "store_type": "manual",
+                        "external_name": "Needs Review",
+                        "wishlist_appid": "30",
+                        "confidence": "medium",
+                        "evidence": "manual_match",
+                    },
+                    {
+                        "store": "ITAD",
+                        "store_type": "price_index",
+                        "external_name": "Price Context",
+                        "wishlist_appid": "40",
+                        "confidence": "high",
+                        "evidence": "price_only",
+                    },
+                    {
+                        "store": "GOG",
+                        "store_type": "library",
+                        "external_name": "Low Confidence",
+                        "wishlist_appid": "50",
+                        "confidence": "low",
+                        "evidence": "owned_in_user_export",
+                    },
+                    None,
+                    {},
+                ]
+            }
+        )
+
+        self.assertEqual(diagnostic["status"], "warning")
+        self.assertEqual(diagnostic["summary"]["accepted_count"], 3)
+        self.assertEqual(diagnostic["summary"]["rejected_count"], 3)
+        self.assertEqual(diagnostic["summary"]["malformed_count"], 1)
+        self.assertEqual(
+            diagnostic["summary"]["signal_counts"],
+            {
+                "external_owned": 1,
+                "external_bundle_owned": 1,
+                "external_review_needed": 1,
+            },
+        )
+        self.assertTrue(diagnostic["summary"]["advisory_only"])
+        self.assertEqual(diagnostic["summary"]["ranking_impact"], "none")
+        self.assertEqual(diagnostic["items"][0]["signal"], "external_owned")
+        self.assertEqual(diagnostic["items"][1]["signal"], "external_bundle_owned")
+        self.assertEqual(diagnostic["items"][2]["signal"], "external_review_needed")
+        self.assertEqual(diagnostic["items"][3]["code"], "context_only_evidence")
+        self.assertEqual(diagnostic["items"][4]["code"], "low_confidence")
+        self.assertEqual(diagnostic["items"][5]["status"], "malformed")
+        self.assertEqual(diagnostic["items"][6]["code"], "missing_match_target")
+
+    def test_diagnose_wishlist_external_matches_accepts_manual_export_templates(self) -> None:
+        diagnostic = diagnose_wishlist_external_matches(
+            {
+                "store": "Humble Bundle",
+                "purchases": [
+                    {"title": "Humble Owned", "steam_appid": "60"},
+                    {"title": "Public Context", "steam_appid": "70", "evidence": "public_bundle"},
+                ],
+            }
+        )
+
+        self.assertEqual(diagnostic["status"], "warning")
+        self.assertEqual(diagnostic["items"][0]["signal"], "external_bundle_owned")
+        self.assertEqual(diagnostic["items"][0]["store_id"], "humble")
+        self.assertEqual(diagnostic["items"][0]["store_type"], "order_export")
+        self.assertEqual(diagnostic["items"][1]["code"], "context_only_evidence")
+        self.assertEqual(diagnostic["summary"]["accepted_count"], 1)
+        self.assertEqual(diagnostic["summary"]["rejected_count"], 1)
+
+    def test_diagnose_wishlist_external_matches_reports_invalid_payload_shape(self) -> None:
+        diagnostic = diagnose_wishlist_external_matches({"external_matches": {}})
+
+        self.assertEqual(diagnostic["status"], "error")
+        self.assertEqual(diagnostic["issues"][0]["code"], "invalid_external_matches_payload")
+        self.assertIn("external_matches debe ser una lista", diagnostic["issues"][0]["message"])
+        self.assertEqual(diagnostic["summary"]["records_count"], 0)
 
 
 class ConfigTests(unittest.TestCase):

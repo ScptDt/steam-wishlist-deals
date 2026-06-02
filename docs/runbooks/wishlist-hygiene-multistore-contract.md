@@ -139,6 +139,17 @@ Reglas de interpretación del import:
 - `price_only`, `price`, catálogo público, bundle público, promociones o `confidence=low` no generan higiene por sí solos.
 - Payload vacío (`null`, `{}`, `[]`) no genera ruido; JSON malformado o shapes incorrectas fallan con error accionable.
 
+## Diagnóstico offline de imports
+
+Para revisar un payload local antes de conectarlo a `wishlist_hygiene`, el helper puro `diagnose_wishlist_external_matches(payload)` clasifica cada registro sin leer archivos ni llamar APIs:
+
+- `accepted` con `signal=external_owned`, `external_bundle_owned` o `external_review_needed`.
+- `rejected` con razones como `context_only_evidence`, `context_only_store_type`, `low_confidence` o `missing_match_target`.
+- `malformed` para entradas que no son objetos JSON.
+- `status=error` si el shape top-level no es válido.
+
+El diagnóstico conserva `advisory_only=true` y `ranking_impact=none`; no cambia score, ranking, wishlist, parsers, renderers ni salidas del reporte.
+
 ## Uso actual: import local `play_access`
 
 El generator también acepta un archivo local explícito con juegos instalados o jugables:
