@@ -27,8 +27,8 @@ Mover el producto hacia un sistema de **Discovery + Decision Support**:
 |---|---|---|
 | `behavioral_taxonomy_v1` | Este slice | Lenguaje versionado: families, loops, descriptors, mappings y reason codes. |
 | `behavioral_signals_v1` | Helper puro + JSON interno | Clasifica juegos/deals usando la taxonomía y se expone como payload JSON opcional. |
-| `behavioral_explanations_v1` | JSON interno | Consume `behavioral_signals_v1` para exponer headlines, razones y cues compactos reutilizables. |
-| `player_behavior_profile_v1` | Futuro | Perfila gustos del usuario cuando existan señales suficientes y opt-in/privacy claros. |
+| `behavioral_explanations_v1` | JSON interno + consumidores Plan F | Consume `behavioral_signals_v1` para exponer headlines, razones y cues compactos reutilizables. |
+| `player_behavior_profile_v1` | Contrato futuro definido docs-only | Perfila preferencias conductuales del usuario con señales locales/opt-in; no está implementado. |
 | Decision support | Futuro | Consume señales de juego + perfil + availability/backlog para sugerir comprar/esperar/revisar. |
 
 ## Contrato JSON
@@ -110,9 +110,9 @@ El reporte JSON expone `behavioral_signals` como payload top-level opcional cuan
 
 Si no hay items válidos, los payloads top-level `behavioral_signals` y `behavioral_explanations` deben omitirse o exponerse solo en diagnósticos internos con `status` no disponible. No deben romper consumidores existentes.
 
-## Explicaciones JSON-only
+## Explicaciones y consumidores visibles
 
-`behavioral_explanations_v1` es un consumidor interno, no una UI visible. Su rol es traducir IDs estables de la taxonomía a material compacto para futuros consumidores de Discovery/Decision:
+`behavioral_explanations_v1` nació como consumidor interno para traducir IDs estables de la taxonomía a material compacto. Plan F lo consume de forma visible en `Recomendaciones personalizadas` del HTML generado, Web UI del último reporte, Markdown principal y Share HTML, sin cambiar el contrato JSON:
 
 - `headline`: resumen corto con 1-2 patrones principales.
 - `reasons`: frases compactas derivadas de families, loops y descriptors.
@@ -129,11 +129,11 @@ Reglas:
 
 ## Plan F — definición de producto para consumidor visible
 
-Plan F desbloquea un consumidor visible futuro sin cambiar el contrato JSON. El objetivo no es decidir compras ni recalibrar el ranking, sino explicar de forma compacta **por qué un juego podría valer la pena revisar** usando señales ya calculadas.
+Plan F define consumidores visibles sin cambiar el contrato JSON. El objetivo no es decidir compras ni recalibrar el ranking, sino explicar de forma compacta **por qué un juego podría valer la pena revisar** usando señales ya calculadas.
 
-### Primer slice implementable aprobado para planificar
+### Consumidores visibles cerrados
 
-- **Superficie**: HTML interactivo generado, dentro de `Recomendaciones personalizadas`, un juego por card cuando exista match por `appid`/`steam_appid`.
+- **Superficies**: HTML interactivo generado, Web UI del último reporte, Markdown principal y Share HTML, siempre dentro de `Recomendaciones personalizadas`, un juego por card/item cuando exista match por `appid`/`steam_appid`.
 - **Título/copy base**: `Por qué podría gustarte` para confianza `medium`/`high`; usar `Señales de estilo del juego` si la confianza es `low` para no prometer afinidad personal.
 - **Fuente única**: `behavioral_explanations.items` existente. No leer red, no recalcular preferencias y no crear payloads nuevos.
 - **Campos permitidos**: `headline`, hasta 2 frases de `reasons`, y hasta 3 labels de `supporting_cues` si aportan claridad.
@@ -145,15 +145,100 @@ Plan F desbloquea un consumidor visible futuro sin cambiar el contrato JSON. El 
 - No construir `player_behavior_profile_v1`.
 - No inferir gustos personales sin señales explícitas.
 - No cambiar Top Picks, score, ranking, defaults, cache, fetching ni orden de recomendaciones.
-- No mover la señal a Web UI, Markdown o Share HTML en el mismo slice; esas superficies requieren slices separados.
+- No mover la señal a otra superficie sin slice separado.
 - No mostrar behavioral signals crudos si no pasan por `behavioral_explanations_v1`.
 
-### Validación requerida para el primer slice visible
+### Validación requerida para consumidores visibles
 
 - Fixture con recomendación personalizada que sí tenga explicación behavioral y renderice el bloque compacto.
 - Fixture con recomendación sin explicación/mismatch que omita el bloque sin romper la card.
 - Fixture con payload malformado o appid inválido que degrade sin excepción.
 - Validación dirigida de renderer y `git diff --check`; sin reportes generados, red real, `BG00G`, `--no-cache` ni builds.
+
+## Player behavior profile v1 (futuro definido, no implementado)
+
+`player_behavior_profile_v1` perfila **preferencias conductuales del usuario**, no juegos. Su objetivo es dar contexto para Discovery/Decision Support, por ejemplo: “parece que prefieres co-op corto y progresión por colección”. No decide compras, no recalibra recomendaciones y no altera score/ranking.
+
+### Principios de producto y privacidad
+
+- Local-first y opt-in defensivo: solo usar señales ya disponibles en la corrida o importadas explícitamente por el usuario.
+- Advisory-only: `advisory_only=true` y `ranking_impact=none` obligatorios.
+- Sin perfil público obligatorio: si Steam/actividad/biblioteca no están disponibles, degradar con estado y razón accionable.
+- Minimización de datos: preferir agregados, labels y conteos; no exponer rutas locales, secretos, IDs privados innecesarios ni listas crudas de playtime.
+- No usar ML/embeddings, scraping, login, SteamKit2, endpoints nuevos ni red extra en v1.
+- No mezclar ownership/import local (`external_matches`, `play_access`) ni precios externos (`external_offers`) como fuentes de gusto; podrían ser consumidores futuros, no señales de perfil.
+
+### Fuentes permitidas en v1
+
+Usar solo si existen y el usuario no las deshabilitó:
+
+- `manual_preferences`: juegos favoritos, comfort games, disliked/avoid o relaciones `similar_to` agregadas explícitamente.
+- `local_activity`: actividad reciente/local ya importada o disponible en el reporte, preferentemente agregada por tags/families/loops.
+- `library_summary`: biblioteca/owned/family ya usada por el reporte, agregada por géneros/tags/families; no afirmar ownership externo por precios.
+- `wishlist_terms`: señales de la wishlist/deals actuales ya cargados, sin fetch adicional.
+- `personalized_recommendations.profile`: resumen ya existente de actividad/biblioteca como señal secundaria, no como verdad absoluta.
+
+### Shape propuesto
+
+El payload futuro debe ser top-level opcional y omitirse si no hay información útil. Shape sugerido:
+
+```json
+{
+  "schema": "player_behavior_profile_v1",
+  "status": "available",
+  "advisory_only": true,
+  "ranking_impact": "none",
+  "profile_scope": "local_run",
+  "confidence": "medium",
+  "source_signals": ["manual_preferences", "local_activity", "library_summary"],
+  "summary": {
+    "families_count": 3,
+    "loops_count": 4,
+    "descriptors_count": 5,
+    "opt_in_sources_count": 2
+  },
+  "preferred_families": [
+    {"id": "coop_teamwork", "label": "Co-op / teamwork", "strength": "strong", "confidence": "medium"}
+  ],
+  "preferred_loops": [
+    {"id": "shared_objective_pressure", "label": "Shared objective pressure", "strength": "medium", "confidence": "low"}
+  ],
+  "preferred_descriptors": [
+    {"id": "short_session", "label": "Short session", "strength": "medium", "confidence": "medium"}
+  ],
+  "evidence_summary": {
+    "manual_preferences_count": 2,
+    "activity_terms_count": 3,
+    "library_terms_count": 5
+  },
+  "limitations": ["local_snapshot", "not_purchase_advice", "ranking_impact_none"]
+}
+```
+
+Reglas de shape:
+
+- `strength` es una etiqueta cualitativa (`weak`, `medium`, `strong`), no score numérico.
+- `confidence` describe calidad/cobertura de señales, no certeza psicológica.
+- `evidence_summary` debe usar conteos/agregados; no incluir rutas, secretos ni listas crudas largas.
+- `preferred_*` debe usar IDs existentes en `behavioral_taxonomy_v1` y labels derivados de la taxonomía.
+
+### Estados y degradación del perfil
+
+- `available`: hay al menos dos fuentes útiles o una fuente manual explícita fuerte.
+- `partial`: hay señales, pero con cobertura limitada, genérica o sin opt-in manual.
+- `insufficient_signals`: no hay señales suficientes para preferencias conductuales.
+- `unavailable`: el usuario deshabilitó señales personales, falta input local o la taxonomía no está disponible.
+
+Razones sugeridas: `profile_opted_out`, `insufficient_personal_signals`, `manual_preferences_missing`, `local_activity_unavailable`, `library_summary_unavailable`, `taxonomy_missing`, `taxonomy_invalid`.
+
+### Primer slice implementable futuro
+
+Si se aprueba implementar, el primer slice debe ser **JSON-only**:
+
+1. helper puro con fixtures locales;
+2. payload top-level opcional en JSON;
+3. resumen `summary.player_behavior_profile_status` o contador equivalente solo si no rompe consumidores;
+4. sin UI visible, sin score/ranking, sin cambios de Top Picks y sin red extra.
 
 ## Estados y degradación
 
@@ -264,17 +349,9 @@ El helper debe:
 - ordenar de forma estable;
 - no incluir rutas locales, playtime crudo sensible, secretos ni datos personales no necesarios.
 
-## Player profile queda futuro
+## Player profile queda no implementado
 
-`player_behavior_profile_v1` sí es deseable, pero no se implementa hasta que `behavioral_signals_v1` esté estable. Futuras fuentes posibles:
-
-- wishlist pública si está disponible;
-- owned/library ya utilizados por el reporte;
-- favoritos o comfort games seleccionados manualmente;
-- import local explícito;
-- playtime/installed/recent activity solo con opt-in claro.
-
-Si faltan señales personales, el perfil futuro debe usar `status=unavailable` o `insufficient_signals` con razón accionable, no fallback silencioso.
+`player_behavior_profile_v1` ya tiene contrato docs-only en este runbook, pero sigue sin implementación. La próxima implementación aceptable debe ser JSON-only, local/opt-in y con degradación explícita (`unavailable` o `insufficient_signals`) si faltan señales personales.
 
 ## No-hacer v1
 
@@ -291,7 +368,8 @@ Si faltan señales personales, el perfil futuro debe usar `status=unavailable` o
 1. **Docs/taxonomy**: este runbook + `data/behavioral_taxonomy_v1.json`.
 2. **Helper puro**: `app/steam_deals_behavioral.py` carga/valida taxonomía y clasifica fixtures locales.
 3. **JSON-only**: `generate_json` serializa `behavioral_signals` top-level y `summary.behavioral_signals_count`.
-4. **Explicaciones JSON-only**: `behavioral_explanations` traduce IDs a headlines/razones/cues compactos sin UI visible.
-5. **Plan F definición**: documentar copy, fuente única, superficies y no-objetivos antes de cualquier UI visible.
-6. **Plan F primer consumidor visible**: explicación compacta en `Recomendaciones personalizadas` del HTML generado, usando solo `behavioral_explanations_v1` y con `ranking_impact=none`.
-7. **Consumidores futuros**: discovery/decision reasons en otras superficies aprobadas por slice y eventualmente `player_behavior_profile_v1`.
+4. **Explicaciones JSON-only**: `behavioral_explanations` traduce IDs a headlines/razones/cues compactos.
+5. **Plan F consumidores visibles**: explicación compacta en `Recomendaciones personalizadas` del HTML generado, Web UI, Markdown y Share HTML, usando solo `behavioral_explanations_v1` y con `ranking_impact=none`.
+6. **Player profile docs-only**: definir `player_behavior_profile_v1` local/opt-in, sin implementación ni UI visible.
+7. **Player profile JSON-only futuro**: helper puro + payload opcional si se aprueba el slice y existen fixtures suficientes.
+8. **Consumidores futuros**: discovery/decision support usando perfil + señales de juego, siempre en slices aprobados y sin score/ranking impact.
