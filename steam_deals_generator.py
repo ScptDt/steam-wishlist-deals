@@ -152,10 +152,12 @@ try:
     from steam_deals_behavioral import (
         build_behavioral_explanations as _build_behavioral_explanations_impl,
         build_behavioral_signals as _build_behavioral_signals_impl,
+        build_player_behavior_profile as _build_player_behavior_profile_impl,
     )
 except Exception:
     _build_behavioral_explanations_impl = None
     _build_behavioral_signals_impl = None
+    _build_player_behavior_profile_impl = None
 
 
 try:
@@ -899,6 +901,35 @@ def build_behavioral_explanations(behavioral_signals, **kwargs):
     return _build_behavioral_explanations_impl(behavioral_signals, **kwargs)
 
 
+def build_player_behavior_profile(**kwargs):
+    """Build an advisory JSON-only player behavior profile from local signals."""
+    if _build_player_behavior_profile_impl is None:
+        return {
+            "schema": "player_behavior_profile_v1",
+            "status": "unavailable",
+            "reason": "taxonomy_invalid",
+            "advisory_only": True,
+            "ranking_impact": "none",
+            "profile_scope": "local_run",
+            "confidence": "unknown",
+            "source_signals": [],
+            "summary": {
+                "families_count": 0,
+                "loops_count": 0,
+                "descriptors_count": 0,
+                "opt_in_sources_count": 0,
+                "advisory_only": True,
+                "ranking_impact": "none",
+            },
+            "preferred_families": [],
+            "preferred_loops": [],
+            "preferred_descriptors": [],
+            "evidence_summary": {},
+            "limitations": ["local_snapshot", "not_purchase_advice", "ranking_impact_none"],
+        }
+    return _build_player_behavior_profile_impl(**kwargs)
+
+
 def _behavioral_signal_records(deals, tags_data=None) -> list[dict]:
     tags_data = tags_data or {}
     records: list[dict] = []
@@ -914,6 +945,16 @@ def _behavioral_signal_records(deals, tags_data=None) -> list[dict]:
                 record["tags"] = list(tags.keys())
         records.append(record)
     return records
+
+
+def _personalized_profile_library_summary(personalized_recommendations) -> dict | None:
+    if not isinstance(personalized_recommendations, dict):
+        return None
+    profile = personalized_recommendations.get("profile")
+    if not isinstance(profile, dict):
+        return None
+    library_summary = profile.get("library_summary")
+    return library_summary if isinstance(library_summary, dict) else None
 
 
 def enrich_free_weekend_cross_signals(payload, **kwargs):
@@ -3997,6 +4038,7 @@ def generate_json(
     play_access: dict | None = None,
     behavioral_signals: dict | None = None,
     behavioral_explanations: dict | None = None,
+    player_behavior_profile: dict | None = None,
 ) -> str:
     if _generate_json_renderer is None:
         raise RuntimeError("JSON renderer module is not available")
@@ -4072,6 +4114,13 @@ def generate_json(
         )
     if behavioral_explanations is None:
         behavioral_explanations = build_behavioral_explanations(behavioral_signals)
+    if player_behavior_profile is None:
+        player_behavior_profile = build_player_behavior_profile(
+            local_activity=activity_games,
+            library_summary=_personalized_profile_library_summary(personalized_recommendations),
+            wishlist_terms=_behavioral_signal_records(deals, tags_data),
+            personalized_recommendations=personalized_recommendations,
+        )
     return _generate_json_renderer(
         deals,
         backlog_on_sale,
@@ -4121,6 +4170,7 @@ def generate_json(
         play_access=play_access,
         behavioral_signals=behavioral_signals,
         behavioral_explanations=behavioral_explanations,
+        player_behavior_profile=player_behavior_profile,
     )
 
 
@@ -4970,6 +5020,12 @@ def main():
     )
     behavioral_signals = build_behavioral_signals(_behavioral_signal_records(deals, tags_data))
     behavioral_explanations = build_behavioral_explanations(behavioral_signals)
+    player_behavior_profile = build_player_behavior_profile(
+        local_activity=owned_game_records,
+        library_summary=_personalized_profile_library_summary(personalized_recommendations),
+        wishlist_terms=_behavioral_signal_records(deals, tags_data),
+        personalized_recommendations=personalized_recommendations,
+    )
     play_access = None
     if local_play_access_records:
         play_access = build_play_access_contract(
@@ -5157,6 +5213,7 @@ def main():
         recommendation_diagnostics=recommendation_diagnostics,
         behavioral_signals=behavioral_signals,
         behavioral_explanations=behavioral_explanations,
+        player_behavior_profile=player_behavior_profile,
         **family_renderer_kwargs,
     )
 

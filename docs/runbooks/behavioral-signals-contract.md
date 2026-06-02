@@ -28,7 +28,7 @@ Mover el producto hacia un sistema de **Discovery + Decision Support**:
 | `behavioral_taxonomy_v1` | Este slice | Lenguaje versionado: families, loops, descriptors, mappings y reason codes. |
 | `behavioral_signals_v1` | Helper puro + JSON interno | Clasifica juegos/deals usando la taxonomía y se expone como payload JSON opcional. |
 | `behavioral_explanations_v1` | JSON interno + consumidores Plan F | Consume `behavioral_signals_v1` para exponer headlines, razones y cues compactos reutilizables. |
-| `player_behavior_profile_v1` | Contrato futuro definido docs-only | Perfila preferencias conductuales del usuario con señales locales/opt-in; no está implementado. |
+| `player_behavior_profile_v1` | JSON interno opcional | Perfila preferencias conductuales del usuario con señales locales/opt-in; se expone solo si hay preferencias útiles. |
 | Decision support | Futuro | Consume señales de juego + perfil + availability/backlog para sugerir comprar/esperar/revisar. |
 
 ## Contrato JSON
@@ -39,7 +39,9 @@ El reporte JSON expone `behavioral_signals` como payload top-level opcional cuan
 {
   "summary": {
     "behavioral_signals_count": 1,
-    "behavioral_explanations_count": 1
+    "behavioral_explanations_count": 1,
+    "player_behavior_profile_status": "available",
+    "player_behavior_profile_sources_count": 3
   },
   "behavioral_signals": {
     "schema": "behavioral_signals_v1",
@@ -104,11 +106,44 @@ El reporte JSON expone `behavioral_signals` como payload top-level opcional cuan
         }
       }
     ]
+  },
+  "player_behavior_profile": {
+    "schema": "player_behavior_profile_v1",
+    "status": "available",
+    "advisory_only": true,
+    "ranking_impact": "none",
+    "profile_scope": "local_run",
+    "confidence": "medium",
+    "source_signals": ["manual_preferences", "local_activity", "wishlist_terms"],
+    "summary": {
+      "families_count": 2,
+      "loops_count": 2,
+      "descriptors_count": 2,
+      "opt_in_sources_count": 3,
+      "taxonomy_schema": "behavioral_taxonomy_v1"
+    },
+    "preferred_families": [
+      {"id": "coop_teamwork", "label": "Co-op / teamwork", "strength": "strong", "confidence": "medium"}
+    ],
+    "preferred_loops": [
+      {"id": "shared_objective_pressure", "label": "Shared objective pressure", "strength": "medium", "confidence": "medium"}
+    ],
+    "preferred_descriptors": [
+      {"id": "short_session", "label": "Short session", "strength": "weak", "confidence": "low"}
+    ],
+    "evidence_summary": {
+      "manual_preferences_count": 2,
+      "activity_terms_count": 3,
+      "library_terms_count": 0,
+      "wishlist_terms_count": 3,
+      "personalized_profile_terms_count": 0
+    },
+    "limitations": ["local_snapshot", "not_purchase_advice", "ranking_impact_none"]
   }
 }
 ```
 
-Si no hay items válidos, los payloads top-level `behavioral_signals` y `behavioral_explanations` deben omitirse o exponerse solo en diagnósticos internos con `status` no disponible. No deben romper consumidores existentes.
+Si no hay items válidos, los payloads top-level `behavioral_signals` y `behavioral_explanations` deben omitirse o exponerse solo en diagnósticos internos con `status` no disponible. Si `player_behavior_profile_v1` no tiene preferencias útiles o queda en `insufficient_signals`/`unavailable`, también debe omitirse del JSON público final y conservar solo el estado interno si un consumidor lo necesita. No deben romper consumidores existentes.
 
 ## Explicaciones y consumidores visibles
 
@@ -142,7 +177,7 @@ Plan F define consumidores visibles sin cambiar el contrato JSON. El objetivo no
 
 ### No objetivos de Plan F v1
 
-- No construir `player_behavior_profile_v1`.
+- No construir ni consumir `player_behavior_profile_v1` dentro de Plan F; ese perfil vive en un slice separado y no altera estas explicaciones visibles.
 - No inferir gustos personales sin señales explícitas.
 - No cambiar Top Picks, score, ranking, defaults, cache, fetching ni orden de recomendaciones.
 - No mover la señal a otra superficie sin slice separado.
@@ -155,7 +190,7 @@ Plan F define consumidores visibles sin cambiar el contrato JSON. El objetivo no
 - Fixture con payload malformado o appid inválido que degrade sin excepción.
 - Validación dirigida de renderer y `git diff --check`; sin reportes generados, red real, `BG00G`, `--no-cache` ni builds.
 
-## Player behavior profile v1 (futuro definido, no implementado)
+## Player behavior profile v1 (JSON interno opcional)
 
 `player_behavior_profile_v1` perfila **preferencias conductuales del usuario**, no juegos. Su objetivo es dar contexto para Discovery/Decision Support, por ejemplo: “parece que prefieres co-op corto y progresión por colección”. No decide compras, no recalibra recomendaciones y no altera score/ranking.
 
@@ -178,9 +213,9 @@ Usar solo si existen y el usuario no las deshabilitó:
 - `wishlist_terms`: señales de la wishlist/deals actuales ya cargados, sin fetch adicional.
 - `personalized_recommendations.profile`: resumen ya existente de actividad/biblioteca como señal secundaria, no como verdad absoluta.
 
-### Shape propuesto
+### Shape vigente
 
-El payload futuro debe ser top-level opcional y omitirse si no hay información útil. Shape sugerido:
+El payload es top-level opcional y debe omitirse si no hay información útil. Shape vigente:
 
 ```json
 {
@@ -231,14 +266,16 @@ Reglas de shape:
 
 Razones sugeridas: `profile_opted_out`, `insufficient_personal_signals`, `manual_preferences_missing`, `local_activity_unavailable`, `library_summary_unavailable`, `taxonomy_missing`, `taxonomy_invalid`.
 
-### Primer slice implementable futuro
+### Primer slice implementado
 
-Si se aprueba implementar, el primer slice debe ser **JSON-only**:
+El primer slice **JSON-only** quedó implementado el 2026-06-02:
 
 1. helper puro con fixtures locales;
 2. payload top-level opcional en JSON;
-3. resumen `summary.player_behavior_profile_status` o contador equivalente solo si no rompe consumidores;
+3. resumen `summary.player_behavior_profile_status` y `summary.player_behavior_profile_sources_count` solo cuando el payload se serializa;
 4. sin UI visible, sin score/ranking, sin cambios de Top Picks y sin red extra.
+
+Siguientes slices posibles deben mantenerse separados: hardening de reasons/evidence, entrada opt-in real para `manual_preferences`, fit JSON-only entre perfil y señales de juego, y solo después un consumidor visible con decisión explícita de UX/privacidad.
 
 ## Estados y degradación
 

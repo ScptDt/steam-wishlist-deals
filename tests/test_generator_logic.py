@@ -46,6 +46,7 @@ from steam_deals_access import (
 from steam_deals_behavioral import (
     build_behavioral_explanations as module_build_behavioral_explanations,
     build_behavioral_signals as module_build_behavioral_signals,
+    build_player_behavior_profile as module_build_player_behavior_profile,
     load_behavioral_taxonomy as module_load_behavioral_taxonomy,
     validate_behavioral_taxonomy as module_validate_behavioral_taxonomy,
 )
@@ -1302,6 +1303,69 @@ class BehavioralSignalsTests(unittest.TestCase):
         self.assertEqual(payload["reason"], "insufficient_behavioral_matches")
         self.assertEqual(payload["summary"]["items_count"], 0)
         self.assertEqual(payload["items"], [])
+
+    def test_build_player_behavior_profile_available_from_manual_and_local_signals(self) -> None:
+        payload = module_build_player_behavior_profile(
+            manual_preferences={
+                "preferred_families": ["coop_teamwork"],
+                "preferred_terms": ["Co-op"],
+            },
+            local_activity=[
+                {
+                    "appid": "1966720",
+                    "name": "Lethal Company",
+                    "tags": ["Co-op", "Survival"],
+                    "playtime_2weeks": 180,
+                }
+            ],
+            wishlist_terms=[{"appid": "381210", "tags": ["Horror"]}],
+        )
+
+        self.assertEqual(payload["schema"], "player_behavior_profile_v1")
+        self.assertEqual(payload["status"], "available")
+        self.assertTrue(payload["advisory_only"])
+        self.assertEqual(payload["ranking_impact"], "none")
+        self.assertEqual(payload["profile_scope"], "local_run")
+        self.assertIn("manual_preferences", payload["source_signals"])
+        self.assertIn("local_activity", payload["source_signals"])
+        self.assertIn("wishlist_terms", payload["source_signals"])
+        self.assertTrue(any(item["id"] == "coop_teamwork" for item in payload["preferred_families"]))
+        self.assertGreaterEqual(payload["evidence_summary"]["manual_preferences_count"], 1)
+        self.assertNotIn("playtime_2weeks", json.dumps(payload))
+        self.assertNotIn("1966720", json.dumps(payload))
+
+    def test_build_player_behavior_profile_partial_from_wishlist_terms_only(self) -> None:
+        payload = module_build_player_behavior_profile(
+            wishlist_terms=[{"appid": "381210", "tags": ["Horror"]}],
+        )
+
+        self.assertEqual(payload["status"], "partial")
+        self.assertEqual(payload["reason"], "manual_preferences_missing")
+        self.assertEqual(payload["confidence"], "low")
+        self.assertEqual(payload["source_signals"], ["wishlist_terms"])
+        self.assertTrue(any(item["id"] == "horror_tension" for item in payload["preferred_families"]))
+
+    def test_build_player_behavior_profile_degrades_without_supported_personal_signals(self) -> None:
+        payload = module_build_player_behavior_profile(
+            wishlist_terms=[{"appid": "20", "tags": ["Totally Unknown Tag"]}],
+        )
+
+        self.assertEqual(payload["status"], "insufficient_signals")
+        self.assertEqual(payload["reason"], "insufficient_personal_signals")
+        self.assertEqual(payload["preferred_families"], [])
+        self.assertEqual(payload["summary"]["families_count"], 0)
+
+    def test_build_player_behavior_profile_unavailable_when_disabled_or_taxonomy_invalid(self) -> None:
+        opted_out = module_build_player_behavior_profile(enabled=False)
+        invalid = module_build_player_behavior_profile(
+            wishlist_terms=[{"tags": ["Co-op"]}],
+            taxonomy={"schema": "behavioral_taxonomy_v1"},
+        )
+
+        self.assertEqual(opted_out["status"], "unavailable")
+        self.assertEqual(opted_out["reason"], "profile_opted_out")
+        self.assertEqual(invalid["status"], "unavailable")
+        self.assertEqual(invalid["reason"], "taxonomy_invalid")
 
 
 class ExternalOffersTests(unittest.TestCase):
@@ -7311,6 +7375,11 @@ class StopApiContractTests(unittest.TestCase):
         self.assertTrue(data["behavioral_explanations"]["advisory_only"])
         self.assertEqual(data["behavioral_explanations"]["ranking_impact"], "none")
         self.assertEqual(data["behavioral_explanations"]["summary"]["items_count"], 1)
+        self.assertEqual(data["summary"]["player_behavior_profile_status"], "partial")
+        self.assertEqual(data["player_behavior_profile"]["schema"], "player_behavior_profile_v1")
+        self.assertTrue(data["player_behavior_profile"]["advisory_only"])
+        self.assertEqual(data["player_behavior_profile"]["ranking_impact"], "none")
+        self.assertNotIn("player_behavior_profile", data["behavioral_signals"])
         self.assertIn(
             "Co-op / teamwork",
             data["behavioral_explanations"]["items"][0]["headline"],
@@ -7346,6 +7415,32 @@ class StopApiContractTests(unittest.TestCase):
         self.assertEqual(data["summary"]["behavioral_explanations_count"], 0)
         self.assertNotIn("behavioral_signals", data)
         self.assertNotIn("behavioral_explanations", data)
+        self.assertNotIn("player_behavior_profile", data)
+        self.assertNotIn("player_behavior_profile_status", data["summary"])
+
+    def test_generate_json_omits_invalid_player_behavior_profile_payload(self) -> None:
+        payload = generate_json(
+            deals=[],
+            backlog_on_sale=[],
+            have_on_sale=[],
+            vanity="gaben",
+            owned={},
+            wishlist_appids=[],
+            min_discount=0,
+            genres=[],
+            player_behavior_profile={
+                "schema": "player_behavior_profile_v1",
+                "status": "insufficient_signals",
+                "preferred_families": [],
+                "preferred_loops": [],
+                "preferred_descriptors": [],
+            },
+        )
+
+        data = json.loads(payload)
+
+        self.assertNotIn("player_behavior_profile", data)
+        self.assertNotIn("player_behavior_profile_status", data["summary"])
 
     def test_generate_json_respects_explicit_empty_wishlist_hygiene(self) -> None:
         payload = generate_json(

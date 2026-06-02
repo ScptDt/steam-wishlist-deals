@@ -258,6 +258,60 @@ def _behavioral_explanations_total(payload: dict | None) -> int:
     return len(normalized["items"]) if normalized else 0
 
 
+def _profile_preferences(value) -> list[dict]:
+    if not isinstance(value, list):
+        return []
+    allowed_strengths = {"weak", "medium", "strong"}
+    allowed_confidences = {"low", "medium", "high"}
+    records = []
+    for item in value:
+        if not isinstance(item, dict):
+            continue
+        entry_id = str(item.get("id") or "").strip()
+        label = str(item.get("label") or "").strip()
+        if not entry_id or not label:
+            continue
+        record = {**item, "id": entry_id, "label": label}
+        record["strength"] = record.get("strength") if record.get("strength") in allowed_strengths else "weak"
+        record["confidence"] = record.get("confidence") if record.get("confidence") in allowed_confidences else "low"
+        records.append(record)
+    return records
+
+
+def _player_behavior_profile_payload(payload: dict | None) -> dict | None:
+    if not isinstance(payload, dict):
+        return None
+    if payload.get("schema") != "player_behavior_profile_v1":
+        return None
+    if payload.get("status") not in {"available", "partial"}:
+        return None
+    families = _profile_preferences(payload.get("preferred_families"))
+    loops = _profile_preferences(payload.get("preferred_loops"))
+    descriptors = _profile_preferences(payload.get("preferred_descriptors"))
+    if not (families or loops or descriptors):
+        return None
+    summary = dict(payload.get("summary") if isinstance(payload.get("summary"), dict) else {})
+    summary.update(
+        {
+            "families_count": len(families),
+            "loops_count": len(loops),
+            "descriptors_count": len(descriptors),
+            "advisory_only": True,
+            "ranking_impact": "none",
+        }
+    )
+    return {
+        **payload,
+        "advisory_only": True,
+        "ranking_impact": "none",
+        "profile_scope": payload.get("profile_scope") or "local_run",
+        "summary": summary,
+        "preferred_families": families,
+        "preferred_loops": loops,
+        "preferred_descriptors": descriptors,
+    }
+
+
 RECOMMENDATION_DIAGNOSTIC_MODES = {"behavioral", "mixed", "score_fallback"}
 
 
@@ -324,6 +378,7 @@ def generate_json(
     play_access: dict | None = None,
     behavioral_signals: dict | None = None,
     behavioral_explanations: dict | None = None,
+    player_behavior_profile: dict | None = None,
 ) -> str:
     previous_appids = previous_appids or set()
     family_appids = family_appids or set()
@@ -357,6 +412,7 @@ def generate_json(
     play_access = _play_access_payload(play_access)
     behavioral_signals = _behavioral_signals_payload(behavioral_signals)
     behavioral_explanations = _behavioral_explanations_payload(behavioral_explanations)
+    player_behavior_profile = _player_behavior_profile_payload(player_behavior_profile)
 
     payload = {
         "meta": {
@@ -455,4 +511,12 @@ def generate_json(
         payload["behavioral_signals"] = _json_safe(behavioral_signals)
     if behavioral_explanations:
         payload["behavioral_explanations"] = _json_safe(behavioral_explanations)
+    if player_behavior_profile:
+        payload["summary"].update(
+            {
+                "player_behavior_profile_status": player_behavior_profile.get("status"),
+                "player_behavior_profile_sources_count": len(player_behavior_profile.get("source_signals", [])),
+            }
+        )
+        payload["player_behavior_profile"] = _json_safe(player_behavior_profile)
     return json.dumps(payload, ensure_ascii=False, indent=2)
