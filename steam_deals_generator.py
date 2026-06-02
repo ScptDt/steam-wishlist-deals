@@ -3466,6 +3466,7 @@ def generate_md(
     external_offers: dict | None = None,
     taste_priority: dict | None = None,
     recommendation_diagnostics: dict | None = None,
+    behavioral_explanations: dict | None = None,
 ) -> str:
     if _generate_md_renderer is None:
         raise RuntimeError("Markdown renderer module is not available")
@@ -3572,6 +3573,7 @@ def generate_md(
         external_offers=external_offers,
         taste_priority=taste_priority,
         recommendation_diagnostics=recommendation_diagnostics,
+        behavioral_explanations=behavioral_explanations,
         group_by_tier=group_by_tier,
         filter_by_genres=filter_by_genres,
         group_deals_by_tag=group_deals_by_tag,
@@ -5033,6 +5035,7 @@ def main():
         free_weekend_now=free_weekend_now,
         external_offers=external_offers,
         recommendation_diagnostics=recommendation_diagnostics,
+        behavioral_explanations=behavioral_explanations,
     )
 
     # Generar HTML interactivo

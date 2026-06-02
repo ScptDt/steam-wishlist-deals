@@ -10395,6 +10395,145 @@ class RankTopPicksTests(unittest.TestCase):
         self.assertIn("encaja con tu actividad reciente: Action", md)
         self.assertIn("similar a Hades", md)
 
+    def test_generate_md_renders_personalized_behavioral_explanation(self) -> None:
+        md = generate_md(
+            deals=[],
+            backlog_on_sale=[],
+            have_on_sale=[],
+            vanity="gaben",
+            owned={},
+            wishlist_appids=["10"],
+            min_discount=50,
+            genres=[],
+            recommended_collections=[],
+            personalized_recommendations={
+                "items": [
+                    {
+                        "steam_appid": "10",
+                        "name": "Deep Rock Galactic",
+                        "personalized_score": 95.0,
+                        "reasons": ["encaja con tu actividad reciente"],
+                    }
+                ],
+                "profile": {},
+            },
+            behavioral_explanations={
+                "schema": "behavioral_explanations_v1",
+                "source_schema": "behavioral_signals_v1",
+                "advisory_only": True,
+                "ranking_impact": "none",
+                "items": [
+                    {
+                        "appid": "10",
+                        "name": "Deep Rock Galactic",
+                        "headline": "Social + Co-op / teamwork",
+                        "confidence": "medium",
+                        "reasons": [
+                            "Patrones principales: Social + Co-op / teamwork",
+                            "Loops detectados: High-execution co-op",
+                            "Esta tercera razón no se renderiza",
+                        ],
+                        "supporting_cues": [
+                            {"kind": "descriptor", "label": "Mission based"},
+                            {"kind": "descriptor", "label": "Short session"},
+                            {"kind": "behavioral_loop", "label": "Shared objective pressure"},
+                            {"kind": "descriptor", "label": "Fourth cue hidden"},
+                        ],
+                    }
+                ],
+            },
+        )
+
+        self.assertIn("## 🎯 Recomendaciones personalizadas", md)
+        self.assertIn("- 1. Deep Rock Galactic", md)
+        self.assertIn("  - **Por qué podría gustarte:** Social + Co-op / teamwork", md)
+        self.assertIn("    - Patrones principales: Social + Co-op / teamwork", md)
+        self.assertIn("    - Loops detectados: High-execution co-op", md)
+        self.assertIn("    - Señales: Mission based · Short session · Shared objective pressure", md)
+        self.assertIn("    - _Señal advisory: no cambia score ni ranking._", md)
+        self.assertNotIn("Esta tercera razón no se renderiza", md)
+        self.assertNotIn("Fourth cue hidden", md)
+
+    def test_generate_md_omits_personalized_behavioral_explanation_mismatch(self) -> None:
+        md = generate_md(
+            deals=[],
+            backlog_on_sale=[],
+            have_on_sale=[],
+            vanity="gaben",
+            owned={},
+            wishlist_appids=["10"],
+            min_discount=50,
+            genres=[],
+            recommended_collections=[],
+            personalized_recommendations={
+                "items": [
+                    {
+                        "appid": "10",
+                        "name": "Personal Pick",
+                        "personalized_score": 88.0,
+                        "reasons": ["score base del reporte"],
+                    }
+                ],
+                "profile": {},
+            },
+            behavioral_explanations={
+                "schema": "behavioral_explanations_v1",
+                "items": [
+                    {
+                        "appid": "20",
+                        "headline": "No debería mostrarse",
+                        "confidence": "medium",
+                        "reasons": ["Explicación para otro juego"],
+                    }
+                ],
+            },
+        )
+
+        self.assertIn("Personal Pick", md)
+        self.assertNotIn("Por qué podría gustarte", md)
+        self.assertNotIn("No debería mostrarse", md)
+        self.assertNotIn("Señal advisory: no cambia score ni ranking", md)
+
+    def test_generate_md_omits_invalid_personalized_behavioral_explanation(self) -> None:
+        md = generate_md(
+            deals=[],
+            backlog_on_sale=[],
+            have_on_sale=[],
+            vanity="gaben",
+            owned={},
+            wishlist_appids=["10"],
+            min_discount=50,
+            genres=[],
+            recommended_collections=[],
+            personalized_recommendations={
+                "items": [
+                    {
+                        "appid": "10",
+                        "name": "Personal Pick",
+                        "personalized_score": 88.0,
+                        "reasons": ["score base del reporte"],
+                    }
+                ],
+                "profile": {},
+            },
+            behavioral_explanations={
+                "schema": "behavioral_explanations_v1",
+                "items": [
+                    "bad",
+                    {
+                        "appid": "not-a-number",
+                        "headline": "No debería mostrarse",
+                        "confidence": "low",
+                        "reasons": ["AppID inválido"],
+                    },
+                ],
+            },
+        )
+
+        self.assertIn("Personal Pick", md)
+        self.assertNotIn("Señales de estilo del juego", md)
+        self.assertNotIn("No debería mostrarse", md)
+
     def test_generate_md_surfaces_recommendation_diagnostics_advisory_only(self) -> None:
         md = generate_md(
             deals=[],

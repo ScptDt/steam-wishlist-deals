@@ -1243,6 +1243,69 @@ def _personalized_item_title(item: dict) -> str:
     return _link(name, appid) if appid else _md_esc(name)
 
 
+def _behavioral_explanation_appid(item: dict | None) -> str:
+    if not isinstance(item, dict):
+        return ""
+    appid = str(item.get("appid") or item.get("steam_appid") or "").strip()
+    return appid if appid.isdigit() else ""
+
+
+def _behavioral_explanations_by_appid(payload: dict | None) -> dict[str, dict]:
+    if (
+        not isinstance(payload, dict)
+        or payload.get("schema") != "behavioral_explanations_v1"
+    ):
+        return {}
+    raw_items = payload.get("items")
+    items = raw_items if isinstance(raw_items, list) else []
+    explanations: dict[str, dict] = {}
+    for item in (entry for entry in items if isinstance(entry, dict)):
+        appid = _behavioral_explanation_appid(item)
+        if appid and appid not in explanations:
+            explanations[appid] = item
+    return explanations
+
+
+def _personalized_behavioral_explanation_lines(explanation: dict | None) -> list[str]:
+    if not isinstance(explanation, dict):
+        return []
+    confidence = str(explanation.get("confidence") or "").strip().lower()
+    title = (
+        "Por qué podría gustarte"
+        if confidence in {"medium", "high"}
+        else "Señales de estilo del juego"
+    )
+    headline = str(explanation.get("headline") or "").strip()
+    raw_reasons = (
+        explanation.get("reasons")
+        if isinstance(explanation.get("reasons"), list)
+        else []
+    )
+    raw_cues = (
+        explanation.get("supporting_cues")
+        if isinstance(explanation.get("supporting_cues"), list)
+        else []
+    )
+    reasons = [str(reason).strip() for reason in raw_reasons if str(reason).strip()][:2]
+    cue_labels = [
+        str(cue.get("label") or "").strip()
+        for cue in raw_cues
+        if isinstance(cue, dict) and str(cue.get("label") or "").strip()
+    ][:3]
+    if not headline and not reasons and not cue_labels:
+        return []
+    heading = f"  - **{_md_esc(title)}:**"
+    if headline:
+        heading += f" {_md_esc(headline)}"
+    lines = [heading]
+    lines.extend(f"    - {_md_esc(reason)}" for reason in reasons)
+    if cue_labels:
+        cues = " · ".join(_md_esc(label) for label in cue_labels)
+        lines.append(f"    - Señales: {cues}")
+    lines.append("    - _Señal advisory: no cambia score ni ranking._")
+    return lines
+
+
 def _personalized_item_line(item: dict, index: int) -> str:
     reasons = [str(reason) for reason in item.get("reasons", []) if str(reason).strip()]
     reason_text = " · ".join(_md_esc(reason) for reason in reasons) or "score base del reporte"
@@ -1259,6 +1322,17 @@ def _personalized_item_line(item: dict, index: int) -> str:
         meta.append(_md_esc(price_final))
     meta_text = f" ({' · '.join(meta)})" if meta else ""
     return f"- {index}. {_personalized_item_title(item)} — {reason_text}{meta_text}"
+
+
+def _personalized_item_lines(
+    item: dict,
+    index: int,
+    behavioral_explanation: dict | None = None,
+) -> list[str]:
+    return [
+        _personalized_item_line(item, index),
+        *_personalized_behavioral_explanation_lines(behavioral_explanation),
+    ]
 
 
 def _profile_terms_text(terms: list[dict]) -> str:
@@ -1321,12 +1395,25 @@ def _personalized_profile_line(profile: dict) -> str:
     return f"> Perfil usado: {' · '.join(parts)}"
 
 
-def _build_personalized_recommendation_lines(payload: dict | None) -> list[str]:
+def _build_personalized_recommendation_lines(
+    payload: dict | None,
+    behavioral_explanations: dict | None = None,
+) -> list[str]:
     if not isinstance(payload, dict):
         return []
     items = [item for item in payload.get("items", []) if isinstance(item, dict)]
     if not items:
         return []
+    explanations_by_appid = _behavioral_explanations_by_appid(behavioral_explanations)
+    item_lines: list[str] = []
+    for idx, item in enumerate(items, 1):
+        item_lines.extend(
+            _personalized_item_lines(
+                item,
+                idx,
+                explanations_by_appid.get(_behavioral_explanation_appid(item)),
+            )
+        )
     profile_line = _personalized_profile_line(payload.get("profile") or {})
     profile_lines = [profile_line, ""] if profile_line else []
     return [
@@ -1335,7 +1422,7 @@ def _build_personalized_recommendation_lines(payload: dict | None) -> list[str]:
         "> Ranking explicable construido con score del reporte y señales opcionales de actividad, biblioteca y preferencias. No cambia el score global.",
         "",
         *profile_lines,
-        *[_personalized_item_line(item, idx) for idx, item in enumerate(items, 1)],
+        *item_lines,
         "",
         "---",
         "",
@@ -1386,6 +1473,7 @@ def generate_md(
     external_offers: dict | None = None,
     taste_priority: dict | None = None,
     recommendation_diagnostics: dict | None = None,
+    behavioral_explanations: dict | None = None,
     *,
     group_by_tier,
     filter_by_genres,
@@ -1421,6 +1509,9 @@ def generate_md(
     taste_priority = taste_priority if isinstance(taste_priority, dict) else None
     recommendation_diagnostics = (
         recommendation_diagnostics if isinstance(recommendation_diagnostics, dict) else None
+    )
+    behavioral_explanations = (
+        behavioral_explanations if isinstance(behavioral_explanations, dict) else None
     )
     watchlist_alerts = watchlist_alerts or []
     comp = comparison or {}
@@ -1533,7 +1624,10 @@ def generate_md(
         lines += ["", "---", ""]
 
     lines += _build_recommended_collection_lines(recommended_collections)
-    lines += _build_personalized_recommendation_lines(personalized_recommendations)
+    lines += _build_personalized_recommendation_lines(
+        personalized_recommendations,
+        behavioral_explanations,
+    )
     lines += _build_recommendation_diagnostics_lines(recommendation_diagnostics)
     lines += _build_taste_priority_lines(taste_priority)
     lines += _build_external_offers_lines(external_offers)

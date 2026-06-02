@@ -1,6 +1,6 @@
 # Bitácora Operativa
 
-Ultima actualizacion: 2026-05-29
+Ultima actualizacion: 2026-06-02
 
 ## Proposito
 
@@ -79,6 +79,8 @@ La nota de inicio puede omitirse en `BITACORA.md` para cambios triviales que no 
 | 2026-04-16 | macOS | validado en CI (parcial) | Workflow `Desktop Cross-Platform Validation` OK en `macos-latest` (run `24487556896`): install deps, build desktop, `py_compile`, check fallback local y artifact `dist-macos-latest` publicado. Falta validacion manual en host macOS para apertura de `.app`, quarantine/codesign/notarizacion segun distribucion. | Ejecutar checklist manual macOS (apertura local, quarantine, codesign) y registrar incidencias/workarounds. |
 
 ## Bitacora
+
+- 2026-06-02: Cierre Plan F slice Markdown `behavioral_explanations` en `Recomendaciones personalizadas`. Autor/ejecutor: OpenCoder. Resultado: el Markdown principal muestra un bloque compacto `Por qué podría gustarte` para confianza media/alta o `Señales de estilo del juego` para baja/otra, usando solo `behavioral_explanations_v1` existente y match por `appid`/`steam_appid`; si el payload falta, no matchea o trae AppID inválido, se omite sin empty state. El bloque limita razones/cues, escapa contenido y declara que es advisory-only y no cambia score/ranking. No cambia endpoints, contrato JSON, HTML generado, Web UI, Share HTML, score, ranking, Top Picks, orden de recomendaciones, defaults, cache ni fetching. Evidencia: `.venv/bin/python -m py_compile renderers/markdown_renderer.py steam_deals_generator.py tests/test_generator_logic.py`, tests dirigidos Markdown personalizado (`test_generate_md_renders_personalized_behavioral_explanation`, `test_generate_md_omits_personalized_behavioral_explanation_mismatch`, `test_generate_md_omits_invalid_personalized_behavioral_explanation`) OK y `git diff --check` OK. Incidencias: ninguna. Sin red real, `BG00G`, `--no-cache`, builds ni reportes generados.
 
 - 2026-06-01: Cierre Plan F slice Web UI `behavioral_explanations` en `Último reporte`. Autor/ejecutor: OpenCoder. Resultado: `Recomendaciones personalizadas` de la Web UI muestra un bloque compacto `Por qué podría gustarte` para confianza media/alta o `Señales de estilo del juego` para baja/otra, usando solo `report.behavioral_explanations` existente y match por `appid`/`steam_appid`; si el payload falta, no matchea o trae AppID inválido, se omite sin empty state. El bloque limita razones/cues, escapa contenido y declara que es advisory-only y no cambia score/ranking. No cambia endpoints, contrato JSON, HTML generado, Markdown, Share HTML, score, ranking, Top Picks, orden de recomendaciones, defaults, cache ni fetching. Evidencia: `node --check web/steam_deals/app.js`, `.venv/bin/python -m py_compile tests/test_web_assets.py`, test dirigido `tests.test_web_assets.WebAssetsTests.test_latest_report_renders_personalized_recommendations_inside_details` OK y `git diff --check` OK. Incidencias: ninguna. Sin red real, `BG00G`, `--no-cache`, builds ni reportes generados.
 
