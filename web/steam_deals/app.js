@@ -4065,7 +4065,7 @@ function renderLatestRecommendedCollections(report) {
   `;
 }
 
-function renderLatestPersonalizedRecommendationItem(item, index, report = null) {
+function renderLatestPersonalizedRecommendationItem(item, index, report = null, behavioralExplanation = null) {
   const source = item && typeof item === 'object' ? item : {};
   const appid = String(source.appid || source.steam_appid || '').trim();
   const safeAppid = /^\d+$/.test(appid) ? appid : '';
@@ -4095,8 +4095,56 @@ function renderLatestPersonalizedRecommendationItem(item, index, report = null) 
         ${meta.length ? `<span class="latest-personalized-item-meta">${escapeHtml(meta.join(' · '))}</span>` : ''}
         <span class="latest-personalized-item-reasons">${escapeHtml((reasons.length ? reasons : ['score base del reporte']).join(' · '))}</span>
         ${renderLatestOfferHighlight(source, report)}
+        ${renderLatestPersonalizedBehavioralExplanation(behavioralExplanation)}
       </div>
     </li>
+  `;
+}
+
+function latestBehavioralExplanationAppid(item) {
+  const source = item && typeof item === 'object' ? item : {};
+  const appid = String(source.appid || source.steam_appid || '').trim();
+  return /^\d+$/.test(appid) ? appid : '';
+}
+
+function latestBehavioralExplanationsByAppid(report) {
+  const payload = report && typeof report === 'object' ? report.behavioral_explanations : null;
+  if (!payload || typeof payload !== 'object' || payload.schema !== 'behavioral_explanations_v1') return new Map();
+  const items = Array.isArray(payload.items) ? payload.items : [];
+  const byAppid = new Map();
+  items.forEach((item) => {
+    if (!item || typeof item !== 'object') return;
+    const appid = latestBehavioralExplanationAppid(item);
+    if (appid && !byAppid.has(appid)) byAppid.set(appid, item);
+  });
+  return byAppid;
+}
+
+function renderLatestPersonalizedBehavioralExplanation(explanation) {
+  const source = explanation && typeof explanation === 'object' ? explanation : null;
+  if (!source) return '';
+  const confidence = String(source.confidence || '').trim().toLowerCase();
+  const title = ['medium', 'high'].includes(confidence) ? 'Por qué podría gustarte' : 'Señales de estilo del juego';
+  const headline = String(source.headline || '').trim();
+  const reasons = Array.isArray(source.reasons)
+    ? source.reasons.map(reason => String(reason || '').trim()).filter(Boolean).slice(0, 2)
+    : [];
+  const cues = Array.isArray(source.supporting_cues)
+    ? source.supporting_cues
+      .filter(cue => cue && typeof cue === 'object')
+      .map(cue => String(cue.label || '').trim())
+      .filter(Boolean)
+      .slice(0, 3)
+    : [];
+  if (!headline && !reasons.length && !cues.length) return '';
+  return `
+    <div class="latest-personalized-behavioral-note" data-latest-personalized-behavioral-explanation>
+      <strong>${escapeHtml(title)}</strong>
+      ${headline ? `<span class="latest-personalized-behavioral-headline">${escapeHtml(headline)}</span>` : ''}
+      ${reasons.length ? `<ul>${reasons.map(reason => `<li>${escapeHtml(reason)}</li>`).join('')}</ul>` : ''}
+      ${cues.length ? `<div class="latest-personalized-behavioral-cues">${cues.map(cue => `<span>${escapeHtml(cue)}</span>`).join('')}</div>` : ''}
+      <small>Señal advisory: no cambia score ni ranking.</small>
+    </div>
   `;
 }
 
@@ -4154,6 +4202,7 @@ function renderLatestPersonalizedRecommendations(report, files = null) {
     : [];
   if (!items.length) return '';
   const selectedItems = items.slice(0, 3);
+  const explanationsByAppid = latestBehavioralExplanationsByAppid(report);
   const hiddenCount = Math.max(0, items.length - selectedItems.length);
   const htmlName = findLatestPrimaryHtmlReport(files);
   const htmlLink = htmlName
@@ -4167,7 +4216,7 @@ function renderLatestPersonalizedRecommendations(report, files = null) {
       </div>
       ${renderLatestPersonalizedProfile(payload.profile || {})}
       <ol class="latest-personalized-list">
-        ${selectedItems.map((item, index) => renderLatestPersonalizedRecommendationItem(item, index + 1, report)).join('')}
+        ${selectedItems.map((item, index) => renderLatestPersonalizedRecommendationItem(item, index + 1, report, explanationsByAppid.get(latestBehavioralExplanationAppid(item)))).join('')}
       </ol>
       <div class="latest-personalized-footer">
         ${htmlLink}
