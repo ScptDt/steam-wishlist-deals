@@ -24,6 +24,13 @@ Contrato de decisión y uso para ampliar `wishlist_hygiene` con señales externa
 4. Precio disponible en otra tienda **no equivale** a que el usuario ya tenga el juego.
 5. Las señales de propiedad externa deben venir de fuentes explícitas del usuario o registros locales confiables, no de disponibilidad pública.
 
+## Cómo elegir el flujo correcto
+
+- Usa `external_matches` cuando el archivo viene de una biblioteca, orden, compra o bundle propio y quieres revisar si algo de la wishlist quizá ya está cubierto.
+- Usa `play_access` cuando el archivo lista juegos instalados o jugables localmente y quieres revisar acceso práctico sin compra nueva.
+- Usa `external_offers`/ITAD solo para comparar precios externos; ese contrato vive en `docs/runbooks/multistore-price-comparison.md` y no alimenta ownership.
+- Un precio, catálogo público o bundle público puede ser contexto, pero debe quedar fuera de `external_owned`/`external_bundle_owned` salvo que exista evidencia local explícita del usuario.
+
 ## Uso actual: import local JSON
 
 El generator acepta un archivo local con matches externos:

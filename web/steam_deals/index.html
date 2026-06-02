@@ -301,7 +301,7 @@
         <div class="field">
           <label>Matches externos wishlist (JSON) <span class="optional">(opcional)</span></label>
           <input type="text" id="wishlist_external_matches_json" placeholder="~/wishlist-external-matches.json">
-          <div class="hint">Import local advisory-only para revisar juegos que quizá ya tienes en GOG, Epic, Fanatical u otra fuente. No borra, no auto-excluye y no cambia el score.</div>
+          <div class="hint">Import local de ownership/revisión: úsalo para juegos que quizá ya tienes en GOG, Epic, Fanatical, Humble u otra fuente. Es distinto de precios ITAD/external_offers: no borra, no auto-excluye, no prueba precios y no cambia score.</div>
         </div>
         <div class="field">
           <label>Play access local (JSON) <span class="optional">(opcional)</span></label>
@@ -311,7 +311,7 @@
         <div class="field">
           <label>Caché ITAD external_offers (JSON) <span class="optional">(opcional)</span></label>
           <input type="text" id="itad_external_offers_cache" placeholder="~/itad-external-offers.json">
-          <div class="hint">Import local de precios ITAD ya descargados para mostrar comparativa externa. No hace red live por sí solo, no prueba ownership y no cambia score, ranking ni wishlist hygiene.</div>
+          <div class="hint">Import local de precios externos ya descargados con ITAD para mostrar comparativa. Es distinto de ownership/wishlist hygiene: no hace red live por sí solo, no prueba que tengas el juego y no cambia score ni ranking.</div>
         </div>
         <div class="field">
           <label>Dónde guardar los reportes</label>
@@ -369,7 +369,7 @@
           <label><input type="checkbox" id="csv"> Generar CSV</label>
           <label><input type="checkbox" id="no_cache"> Ignorar cache</label>
           <label><input type="checkbox" id="free_weekend_live"> Buscar Free Weekend ahora (opt-in)</label>
-          <label><input type="checkbox" id="itad_refresh_external_offers_cache"> Refrescar caché ITAD external_offers en vivo (opt-in)</label>
+          <label><input type="checkbox" id="itad_refresh_external_offers_cache"> Refrescar caché ITAD external_offers en vivo (opt-in, solo precios)</label>
         </div>
         <details class="advanced-filters-help">
           <summary>Ayuda rápida de filtros avanzados</summary>
@@ -379,7 +379,7 @@
             <div><strong>Steam Deck</strong><span>Compatible puede requerir ajustes; Verified suele pedir menos ajustes.</span></div>
             <div><strong>CSV/cache/ofertas nuevas</strong><span>CSV exporta para hojas de cálculo; cache y nuevas ofertas son opciones técnicas para casos puntuales.</span></div>
             <div><strong>Free Weekend</strong><span>Opt-in: consulta señales Store JSON y usa cache separado; no cambia ranking ni precios.</span></div>
-            <div><strong>Refresh ITAD external_offers</strong><span>Opt-in live: requiere ITAD key y ruta de caché; actualiza precios externos sin cambiar score, ranking ni ownership.</span></div>
+            <div><strong>Refresh ITAD external_offers</strong><span>Opt-in live: requiere ITAD key y ruta de caché; solo actualiza precios externos. No revisa bibliotecas, no prueba ownership y no cambia score ni ranking.</span></div>
           </div>
         </details>
       </div>

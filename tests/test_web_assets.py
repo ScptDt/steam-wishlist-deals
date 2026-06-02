@@ -230,8 +230,10 @@ class WebAssetsTests(unittest.TestCase):
 
         self.assertIn("Matches externos wishlist (JSON)", index_html)
         self.assertIn('id="wishlist_external_matches_json"', index_html)
-        self.assertIn("Import local advisory-only", index_html)
-        self.assertIn("No borra, no auto-excluye y no cambia el score", index_html)
+        self.assertIn("Import local de ownership/revisión", index_html)
+        self.assertIn("Es distinto de precios ITAD/external_offers", index_html)
+        self.assertIn("no borra, no auto-excluye", index_html)
+        self.assertIn("no prueba precios", index_html)
         self.assertIn("wishlist_external_matches_json", app_js)
         self.assertIn(
             "'wishlist_external_matches_json'",
@@ -287,10 +289,11 @@ class WebAssetsTests(unittest.TestCase):
 
         self.assertIn("Caché ITAD external_offers (JSON)", index_html)
         self.assertIn('id="itad_external_offers_cache"', index_html)
-        self.assertIn("Import local de precios ITAD", index_html)
-        self.assertIn("No hace red live por sí solo", index_html)
-        self.assertIn("no prueba ownership", index_html)
-        self.assertIn("no cambia score, ranking ni wishlist hygiene", index_html)
+        self.assertIn("Import local de precios externos", index_html)
+        self.assertIn("Es distinto de ownership/wishlist hygiene", index_html)
+        self.assertIn("no hace red live por sí solo", index_html)
+        self.assertIn("no prueba que tengas el juego", index_html)
+        self.assertIn("no cambia score ni ranking", index_html)
         self.assertIn("itad_external_offers_cache", app_js)
         self.assertIn(
             "'itad_external_offers_cache'",
@@ -846,9 +849,11 @@ class WebAssetsTests(unittest.TestCase):
         )
 
         self.assertIn('id="itad_refresh_external_offers_cache"', index_html)
-        self.assertIn("Refrescar caché ITAD external_offers en vivo (opt-in)", index_html)
+        self.assertIn("Refrescar caché ITAD external_offers en vivo (opt-in, solo precios)", index_html)
         self.assertIn("requiere ITAD key y ruta de caché", index_html)
-        self.assertIn("sin cambiar score, ranking ni ownership", index_html)
+        self.assertIn("solo actualiza precios externos", index_html)
+        self.assertIn("No revisa bibliotecas, no prueba ownership", index_html)
+        self.assertIn("no cambia score ni ranking", index_html)
         self.assertIn("'itad_refresh_external_offers_cache'", app_js)
         self.assertIn("const itadRefreshEl = $('itad_refresh_external_offers_cache')", app_js)
         self.assertIn("itadRefreshEl.checked = false", app_js)

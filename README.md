@@ -157,7 +157,9 @@ python3 steam_deals_generator.py --vanity gaben --md-frontmatter
 
 `--itad-external-offers-cache` permite sumar precios externos desde una caché JSON ITAD local. Leer esa caché no hace red live por sí solo y la comparativa es informativa: no prueba ownership, no abre carrito/checkout y no cambia score/ranking.
 
-La Web UI expone el flujo en **Archivos opcionales** → `Caché ITAD external_offers (JSON)`. Si necesitas poblarla o actualizarla desde ITAD, marca explícitamente **Filtros avanzados** → `Refrescar caché ITAD external_offers en vivo (opt-in)`; ese refresh requiere `ITAD key` y ruta de caché, y puede crear/actualizar el archivo indicado.
+La Web UI expone el flujo en **Archivos opcionales** → `Caché ITAD external_offers (JSON)`. Si necesitas poblarla o actualizarla desde ITAD, marca explícitamente **Filtros avanzados** → `Refrescar caché ITAD external_offers en vivo (opt-in, solo precios)`; ese refresh requiere `ITAD key` y ruta de caché, y puede crear/actualizar el archivo indicado.
+
+Este flujo es solo para **precios externos** (`external_offers`). No revisa bibliotecas ni órdenes, y nunca debe interpretarse como “ya tengo el juego”. Para ownership/revisión de wishlist usa el import local `external_matches` de la sección siguiente.
 
 Para obtener una ITAD key, crea o usa tu cuenta regular de IsThereAnyDeal y registra una app en <https://isthereanydeal.com/apps/my/>. La documentación oficial vive en <https://docs.isthereanydeal.com/>. Guarda la key solo en tu entorno local, por ejemplo `STEAM_TOOLS_ITAD_API_KEY`, o en la config local de la Web UI si aceptas guardarla en tu máquina. No la pegues en issues, commits, reportes generados ni ejemplos compartidos.
 
@@ -166,6 +168,8 @@ Steam Tools envía la key de refresh ITAD como header `ITAD-API-Key` para evitar
 ### Import local para revisar la wishlist
 
 Puedes aportar un JSON local con matches externos para que `Revisar wishlist` sugiera juegos que quizá ya tienes en otra tienda. Es **solo revisión manual**: no borra juegos, no auto-excluye, no cambia score/ranking y no llama APIs externas.
+
+Este flujo es para **ownership/import local** (`external_matches` → `wishlist_hygiene`). Es distinto de `external_offers`: un precio externo, catálogo público o bundle público puede servir como contexto, pero no prueba propiedad.
 
 ```bash
 python3 steam_deals_generator.py --vanity gaben \

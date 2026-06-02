@@ -30,6 +30,13 @@ La expansión multi-tienda debe mantener separados estos conceptos:
 
 Regla: un precio externo nunca equivale a “ya lo tienes”. Para ownership externo se requiere evidencia explícita del usuario, como export local de biblioteca/órdenes/bundles.
 
+## Cómo elegir el flujo correcto
+
+- Usa `external_offers` para comparar precio/disponibilidad fuera de Steam. Puede venir de caché ITAD local o de refresh ITAD opt-in, y nunca cambia score/ranking ni prueba ownership.
+- Usa `external_matches` cuando el usuario aporta una biblioteca, orden, compra o bundle propio para que `wishlist_hygiene` sugiera revisión manual.
+- Usa `play_access` cuando el usuario aporta juegos instalados/jugables localmente para revisar acceso práctico sin compra nueva.
+- Trabajar los tres frentes es válido, pero deben avanzar como slices separados: primero UX/contrato claro, luego parsers locales con exports concretos, y solo después live smoke ITAD si hay key oficial y aprobación explícita.
+
 ## Enfoque: feature-sliced + risk-gated
 
 No se implementa como “feature-first y luego revisar riesgos”, porque eso podría exponer links, copy o ranking inseguros antes de tiempo. Tampoco se bloquea como “risk-first infinito”.
