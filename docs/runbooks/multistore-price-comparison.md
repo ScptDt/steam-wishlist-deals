@@ -2,7 +2,7 @@
 
 Track priorizado para ampliar la comparativa multi-tienda hacia Fanatical y más stores sin mezclarla con `wishlist_hygiene` ni con flujos de compra.
 
-Estado actual: Fase 0/docs, Fase 1 normalizador fixture-only, Fase 1B JSON interno opcional, Fase 1C diagnóstico JSON-consumer, primer render visible mínimo risk-gated, Share HTML, adaptador ITAD fixture-only, lectura de caché ITAD local por flag, configuración Web de esa caché, refresh live opt-in/acotado, trigger Web explícito y pulido UX no-checkout cerrados entre 2026-05-21 y 2026-05-22. El siguiente paso requiere elegir explícitamente si hacer un live smoke acotado/aprobado o ampliar otra superficie bajo los mismos gates.
+Estado actual: Fase 0/docs, Fase 1 normalizador fixture-only, Fase 1B JSON interno opcional, Fase 1C diagnóstico JSON-consumer, primer render visible mínimo risk-gated, Share HTML, adaptador ITAD fixture-only, lectura de caché ITAD local por flag, configuración Web de esa caché, refresh live opt-in/acotado, trigger Web explícito, pulido UX no-checkout y diagnóstico offline de caché ITAD cerrados entre 2026-05-21 y 2026-06-02. El siguiente paso requiere elegir explícitamente si hacer un live smoke acotado/aprobado con key oficial o ampliar otra superficie local bajo los mismos gates.
 
 Enfoque de ejecución: **feature-sliced + risk-gated**. La feature avanza por cortes pequeños, pero cada corte debe pasar gates de riesgo antes de exponerse al usuario, tocar ranking o usar fuentes live.
 
@@ -437,6 +437,13 @@ Corte Web trigger refresh live cerrado 2026-05-22:
 - `/api/preflight` exige ITAD key y ruta de caché cuando el refresh está marcado; si el archivo de caché aún no existe, avisa que se creará/actualizará con la ruta pública redactada.
 - El copy conserva que es live opt-in, requiere key + caché, no prueba ownership y no cambia score/ranking/wishlist hygiene.
 - No se ejecutó live smoke real, no se agregó refresh automático, scraping, credenciales Fanatical, checkout/carrito, ownership, ranking ni defaults.
+
+Corte diagnóstico offline de caché ITAD cerrado 2026-06-02:
+
+- `diagnose_itad_external_offers_cache(cache_payload, appids=None)` inspecciona payloads locales de caché sin leer archivos ni hacer red.
+- Reporta caché vacía/malformada, cobertura de mappings AppID→ITAD, appids mapeados sin payload de precios, ofertas normalizables, ofertas ocultas/riesgosas, conteos por risk flag y coverage básico.
+- El summary conserva `advisory_only=true` y `ranking_impact=none`; el helper no toca CLI/Web, renderers, score, ranking, ownership ni `wishlist_hygiene`.
+- El diagnóstico usa fixtures/caché local únicamente; live smoke ITAD sigue bloqueado sin key oficial configurada y aprobación explícita.
 
 ### Fase 3 — render visible mínimo — primer cierre 2026-05-21
 

@@ -2,6 +2,7 @@ import unittest
 
 from steam_deals_itad import (
     build_itad_external_offers_cache,
+    diagnose_itad_external_offers_cache,
     itad_external_offers_from_cache,
     itad_get_prices_payload,
     itad_lookup_games_by_appid,
@@ -72,6 +73,147 @@ class ItadExternalOffersCacheTests(unittest.TestCase):
                 appids=["10"],
             )
         )
+
+    def test_diagnose_cache_reports_empty_and_malformed_payloads(self) -> None:
+        empty = diagnose_itad_external_offers_cache({}, appids=["10"])
+
+        self.assertEqual(empty["status"], "warning")
+        self.assertEqual(empty["issues"][0]["code"], "cache_empty")
+        self.assertEqual(empty["items"][0]["code"], "missing_itad_mapping")
+        self.assertEqual(empty["summary"]["missing_mapping_count"], 1)
+        self.assertEqual(empty["summary"]["coverage"]["mapping"], 0.0)
+
+        malformed = diagnose_itad_external_offers_cache(["bad-cache"], appids=["10"])
+
+        self.assertEqual(malformed["status"], "error")
+        self.assertEqual(malformed["issues"][0]["code"], "invalid_itad_external_offers_cache")
+        self.assertEqual(malformed["summary"]["advisory_only"], True)
+        self.assertEqual(malformed["summary"]["ranking_impact"], "none")
+
+    def test_diagnose_cache_reports_mapping_price_and_offer_coverage(self) -> None:
+        cache_payload = build_itad_external_offers_cache(
+            [
+                {
+                    "id": "itad-hades",
+                    "title": "Hades",
+                    "deals": [
+                        {
+                            "shop": {"id": 35, "name": "Fanatical"},
+                            "price": {"amount": 8.99, "currency": "USD"},
+                            "regular": {"amount": 24.99, "currency": "USD"},
+                            "cut": 64,
+                            "drm": [{"name": "Steam"}],
+                            "url": "https://fanatical.example/hades",
+                        }
+                    ],
+                }
+            ],
+            {"1145360": "itad-hades", "20": "itad-missing"},
+            country="MX",
+        )
+
+        diagnostic = diagnose_itad_external_offers_cache(
+            cache_payload,
+            appids=["1145360", "20", "30"],
+        )
+
+        items = {item["appid"]: item for item in diagnostic["items"]}
+        self.assertEqual(diagnostic["status"], "warning")
+        self.assertEqual(items["1145360"]["code"], "offers_available")
+        self.assertEqual(items["20"]["code"], "missing_price_payload")
+        self.assertEqual(items["30"]["code"], "missing_itad_mapping")
+        summary = diagnostic["summary"]
+        self.assertEqual(summary["mapped_appids_count"], 2)
+        self.assertEqual(summary["appids_with_price_payload_count"], 1)
+        self.assertEqual(summary["appids_with_external_offers_count"], 1)
+        self.assertEqual(summary["highlight_count"], 1)
+        self.assertEqual(summary["coverage"]["mapping"], 0.6667)
+        self.assertEqual(summary["coverage"]["price_payload"], 0.3333)
+        self.assertEqual(summary["coverage"]["external_offers"], 0.3333)
+
+    def test_diagnose_cache_counts_hidden_risky_offers_without_ownership_or_ranking(self) -> None:
+        cache_payload = build_itad_external_offers_cache(
+            [
+                {
+                    "id": "itad-hades",
+                    "title": "Hades",
+                    "deals": [
+                        {
+                            "shop": {"id": 35, "name": "Fanatical"},
+                            "price": {"amount": 8.99, "currency": "USD"},
+                            "regular": {"amount": 24.99, "currency": "USD"},
+                            "cut": 64,
+                            "drm": [{"name": "Steam"}],
+                            "url": "https://fanatical.example/hades",
+                        },
+                        {
+                            "shop": {"id": 99, "name": "G2A"},
+                            "price": {"amount": 7.50, "currency": "USD"},
+                            "regular": {"amount": 24.99, "currency": "USD"},
+                            "cut": 70,
+                            "drm": [{"name": "Steam"}],
+                            "url": "https://g2a.example/hades",
+                        },
+                        {
+                            "shop": {"id": 35, "name": "Fanatical"},
+                            "price": {"amount": 8.50, "currency": "USD"},
+                            "regular": {"amount": 24.99, "currency": "USD"},
+                            "cut": 66,
+                            "drm": [{"name": "Steam"}],
+                            "url": "https://fanatical.example/checkout/hades",
+                        },
+                    ],
+                }
+            ],
+            {"1145360": "itad-hades"},
+            country="MX",
+        )
+
+        diagnostic = diagnose_itad_external_offers_cache(cache_payload, appids=["1145360"])
+
+        self.assertEqual(diagnostic["status"], "warning")
+        self.assertEqual(diagnostic["items"][0]["code"], "offers_available_with_hidden_risks")
+        summary = diagnostic["summary"]
+        self.assertEqual(summary["offers_count"], 3)
+        self.assertEqual(summary["highlight_count"], 1)
+        self.assertEqual(summary["hidden_count"], 2)
+        self.assertEqual(summary["risky_offer_count"], 2)
+        self.assertEqual(summary["risk_counts"]["marketplace_keyshop"], 1)
+        self.assertEqual(summary["risk_counts"]["checkout_like_url"], 1)
+        self.assertTrue(summary["advisory_only"])
+        self.assertEqual(summary["ranking_impact"], "none")
+        self.assertNotIn("wishlist_hygiene", diagnostic)
+        self.assertNotIn("top_picks", summary)
+
+    def test_diagnose_cache_reports_mapped_app_without_external_offers(self) -> None:
+        cache_payload = build_itad_external_offers_cache(
+            [
+                {
+                    "id": "itad-hades",
+                    "title": "Hades",
+                    "deals": [
+                        {
+                            "shop": {"id": 61, "name": "Steam"},
+                            "price": {"amount": 9.99, "currency": "USD"},
+                            "regular": {"amount": 24.99, "currency": "USD"},
+                            "cut": 60,
+                            "drm": [{"name": "Steam"}],
+                            "url": "https://store.steampowered.com/app/1145360",
+                        }
+                    ],
+                }
+            ],
+            {"1145360": "itad-hades"},
+        )
+
+        diagnostic = diagnose_itad_external_offers_cache(cache_payload, appids=["1145360"])
+
+        self.assertEqual(diagnostic["status"], "warning")
+        self.assertEqual(diagnostic["items"][0]["code"], "no_external_offers")
+        self.assertTrue(diagnostic["items"][0]["has_price_payload"])
+        self.assertFalse(diagnostic["items"][0]["has_external_offers"])
+        self.assertEqual(diagnostic["summary"]["appids_with_price_payload_count"], 1)
+        self.assertEqual(diagnostic["summary"]["appids_with_external_offers_count"], 0)
 
     def test_itad_get_prices_payload_uses_header_auth_without_logging_key(self) -> None:
         calls = []

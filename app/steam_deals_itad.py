@@ -88,6 +88,65 @@ def itad_external_offers_from_cache(
     return offers if offers.get("items") else None
 
 
+def diagnose_itad_external_offers_cache(
+    cache_payload,
+    *,
+    appids: list[str] | set[str] | tuple[str, ...] | None = None,
+    include_marketplaces: bool = False,
+) -> dict:
+    """Diagnose a local ITAD external_offers cache without I/O or ranking changes."""
+    issues: list[dict] = []
+    if cache_payload is None:
+        cache_payload = {}
+        issues.append(_itad_cache_issue("warning", "cache_empty", "caché ITAD external_offers vacía"))
+    elif not isinstance(cache_payload, dict):
+        issue = _itad_cache_issue(
+            "error",
+            "invalid_itad_external_offers_cache",
+            "la caché ITAD external_offers debe ser un objeto JSON",
+        )
+        summary = _itad_cache_diagnostic_summary([], price_payload_items_count=0)
+        return {"status": "error", "items": [], "issues": [issue], "summary": summary}
+    elif not cache_payload:
+        issues.append(_itad_cache_issue("warning", "cache_empty", "caché ITAD external_offers vacía"))
+
+    mapping_value = cache_payload.get("appid_to_itad_id")
+    mapping = _itad_cache_mapping(mapping_value)
+    issues.extend(_itad_cache_mapping_issues(mapping_value, mapping, cache_empty=not cache_payload))
+
+    price_payload, price_source = _itad_cache_price_payload(cache_payload)
+    price_items = _itad_price_items(price_payload)
+    issues.extend(
+        _itad_cache_price_payload_issues(
+            price_payload,
+            price_source,
+            price_items_count=len(price_items),
+            cache_empty=not cache_payload,
+        )
+    )
+
+    price_items_by_id = _itad_cache_price_items_by_id(price_items)
+    checked_appids = _itad_cache_checked_appids(mapping, appids)
+    country = str(cache_payload.get("country") or "MX")
+    items = [
+        _itad_cache_diagnostic_item(
+            appid,
+            mapping,
+            price_items_by_id,
+            country=country,
+            include_marketplaces=include_marketplaces,
+        )
+        for appid in checked_appids
+    ]
+    summary = _itad_cache_diagnostic_summary(items, price_payload_items_count=len(price_items))
+    return {
+        "status": _itad_cache_diagnostic_status(issues, items),
+        "items": items,
+        "issues": issues,
+        "summary": summary,
+    }
+
+
 def load_itad_external_offers_cache(
     cache_file: Path,
     *,
@@ -129,6 +188,292 @@ def _itad_price_items(price_payload) -> list[dict]:
         if isinstance(value, list):
             return [item for item in value if isinstance(item, dict)]
     return []
+
+
+def _itad_cache_mapping(value) -> dict[str, str]:
+    if not isinstance(value, dict):
+        return {}
+    return {
+        str(appid).strip(): str(itad_id).strip()
+        for appid, itad_id in value.items()
+        if str(appid).strip() and str(itad_id).strip()
+    }
+
+
+def _itad_cache_mapping_issues(mapping_value, mapping: dict[str, str], *, cache_empty: bool) -> list[dict]:
+    if cache_empty:
+        return []
+    if mapping_value is None:
+        return [
+            _itad_cache_issue(
+                "warning",
+                "missing_appid_mapping",
+                "la caché no incluye appid_to_itad_id",
+            )
+        ]
+    if not isinstance(mapping_value, dict):
+        return [
+            _itad_cache_issue(
+                "error",
+                "invalid_appid_mapping",
+                "appid_to_itad_id debe ser un objeto",
+            )
+        ]
+    if not mapping:
+        return [
+            _itad_cache_issue(
+                "warning",
+                "appid_mapping_empty",
+                "appid_to_itad_id no contiene mappings válidos",
+            )
+        ]
+    return []
+
+
+def _itad_cache_price_payload(cache_payload: dict) -> tuple[object | None, str]:
+    for key in ("prices", "items", "data"):
+        if key in cache_payload:
+            return cache_payload.get(key), key
+    return None, ""
+
+
+def _itad_cache_price_payload_issues(
+    price_payload,
+    price_source: str,
+    *,
+    price_items_count: int,
+    cache_empty: bool,
+) -> list[dict]:
+    if cache_empty:
+        return []
+    if not price_source:
+        return [
+            _itad_cache_issue(
+                "warning",
+                "missing_price_payload",
+                "la caché no incluye prices/items/data",
+            )
+        ]
+    if isinstance(price_payload, list):
+        malformed_count = sum(1 for item in price_payload if not isinstance(item, dict))
+        if malformed_count:
+            return [
+                _itad_cache_issue(
+                    "warning",
+                    "malformed_price_items",
+                    f"{malformed_count} entradas de precios ITAD no son objetos",
+                )
+            ]
+        return []
+    if isinstance(price_payload, dict):
+        has_collection = any(isinstance(price_payload.get(key), list) for key in ("items", "prices", "data"))
+        if has_collection or price_items_count:
+            return []
+    return [
+        _itad_cache_issue(
+            "error",
+            "invalid_price_payload",
+            f"{price_source} debe ser una lista o contener items/prices/data como lista",
+        )
+    ]
+
+
+def _itad_cache_price_items_by_id(price_items: list[dict]) -> dict[str, dict]:
+    items_by_id: dict[str, dict] = {}
+    for item in price_items:
+        itad_id = str(item.get("id") or "").strip()
+        if itad_id and itad_id not in items_by_id:
+            items_by_id[itad_id] = item
+    return items_by_id
+
+
+def _itad_cache_checked_appids(mapping: dict[str, str], appids) -> list[str]:
+    candidates = list(appids or mapping.keys())
+    checked: list[str] = []
+    seen: set[str] = set()
+    for appid in candidates:
+        value = str(appid).strip()
+        if value and value not in seen:
+            checked.append(value)
+            seen.add(value)
+    return checked
+
+
+def _itad_cache_diagnostic_item(
+    appid: str,
+    mapping: dict[str, str],
+    price_items_by_id: dict[str, dict],
+    *,
+    country: str,
+    include_marketplaces: bool,
+) -> dict:
+    itad_id = mapping.get(appid, "")
+    if not itad_id:
+        return _itad_cache_appid_item(appid, "warning", "missing_itad_mapping", "appid sin mapping ITAD")
+    price_item = price_items_by_id.get(itad_id)
+    if price_item is None:
+        return _itad_cache_appid_item(
+            appid,
+            "warning",
+            "missing_price_payload",
+            "appid con mapping ITAD pero sin payload de precios",
+            itad_id=itad_id,
+        )
+    try:
+        offers = itad_prices_to_external_offers(
+            [price_item], {appid: itad_id}, country=country, include_marketplaces=include_marketplaces
+        )
+    except Exception as exc:
+        return _itad_cache_appid_item(
+            appid,
+            "malformed",
+            "price_payload_malformed",
+            f"payload de precios ITAD inválido: {exc}",
+            itad_id=itad_id,
+            has_price_payload=True,
+        )
+    return _itad_cache_offer_item(appid, itad_id, offers)
+
+
+def _itad_cache_appid_item(
+    appid: str,
+    status: str,
+    code: str,
+    message: str,
+    *,
+    itad_id: str = "",
+    has_price_payload: bool = False,
+) -> dict:
+    item = {
+        "appid": appid,
+        "status": status,
+        "code": code,
+        "message": message,
+        "has_price_payload": has_price_payload,
+        "has_external_offers": False,
+        "offers_count": 0,
+        "highlight_count": 0,
+        "review_count": 0,
+        "hidden_count": 0,
+        "visible_count": 0,
+        "risky_offer_count": 0,
+        "risk_counts": {},
+    }
+    if itad_id:
+        item["itad_id"] = itad_id
+    return item
+
+
+def _itad_cache_offer_item(appid: str, itad_id: str, offers: dict) -> dict:
+    offer_items = offers.get("items") if isinstance(offers, dict) else []
+    offer_items = offer_items if isinstance(offer_items, list) else []
+    summary = offers.get("summary") if isinstance(offers, dict) else {}
+    summary = summary if isinstance(summary, dict) else {}
+    visible_count = int(summary.get("highlight_count") or 0) + int(summary.get("review_count") or 0)
+    hidden_count = int(summary.get("hidden_count") or 0)
+    offers_count = len(offer_items)
+    if not offers_count:
+        status, code, message = "warning", "no_external_offers", "payload ITAD sin ofertas externas normalizables"
+    elif not visible_count:
+        status, code, message = "warning", "hidden_offers_only", "solo hay ofertas ocultas por risk gates"
+    elif hidden_count:
+        status, code, message = "warning", "offers_available_with_hidden_risks", "hay ofertas visibles y otras ocultas por risk gates"
+    else:
+        status, code, message = "ok", "offers_available", "ofertas externas normalizadas disponibles"
+    item = _itad_cache_appid_item(
+        appid,
+        status,
+        code,
+        message,
+        itad_id=itad_id,
+        has_price_payload=True,
+    )
+    item.update(
+        {
+            "has_external_offers": bool(offers_count),
+            "offers_count": offers_count,
+            "highlight_count": int(summary.get("highlight_count") or 0),
+            "review_count": int(summary.get("review_count") or 0),
+            "hidden_count": hidden_count,
+            "visible_count": visible_count,
+            "risky_offer_count": _itad_cache_risky_offer_count(offer_items),
+            "risk_counts": _itad_cache_risk_counts(offer_items),
+        }
+    )
+    return item
+
+
+def _itad_cache_diagnostic_summary(items: list[dict], *, price_payload_items_count: int) -> dict:
+    appids_count = len(items)
+    mapped_count = sum(1 for item in items if item.get("itad_id"))
+    price_payload_appids_count = sum(1 for item in items if item.get("has_price_payload"))
+    external_offer_appids_count = sum(1 for item in items if item.get("has_external_offers"))
+    return {
+        "appids_count": appids_count,
+        "mapped_appids_count": mapped_count,
+        "missing_mapping_count": sum(1 for item in items if item.get("code") == "missing_itad_mapping"),
+        "appids_with_price_payload_count": price_payload_appids_count,
+        "missing_price_payload_count": sum(1 for item in items if item.get("code") == "missing_price_payload"),
+        "appids_with_external_offers_count": external_offer_appids_count,
+        "visible_appids_count": sum(1 for item in items if item.get("visible_count", 0) > 0),
+        "hidden_only_appids_count": sum(1 for item in items if item.get("code") == "hidden_offers_only"),
+        "malformed_count": sum(1 for item in items if item.get("status") == "malformed"),
+        "price_payload_items_count": price_payload_items_count,
+        "offers_count": sum(int(item.get("offers_count") or 0) for item in items),
+        "highlight_count": sum(int(item.get("highlight_count") or 0) for item in items),
+        "review_count": sum(int(item.get("review_count") or 0) for item in items),
+        "hidden_count": sum(int(item.get("hidden_count") or 0) for item in items),
+        "risky_offer_count": sum(int(item.get("risky_offer_count") or 0) for item in items),
+        "risk_counts": _itad_cache_merged_risk_counts(items),
+        "coverage": {
+            "mapping": _itad_cache_ratio(mapped_count, appids_count),
+            "price_payload": _itad_cache_ratio(price_payload_appids_count, appids_count),
+            "external_offers": _itad_cache_ratio(external_offer_appids_count, appids_count),
+        },
+        "advisory_only": True,
+        "ranking_impact": "none",
+    }
+
+
+def _itad_cache_diagnostic_status(issues: list[dict], items: list[dict]) -> str:
+    if any(issue.get("severity") == "error" for issue in issues):
+        return "error"
+    if issues or any(item.get("status") != "ok" for item in items):
+        return "warning"
+    return "ok"
+
+
+def _itad_cache_risky_offer_count(offer_items: list[dict]) -> int:
+    return sum(
+        1
+        for item in offer_items
+        if set(item.get("risk_flags") or []) - {"ownership_not_proven"}
+    )
+
+
+def _itad_cache_risk_counts(offer_items: list[dict]) -> dict[str, int]:
+    risk_counts: dict[str, int] = {}
+    for item in offer_items:
+        for risk in item.get("risk_flags") or []:
+            risk_counts[risk] = risk_counts.get(risk, 0) + 1
+    return risk_counts
+
+
+def _itad_cache_merged_risk_counts(items: list[dict]) -> dict[str, int]:
+    merged: dict[str, int] = {}
+    for item in items:
+        risk_counts = item.get("risk_counts") or {}
+        for risk, count in risk_counts.items():
+            merged[risk] = merged.get(risk, 0) + int(count)
+    return merged
+
+
+def _itad_cache_ratio(value: int, total: int) -> float:
+    return round(value / total, 4) if total else 0.0
+
+
+def _itad_cache_issue(severity: str, code: str, message: str) -> dict:
+    return {"severity": severity, "code": code, "message": message}
 
 
 def _itad_deal_record(item: dict, deal: dict, appid: str, *, country: str) -> dict:
