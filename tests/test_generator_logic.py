@@ -13019,6 +13019,133 @@ class RankTopPicksTests(unittest.TestCase):
         self.assertIn('class="personalized-share"', html)
         self.assertIn("data-share-game=", html)
 
+    def test_generate_share_html_renders_personalized_behavioral_explanation(self) -> None:
+        html = generate_share_html(
+            deals=[],
+            vanity="gaben",
+            min_discount=50,
+            recommended_collections=[],
+            personalized_recommendations={
+                "items": [
+                    {
+                        "steam_appid": "10",
+                        "name": "Deep Rock Galactic",
+                        "personalized_score": 95.0,
+                        "reasons": ["encaja con tu actividad reciente"],
+                    }
+                ],
+                "profile": {},
+            },
+            behavioral_explanations={
+                "schema": "behavioral_explanations_v1",
+                "source_schema": "behavioral_signals_v1",
+                "advisory_only": True,
+                "ranking_impact": "none",
+                "items": [
+                    {
+                        "appid": "10",
+                        "name": "Deep Rock Galactic",
+                        "headline": "Social + Co-op / teamwork",
+                        "confidence": "medium",
+                        "reasons": [
+                            "Patrones principales: Social + Co-op / teamwork",
+                            "Loops detectados: High-execution co-op",
+                            "Esta tercera razón no se renderiza",
+                        ],
+                        "supporting_cues": [
+                            {"kind": "descriptor", "label": "Mission based"},
+                            {"kind": "descriptor", "label": "Short session"},
+                            {"kind": "behavioral_loop", "label": "Shared objective pressure"},
+                            {"kind": "descriptor", "label": "Fourth cue hidden"},
+                        ],
+                    }
+                ],
+            },
+        )
+
+        self.assertIn("data-personalized-recommendations-section", html)
+        self.assertIn('class="personalized-behavioral-note"', html)
+        self.assertIn("Por qué podría gustarte", html)
+        self.assertIn("Social + Co-op / teamwork", html)
+        self.assertIn("Patrones principales: Social + Co-op / teamwork", html)
+        self.assertIn("Loops detectados: High-execution co-op", html)
+        self.assertIn("Mission based", html)
+        self.assertIn("Short session", html)
+        self.assertIn("Shared objective pressure", html)
+        self.assertIn("Señal advisory: no cambia score ni ranking.", html)
+        self.assertNotIn("Esta tercera razón no se renderiza", html)
+        self.assertNotIn("Fourth cue hidden", html)
+
+    def test_generate_share_html_omits_personalized_behavioral_explanation_mismatch(self) -> None:
+        html = generate_share_html(
+            deals=[],
+            vanity="gaben",
+            min_discount=50,
+            recommended_collections=[],
+            personalized_recommendations={
+                "items": [
+                    {
+                        "appid": "10",
+                        "name": "Personal Pick",
+                        "personalized_score": 88.0,
+                        "reasons": ["score base del reporte"],
+                    }
+                ],
+                "profile": {},
+            },
+            behavioral_explanations={
+                "schema": "behavioral_explanations_v1",
+                "items": [
+                    {
+                        "appid": "20",
+                        "headline": "No debería mostrarse",
+                        "confidence": "medium",
+                        "reasons": ["Explicación para otro juego"],
+                    }
+                ],
+            },
+        )
+
+        self.assertIn("Personal Pick", html)
+        self.assertNotIn("Por qué podría gustarte", html)
+        self.assertNotIn("No debería mostrarse", html)
+        self.assertNotIn("Señal advisory: no cambia score ni ranking.", html)
+
+    def test_generate_share_html_omits_invalid_personalized_behavioral_explanation(self) -> None:
+        html = generate_share_html(
+            deals=[],
+            vanity="gaben",
+            min_discount=50,
+            recommended_collections=[],
+            personalized_recommendations={
+                "items": [
+                    {
+                        "appid": "10",
+                        "name": "Personal Pick",
+                        "personalized_score": 88.0,
+                        "reasons": ["score base del reporte"],
+                    }
+                ],
+                "profile": {},
+            },
+            behavioral_explanations={
+                "schema": "behavioral_explanations_v1",
+                "items": [
+                    "bad",
+                    {
+                        "appid": "not-a-number",
+                        "headline": "No debería mostrarse",
+                        "confidence": "low",
+                        "reasons": ["AppID inválido"],
+                    },
+                ],
+            },
+        )
+
+        self.assertIn("Personal Pick", html)
+        self.assertNotIn("Señales de estilo del juego", html)
+        self.assertNotIn("No debería mostrarse", html)
+
     def test_generate_share_html_renders_recommendation_thumbnails_from_steam_appid(self) -> None:
         html = generate_share_html(
             deals=[],

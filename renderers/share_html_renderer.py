@@ -355,6 +355,13 @@ tr:hover { background: #1a3a5c; }
 .personalized-meta { display:flex; flex-wrap:wrap; gap:.35rem; color:#c7d5e0; font-size:.72rem; margin:.25rem 0; }
 .personalized-meta span:first-child { color:#f0b232; }
 .personalized-reasons { color:#8f98a0; font-size:.74rem; margin:.35rem 0 0; padding-left:1rem; }
+.personalized-behavioral-note { margin-top:.5rem; padding:.5rem .55rem; border:1px solid rgba(102,192,244,.22); border-left:3px solid #66c0f4; border-radius:6px; background:rgba(102,192,244,.06); color:#8f98a0; font-size:.72rem; line-height:1.35; }
+.personalized-behavioral-note strong { display:block; color:#66c0f4; font-size:.74rem; margin-bottom:.18rem; }
+.personalized-behavioral-note p { margin:0 0 .28rem; }
+.personalized-behavioral-note ul { margin:.22rem 0 0; padding-left:1rem; }
+.personalized-behavioral-cues { display:flex; flex-wrap:wrap; gap:.22rem; margin-top:.3rem; }
+.personalized-behavioral-cues span { border:1px solid rgba(102,192,244,.25); border-radius:999px; padding:.1rem .35rem; background:rgba(27,40,56,.65); }
+.personalized-behavioral-note small { display:block; margin-top:.32rem; opacity:.86; }
 .personalized-share { display:flex; justify-content:flex-end; margin-top:.45rem; }
 .gift-ideas { margin: 1rem 0 .5rem; }
 .gift-ideas > p { color:#8f98a0; font-size:.78rem; margin:0 0 .55rem; }
@@ -877,7 +884,80 @@ def _render_personalized_meta(item: dict) -> str:
     return f'''<div class="personalized-meta">{"".join(f'<span>{html_escape(part)}</span>' for part in meta)}</div>'''
 
 
-def _render_personalized_item(item: dict, index: int) -> str:
+def _behavioral_explanation_appid(item: dict | None) -> str:
+    if not isinstance(item, dict):
+        return ""
+    appid = str(item.get("appid") or item.get("steam_appid") or "").strip()
+    return appid if appid.isdigit() else ""
+
+
+def _behavioral_explanations_by_appid(payload: dict | None) -> dict[str, dict]:
+    if (
+        not isinstance(payload, dict)
+        or payload.get("schema") != "behavioral_explanations_v1"
+    ):
+        return {}
+    raw_items = payload.get("items")
+    items = raw_items if isinstance(raw_items, list) else []
+    explanations: dict[str, dict] = {}
+    for item in (entry for entry in items if isinstance(entry, dict)):
+        appid = _behavioral_explanation_appid(item)
+        if appid and appid not in explanations:
+            explanations[appid] = item
+    return explanations
+
+
+def _render_personalized_behavioral_explanation(explanation: dict | None) -> str:
+    if not isinstance(explanation, dict):
+        return ""
+    confidence = str(explanation.get("confidence") or "").strip().lower()
+    title = (
+        "Por qué podría gustarte"
+        if confidence in {"medium", "high"}
+        else "Señales de estilo del juego"
+    )
+    headline = str(explanation.get("headline") or "").strip()
+    raw_reasons = (
+        explanation.get("reasons")
+        if isinstance(explanation.get("reasons"), list)
+        else []
+    )
+    raw_cues = (
+        explanation.get("supporting_cues")
+        if isinstance(explanation.get("supporting_cues"), list)
+        else []
+    )
+    reasons = [str(reason).strip() for reason in raw_reasons if str(reason).strip()][:2]
+    cue_labels = [
+        str(cue.get("label") or "").strip()
+        for cue in raw_cues
+        if isinstance(cue, dict) and str(cue.get("label") or "").strip()
+    ][:3]
+    if not headline and not reasons and not cue_labels:
+        return ""
+    headline_html = f"<p>{html_escape(headline)}</p>" if headline else ""
+    reasons_html = "".join(f"<li>{html_escape(reason)}</li>" for reason in reasons)
+    reasons_block = f"<ul>{reasons_html}</ul>" if reasons_html else ""
+    cues_html = "".join(f"<span>{html_escape(label)}</span>" for label in cue_labels)
+    cues_block = (
+        f'<div class="personalized-behavioral-cues">{cues_html}</div>'
+        if cues_html
+        else ""
+    )
+    return f'''<div class="personalized-behavioral-note">
+    <strong>{html_escape(title)}</strong>
+    {headline_html}
+    {reasons_block}
+    {cues_block}
+    <small>Señal advisory: no cambia score ni ranking.</small>
+  </div>'''
+
+
+def _render_personalized_item(
+    item: dict,
+    index: int,
+    behavioral_explanation: dict | None = None,
+) -> str:
     appid = str(item.get("appid") or item.get("steam_appid") or "").strip()
     safe_appid = appid if appid.isdigit() else ""
     name = str(item.get("name") or item.get("steam_name") or "Juego desconocido")
@@ -910,24 +990,35 @@ def _render_personalized_item(item: dict, index: int) -> str:
         else ""
     )
     thumb_html = _render_steam_capsule_thumb(safe_appid, name, "personalized-item-thumb")
+    behavioral_html = _render_personalized_behavioral_explanation(behavioral_explanation)
     return f'''<article class="personalized-recommendation-card"{data_attr}>
   <div class="personalized-rank">#{index}</div>
   {thumb_html}
   <h3>{name_html}</h3>
   {_render_personalized_meta(item)}
   <ul class="personalized-reasons">{reasons_html}</ul>
+  {behavioral_html}
   {share_html}
 </article>'''
 
 
-def _render_personalized_recommendations(payload: dict | None) -> str:
+def _render_personalized_recommendations(
+    payload: dict | None,
+    behavioral_explanations: dict | None = None,
+) -> str:
     if not isinstance(payload, dict):
         return ""
     items = [item for item in payload.get("items", []) if isinstance(item, dict)]
     if not items:
         return ""
+    explanations_by_appid = _behavioral_explanations_by_appid(behavioral_explanations)
     cards = "".join(
-        _render_personalized_item(item, index) for index, item in enumerate(items, 1)
+        _render_personalized_item(
+            item,
+            index,
+            explanations_by_appid.get(_behavioral_explanation_appid(item)),
+        )
+        for index, item in enumerate(items, 1)
     )
     return f'''<section class="personalized-recommendations" data-personalized-recommendations-section>
   <h2 style="margin:1rem 0 .35rem">Recomendaciones personalizadas</h2>
@@ -1150,6 +1241,7 @@ def generate_share_html(
     gift_ideas_by_friend: list[dict] | None = None,
     shared_gift_ideas: list[dict] | None = None,
     external_offers: dict | None = None,
+    behavioral_explanations: dict | None = None,
 ):
     """Generate a lightweight shareable HTML page with the deals list."""
     reviews = reviews or {}
@@ -1160,6 +1252,9 @@ def generate_share_html(
     personalized_recommendations = personalized_recommendations or {"items": []}
     gift_ideas = gift_ideas or []
     external_offers = external_offers if isinstance(external_offers, dict) else None
+    behavioral_explanations = (
+        behavioral_explanations if isinstance(behavioral_explanations, dict) else None
+    )
     today = date.today().strftime("%Y-%m-%d")
     title = f"Steam Deals — {profile_display_name or vanity}"
     deals_by_appid = {deal["appid"]: deal for deal in deals}
@@ -1187,7 +1282,8 @@ def generate_share_html(
 
     collections_html = _render_recommended_collections(recommended_collections)
     personalized_html = _render_personalized_recommendations(
-        personalized_recommendations
+        personalized_recommendations,
+        behavioral_explanations,
     )
     gift_html = _render_gift_ideas(gift_ideas, compare_data)
     multi_profile_gifts_html = _render_multi_profile_gifts(
