@@ -6,8 +6,12 @@ import unittest
 from pathlib import Path
 
 from steam_deals_warm_cache_summary import (
+    FULL_WARM_CACHE_CONTINUE,
+    FULL_WARM_CACHE_STOP_SAFETY_CAP,
+    FULL_WARM_CACHE_STOP_WITH_ADVISORY,
     WarmCacheLogSummary,
     analyze_warm_cache_recommendations,
+    decide_full_warm_cache_next_action,
     format_warm_cache_comparison,
     format_warm_cache_recommendations,
     format_warm_cache_summary,
@@ -276,6 +280,88 @@ class WarmCacheSummaryTests(unittest.TestCase):
         )
         self.assertNotIn("Cobertura parcial", output)
         self.assertNotIn("no se sabe aún si", output)
+
+    def test_decide_full_warm_cache_continues_for_deferred_resume_hint(self) -> None:
+        summary = WarmCacheLogSummary(
+            processed_count=360,
+            deferred_by_time_budget=2575,
+            time_budget_exhausted=True,
+            next_resume_hint="542050",
+        )
+
+        decision = decide_full_warm_cache_next_action(summary, completed_passes=1, max_passes=5)
+
+        self.assertEqual(decision.action, FULL_WARM_CACHE_CONTINUE)
+        self.assertTrue(decision.should_continue)
+        self.assertEqual(decision.next_resume_hint, "542050")
+        self.assertIn("deferred_by_time_budget", decision.reason_codes)
+        self.assertIn("next_resume_hint", decision.reason_codes)
+        self.assertIn("misma caché", " ".join(decision.messages))
+        self.assertNotIn("--no-cache", decision.messages[0])
+
+    def test_decide_full_warm_cache_stops_when_only_cooldown_no_price_remains(self) -> None:
+        summary = WarmCacheLogSummary(
+            refresh_candidates=42,
+            processed_count=42,
+            deferred_by_time_budget=0,
+            deferred_failure_count=4,
+            individual_fallback_failed_count=7,
+        )
+
+        decision = decide_full_warm_cache_next_action(summary, completed_passes=2, max_passes=5)
+
+        self.assertEqual(decision.action, FULL_WARM_CACHE_STOP_WITH_ADVISORY)
+        self.assertFalse(decision.should_continue)
+        self.assertEqual(
+            decision.reason_codes,
+            ("cooldown_advisory", "fallback_no_data_advisory"),
+        )
+        self.assertIn("esperar", " ".join(decision.messages))
+        self.assertIn("advisory", " ".join(decision.messages))
+
+    def test_decide_full_warm_cache_stops_when_queue_has_no_pending_work(self) -> None:
+        summary = WarmCacheLogSummary(
+            refresh_candidates=42,
+            processed_count=42,
+            deferred_by_time_budget=0,
+        )
+
+        decision = decide_full_warm_cache_next_action(summary)
+
+        self.assertEqual(decision.action, FULL_WARM_CACHE_STOP_WITH_ADVISORY)
+        self.assertFalse(decision.should_continue)
+        self.assertEqual(decision.reason_codes, ("queue_finished",))
+        self.assertIn("ejecución normal separada", decision.messages[0])
+
+    def test_decide_full_warm_cache_continues_when_mixed_priorities_have_pending(self) -> None:
+        summary = WarmCacheLogSummary(
+            deferred_by_time_budget=2,
+            stale_refresh_deferred_count=3,
+            deferred_failure_count=5,
+            individual_fallback_failed_count=7,
+        )
+
+        decision = decide_full_warm_cache_next_action(summary, completed_passes=2, max_passes=5)
+
+        self.assertEqual(decision.action, FULL_WARM_CACHE_CONTINUE)
+        self.assertTrue(decision.should_continue)
+        self.assertIn("deferred_by_time_budget", decision.reason_codes)
+        self.assertIn("stale_refresh_deferred", decision.reason_codes)
+        self.assertIn("cooldown_advisory", decision.reason_codes)
+        self.assertIn("fallback_no_data_advisory", decision.reason_codes)
+
+    def test_decide_full_warm_cache_stops_on_safety_cap_before_next_pass(self) -> None:
+        summary = WarmCacheLogSummary(
+            deferred_by_time_budget=2,
+            next_resume_hint="730430",
+        )
+
+        decision = decide_full_warm_cache_next_action(summary, completed_passes=3, max_passes=3)
+
+        self.assertEqual(decision.action, FULL_WARM_CACHE_STOP_SAFETY_CAP)
+        self.assertFalse(decision.should_continue)
+        self.assertEqual(decision.reason_codes[0], "safety_cap")
+        self.assertIn("3/3", decision.messages[0])
 
     def test_parse_warm_cache_log_text_extracts_stale_revalidate_metrics(self) -> None:
         text = (

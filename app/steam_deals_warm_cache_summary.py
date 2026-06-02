@@ -64,6 +64,15 @@ class WarmCacheRecommendation:
     action: str
 
 
+@dataclass(frozen=True)
+class WarmCacheFullDecision:
+    action: str
+    should_continue: bool
+    reason_codes: tuple[str, ...]
+    messages: tuple[str, ...]
+    next_resume_hint: str | None = None
+
+
 COMPARISON_COLUMNS = (
     ("Duración", "elapsed_seconds", "s"),
     ("Refresh candidates", "refresh_candidates", ""),
@@ -82,6 +91,129 @@ CACHE_EFFECTIVE_DROP_RATIO = 0.25
 DEFAULT_PRICE_BATCH_SIZE = 20
 MIN_PRICE_BATCH_SIZE = 1
 PRICE_FAILURE_RETRY_HOURS = 2
+FULL_WARM_CACHE_CONTINUE = "continue"
+FULL_WARM_CACHE_STOP_WITH_ADVISORY = "stop_with_advisory"
+FULL_WARM_CACHE_STOP_SAFETY_CAP = "stop_safety_cap"
+
+
+def _safe_summary_int(summary: WarmCacheLogSummary | dict, field_name: str) -> int:
+    raw_value = summary.get(field_name) if isinstance(summary, dict) else getattr(summary, field_name, 0)
+    try:
+        return max(0, int(raw_value or 0))
+    except (TypeError, ValueError):
+        return 0
+
+
+def _safe_summary_hint(summary: WarmCacheLogSummary | dict) -> str | None:
+    raw_hint = summary.get("next_resume_hint") if isinstance(summary, dict) else getattr(summary, "next_resume_hint", None)
+    hint = str(raw_hint or "").strip()
+    return None if not hint or hint.lower() == "none" else hint
+
+
+def _normalise_pass_limit(max_passes: int | None) -> int | None:
+    if max_passes is None:
+        return None
+    try:
+        return max(0, int(max_passes))
+    except (TypeError, ValueError):
+        return None
+
+
+def decide_full_warm_cache_next_action(
+    summary: WarmCacheLogSummary | dict,
+    *,
+    completed_passes: int = 1,
+    max_passes: int | None = None,
+) -> WarmCacheFullDecision:
+    """Decide if optional full warm-cache should continue with another pass."""
+
+    deferred = _safe_summary_int(summary, "deferred_by_time_budget")
+    stale_deferred = _safe_summary_int(summary, "stale_refresh_deferred_count")
+    fallback_deferred = _safe_summary_int(summary, "deferred_by_fallback_budget")
+    cooldown = _safe_summary_int(summary, "deferred_failure_count")
+    fallback_no_data = _safe_summary_int(summary, "individual_fallback_failed_count")
+    processed = _safe_summary_int(summary, "processed_count")
+    refresh_candidates = _safe_summary_int(summary, "refresh_candidates")
+    missing = _safe_summary_int(summary, "missing_count")
+    hint = _safe_summary_hint(summary)
+
+    pending_codes: list[str] = []
+    pending_messages: list[str] = []
+    if deferred:
+        pending_codes.append("deferred_by_time_budget")
+        pending_messages.append(
+            f"Quedan {deferred:,} candidatos diferidos por presupuesto; continuar con la misma caché y `--warm-cache`."
+        )
+    if hint:
+        pending_codes.append("next_resume_hint")
+        pending_messages.append(f"La próxima pasada puede reanudar desde `{hint}`.")
+    if stale_deferred:
+        pending_codes.append("stale_refresh_deferred")
+        pending_messages.append(
+            f"Quedan {stale_deferred:,} stale refreshes diferidos; otra pasada puede revalidarlos sin `--no-cache`."
+        )
+    if fallback_deferred:
+        pending_codes.append("fallback_budget_deferred")
+        pending_messages.append(
+            f"Quedan {fallback_deferred:,} fallos diferidos por presupuesto de fallback; otra pasada puede reintentarlos con cautela."
+        )
+    if missing and refresh_candidates and not processed:
+        pending_codes.append("missing_candidates_unprocessed")
+        pending_messages.append(
+            f"Hay {missing:,} candidatos nuevos/missing detectados sin evidencia de procesamiento en este resumen."
+        )
+
+    advisory_codes: list[str] = []
+    advisory_messages: list[str] = []
+    if cooldown:
+        advisory_codes.append("cooldown_advisory")
+        advisory_messages.append(
+            f"{cooldown:,} fallos siguen en cooldown; no forzar `--no-cache`, esperar antes de reintentar."
+        )
+    if fallback_no_data:
+        advisory_codes.append("fallback_no_data_advisory")
+        advisory_messages.append(
+            f"{fallback_no_data:,} fallback(s) quedaron sin oferta/datos; tratarlos como advisory, no como cobertura perfecta."
+        )
+
+    pass_limit = _normalise_pass_limit(max_passes)
+    try:
+        safe_completed_passes = max(0, int(completed_passes))
+    except (TypeError, ValueError):
+        safe_completed_passes = 0
+    if pending_codes and pass_limit is not None and safe_completed_passes >= pass_limit:
+        return WarmCacheFullDecision(
+            action=FULL_WARM_CACHE_STOP_SAFETY_CAP,
+            should_continue=False,
+            reason_codes=("safety_cap", *pending_codes, *advisory_codes),
+            messages=(
+                f"Safety cap alcanzado ({safe_completed_passes}/{pass_limit} pasadas); detener y mostrar pendientes como advisory.",
+                *pending_messages,
+                *advisory_messages,
+            ),
+            next_resume_hint=hint,
+        )
+
+    if pending_codes:
+        return WarmCacheFullDecision(
+            action=FULL_WARM_CACHE_CONTINUE,
+            should_continue=True,
+            reason_codes=(*pending_codes, *advisory_codes),
+            messages=(*pending_messages, *advisory_messages),
+            next_resume_hint=hint,
+        )
+
+    stop_codes = advisory_codes or ["queue_finished"]
+    stop_messages = advisory_messages or [
+        "No quedan pendientes importantes para otra pasada automática; generar el reporte debe ser una ejecución normal separada."
+    ]
+    return WarmCacheFullDecision(
+        action=FULL_WARM_CACHE_STOP_WITH_ADVISORY,
+        should_continue=False,
+        reason_codes=tuple(stop_codes),
+        messages=tuple(stop_messages),
+        next_resume_hint=hint,
+    )
 
 
 def _parse_int(raw_value: str) -> int:
@@ -992,10 +1124,15 @@ def main(argv: list[str] | None = None, *, stdout: TextIO | None = None) -> int:
 
 
 __all__ = [
+    "FULL_WARM_CACHE_CONTINUE",
+    "FULL_WARM_CACHE_STOP_SAFETY_CAP",
+    "FULL_WARM_CACHE_STOP_WITH_ADVISORY",
+    "WarmCacheFullDecision",
     "WarmCacheLogSummary",
     "WarmCacheRecommendation",
     "analyze_warm_cache_recommendations",
     "build_parser",
+    "decide_full_warm_cache_next_action",
     "format_warm_cache_comparison",
     "format_warm_cache_recommendations",
     "format_warm_cache_summary",
