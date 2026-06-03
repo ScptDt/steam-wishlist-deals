@@ -41,7 +41,9 @@ from steam_deals_alerts import (
 from steam_deals_access import (
     build_play_access_contract,
     load_local_play_access_import,
+    load_steam_access_import,
     normalize_local_play_access_import,
+    normalize_steam_access_import,
 )
 from steam_deals_behavioral import (
     build_behavioral_explanations as module_build_behavioral_explanations,
@@ -2068,6 +2070,92 @@ class AccessLayerTests(unittest.TestCase):
                 self.assertEqual(records[0]["play_state"], expected_state)
                 if expected_name:
                     self.assertEqual(records[0]["name"], expected_name)
+
+    def test_normalize_steam_access_import_accepts_appid_only_contract(self) -> None:
+        access = normalize_steam_access_import(
+            {
+                "source": "steam_browser_helper_export",
+                "steamid": "76561198000000000",
+                "generated_at": "2026-06-03T12:00:00Z",
+                "provenance": "manual_json_export",
+                "owned_appids": ["10", {"appid": "20", "name": "Owned Name"}, "10", "bad", "0"],
+                "family_shared_appids": {"30": "Family Name", "not_appid": "Ignored"},
+                "wishlist_appids": [{"steam_appid": "40"}, 50, None],
+            }
+        )
+
+        self.assertEqual(access["schema"], "steam_access_import_v1")
+        self.assertEqual(access["source"], "steam_browser_helper_export")
+        self.assertEqual(access["steamid"], "76561198000000000")
+        self.assertEqual(access["generated_at"], "2026-06-03T12:00:00Z")
+        self.assertEqual(access["provenance"], "manual_json_export")
+        self.assertEqual(access["owned_appids"], ["10", "20"])
+        self.assertEqual(access["family_shared_appids"], ["30"])
+        self.assertEqual(access["wishlist_appids"], ["40", "50"])
+        self.assertEqual(access["summary"]["owned_count"], 2)
+        self.assertEqual(access["summary"]["family_shared_count"], 1)
+        self.assertTrue(access["advisory_only"])
+        self.assertEqual(access["ranking_impact"], "none")
+
+    def test_normalize_steam_access_import_omits_sensitive_fields(self) -> None:
+        access = normalize_steam_access_import(
+            {
+                "steam_access_import": {
+                    "source": {"unexpected": "object is ignored"},
+                    "owned_appids": ["10"],
+                    "cookies": "steamLoginSecure=secret",
+                    "webapi_token": "secret-token",
+                    "raw_response": {"apps": ["too much data"]},
+                    "family_members": [{"name": "Jane Doe"}],
+                    "provenance": {"token": "also ignored"},
+                }
+            }
+        )
+
+        serialized = json.dumps(access, sort_keys=True)
+
+        self.assertEqual(access["source"], "steam_access_import")
+        self.assertEqual(access["owned_appids"], ["10"])
+        self.assertNotIn("cookies", access)
+        self.assertNotIn("webapi_token", access)
+        self.assertNotIn("raw_response", access)
+        self.assertNotIn("family_members", access)
+        self.assertNotIn("Jane Doe", serialized)
+        self.assertNotIn("secret-token", serialized)
+
+    def test_load_steam_access_import_accepts_wrapper_and_empty_payloads(self) -> None:
+        cases = [
+            ("", []),
+            ("null", []),
+            ("{}", []),
+            (json.dumps({"steam_access": {"family_shared_appids": ["30", "30"]}}), ["30"]),
+        ]
+
+        with TemporaryDirectory() as temp_dir:
+            for index, (content, expected_family_appids) in enumerate(cases):
+                path = Path(temp_dir) / f"steam_access_{index}.json"
+                path.write_text(content, encoding="utf-8")
+
+                access = load_steam_access_import(path)
+
+                self.assertEqual(access["family_shared_appids"], expected_family_appids)
+                self.assertTrue(access["summary"]["advisory_only"])
+
+    def test_load_steam_access_import_rejects_malformed_payloads(self) -> None:
+        cases = [
+            ("{bad", "JSON local Steam Access inválido"),
+            (json.dumps(["10"]), "debe ser un objeto JSON"),
+            (json.dumps({"unexpected": []}), "debe incluir"),
+            (json.dumps({"steam_access": ["10"]}), "steam_access debe ser un objeto JSON"),
+        ]
+
+        with TemporaryDirectory() as temp_dir:
+            for index, (content, expected_error) in enumerate(cases):
+                path = Path(temp_dir) / f"bad_steam_access_{index}.json"
+                path.write_text(content, encoding="utf-8")
+
+                with self.assertRaisesRegex(ValueError, expected_error):
+                    load_steam_access_import(path)
 
     def test_load_local_play_access_import_accepts_common_json_shapes(self) -> None:
         cases = [

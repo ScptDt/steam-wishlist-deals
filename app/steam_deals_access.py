@@ -14,10 +14,19 @@ _LOCAL_PLAY_ACCESS_COLLECTION_KEYS = (
     "library",
 )
 _LOCAL_PLAY_ACCESS_DEFAULT_SOURCE = "local_play_access_import"
+_STEAM_ACCESS_IMPORT_DEFAULT_SOURCE = "steam_access_import"
+_STEAM_ACCESS_COLLECTION_KEYS = ("owned_appids", "family_shared_appids", "wishlist_appids")
+_STEAM_ACCESS_WRAPPER_KEYS = ("steam_access_import", "steam_access", "access")
 
 
 def _clean_text(value) -> str:
     return str(value or "").strip()
+
+
+def _metadata_text(value) -> str:
+    if isinstance(value, (str, int, float)):
+        return _clean_text(value)
+    return ""
 
 
 def _record_appid(record) -> str:
@@ -57,6 +66,123 @@ def _records(records) -> list[dict]:
 
 def _looks_like_appid_map(payload: dict) -> bool:
     return bool(payload) and all(str(key).strip().isdigit() for key in payload)
+
+
+def _numeric_appid(value) -> str:
+    appid = _clean_text(value)
+    if not appid.isdigit():
+        return ""
+    if int(appid) <= 0:
+        return ""
+    return appid
+
+
+def _dedupe_appids(values) -> list[str]:
+    appids: list[str] = []
+    seen: set[str] = set()
+    for record in _records(values):
+        appid = _numeric_appid(_record_appid(record))
+        if not appid or appid in seen:
+            continue
+        seen.add(appid)
+        appids.append(appid)
+    return appids
+
+
+def _steam_access_payload(payload) -> dict:
+    if payload is None:
+        return {}
+    if not isinstance(payload, dict):
+        raise ValueError("import Steam Access debe ser un objeto JSON")
+    for key in _STEAM_ACCESS_WRAPPER_KEYS:
+        if key in payload:
+            nested = payload[key]
+            if nested is None:
+                return {}
+            if not isinstance(nested, dict):
+                raise ValueError(f"{key} debe ser un objeto JSON")
+            return nested
+    return payload
+
+
+def _empty_steam_access_contract() -> dict:
+    return {
+        "schema": "steam_access_import_v1",
+        "source": _STEAM_ACCESS_IMPORT_DEFAULT_SOURCE,
+        "owned_appids": [],
+        "family_shared_appids": [],
+        "wishlist_appids": [],
+        "advisory_only": True,
+        "ranking_impact": "none",
+        "summary": {
+            "owned_count": 0,
+            "family_shared_count": 0,
+            "wishlist_count": 0,
+            "advisory_only": True,
+            "ranking_impact": "none",
+        },
+    }
+
+
+def _has_steam_access_signal(payload: dict) -> bool:
+    return any(key in payload for key in _STEAM_ACCESS_COLLECTION_KEYS)
+
+
+def normalize_steam_access_import(payload) -> dict:
+    """Normalize a local Steam access import into safe AppID-only signals."""
+    data = _steam_access_payload(payload)
+    contract = _empty_steam_access_contract()
+    if not data:
+        return contract
+    if not _has_steam_access_signal(data):
+        raise ValueError("import Steam Access debe incluir 'owned_appids', 'family_shared_appids' o 'wishlist_appids'")
+    source = _metadata_text(data.get("source")) or _STEAM_ACCESS_IMPORT_DEFAULT_SOURCE
+    owned_appids = _dedupe_appids(data.get("owned_appids"))
+    family_shared_appids = _dedupe_appids(data.get("family_shared_appids"))
+    wishlist_appids = _dedupe_appids(data.get("wishlist_appids"))
+    contract.update(
+        {
+            "source": source,
+            "owned_appids": owned_appids,
+            "family_shared_appids": family_shared_appids,
+            "wishlist_appids": wishlist_appids,
+            "summary": {
+                "owned_count": len(owned_appids),
+                "family_shared_count": len(family_shared_appids),
+                "wishlist_count": len(wishlist_appids),
+                "advisory_only": True,
+                "ranking_impact": "none",
+            },
+        }
+    )
+    for field in ("steamid", "generated_at", "observed_at", "imported_at", "provenance"):
+        if value := _metadata_text(data.get(field)):
+            contract[field] = value
+    return contract
+
+
+def load_steam_access_import(json_path: Path | str | None) -> dict:
+    """Load a local Steam access JSON import without login, cookies, tokens, or network."""
+    if json_path is None:
+        return _empty_steam_access_contract()
+    path = Path(json_path).expanduser()
+    try:
+        raw = path.read_text(encoding="utf-8")
+    except OSError as exc:
+        raise ValueError(f"No se pudo leer JSON local Steam Access ({path}): {exc}") from exc
+    if not raw.strip():
+        return _empty_steam_access_contract()
+    try:
+        payload = json.loads(raw)
+    except json.JSONDecodeError as exc:
+        raise ValueError(
+            "JSON local Steam Access inválido "
+            f"({path}): {exc.msg} en línea {exc.lineno}, columna {exc.colno}"
+        ) from exc
+    try:
+        return normalize_steam_access_import(payload)
+    except ValueError as exc:
+        raise ValueError(f"JSON local Steam Access inválido ({path}): {exc}") from exc
 
 
 def _local_play_access_records(payload) -> tuple[list[dict], dict]:
