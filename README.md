@@ -224,6 +224,28 @@ Shape mínima aceptada:
 
 También acepta lista directa, mapas `{ "appid": "Nombre" }`, y listas bajo `installed`, `playable`, `games`, `items` o `library`. Cuando un juego de tu wishlist aparece en ese import local pero no como owned/family, `play_access` puede marcarlo como `probable_family_shared` para revisión manual.
 
+Si ya tienes una lista explícita de AppIDs propios o disponibles por Steam Family, usa `--steam-access-json`. Este import también es **local y explícito**: no hace login, no lee cookies/tokens, no llama red y no escanea carpetas. Alimenta señales `owned`/`family_shared` para `play_access` y `wishlist_hygiene` sin cambiar score/ranking.
+
+```bash
+python3 steam_deals_generator.py --vanity gaben \
+  --steam-access-json ./steam-access-local.json
+```
+
+Shape mínima aceptada:
+
+```json
+{
+  "source": "steam_browser_helper_export",
+  "steamid": "76561198000000000",
+  "generated_at": "2026-06-03T12:00:00Z",
+  "owned_appids": ["10", "20"],
+  "family_shared_appids": ["30"],
+  "wishlist_appids": ["40"]
+}
+```
+
+La app solo conserva AppIDs y metadata segura. Campos como cookies, tokens, raw responses o nombres de familiares se omiten.
+
 Contrato completo y ejemplos: `docs/runbooks/wishlist-hygiene-multistore-contract.md`.
 
 ### Preferencias manuales del jugador (JSON local opt-in)
@@ -680,6 +702,7 @@ Flags más usados:
 | `--watchlist` | `add/remove/list` de precio objetivo |
 | `--csv` / `--md-frontmatter` | Exports extra para Sheets, Obsidian o Notion |
 | `--wishlist-external-matches-json` | Import local advisory-only para sugerencias `Revisar wishlist` |
+| `--play-access-json` / `--steam-access-json` | Imports locales para acceso jugable/Steam Family sin login/red |
 | `--max-workers` | Paralelismo de enrichment; default actual: 16 |
 | `--warm-cache` | Precalentar caché de precios sin generar reportes |
 | `--warm-cache-full` | Repetir warm-cache en pasadas resumibles con la misma caché |

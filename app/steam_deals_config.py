@@ -97,6 +97,10 @@ def build_parser() -> argparse.ArgumentParser:
         help="Ruta al JSON local de juegos instalados/jugables para play_access",
     )
     parser.add_argument(
+        "--steam-access-json",
+        help="Ruta al JSON local Steam Access con AppIDs owned/family/wishlist",
+    )
+    parser.add_argument(
         "--player-preferences-json",
         help="Ruta al JSON local opt-in de preferencias para player_behavior_profile",
     )
@@ -383,6 +387,9 @@ def _build_filters(args, cfg: dict, *, environ=None) -> dict:
         else None,
         "play_access_json": Path(args.play_access_json).expanduser()
         if args.play_access_json
+        else None,
+        "steam_access_json": Path(args.steam_access_json).expanduser()
+        if args.steam_access_json
         else None,
         "player_preferences_json": Path(args.player_preferences_json).expanduser()
         if args.player_preferences_json

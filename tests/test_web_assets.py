@@ -260,6 +260,27 @@ class WebAssetsTests(unittest.TestCase):
             app_js,
         )
 
+    def test_steam_access_import_is_visible_and_local_only(self) -> None:
+        index_html = (ROOT / "web" / "steam_deals" / "index.html").read_text(
+            encoding="utf-8"
+        )
+        app_js = (ROOT / "web" / "steam_deals" / "app.js").read_text(
+            encoding="utf-8"
+        )
+
+        self.assertIn("Steam Access local (JSON)", index_html)
+        self.assertIn('id="steam_access_json"', index_html)
+        self.assertIn("Import local explícito de AppIDs", index_html)
+        self.assertIn("No hace login", index_html)
+        self.assertIn("no lee cookies/tokens", index_html)
+        self.assertIn("no hace red", index_html)
+        self.assertIn("no borra ni cambia score/ranking", index_html)
+        self.assertIn("steam_access_json", app_js)
+        self.assertIn(
+            "'steam_access_json'",
+            app_js,
+        )
+
     def test_latest_report_recommendation_diagnostics_are_visible_and_advisory_only(self) -> None:
         app_js = (ROOT / "web" / "steam_deals" / "app.js").read_text(
             encoding="utf-8"

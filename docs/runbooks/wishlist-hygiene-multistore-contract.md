@@ -28,6 +28,7 @@ Contrato de decisión y uso para ampliar `wishlist_hygiene` con señales externa
 
 - Usa `external_matches` cuando el archivo viene de una biblioteca, orden, compra o bundle propio y quieres revisar si algo de la wishlist quizá ya está cubierto.
 - Usa `play_access` cuando el archivo lista juegos instalados o jugables localmente y quieres revisar acceso práctico sin compra nueva.
+- Usa `steam_access` cuando el archivo lista AppIDs propios o disponibles por Steam Family desde una fuente local explícita/helper futuro; no implica login ni cookies en la app.
 - Usa `external_offers`/ITAD solo para comparar precios externos; ese contrato vive en `docs/runbooks/multistore-price-comparison.md` y no alimenta ownership.
 - Un precio, catálogo público o bundle público puede ser contexto, pero debe quedar fuera de `external_owned`/`external_bundle_owned` salvo que exista evidencia local explícita del usuario.
 
@@ -189,6 +190,38 @@ Reglas de interpretación:
 - Payload vacío (`null`, `{}`, `[]`) no genera ruido; JSON malformado o shapes incorrectas fallan con error accionable.
 - Si un juego aparece en el import local pero no en owned/family, la señal visible esperada es `probable_family_shared`, no ownership definitivo.
 - No cambia score, ranking, filtros, defaults, wishlist deletion ni auto-exclusión.
+
+## Uso actual: import local `steam_access`
+
+El generator acepta un archivo local explícito con AppIDs propios o disponibles por Steam Family:
+
+```bash
+python3 steam_deals_generator.py --vanity gaben \
+  --steam-access-json ./steam-access-local.json
+```
+
+La Web UI usa el mismo flujo desde `Archivos opcionales` → `Steam Access local (JSON)`. La ruta se valida en preflight y no se expone en el JSON generado.
+
+Shape mínima:
+
+```json
+{
+  "source": "steam_browser_helper_export",
+  "steamid": "76561198000000000",
+  "generated_at": "2026-06-03T12:00:00Z",
+  "owned_appids": ["10", "20"],
+  "family_shared_appids": ["30"],
+  "wishlist_appids": ["40"]
+}
+```
+
+Reglas de interpretación:
+
+- El import es **local y opt-in**: no hay login directo, cookies, tokens, auto-scan, SteamKit2, scraping ni red real.
+- Solo se conservan AppIDs y metadata segura (`source`, `steamid`, timestamps/provenance simples).
+- Campos sensibles o sobredimensionados (`cookies`, tokens, raw responses, nombres de familiares) no forman parte del contrato público.
+- AppIDs inválidos se ignoran; duplicados se deduplican preservando orden.
+- `owned_appids` y `family_shared_appids` alimentan `play_access`/`wishlist_hygiene` como señales advisory-only; no cambian score, ranking, filtros, defaults, wishlist deletion ni auto-exclusión.
 
 ## Contrato actual que se debe preservar
 

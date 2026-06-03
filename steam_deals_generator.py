@@ -142,10 +142,12 @@ try:
     from steam_deals_access import (
         build_play_access_contract as _build_play_access_contract_impl,
         load_local_play_access_import as _load_local_play_access_import_impl,
+        load_steam_access_import as _load_steam_access_import_impl,
     )
 except Exception:
     _build_play_access_contract_impl = None
     _load_local_play_access_import_impl = None
+    _load_steam_access_import_impl = None
 
 
 try:
@@ -863,6 +865,42 @@ def load_local_play_access_import(json_path: Path | str | None) -> list[dict]:
     if _load_local_play_access_import_impl is None:
         raise RuntimeError("Play access module is not available")
     return _load_local_play_access_import_impl(json_path)
+
+
+def load_steam_access_import(json_path: Path | str | None) -> dict:
+    """Load explicit local Steam Access AppID-only records."""
+    if _load_steam_access_import_impl is None:
+        raise RuntimeError("Play access module is not available")
+    return _load_steam_access_import_impl(json_path)
+
+
+def _merge_appid_values(*sources) -> list[str]:
+    merged: list[str] = []
+    seen: set[str] = set()
+    for source in sources:
+        if not source:
+            continue
+        values = source.keys() if isinstance(source, dict) else source
+        for value in values:
+            appid = str(value or "").strip()
+            if not appid or appid in seen:
+                continue
+            seen.add(appid)
+            merged.append(appid)
+    return merged
+
+
+def merge_steam_access_sources(owned, family_appids, steam_access: dict | None) -> tuple[dict, list[str]]:
+    """Merge local Steam Access AppIDs into access-only owned/family sources."""
+    access_owned = dict(owned or {})
+    steam_access = steam_access or {}
+    for appid in _merge_appid_values(steam_access.get("owned_appids")):
+        access_owned.setdefault(appid, f"AppID {appid}")
+    access_family_appids = _merge_appid_values(
+        family_appids,
+        steam_access.get("family_shared_appids"),
+    )
+    return access_owned, access_family_appids
 
 
 def build_play_access_contract(wishlist, **kwargs):
@@ -4772,6 +4810,7 @@ def main():
     COMPARE_TARGETS = parse_compare_targets(FILTERS.get("compare"))
     WISHLIST_EXTERNAL_MATCHES_JSON = FILTERS.get("wishlist_external_matches_json")
     PLAY_ACCESS_JSON = FILTERS.get("play_access_json")
+    STEAM_ACCESS_JSON = FILTERS.get("steam_access_json")
     PLAYER_PREFERENCES_JSON = FILTERS.get("player_preferences_json")
     emit = print
     warm_cache_log_handle = None
@@ -4865,6 +4904,21 @@ def main():
         if local_play_access_records:
             emit(
                 f"  {_dim(f'Play access local: {len(local_play_access_records):,} registros')}"
+            )
+    steam_access_import = None
+    if STEAM_ACCESS_JSON:
+        try:
+            steam_access_import = load_steam_access_import(STEAM_ACCESS_JSON)
+        except ValueError as exc:
+            emit(f"{_err(str(exc))}")
+            return 1
+        steam_access_summary = (steam_access_import or {}).get("summary", {})
+        steam_access_count = int(steam_access_summary.get("owned_count", 0)) + int(
+            steam_access_summary.get("family_shared_count", 0)
+        )
+        if steam_access_count:
+            emit(
+                f"  {_dim(f'Steam Access local: {steam_access_count:,} señales owned/family')}"
             )
     player_manual_preferences = {}
     if PLAYER_PREFERENCES_JSON:
@@ -5094,6 +5148,11 @@ def main():
     # Biblioteca familiar (opcional)
     family_context = load_family_context(FAMILY_JSON, step_fn=step)
     family_renderer_kwargs = build_family_renderer_kwargs(family_context)
+    access_owned, access_family_appids = merge_steam_access_sources(
+        owned,
+        family_renderer_kwargs.get("family_appids"),
+        steam_access_import,
+    )
     itad_contract = build_generator_itad_contract(step)
     post_processing_contract = build_generator_post_processing_contract()
     engagement_contract = build_generator_engagement_contract(step)
@@ -5242,17 +5301,21 @@ def main():
     player_behavior_fit = build_player_behavior_fit(player_behavior_profile, behavioral_signals)
     decision_support = build_decision_support(player_behavior_profile, player_behavior_fit)
     play_access = None
-    if local_play_access_records:
+    steam_access_has_signals = bool(
+        (steam_access_import or {}).get("owned_appids")
+        or (steam_access_import or {}).get("family_shared_appids")
+    )
+    if local_play_access_records or steam_access_has_signals:
         play_access = build_play_access_contract(
             wishlist_appids,
-            owned=owned,
-            family_appids=family_renderer_kwargs.get("family_appids"),
+            owned=access_owned,
+            family_appids=access_family_appids,
             installed_or_playable_appids=local_play_access_records,
         )
     wishlist_hygiene = build_wishlist_hygiene_signals(
         wishlist_appids,
-        owned=owned,
-        family_appids=family_renderer_kwargs.get("family_appids"),
+        owned=access_owned,
+        family_appids=access_family_appids,
         library_games=have_on_sale,
         hltb_records=hltb_hours,
         external_matches=wishlist_external_matches,

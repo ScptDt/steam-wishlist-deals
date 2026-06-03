@@ -249,6 +249,21 @@ class GeneratedFilesServingTests(unittest.TestCase):
             "/tmp/play-access.json",
         )
 
+    def test_build_command_passes_steam_access_json(self) -> None:
+        cmd = build_command(
+            {
+                "vanity": "gaben",
+                "steam_access_json": " /tmp/steam-access.json ",
+            },
+            {},
+        )
+
+        self.assertIn("--steam-access-json", cmd)
+        self.assertEqual(
+            cmd[cmd.index("--steam-access-json") + 1],
+            "/tmp/steam-access.json",
+        )
+
     def test_build_command_passes_itad_external_offers_cache(self) -> None:
         cmd = build_command(
             {
@@ -404,6 +419,7 @@ class GeneratedFilesServingTests(unittest.TestCase):
         family_path = "/private/tmp/steamtools-family-missing.json"
         wishlist_matches_path = "/private/tmp/wishlist-external-missing.json"
         play_access_path = "/private/tmp/play-access-missing.json"
+        steam_access_path = "/private/tmp/steam-access-missing.json"
         itad_external_offers_cache_path = "/private/tmp/itad-external-offers-missing.json"
         output_path = "/srv/app/steamtools-output-secret"
 
@@ -416,6 +432,7 @@ class GeneratedFilesServingTests(unittest.TestCase):
                     "family_json": family_path,
                     "wishlist_external_matches_json": wishlist_matches_path,
                     "play_access_json": play_access_path,
+                    "steam_access_json": steam_access_path,
                     "itad_external_offers_cache": itad_external_offers_cache_path,
                     "output": output_path,
                 }
@@ -434,12 +451,14 @@ class GeneratedFilesServingTests(unittest.TestCase):
         self.assertNotIn(family_path, payload)
         self.assertNotIn(wishlist_matches_path, payload)
         self.assertNotIn(play_access_path, payload)
+        self.assertNotIn(steam_access_path, payload)
         self.assertNotIn(itad_external_offers_cache_path, payload)
         self.assertNotIn(output_path, payload)
         self.assertIn("[ruta]", payload)
         self.assertIn("ruta completa sin comillas", payload)
         self.assertIn("JSON de matches externos wishlist", payload)
         self.assertIn("JSON local de play_access", payload)
+        self.assertIn("JSON local Steam Access", payload)
         self.assertIn("caché ITAD external_offers local", payload)
 
     def test_preflight_reports_missing_play_access_json_redacted(self) -> None:
@@ -467,6 +486,32 @@ class GeneratedFilesServingTests(unittest.TestCase):
         self.assertFalse(handler.json["ok"])
         self.assertNotIn(play_access_path, payload)
         self.assertIn("JSON local de play_access", payload)
+
+    def test_preflight_reports_missing_steam_access_json_redacted(self) -> None:
+        original_load_config = web.load_config
+        original_find_hltb_csv_candidates = web.find_hltb_csv_candidates
+        steam_access_path = "/private/tmp/steam-access-missing.json"
+        web.load_config = lambda: {}
+        web.find_hltb_csv_candidates = lambda: []
+        handler = _FakeJsonHandler(
+            {
+                "config": {
+                    "vanity": "gaben",
+                    "steam_access_json": steam_access_path,
+                }
+            }
+        )
+        try:
+            Handler._serve_preflight(handler)
+        finally:
+            web.load_config = original_load_config
+            web.find_hltb_csv_candidates = original_find_hltb_csv_candidates
+
+        payload = str(handler.json)
+        self.assertEqual(handler.status, 200)
+        self.assertFalse(handler.json["ok"])
+        self.assertNotIn(steam_access_path, payload)
+        self.assertIn("JSON local Steam Access", payload)
         self.assertIn("[ruta]", payload)
 
     def test_preflight_requires_itad_key_and_cache_path_for_itad_refresh(self) -> None:

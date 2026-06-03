@@ -2207,6 +2207,16 @@ class AccessLayerTests(unittest.TestCase):
                 with self.assertRaisesRegex(ValueError, expected_error):
                     load_steam_access_import(path)
 
+    def test_merge_steam_access_sources_keeps_runtime_owned_separate(self) -> None:
+        owned_for_access, family_for_access = generator_module.merge_steam_access_sources(
+            {"10": "Owned API"},
+            {"20"},
+            {"owned_appids": ["10", "30", "30"], "family_shared_appids": ["20", "40"]},
+        )
+
+        self.assertEqual(owned_for_access, {"10": "Owned API", "30": "AppID 30"})
+        self.assertEqual(family_for_access, ["20", "40"])
+
     def test_load_local_play_access_import_accepts_common_json_shapes(self) -> None:
         cases = [
             ([{"appid": "10", "name": "Direct List"}], ["10"]),
