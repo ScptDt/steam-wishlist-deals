@@ -1657,6 +1657,15 @@ async function runPreflightUI(filtersOverride = null) {
 function buildWarmCacheContinueFilters() {
   const filters = Object.assign({}, getFilters());
   filters.warm_cache = true;
+  filters.warm_cache_full = false;
+  filters.no_cache = false;
+  return filters;
+}
+
+function buildWarmCacheFullFilters() {
+  const filters = Object.assign({}, getFilters());
+  filters.warm_cache = false;
+  filters.warm_cache_full = true;
   filters.no_cache = false;
   return filters;
 }
@@ -1664,6 +1673,7 @@ function buildWarmCacheContinueFilters() {
 function buildUpdatedCacheReportFilters() {
   const filters = Object.assign({}, getFilters());
   filters.warm_cache = false;
+  filters.warm_cache_full = false;
   filters.no_cache = false;
   return filters;
 }
@@ -1788,6 +1798,36 @@ function updateWarmCacheBackgroundBannerFromEvent(ev) {
     'Warm-cache en segundo plano',
     progress,
     'Puedes seguir revisando el último reporte mientras se revalida con --warm-cache, sin --no-cache.'
+  );
+}
+
+function updateFullWarmCacheBackgroundBannerFromEvent(ev) {
+  if (!ev) return;
+  if (ev.type === 'done') {
+    const ok = Number(ev.exit_code || 0) === 0;
+    setWarmCacheBackgroundBanner(
+      ok ? 'ok' : 'warn',
+      ok ? 'Full warm-cache finalizado' : 'Full warm-cache no completado',
+      ok
+        ? 'Las pasadas resumibles terminaron; genera un reporte normal para ver HTML/JSON con la caché actualizada.'
+        : 'Revisa el log antes de reintentar Completar warm-cache.',
+      ok
+        ? 'No se generó reporte automáticamente y no se usó --no-cache.'
+        : 'Se respetó el lock actual y la caché local se conserva.',
+      {showRefresh: ok, showReportAction: ok}
+    );
+    return;
+  }
+  if (ev.type !== 'progress') return;
+  const current = Number(ev.current || 0);
+  const total = Number(ev.total || 0);
+  const label = String(ev.label || 'Full warm-cache').trim();
+  const progress = total > 0 ? `[${current}/${total}] ${label}` : label;
+  setWarmCacheBackgroundBanner(
+    'progress',
+    'Full warm-cache en segundo plano',
+    progress,
+    'Repite pasadas con la misma caché usando --warm-cache-full, sin --no-cache y sin regenerar reportes automáticamente.'
   );
 }
 
@@ -5503,7 +5543,7 @@ function renderLatestCacheCoverage(report) {
   const showWarmCacheAction = hasDeferred || hasRetryableFinalFailures;
   const warmCacheActionLabel = hasDeferred ? 'Continuar warm-cache' : 'Reintentar fallidos elegibles';
   const warmCacheActionHint = hasDeferred
-    ? ''
+    ? '<div class="latest-cache-coverage-action-hint">Completar warm-cache repite pasadas con la misma caché usando --warm-cache-full, sin --no-cache y sin regenerar reportes automáticamente. Al terminar, genera un reporte normal con la caché actualizada.</div>'
     : '<div class="latest-cache-coverage-action-hint">Reintenta solo fallidos elegibles con la caché actual; sin --no-cache y sin eliminar juegos.</div>';
   const processed = latestCoverageCount(coverage.processed_count);
   const total = latestCoverageCount(coverage.refresh_candidate_count) || processed + deferred;
@@ -5529,6 +5569,7 @@ function renderLatestCacheCoverage(report) {
       ${showWarmCacheAction ? `
         <div class="latest-cache-coverage-actions">
           <button type="button" class="file-link file-link-button latest-cache-coverage-action" data-latest-action="continue-warm-cache">${escapeHtml(warmCacheActionLabel)}</button>
+          ${hasDeferred ? '<button type="button" class="file-link file-link-button latest-cache-coverage-action" data-latest-action="complete-warm-cache">Completar warm-cache</button>' : ''}
         </div>
         ${warmCacheActionHint}
         <div class="latest-cache-continue-status hidden" data-latest-cache-continue-status role="status" aria-live="polite"></div>
@@ -5611,6 +5652,59 @@ async function continueWarmCacheFromLatestReport(btn) {
   );
 }
 
+async function completeWarmCacheFromLatestReport(btn) {
+  const originalLabel = btn ? btn.textContent : 'Completar warm-cache';
+  if (btn) {
+    btn.textContent = 'Completando warm-cache...';
+    btn.setAttribute('aria-busy', 'true');
+    btn.classList.add('is-running');
+  }
+  setWarmCacheContinueStatus(
+    btn,
+    'Completando warm-cache: repitiendo pasadas con --warm-cache-full, misma caché y sin --no-cache.',
+    'progress'
+  );
+  setWarmCacheBackgroundBanner(
+    'progress',
+    'Full warm-cache en segundo plano',
+    'Repitiendo pasadas resumibles con la misma caché.',
+    'Usa --warm-cache-full, no fuerza --no-cache y no genera reportes automáticamente.'
+  );
+  const completed = await runSteamDealsUI({
+    filters: buildWarmCacheFullFilters(),
+    startLabel: 'Completando warm-cache...',
+    introLine: 'Completando warm-cache con pasadas resumibles (misma caché, sin --no-cache, sin reporte automático).',
+    conflictMessage: 'Ya hay una ejecucion en curso. Espera a que termine antes de completar warm-cache.',
+    triggerButton: btn,
+    preserveOutputFiles: true,
+    preserveLatestReportOnDone: true,
+    onEvent: updateFullWarmCacheBackgroundBannerFromEvent,
+  });
+  if (btn && btn.isConnected) {
+    btn.textContent = originalLabel;
+    btn.removeAttribute('aria-busy');
+    btn.classList.remove('is-running');
+    setWarmCacheContinueStatus(
+      btn,
+      completed
+        ? 'Full warm-cache finalizado. Genera un reporte normal con la caché actualizada para ver ofertas, Top Picks y recomendaciones recalculadas.'
+        : 'No se pudo completar warm-cache. Revisa el log; si ya hay una ejecución activa, espera a que termine.',
+      completed ? 'ok' : 'warn'
+    );
+  }
+  setWarmCacheBackgroundBanner(
+    completed ? 'ok' : 'warn',
+    completed ? 'Full warm-cache finalizado' : 'No se pudo completar warm-cache',
+    completed
+      ? 'Warm-cache no genera HTML/JSON por sí mismo; usa Generar reporte con caché actualizada.'
+      : 'Revisa el log; no se usó --no-cache y la caché local se conserva.',
+    completed
+      ? 'El reporte final debe ser una corrida normal separada para recalcular la vista con la caché actualizada.'
+      : 'Puedes reintentar cuando no haya otra ejecución activa.',
+    {showRefresh: completed, showReportAction: completed}
+  );
+}
+
 function bindLatestReportQuickActions() {
   const el = latestReportCardEl();
   if (!el) return;
@@ -5622,6 +5716,9 @@ function bindLatestReportQuickActions() {
   });
   el.querySelectorAll('[data-latest-action="continue-warm-cache"]').forEach((btn) => {
     btn.addEventListener('click', () => continueWarmCacheFromLatestReport(btn));
+  });
+  el.querySelectorAll('[data-latest-action="complete-warm-cache"]').forEach((btn) => {
+    btn.addEventListener('click', () => completeWarmCacheFromLatestReport(btn));
   });
 }
 

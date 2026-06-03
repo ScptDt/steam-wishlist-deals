@@ -799,10 +799,15 @@ def build_command(config: dict, filters: dict) -> list[str]:
     )
     if itad_external_offers_cache:
         cmd += ["--itad-external-offers-cache", itad_external_offers_cache]
+    warm_cache_full = bool(filters.get("warm_cache_full"))
     warm_cache = bool(filters.get("warm_cache"))
-    if warm_cache:
+    if warm_cache_full:
+        cmd.append("--warm-cache-full")
+        if filters.get("warm_cache_full_max_passes"):
+            cmd += ["--warm-cache-full-max-passes", str(filters["warm_cache_full_max_passes"])]
+    elif warm_cache:
         cmd.append("--warm-cache")
-    if filters.get("no_cache") and not warm_cache:
+    if filters.get("no_cache") and not (warm_cache or warm_cache_full):
         cmd.append("--no-cache")
     if filters.get("free_weekend_live"):
         cmd.append("--free-weekend-live")
