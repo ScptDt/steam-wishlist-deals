@@ -173,6 +173,16 @@ class GeneratedFilesServingTests(unittest.TestCase):
         self.assertEqual(cmd[cmd.index("--warm-cache-full-max-passes") + 1], "4")
         self.assertNotIn("--no-cache", cmd)
 
+    def test_build_command_updated_cache_report_is_normal_cached_run(self) -> None:
+        cmd = build_command(
+            {"vanity": "gaben"},
+            {"warm_cache": False, "warm_cache_full": False, "no_cache": False},
+        )
+
+        self.assertNotIn("--warm-cache", cmd)
+        self.assertNotIn("--warm-cache-full", cmd)
+        self.assertNotIn("--no-cache", cmd)
+
     def test_build_command_explicit_no_cache_still_requires_non_warm_cache_run(self) -> None:
         normal_cmd = build_command({"vanity": "gaben"}, {"no_cache": True})
         warm_cmd = build_command(
