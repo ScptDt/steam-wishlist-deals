@@ -31,7 +31,7 @@
 | `wishlist-hygiene-windows-validation.md` | Validar en Windows que `wishlist_hygiene` se vea en Web UI/reportes y que el import local opcional funcione como revisión | JSON `wishlist_hygiene.items`, sección `Revisar wishlist`, `external_matches` advisory-only |
 | `wishlist-hygiene-multistore-contract.md` | Consultar contrato y uso local de señales multi-store/play_access para `wishlist_hygiene` | `--wishlist-external-matches-json`, `--play-access-json`, shapes aceptadas, señales aceptables/rechazadas y guardrails advisory-only |
 | `multistore-price-comparison.md` | Planificar la comparativa de precios multi-tienda separada de `wishlist_hygiene` | Contrato `external_offers`, taxonomía de tiendas, ITAD/Fanatical, keyshops opt-in y no-checkout |
-| `behavioral-signals-contract.md` | Diseñar o auditar `behavioral_signals_v1`, `behavioral_explanations_v1`, consumidores visibles Plan F y `player_behavior_profile_v1` futuro | Taxonomía `data/behavioral_taxonomy_v1.json`, contrato advisory-only, degraded states y perfil local/opt-in JSON-only futuro |
+| `behavioral-signals-contract.md` | Diseñar o auditar `behavioral_signals_v1`, `behavioral_explanations_v1`, consumidores visibles Plan F, `player_behavior_profile_v1` y `player_behavior_fit_v1` | Taxonomía `data/behavioral_taxonomy_v1.json`, contrato advisory-only, degraded states, perfil local/opt-in y fit JSON-only |
 
 ## Selector rápido por wave/tipo
 

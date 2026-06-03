@@ -1,0 +1,65 @@
+{
+  "manual_preferences": {
+    "preferred_families": [
+      "coop_teamwork",
+      "collection_progression",
+      "comfort_cozy"
+    ],
+    "preferred_loops": [
+      "shared_objective_pressure",
+      "loot_chasing",
+      "daily_routine"
+    ],
+    "preferred_descriptors": [
+      "short_session",
+      "matchmaking_friendly",
+      "pause_friendly"
+    ],
+    "preferred_terms": [
+      "online co-op",
+      "loot",
+      "story rich"
+    ],
+    "tags": [
+      "Co-op",
+      "Deckbuilding",
+      "Survival"
+    ],
+    "genres": [
+      "Action",
+      "Strategy"
+    ],
+    "favorite_games": [
+      {
+        "tags": [
+          "Online Co-op",
+          "Horror"
+        ]
+      },
+      {
+        "steam_tags": [
+          "Loot",
+          "Action"
+        ]
+      }
+    ],
+    "comfort_games": [
+      {
+        "tags": [
+          "Cozy",
+          "Farming Sim"
+        ]
+      }
+    ],
+    "liked_games": [
+      {
+        "genres": [
+          "Strategy"
+        ],
+        "categories": [
+          "Co-op"
+        ]
+      }
+    ]
+  }
+}

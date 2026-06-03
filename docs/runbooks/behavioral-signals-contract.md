@@ -288,6 +288,27 @@ El primer input explícito de usuario para el perfil es `--player-preferences-js
 - descarta campos extra/debug antes de entrar al perfil y el JSON final sigue usando solo agregados/labels/conteos;
 - JSON inválido o shape top-level no soportado falla con error local accionable y no genera reporte parcial.
 
+Ejemplo de uso CLI:
+
+```bash
+python3 steam_deals_generator.py --vanity gaben \
+  --player-preferences-json ./mis-preferencias-jugador.json
+```
+
+Shape mínima:
+
+```json
+{
+  "manual_preferences": {
+    "preferred_families": ["coop_teamwork"],
+    "preferred_terms": ["online co-op", "loot"],
+    "favorite_games": [{"tags": ["Horror", "Online Co-op"]}]
+  }
+}
+```
+
+La plantilla editable versionada vive en `docs/player-preferences.example.json`. Copiarla a un archivo local personal antes de usarla; no versionar preferencias privadas. En `favorite_games`, `comfort_games` y `liked_games` solo se consumen señales agregables (`tags`, `steam_tags`, `genres`, `steam_genres`, `categories`, `steam_categories`); rutas locales, AppIDs, playtime, nombres y campos debug no entran al perfil final.
+
 ### Fit JSON-only entre perfil y señales de juego
 
 `player_behavior_fit_v1` es un payload top-level opcional que cruza `player_behavior_profile_v1` con `behavioral_signals_v1` por IDs de taxonomía. Reglas:
@@ -408,9 +429,9 @@ El helper debe:
 - ordenar de forma estable;
 - no incluir rutas locales, playtime crudo sensible, secretos ni datos personales no necesarios.
 
-## Player profile queda no implementado
+## Player profile implementado JSON-only
 
-`player_behavior_profile_v1` ya tiene contrato docs-only en este runbook, pero sigue sin implementación. La próxima implementación aceptable debe ser JSON-only, local/opt-in y con degradación explícita (`unavailable` o `insufficient_signals`) si faltan señales personales.
+`player_behavior_profile_v1` ya está implementado como payload JSON-only, top-level opcional, local/opt-in y con degradación explícita (`unavailable` o `insufficient_signals`) si faltan señales personales. `player_behavior_fit_v1` también está implementado como cruce cualitativo entre perfil y `behavioral_signals_v1`. Cualquier consumidor futuro debe aprobarse como slice separado y mantener `advisory_only=true` + `ranking_impact=none`.
 
 ## No-hacer v1
 
@@ -429,6 +450,7 @@ El helper debe:
 3. **JSON-only**: `generate_json` serializa `behavioral_signals` top-level y `summary.behavioral_signals_count`.
 4. **Explicaciones JSON-only**: `behavioral_explanations` traduce IDs a headlines/razones/cues compactos.
 5. **Plan F consumidores visibles**: explicación compacta en `Recomendaciones personalizadas` del HTML generado, Web UI, Markdown y Share HTML, usando solo `behavioral_explanations_v1` y con `ranking_impact=none`.
-6. **Player profile docs-only**: definir `player_behavior_profile_v1` local/opt-in, sin implementación ni UI visible.
-7. **Player profile JSON-only futuro**: helper puro + payload opcional si se aprueba el slice y existen fixtures suficientes.
-8. **Consumidores futuros**: discovery/decision support usando perfil + señales de juego, siempre en slices aprobados y sin score/ranking impact.
+6. **Player profile docs-only**: cerrado; define `player_behavior_profile_v1` local/opt-in, sin UI visible.
+7. **Player profile JSON-only**: cerrado; helper puro + payload opcional top-level, con `--player-preferences-json` para input manual explícito.
+8. **Player behavior fit JSON-only**: cerrado; cruza perfil + señales de juego con `fit_level` cualitativo y sin impacto en ranking.
+9. **Consumidores futuros**: discovery/decision support usando perfil + señales de juego, siempre en slices aprobados y sin score/ranking impact.

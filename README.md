@@ -226,6 +226,31 @@ También acepta lista directa, mapas `{ "appid": "Nombre" }`, y listas bajo `ins
 
 Contrato completo y ejemplos: `docs/runbooks/wishlist-hygiene-multistore-contract.md`.
 
+### Preferencias manuales del jugador (JSON local opt-in)
+
+Puedes aportar un JSON local de preferencias conductuales para que el export JSON incluya `player_behavior_profile` y, cuando haya matches con las señales del juego, `player_behavior_fit`. Es **advisory-only**: no cambia score, ranking, Top Picks, filtros, cache ni fetching.
+
+```bash
+python3 steam_deals_generator.py --vanity gaben \
+  --player-preferences-json ./mis-preferencias-jugador.json
+```
+
+Shape mínima aceptada:
+
+```json
+{
+  "manual_preferences": {
+    "preferred_families": ["coop_teamwork"],
+    "preferred_terms": ["online co-op", "loot"],
+    "favorite_games": [{"tags": ["Horror", "Online Co-op"]}]
+  }
+}
+```
+
+También acepta un objeto directo sin wrapper `manual_preferences`. Campos soportados: `preferred_families`, `preferred_loops`, `preferred_descriptors`, `preferred_terms`, `tags`, `genres`, `favorite_games`, `comfort_games` y `liked_games`. En listas de juegos, las señales útiles son `tags`, `steam_tags`, `genres`, `steam_genres`, `categories` y `steam_categories`; nombres, rutas, AppIDs, playtime y campos debug se ignoran/sanitizan.
+
+Plantilla editable: `docs/player-preferences.example.json`. Cópiala fuera del repo o renómbrala antes de poner preferencias personales. JSON inválido o shape no soportado falla localmente con un error accionable y no genera un reporte parcial.
+
 ### Warm cache headless
 
 Si quieres dejar una corrida de preparación en segundo plano sin abrir la Web UI o Desktop, usa:
@@ -335,6 +360,7 @@ El JSON está pensado para scripting y automatización local. Incluye, entre otr
 - `meta` / `inputs` / `summary`
 - `top_picks` con `recommendation` y `score_reasons`
 - `deals`, `watchlist_alerts`, `wishlist_hygiene`, `budget_result`, `compare_data`
+- señales advisory opcionales como `behavioral_signals`, `behavioral_explanations`, `player_behavior_profile` y `player_behavior_fit` cuando hay datos locales suficientes
 
 La Web UI también expone un endpoint local útil:
 
