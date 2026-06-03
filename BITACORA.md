@@ -1,6 +1,6 @@
 # Bitácora Operativa
 
-Ultima actualizacion: 2026-06-02
+Ultima actualizacion: 2026-06-03
 
 ## Proposito
 
@@ -79,6 +79,8 @@ La nota de inicio puede omitirse en `BITACORA.md` para cambios triviales que no 
 | 2026-04-16 | macOS | validado en CI (parcial) | Workflow `Desktop Cross-Platform Validation` OK en `macos-latest` (run `24487556896`): install deps, build desktop, `py_compile`, check fallback local y artifact `dist-macos-latest` publicado. Falta validacion manual en host macOS para apertura de `.app`, quarantine/codesign/notarizacion segun distribucion. | Ejecutar checklist manual macOS (apertura local, quarantine, codesign) y registrar incidencias/workarounds. |
 
 ## Bitacora
+
+- 2026-06-03: Cierre docs-only investigación/plan Steam Access / Family Import. Autor/ejecutor: OpenCoder. Resultado: `PENDIENTES.md` agrega el track funcional para detectar acceso jugable (`owned`, `family_shared`, `probable_family_shared`) y evitar compras innecesarias, separando OpenID seguro de Family real por helper/extensión. La decisión queda explícita: no copiar iconos, no pedir password, no capturar cookies/tokens, no scraping/login automation desde Python, no mutar wishlist/carrito y no tocar score/ranking/defaults al inicio. El plan queda dividido en slices: contrato JSON local, import app/CLI/Web, render/decisión advisory, OpenID v1, owned públicos, helper/extensión export JSON y endpoint local con pairing token solo si se aprueba. Evidencia: investigación pública de Steam OpenID/Web API/SteamDB BrowserExtension + revisión documental y `git diff --check -- PENDIENTES.md BITACORA.md` OK. Incidencias: ninguna. Siguiente seguimiento: Plan 1 `steam_access_import_v1` fixture-only si se aprueba, o volver a Plan 4 Web/App warm-cache si se retoma la prioridad anterior. Sin código runtime, red real, credenciales, cookies/tokens, endpoints nuevos, UI/render visible, `BG00G`, `--no-cache`, builds ni reportes generados.
 
 - 2026-06-03: Cierre docs-only plantilla `--player-preferences-json`. Autor/ejecutor: OpenCoder. Resultado: README documenta el uso CLI de preferencias manuales, shape mínima, campos permitidos y guardrails de privacidad; se agrega `docs/player-preferences.example.json` como plantilla editable con IDs válidos de taxonomía; `docs/runbooks/behavioral-signals-contract.md` elimina texto obsoleto de “no implementado”, agrega ejemplo de entrada opt-in y actualiza slices cerrados de profile/fit; `docs/runbooks/README.md` deja de marcar el perfil como futuro. Evidencia: `PYTHONDONTWRITEBYTECODE=1 .venv/bin/python -m json.tool docs/player-preferences.example.json >/tmp/opencode/player-preferences.example.json.check` y `git diff --check -- README.md docs/player-preferences.example.json docs/runbooks/behavioral-signals-contract.md docs/runbooks/README.md PENDIENTES.md BITACORA.md` OK. Incidencias: ninguna. Siguiente seguimiento: `decision_support_v1` JSON-only si se aprueba. Sin código runtime, UI/render visible, score/ranking/Top Picks/defaults/cache/fetching, red real, `BG00G`, `--no-cache`, builds ni reportes generados.
 
