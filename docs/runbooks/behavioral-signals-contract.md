@@ -29,6 +29,7 @@ Mover el producto hacia un sistema de **Discovery + Decision Support**:
 | `behavioral_signals_v1` | Helper puro + JSON interno | Clasifica juegos/deals usando la taxonomía y se expone como payload JSON opcional. |
 | `behavioral_explanations_v1` | JSON interno + consumidores Plan F | Consume `behavioral_signals_v1` para exponer headlines, razones y cues compactos reutilizables. |
 | `player_behavior_profile_v1` | JSON interno opcional | Perfila preferencias conductuales del usuario con señales locales/opt-in; se expone solo si hay preferencias útiles. |
+| `player_behavior_fit_v1` | JSON interno opcional | Cruza perfil del jugador con señales de juego por item, sin score numérico ni impacto en ranking. |
 | Decision support | Futuro | Consume señales de juego + perfil + availability/backlog para sugerir comprar/esperar/revisar. |
 
 ## Contrato JSON
@@ -207,7 +208,7 @@ Plan F define consumidores visibles sin cambiar el contrato JSON. El objetivo no
 
 Usar solo si existen y el usuario no las deshabilitó:
 
-- `manual_preferences`: juegos favoritos, comfort games, disliked/avoid o relaciones `similar_to` agregadas explícitamente.
+- `manual_preferences`: juegos favoritos, comfort games, disliked/avoid o relaciones `similar_to` agregadas explícitamente. En CLI puede entrar como JSON local opt-in mediante `--player-preferences-json`.
 - `local_activity`: actividad reciente/local ya importada o disponible en el reporte, preferentemente agregada por tags/families/loops.
 - `library_summary`: biblioteca/owned/family ya usada por el reporte, agregada por géneros/tags/families; no afirmar ownership externo por precios.
 - `wishlist_terms`: señales de la wishlist/deals actuales ya cargados, sin fetch adicional.
@@ -275,7 +276,28 @@ El primer slice **JSON-only** quedó implementado el 2026-06-02:
 3. resumen `summary.player_behavior_profile_status` y `summary.player_behavior_profile_sources_count` solo cuando el payload se serializa;
 4. sin UI visible, sin score/ranking, sin cambios de Top Picks y sin red extra.
 
-Siguientes slices posibles deben mantenerse separados: hardening de reasons/evidence, entrada opt-in real para `manual_preferences`, fit JSON-only entre perfil y señales de juego, y solo después un consumidor visible con decisión explícita de UX/privacidad.
+Siguientes slices posibles deben mantenerse separados: documentación/plantillas de ejemplo para preferencias manuales, decision-support JSON-only sobre disponibilidad/backlog, y solo después un consumidor visible con decisión explícita de UX/privacidad.
+
+### Entrada local opt-in de preferencias manuales
+
+El primer input explícito de usuario para el perfil es `--player-preferences-json <ruta>`. Reglas:
+
+- lee solo un archivo JSON local proporcionado por el usuario; no hace red ni persistencia automática;
+- acepta un objeto directo o `{ "manual_preferences": { ... } }`;
+- normaliza solo campos permitidos (`preferred_families`, `preferred_loops`, `preferred_descriptors`, `preferred_terms`, `tags`, `genres`, `favorite_games`, `comfort_games`, `liked_games`);
+- descarta campos extra/debug antes de entrar al perfil y el JSON final sigue usando solo agregados/labels/conteos;
+- JSON inválido o shape top-level no soportado falla con error local accionable y no genera reporte parcial.
+
+### Fit JSON-only entre perfil y señales de juego
+
+`player_behavior_fit_v1` es un payload top-level opcional que cruza `player_behavior_profile_v1` con `behavioral_signals_v1` por IDs de taxonomía. Reglas:
+
+- `advisory_only=true` y `ranking_impact=none` obligatorios;
+- no produce score numérico, no modifica `score`, `personalized_score`, Top Picks, orden ni filtros;
+- usa labels/IDs de taxonomía para `matched_families`, `matched_loops` y `matched_descriptors`;
+- `fit_level` es cualitativo (`weak`, `medium`, `strong`);
+- se omite si no hay perfil útil, señales de juego útiles o matches entre ambos;
+- no expone rutas locales, playtime crudo, AppIDs personales ni campos debug del perfil.
 
 ## Estados y degradación
 

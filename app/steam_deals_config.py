@@ -97,6 +97,10 @@ def build_parser() -> argparse.ArgumentParser:
         help="Ruta al JSON local de juegos instalados/jugables para play_access",
     )
     parser.add_argument(
+        "--player-preferences-json",
+        help="Ruta al JSON local opt-in de preferencias para player_behavior_profile",
+    )
+    parser.add_argument(
         "--itad-key", help="IsThereAnyDeal API Key (para mínimo histórico)"
     )
     parser.add_argument(
@@ -379,6 +383,9 @@ def _build_filters(args, cfg: dict, *, environ=None) -> dict:
         else None,
         "play_access_json": Path(args.play_access_json).expanduser()
         if args.play_access_json
+        else None,
+        "player_preferences_json": Path(args.player_preferences_json).expanduser()
+        if args.player_preferences_json
         else None,
         "itad_external_offers_cache": Path(itad_external_offers_cache).expanduser()
         if itad_external_offers_cache

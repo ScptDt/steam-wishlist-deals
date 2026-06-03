@@ -10,6 +10,7 @@ from app.steam_deals_tags import steam_tag_key
 BEHAVIORAL_SIGNALS_SCHEMA = "behavioral_signals_v1"
 BEHAVIORAL_EXPLANATIONS_SCHEMA = "behavioral_explanations_v1"
 PLAYER_BEHAVIOR_PROFILE_SCHEMA = "player_behavior_profile_v1"
+PLAYER_BEHAVIOR_FIT_SCHEMA = "player_behavior_fit_v1"
 BEHAVIORAL_TAXONOMY_SCHEMA = "behavioral_taxonomy_v1"
 DEFAULT_BEHAVIORAL_TAXONOMY_PATH = (
     Path(__file__).resolve().parents[1] / "data" / "behavioral_taxonomy_v1.json"
@@ -50,6 +51,21 @@ _PROFILE_ACTIVITY_FIELDS = (
     "total_hours",
 )
 _PROFILE_PREFERRED_LIMIT = 5
+_MANUAL_PREFERENCE_ID_FIELDS = {
+    "preferred_families": "preferred_families",
+    "families": "preferred_families",
+    "preferred_loops": "preferred_loops",
+    "behavioral_loops": "preferred_loops",
+    "preferred_descriptors": "preferred_descriptors",
+    "descriptors": "preferred_descriptors",
+}
+_MANUAL_PREFERENCE_TERM_FIELDS = {
+    "preferred_terms": "preferred_terms",
+    "terms": "preferred_terms",
+    "tags": "tags",
+    "genres": "genres",
+}
+_MANUAL_PREFERENCE_GAME_FIELDS = ("favorite_games", "comfort_games", "liked_games")
 _TERM_FIELDS = {
     "tags": "steam_tags",
     "steam_tags": "steam_tags",
@@ -212,6 +228,7 @@ def _empty_player_profile(status: str, reason: str, taxonomy: dict | None = None
         "schema": PLAYER_BEHAVIOR_PROFILE_SCHEMA,
         "status": status,
         "reason": reason,
+        "reasons": [reason] if reason else [],
         "advisory_only": True,
         "ranking_impact": "none",
         "profile_scope": "local_run",
@@ -236,6 +253,30 @@ def _empty_player_profile(status: str, reason: str, taxonomy: dict | None = None
             "wishlist_terms_count": 0,
             "personalized_profile_terms_count": 0,
         },
+        "limitations": list(_PROFILE_LIMITATIONS),
+    }
+
+
+def _empty_player_fit(status: str, reason: str, taxonomy: dict | None = None) -> dict:
+    return {
+        "schema": PLAYER_BEHAVIOR_FIT_SCHEMA,
+        "source_schemas": [PLAYER_BEHAVIOR_PROFILE_SCHEMA, BEHAVIORAL_SIGNALS_SCHEMA],
+        "status": status,
+        "reason": reason,
+        "reasons": [reason] if reason else [],
+        "advisory_only": True,
+        "ranking_impact": "none",
+        "summary": {
+            "items_count": 0,
+            "families_count": 0,
+            "loops_count": 0,
+            "descriptors_count": 0,
+            "confidence": "unknown",
+            "advisory_only": True,
+            "ranking_impact": "none",
+            **_taxonomy_summary(taxonomy),
+        },
+        "items": [],
         "limitations": list(_PROFILE_LIMITATIONS),
     }
 
@@ -303,6 +344,68 @@ def load_behavioral_taxonomy(json_path: Path | str | None = None) -> dict:
             f"behavioral taxonomy JSON inválido: {exc.msg} en línea {exc.lineno}, columna {exc.colno}"
         ) from exc
     return validate_behavioral_taxonomy(payload)
+
+
+def _manual_preference_records(value: Any) -> list[dict]:
+    records = []
+    for record in _as_records(value):
+        item = {
+            field: _terms_from_value(record.get(field))
+            for field in _TERM_FIELDS
+            if _terms_from_value(record.get(field))
+        }
+        if item:
+            records.append(item)
+    return records
+
+
+def normalize_player_manual_preferences(payload: Any) -> dict:
+    """Normalize explicit local player preferences into allowed profile signals."""
+    if payload in (None, ""):
+        return {}
+    if not isinstance(payload, dict):
+        raise ValueError("debe ser un objeto JSON")
+    source = payload.get("manual_preferences") if isinstance(payload.get("manual_preferences"), dict) else payload
+    if not isinstance(source, dict):
+        raise ValueError("manual_preferences debe ser un objeto JSON")
+    normalized: dict[str, Any] = {}
+    for field, target in _MANUAL_PREFERENCE_ID_FIELDS.items():
+        values = _profile_terms_from_value(source.get(field))
+        if values:
+            normalized.setdefault(target, []).extend(values)
+    for field, target in _MANUAL_PREFERENCE_TERM_FIELDS.items():
+        values = _profile_terms_from_value(source.get(field))
+        if values:
+            normalized.setdefault(target, []).extend(values)
+    for field in _MANUAL_PREFERENCE_GAME_FIELDS:
+        records = _manual_preference_records(source.get(field))
+        if records:
+            normalized[field] = records
+    return normalized
+
+
+def load_player_manual_preferences(json_path: Path | str | None) -> dict:
+    """Load explicit local player preference JSON without network access."""
+    if json_path is None:
+        return {}
+    path = Path(json_path).expanduser()
+    try:
+        raw = path.read_text(encoding="utf-8")
+    except OSError as exc:
+        raise ValueError(f"No se pudo leer JSON de preferencias del jugador ({path}): {exc}") from exc
+    if not raw.strip():
+        return {}
+    try:
+        payload = json.loads(raw)
+    except json.JSONDecodeError as exc:
+        raise ValueError(
+            "JSON de preferencias del jugador inválido "
+            f"({path}): {exc.msg} en línea {exc.lineno}, columna {exc.colno}"
+        ) from exc
+    try:
+        return normalize_player_manual_preferences(payload)
+    except ValueError as exc:
+        raise ValueError(f"JSON de preferencias del jugador inválido ({path}): {exc}") from exc
 
 
 def _resolve_taxonomy(taxonomy: dict | None, taxonomy_path: Path | str | None) -> tuple[dict | None, str | None]:
@@ -688,7 +791,7 @@ def _profile_ingest_personalized_profile(buckets: dict, mappings: dict[str, dict
     profile = payload.get("profile") if isinstance(payload.get("profile"), dict) else payload
     if not isinstance(profile, dict):
         return 0
-    terms = _profile_terms_from_value(profile.get("activity_terms"))
+    terms = _profile_terms_from_summary(profile)
     terms.extend(_profile_terms_from_summary(profile.get("library_summary")))
     return _profile_ingest_terms(buckets, mappings, terms, "personalized_recommendations.profile")
 
@@ -745,6 +848,17 @@ def _profile_overall_confidence(status: str, sources: list[str], has_manual: boo
     return "medium"
 
 
+def _player_profile_gap_reasons(sources: list[str]) -> list[str]:
+    reasons: list[str] = []
+    if "manual_preferences" not in sources:
+        reasons.append("manual_preferences_missing")
+    if "local_activity" not in sources:
+        reasons.append("local_activity_unavailable")
+    if "library_summary" not in sources:
+        reasons.append("library_summary_unavailable")
+    return reasons or ["insufficient_personal_signals"]
+
+
 def _player_profile_contract(
     buckets: dict,
     taxonomy: dict,
@@ -783,7 +897,9 @@ def _player_profile_contract(
         "limitations": list(_PROFILE_LIMITATIONS),
     }
     if status == "partial":
-        payload["reason"] = "manual_preferences_missing" if manual_matches <= 0 else "insufficient_personal_signals"
+        reasons = _player_profile_gap_reasons(sources)
+        payload["reason"] = reasons[0]
+        payload["reasons"] = reasons
     return payload
 
 
@@ -845,6 +961,145 @@ def build_player_behavior_profile(
     if not any(buckets[key] for key in buckets):
         return _empty_player_profile("insufficient_signals", "insufficient_personal_signals", taxonomy)
     return _player_profile_contract(buckets, taxonomy, source_signals, evidence, manual_matches)
+
+
+def _fit_profile_records(profile: dict, key: str, taxonomy: dict, section: str) -> dict[str, dict]:
+    records: dict[str, dict] = {}
+    for record in _as_records(profile.get(key)):
+        entry_id = _profile_taxonomy_id(taxonomy, section, record.get("id"))
+        if not entry_id or entry_id in records:
+            continue
+        strength = record.get("strength") if record.get("strength") in {"weak", "medium", "strong"} else "weak"
+        confidence = record.get("confidence") if record.get("confidence") in _CONFIDENCE_RANK else "unknown"
+        records[entry_id] = {
+            "id": entry_id,
+            "label": _taxonomy_label(taxonomy, section, entry_id),
+            "strength": strength,
+            "confidence": confidence,
+        }
+    return records
+
+
+def _fit_profile_maps(profile: dict, taxonomy: dict) -> dict[str, dict[str, dict]]:
+    return {
+        "families": _fit_profile_records(profile, "preferred_families", taxonomy, "families"),
+        "behavioral_loops": _fit_profile_records(profile, "preferred_loops", taxonomy, "behavioral_loops"),
+        "descriptors": _fit_profile_records(profile, "preferred_descriptors", taxonomy, "descriptors"),
+    }
+
+
+def _fit_matched_records(ids: list[str], profile_records: dict[str, dict]) -> list[dict]:
+    return [dict(profile_records[entry_id]) for entry_id in ids if entry_id in profile_records]
+
+
+def _fit_level(families: list[dict], loops: list[dict], descriptors: list[dict]) -> str:
+    matched_groups = sum(1 for values in (families, loops, descriptors) if values)
+    matched_count = len(families) + len(loops) + len(descriptors)
+    if matched_groups >= 2 and matched_count >= 3:
+        return "strong"
+    if matched_groups >= 2 or matched_count >= 2:
+        return "medium"
+    return "weak"
+
+
+def _fit_confidence(signal_item: dict, matches: list[dict]) -> str:
+    confidences = [signal_item.get("confidence")]
+    confidences.extend(record.get("confidence") for record in matches)
+    confidence = _confidence(confidences)
+    return "low" if confidence == "unknown" else confidence
+
+
+def _fit_item(signal_item: dict, profile_maps: dict[str, dict[str, dict]], taxonomy: dict) -> dict | None:
+    appid = _record_appid(signal_item)
+    if not appid:
+        return None
+    family_ids = _valid_signal_ids(signal_item, "families", taxonomy["families"].keys())
+    loop_ids = _valid_signal_ids(signal_item, "behavioral_loops", taxonomy["behavioral_loops"].keys())
+    descriptor_ids = _valid_signal_ids(signal_item, "descriptors", taxonomy["descriptors"].keys())
+    families = _fit_matched_records(family_ids, profile_maps["families"])
+    loops = _fit_matched_records(loop_ids, profile_maps["behavioral_loops"])
+    descriptors = _fit_matched_records(descriptor_ids, profile_maps["descriptors"])
+    if not (families or loops or descriptors):
+        return None
+    matches = [*families, *loops, *descriptors]
+    item = {
+        "appid": appid,
+        "fit_level": _fit_level(families, loops, descriptors),
+        "confidence": _fit_confidence(signal_item, matches),
+        "matched_families": families,
+        "matched_loops": loops,
+        "matched_descriptors": descriptors,
+        "reason_codes": _ordered(
+            (
+                code
+                for code, values in (
+                    ("profile_family_match", families),
+                    ("profile_loop_match", loops),
+                    ("profile_descriptor_match", descriptors),
+                )
+                if values
+            ),
+            ("profile_family_match", "profile_loop_match", "profile_descriptor_match"),
+        ),
+    }
+    if name := _record_name(signal_item):
+        item["name"] = name
+    return item
+
+
+def _player_fit_contract(items: list[dict], taxonomy: dict) -> dict:
+    return {
+        "schema": PLAYER_BEHAVIOR_FIT_SCHEMA,
+        "source_schemas": [PLAYER_BEHAVIOR_PROFILE_SCHEMA, BEHAVIORAL_SIGNALS_SCHEMA],
+        "status": "available",
+        "advisory_only": True,
+        "ranking_impact": "none",
+        "summary": {
+            "items_count": len(items),
+            "families_count": len({entry["id"] for item in items for entry in item.get("matched_families", [])}),
+            "loops_count": len({entry["id"] for item in items for entry in item.get("matched_loops", [])}),
+            "descriptors_count": len({entry["id"] for item in items for entry in item.get("matched_descriptors", [])}),
+            "confidence": _summary_confidence(items),
+            "advisory_only": True,
+            "ranking_impact": "none",
+            **_taxonomy_summary(taxonomy),
+        },
+        "items": items,
+        "limitations": list(_PROFILE_LIMITATIONS),
+    }
+
+
+def build_player_behavior_fit(
+    player_behavior_profile: Any,
+    behavioral_signals: Any,
+    *,
+    taxonomy: dict | None = None,
+    taxonomy_path: Path | str | None = None,
+) -> dict:
+    """Build advisory item-level fit between a local player profile and game signals."""
+    taxonomy, taxonomy_error = _resolve_taxonomy(taxonomy, taxonomy_path)
+    if taxonomy_error:
+        return _empty_player_fit("unavailable", taxonomy_error)
+    assert taxonomy is not None
+    if not isinstance(player_behavior_profile, dict) or player_behavior_profile.get("schema") != PLAYER_BEHAVIOR_PROFILE_SCHEMA:
+        return _empty_player_fit("unavailable", "player_profile_unavailable", taxonomy)
+    if player_behavior_profile.get("status") not in {"available", "partial"}:
+        return _empty_player_fit("insufficient_signals", "player_profile_insufficient", taxonomy)
+    if not isinstance(behavioral_signals, dict) or behavioral_signals.get("schema") != BEHAVIORAL_SIGNALS_SCHEMA:
+        return _empty_player_fit("unavailable", "behavioral_signals_unavailable", taxonomy)
+    if behavioral_signals.get("status") not in {"available", "partial"}:
+        return _empty_player_fit("insufficient_signals", "behavioral_signals_insufficient", taxonomy)
+    profile_maps = _fit_profile_maps(player_behavior_profile, taxonomy)
+    if not any(profile_maps.values()):
+        return _empty_player_fit("insufficient_signals", "player_profile_insufficient", taxonomy)
+    items = [
+        item
+        for item in (_fit_item(signal, profile_maps, taxonomy) for signal in _signal_items(behavioral_signals))
+        if item
+    ]
+    if not items:
+        return _empty_player_fit("insufficient_signals", "insufficient_behavioral_fit_matches", taxonomy)
+    return _player_fit_contract(items, taxonomy)
 
 
 def build_behavioral_signals(

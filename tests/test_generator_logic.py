@@ -46,8 +46,11 @@ from steam_deals_access import (
 from steam_deals_behavioral import (
     build_behavioral_explanations as module_build_behavioral_explanations,
     build_behavioral_signals as module_build_behavioral_signals,
+    build_player_behavior_fit as module_build_player_behavior_fit,
     build_player_behavior_profile as module_build_player_behavior_profile,
+    load_player_manual_preferences as module_load_player_manual_preferences,
     load_behavioral_taxonomy as module_load_behavioral_taxonomy,
+    normalize_player_manual_preferences as module_normalize_player_manual_preferences,
     validate_behavioral_taxonomy as module_validate_behavioral_taxonomy,
 )
 from steam_deals_recommendations import (
@@ -202,6 +205,7 @@ from steam_deals_generator import (
     build_gift_ideas,
     build_wishlist_hygiene_signals,
     load_local_play_access_import as generator_load_local_play_access_import,
+    load_player_manual_preferences as generator_load_player_manual_preferences,
     load_wishlist_external_matches,
     compute_budget_picks,
     compute_deal_comparison,
@@ -1343,9 +1347,37 @@ class BehavioralSignalsTests(unittest.TestCase):
 
         self.assertEqual(payload["status"], "partial")
         self.assertEqual(payload["reason"], "manual_preferences_missing")
+        self.assertIn("local_activity_unavailable", payload["reasons"])
+        self.assertIn("library_summary_unavailable", payload["reasons"])
         self.assertEqual(payload["confidence"], "low")
         self.assertEqual(payload["source_signals"], ["wishlist_terms"])
         self.assertTrue(any(item["id"] == "horror_tension" for item in payload["preferred_families"]))
+
+    def test_build_player_behavior_profile_uses_personalized_profile_defensively(self) -> None:
+        payload = module_build_player_behavior_profile(
+            personalized_recommendations={
+                "profile": {
+                    "activity_terms": [{"term": "Co-op", "weight": 4}],
+                    "library_summary": {
+                        "top_terms": [{"term": "Horror", "weight": 2}],
+                        "genre_distribution": None,
+                        "local_path": "/home/example-user/SteamTools/private.json",
+                    },
+                },
+                "raw_debug": {"playtime_2weeks": 999, "appid": "1966720"},
+            },
+        )
+
+        dumped = json.dumps(payload)
+
+        self.assertEqual(payload["status"], "partial")
+        self.assertEqual(payload["source_signals"], ["personalized_recommendations.profile"])
+        self.assertIn("manual_preferences_missing", payload["reasons"])
+        self.assertTrue(any(item["id"] == "coop_teamwork" for item in payload["preferred_families"]))
+        self.assertTrue(any(item["id"] == "horror_tension" for item in payload["preferred_families"]))
+        self.assertNotIn("/home/example-user", dumped)
+        self.assertNotIn("playtime_2weeks", dumped)
+        self.assertNotIn("1966720", dumped)
 
     def test_build_player_behavior_profile_degrades_without_supported_personal_signals(self) -> None:
         payload = module_build_player_behavior_profile(
@@ -1368,6 +1400,112 @@ class BehavioralSignalsTests(unittest.TestCase):
         self.assertEqual(opted_out["reason"], "profile_opted_out")
         self.assertEqual(invalid["status"], "unavailable")
         self.assertEqual(invalid["reason"], "taxonomy_invalid")
+
+    def test_normalize_player_manual_preferences_accepts_wrapper_and_allowed_fields(self) -> None:
+        payload = module_normalize_player_manual_preferences(
+            {
+                "manual_preferences": {
+                    "families": ["coop_teamwork"],
+                    "behavioral_loops": ["shared_objective_pressure"],
+                    "descriptors": ["short_session"],
+                    "terms": ["Co-op"],
+                    "favorite_games": [
+                        {
+                            "appid": "1966720",
+                            "name": "Lethal Company",
+                            "tags": ["Horror", "Online Co-op"],
+                            "local_path": "/home/example-user/private.json",
+                            "playtime_2weeks": 180,
+                        }
+                    ],
+                    "debug_secret": "SECRET",
+                }
+            }
+        )
+
+        dumped = json.dumps(payload)
+
+        self.assertEqual(payload["preferred_families"], ["coop_teamwork"])
+        self.assertEqual(payload["preferred_loops"], ["shared_objective_pressure"])
+        self.assertEqual(payload["preferred_descriptors"], ["short_session"])
+        self.assertEqual(payload["preferred_terms"], ["Co-op"])
+        self.assertEqual(payload["favorite_games"], [{"tags": ["Horror", "Online Co-op"]}])
+        self.assertNotIn("1966720", dumped)
+        self.assertNotIn("/home/example-user", dumped)
+        self.assertNotIn("SECRET", dumped)
+        self.assertNotIn("playtime_2weeks", dumped)
+
+    def test_load_player_manual_preferences_handles_empty_and_invalid_json(self) -> None:
+        with TemporaryDirectory() as temp_dir:
+            empty_path = Path(temp_dir) / "empty.json"
+            invalid_path = Path(temp_dir) / "invalid.json"
+            empty_path.write_text("  ", encoding="utf-8")
+            invalid_path.write_text("{bad", encoding="utf-8")
+
+            self.assertEqual(module_load_player_manual_preferences(empty_path), {})
+            self.assertEqual(generator_load_player_manual_preferences(empty_path), {})
+            with self.assertRaises(ValueError):
+                module_load_player_manual_preferences(invalid_path)
+
+    def test_load_player_manual_preferences_rejects_unsupported_top_level_shape(self) -> None:
+        with TemporaryDirectory() as temp_dir:
+            json_path = Path(temp_dir) / "preferences.json"
+            json_path.write_text(json.dumps([{"tags": ["Co-op"]}]), encoding="utf-8")
+
+            with self.assertRaises(ValueError):
+                module_load_player_manual_preferences(json_path)
+
+    def test_build_player_behavior_fit_matches_profile_to_game_signals(self) -> None:
+        profile = module_build_player_behavior_profile(
+            manual_preferences={
+                "preferred_families": ["coop_teamwork"],
+                "preferred_loops": ["shared_objective_pressure"],
+                "preferred_terms": ["Co-op"],
+            }
+        )
+        signals = module_build_behavioral_signals(
+            [
+                {
+                    "appid": "1966720",
+                    "name": "Lethal Company",
+                    "tags": ["Co-op", "Online Co-op", "Horror"],
+                }
+            ]
+        )
+
+        payload = module_build_player_behavior_fit(profile, signals)
+        item = payload["items"][0]
+        dumped = json.dumps(payload)
+
+        self.assertEqual(payload["schema"], "player_behavior_fit_v1")
+        self.assertEqual(payload["source_schemas"], ["player_behavior_profile_v1", "behavioral_signals_v1"])
+        self.assertEqual(payload["status"], "available")
+        self.assertTrue(payload["advisory_only"])
+        self.assertEqual(payload["ranking_impact"], "none")
+        self.assertEqual(payload["summary"]["items_count"], 1)
+        self.assertEqual(item["appid"], "1966720")
+        self.assertEqual(item["fit_level"], "strong")
+        self.assertTrue(any(record["id"] == "coop_teamwork" for record in item["matched_families"]))
+        self.assertTrue(any(record["id"] == "shared_objective_pressure" for record in item["matched_loops"]))
+        self.assertIn("profile_family_match", item["reason_codes"])
+        self.assertNotIn("playtime_2weeks", dumped)
+        self.assertNotIn("player_behavior_profile", item)
+
+    def test_build_player_behavior_fit_degrades_without_matches_or_sources(self) -> None:
+        profile = module_build_player_behavior_profile(
+            manual_preferences={"preferred_families": ["horror_tension"]}
+        )
+        signals = module_build_behavioral_signals(
+            [{"appid": "10", "name": "Portal 2", "tags": ["Puzzle"]}]
+        )
+        no_match = module_build_player_behavior_fit(profile, signals)
+        missing_profile = module_build_player_behavior_fit({}, signals)
+
+        self.assertEqual(no_match["status"], "insufficient_signals")
+        self.assertEqual(no_match["reason"], "insufficient_behavioral_fit_matches")
+        self.assertEqual(no_match["items"], [])
+        self.assertEqual(missing_profile["status"], "unavailable")
+        self.assertEqual(missing_profile["reason"], "player_profile_unavailable")
 
 
 class ExternalOffersTests(unittest.TestCase):
@@ -2733,6 +2871,8 @@ class ConfigTests(unittest.TestCase):
                 "/tmp/wishlist_matches.json",
                 "--play-access-json",
                 "/tmp/play_access.json",
+                "--player-preferences-json",
+                "/tmp/player_preferences.json",
                 "--alert-rise-pct",
                 "12.5",
                 "--alert-global-margin-pct",
@@ -2756,6 +2896,7 @@ class ConfigTests(unittest.TestCase):
         self.assertEqual(result[11]["free_weekend_live"], True)
         self.assertEqual(result[11]["wishlist_external_matches_json"], Path("/tmp/wishlist_matches.json"))
         self.assertEqual(result[11]["play_access_json"], Path("/tmp/play_access.json"))
+        self.assertEqual(result[11]["player_preferences_json"], Path("/tmp/player_preferences.json"))
         self.assertEqual(result[11]["alert_rise_pct"], 12.5)
         self.assertEqual(result[11]["alert_global_margin_pct"], 3.0)
         self.assertEqual(result[11]["alert_score_min"], 80.0)
@@ -7564,6 +7705,206 @@ class StopApiContractTests(unittest.TestCase):
 
         self.assertNotIn("player_behavior_profile", data)
         self.assertNotIn("player_behavior_profile_status", data["summary"])
+
+    def test_generate_json_sanitizes_player_behavior_profile_payload(self) -> None:
+        payload = generate_json(
+            deals=[],
+            backlog_on_sale=[],
+            have_on_sale=[],
+            vanity="gaben",
+            owned={},
+            wishlist_appids=[],
+            min_discount=0,
+            genres=[],
+            player_behavior_profile={
+                "schema": "player_behavior_profile_v1",
+                "status": "available",
+                "advisory_only": False,
+                "ranking_impact": "score",
+                "profile_scope": "local_run",
+                "confidence": "medium",
+                "reason": "/home/example-user/private-reason",
+                "reasons": ["manual_preferences_missing", "/home/example-user/private-reason"],
+                "source_signals": ["wishlist_terms", "/home/example-user/private-source"],
+                "summary": {
+                    "families_count": 99,
+                    "loops_count": 99,
+                    "descriptors_count": 99,
+                    "local_path": "/home/example-user/private-summary.json",
+                    "taxonomy_schema": "behavioral_taxonomy_v1",
+                },
+                "preferred_families": [
+                    {"id": "coop_teamwork", "label": "Co-op / teamwork", "strength": "strong", "confidence": "medium"}
+                ],
+                "preferred_loops": [],
+                "preferred_descriptors": [],
+                "evidence_summary": {
+                    "manual_preferences_count": 1,
+                    "raw_playtime": [{"appid": "1966720", "playtime_2weeks": 180}],
+                    "local_path": "/home/example-user/private-evidence.json",
+                },
+                "limitations": ["local_snapshot", "/home/example-user/private-limitation"],
+                "raw_playtime": [{"appid": "1966720", "playtime_2weeks": 180}],
+                "local_path": "/home/example-user/private-profile.json",
+            },
+        )
+
+        data = json.loads(payload)
+        profile = data["player_behavior_profile"]
+        dumped = json.dumps(profile)
+
+        self.assertTrue(profile["advisory_only"])
+        self.assertEqual(profile["ranking_impact"], "none")
+        self.assertEqual(profile["source_signals"], ["wishlist_terms"])
+        self.assertEqual(profile["reasons"], ["manual_preferences_missing"])
+        self.assertEqual(profile["limitations"], ["local_snapshot"])
+        self.assertEqual(profile["summary"]["families_count"], 1)
+        self.assertEqual(profile["evidence_summary"]["manual_preferences_count"], 1)
+        self.assertNotIn("/home/example-user", dumped)
+        self.assertNotIn("raw_playtime", dumped)
+        self.assertNotIn("playtime_2weeks", dumped)
+        self.assertNotIn("1966720", dumped)
+
+    def test_generate_json_uses_manual_player_preferences_opt_in(self) -> None:
+        payload = generate_json(
+            deals=[],
+            backlog_on_sale=[],
+            have_on_sale=[],
+            vanity="gaben",
+            owned={},
+            wishlist_appids=[],
+            min_discount=0,
+            genres=[],
+            player_manual_preferences={
+                "preferred_families": ["coop_teamwork"],
+                "preferred_terms": ["Co-op"],
+                "favorite_games": [{"tags": ["Horror"], "appid": "1966720"}],
+            },
+        )
+
+        data = json.loads(payload)
+        profile = data["player_behavior_profile"]
+
+        self.assertEqual(profile["status"], "available")
+        self.assertEqual(profile["source_signals"], ["manual_preferences"])
+        self.assertEqual(data["summary"]["player_behavior_profile_status"], "available")
+        self.assertTrue(any(item["id"] == "coop_teamwork" for item in profile["preferred_families"]))
+        self.assertNotIn("1966720", json.dumps(profile))
+
+    def test_generate_json_serializes_player_behavior_fit_without_ranking_changes(self) -> None:
+        deals = [
+            {
+                "appid": "1966720",
+                "name": "Lethal Company",
+                "score": 85,
+                "genres": ["Action"],
+            }
+        ]
+        payload = generate_json(
+            deals=deals,
+            backlog_on_sale=[],
+            have_on_sale=[],
+            vanity="gaben",
+            owned={},
+            wishlist_appids=["1966720"],
+            min_discount=0,
+            genres=[],
+            tags_data={"1966720": {"tags": {"Co-op": 500, "Online Co-op": 450}}},
+            player_manual_preferences={
+                "preferred_families": ["coop_teamwork"],
+                "preferred_loops": ["shared_objective_pressure"],
+            },
+        )
+
+        data = json.loads(payload)
+        fit = data["player_behavior_fit"]
+        item = fit["items"][0]
+
+        self.assertEqual(data["summary"]["player_behavior_fit_count"], 1)
+        self.assertEqual(fit["schema"], "player_behavior_fit_v1")
+        self.assertEqual(fit["source_schemas"], ["player_behavior_profile_v1", "behavioral_signals_v1"])
+        self.assertTrue(fit["advisory_only"])
+        self.assertEqual(fit["ranking_impact"], "none")
+        self.assertEqual(item["appid"], "1966720")
+        self.assertEqual(item["fit_level"], "strong")
+        self.assertIn("profile_family_match", item["reason_codes"])
+        self.assertEqual(data["deals"], deals)
+        self.assertNotIn("player_behavior_fit", data["behavioral_signals"])
+
+    def test_generate_json_omits_invalid_player_behavior_fit_payload(self) -> None:
+        payload = generate_json(
+            deals=[],
+            backlog_on_sale=[],
+            have_on_sale=[],
+            vanity="gaben",
+            owned={},
+            wishlist_appids=[],
+            min_discount=0,
+            genres=[],
+            player_behavior_fit={
+                "schema": "player_behavior_fit_v1",
+                "source_schemas": ["player_behavior_profile_v1", "behavioral_signals_v1"],
+                "status": "insufficient_signals",
+                "items": [],
+            },
+        )
+
+        data = json.loads(payload)
+
+        self.assertEqual(data["summary"]["player_behavior_fit_count"], 0)
+        self.assertNotIn("player_behavior_fit", data)
+
+    def test_generate_json_sanitizes_player_behavior_fit_payload(self) -> None:
+        payload = generate_json(
+            deals=[],
+            backlog_on_sale=[],
+            have_on_sale=[],
+            vanity="gaben",
+            owned={},
+            wishlist_appids=[],
+            min_discount=0,
+            genres=[],
+            player_behavior_fit={
+                "schema": "player_behavior_fit_v1",
+                "source_schemas": ["player_behavior_profile_v1", "behavioral_signals_v1"],
+                "status": "available",
+                "advisory_only": False,
+                "ranking_impact": "score",
+                "items": [
+                    {
+                        "appid": "1966720",
+                        "name": "Lethal Company",
+                        "fit_level": "strong",
+                        "confidence": "medium",
+                        "matched_families": [
+                            {
+                                "id": "coop_teamwork",
+                                "label": "Co-op / teamwork",
+                                "strength": "strong",
+                                "confidence": "medium",
+                                "local_path": "/home/example-user/private.json",
+                            }
+                        ],
+                        "matched_loops": [],
+                        "matched_descriptors": [],
+                        "reason_codes": ["profile_family_match", "/home/example-user/private-code"],
+                        "raw_playtime": [{"appid": "1966720", "playtime_2weeks": 180}],
+                    }
+                ],
+                "limitations": ["local_snapshot", "/home/example-user/private-limitation"],
+            },
+        )
+
+        fit = json.loads(payload)["player_behavior_fit"]
+        dumped = json.dumps(fit)
+
+        self.assertTrue(fit["advisory_only"])
+        self.assertEqual(fit["ranking_impact"], "none")
+        self.assertEqual(fit["limitations"], ["local_snapshot"])
+        self.assertEqual(fit["items"][0]["reason_codes"], ["profile_family_match"])
+        self.assertNotIn("/home/example-user", dumped)
+        self.assertNotIn("raw_playtime", dumped)
+        self.assertNotIn("playtime_2weeks", dumped)
 
     def test_generate_json_respects_explicit_empty_wishlist_hygiene(self) -> None:
         payload = generate_json(

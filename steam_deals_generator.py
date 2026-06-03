@@ -152,12 +152,16 @@ try:
     from steam_deals_behavioral import (
         build_behavioral_explanations as _build_behavioral_explanations_impl,
         build_behavioral_signals as _build_behavioral_signals_impl,
+        build_player_behavior_fit as _build_player_behavior_fit_impl,
         build_player_behavior_profile as _build_player_behavior_profile_impl,
+        load_player_manual_preferences as _load_player_manual_preferences_impl,
     )
 except Exception:
     _build_behavioral_explanations_impl = None
     _build_behavioral_signals_impl = None
+    _build_player_behavior_fit_impl = None
     _build_player_behavior_profile_impl = None
+    _load_player_manual_preferences_impl = None
 
 
 try:
@@ -938,6 +942,39 @@ def build_player_behavior_profile(**kwargs):
             "limitations": ["local_snapshot", "not_purchase_advice", "ranking_impact_none"],
         }
     return _build_player_behavior_profile_impl(**kwargs)
+
+
+def build_player_behavior_fit(player_behavior_profile, behavioral_signals, **kwargs):
+    """Build advisory JSON-only fit between player profile and game signals."""
+    if _build_player_behavior_fit_impl is None:
+        return {
+            "schema": "player_behavior_fit_v1",
+            "source_schemas": ["player_behavior_profile_v1", "behavioral_signals_v1"],
+            "status": "unavailable",
+            "reason": "taxonomy_invalid",
+            "reasons": ["taxonomy_invalid"],
+            "advisory_only": True,
+            "ranking_impact": "none",
+            "summary": {
+                "items_count": 0,
+                "families_count": 0,
+                "loops_count": 0,
+                "descriptors_count": 0,
+                "confidence": "unknown",
+                "advisory_only": True,
+                "ranking_impact": "none",
+            },
+            "items": [],
+            "limitations": ["local_snapshot", "not_purchase_advice", "ranking_impact_none"],
+        }
+    return _build_player_behavior_fit_impl(player_behavior_profile, behavioral_signals, **kwargs)
+
+
+def load_player_manual_preferences(json_path: Path | str | None) -> dict:
+    """Load explicit local player preferences for player_behavior_profile."""
+    if _load_player_manual_preferences_impl is None:
+        raise RuntimeError("Behavioral module is not available")
+    return _load_player_manual_preferences_impl(json_path)
 
 
 def _behavioral_signal_records(deals, tags_data=None) -> list[dict]:
@@ -4149,6 +4186,8 @@ def generate_json(
     behavioral_signals: dict | None = None,
     behavioral_explanations: dict | None = None,
     player_behavior_profile: dict | None = None,
+    player_behavior_fit: dict | None = None,
+    player_manual_preferences: dict | None = None,
 ) -> str:
     if _generate_json_renderer is None:
         raise RuntimeError("JSON renderer module is not available")
@@ -4226,11 +4265,14 @@ def generate_json(
         behavioral_explanations = build_behavioral_explanations(behavioral_signals)
     if player_behavior_profile is None:
         player_behavior_profile = build_player_behavior_profile(
+            manual_preferences=player_manual_preferences,
             local_activity=activity_games,
             library_summary=_personalized_profile_library_summary(personalized_recommendations),
             wishlist_terms=_behavioral_signal_records(deals, tags_data),
             personalized_recommendations=personalized_recommendations,
         )
+    if player_behavior_fit is None:
+        player_behavior_fit = build_player_behavior_fit(player_behavior_profile, behavioral_signals)
     return _generate_json_renderer(
         deals,
         backlog_on_sale,
@@ -4281,6 +4323,7 @@ def generate_json(
         behavioral_signals=behavioral_signals,
         behavioral_explanations=behavioral_explanations,
         player_behavior_profile=player_behavior_profile,
+        player_behavior_fit=player_behavior_fit,
     )
 
 
@@ -4697,6 +4740,7 @@ def main():
     COMPARE_TARGETS = parse_compare_targets(FILTERS.get("compare"))
     WISHLIST_EXTERNAL_MATCHES_JSON = FILTERS.get("wishlist_external_matches_json")
     PLAY_ACCESS_JSON = FILTERS.get("play_access_json")
+    PLAYER_PREFERENCES_JSON = FILTERS.get("player_preferences_json")
     emit = print
     warm_cache_log_handle = None
     if WARM_CACHE_ONLY:
@@ -4790,6 +4834,15 @@ def main():
             emit(
                 f"  {_dim(f'Play access local: {len(local_play_access_records):,} registros')}"
             )
+    player_manual_preferences = {}
+    if PLAYER_PREFERENCES_JSON:
+        try:
+            player_manual_preferences = load_player_manual_preferences(PLAYER_PREFERENCES_JSON)
+        except ValueError as exc:
+            emit(f"{_err(str(exc))}")
+            return 1
+        if player_manual_preferences:
+            emit(f"  {_dim('Preferencias conductuales manuales: activas')}")
 
     try:
         # [1] Steam ID
@@ -5148,11 +5201,13 @@ def main():
     behavioral_signals = build_behavioral_signals(_behavioral_signal_records(deals, tags_data))
     behavioral_explanations = build_behavioral_explanations(behavioral_signals)
     player_behavior_profile = build_player_behavior_profile(
+        manual_preferences=player_manual_preferences,
         local_activity=owned_game_records,
         library_summary=_personalized_profile_library_summary(personalized_recommendations),
         wishlist_terms=_behavioral_signal_records(deals, tags_data),
         personalized_recommendations=personalized_recommendations,
     )
+    player_behavior_fit = build_player_behavior_fit(player_behavior_profile, behavioral_signals)
     play_access = None
     if local_play_access_records:
         play_access = build_play_access_contract(
@@ -5341,6 +5396,7 @@ def main():
         behavioral_signals=behavioral_signals,
         behavioral_explanations=behavioral_explanations,
         player_behavior_profile=player_behavior_profile,
+        player_behavior_fit=player_behavior_fit,
         **family_renderer_kwargs,
     )
 

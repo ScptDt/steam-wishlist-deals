@@ -271,11 +271,83 @@ def _profile_preferences(value) -> list[dict]:
         label = str(item.get("label") or "").strip()
         if not entry_id or not label:
             continue
-        record = {**item, "id": entry_id, "label": label}
-        record["strength"] = record.get("strength") if record.get("strength") in allowed_strengths else "weak"
-        record["confidence"] = record.get("confidence") if record.get("confidence") in allowed_confidences else "low"
+        record = {"id": entry_id, "label": label}
+        record["strength"] = item.get("strength") if item.get("strength") in allowed_strengths else "weak"
+        record["confidence"] = item.get("confidence") if item.get("confidence") in allowed_confidences else "low"
         records.append(record)
     return records
+
+
+PLAYER_PROFILE_SOURCE_SIGNALS = {
+    "manual_preferences",
+    "local_activity",
+    "library_summary",
+    "wishlist_terms",
+    "personalized_recommendations.profile",
+}
+PLAYER_PROFILE_REASONS = {
+    "profile_opted_out",
+    "insufficient_personal_signals",
+    "manual_preferences_missing",
+    "local_activity_unavailable",
+    "library_summary_unavailable",
+    "taxonomy_missing",
+    "taxonomy_invalid",
+}
+PLAYER_PROFILE_LIMITATIONS = {
+    "local_snapshot",
+    "not_purchase_advice",
+    "ranking_impact_none",
+}
+PLAYER_PROFILE_EVIDENCE_KEYS = (
+    "manual_preferences_count",
+    "activity_terms_count",
+    "library_terms_count",
+    "wishlist_terms_count",
+    "personalized_profile_terms_count",
+)
+
+
+def _safe_profile_count(value) -> int:
+    try:
+        return max(0, int(value or 0))
+    except (TypeError, ValueError):
+        return 0
+
+
+def _player_profile_strings(value, allowed: set[str]) -> list[str]:
+    if not isinstance(value, list):
+        return []
+    result = []
+    for item in value:
+        text = str(item or "").strip()
+        if text in allowed and text not in result:
+            result.append(text)
+    return result
+
+
+def _player_profile_summary(payload: dict, families: list[dict], loops: list[dict], descriptors: list[dict]) -> dict:
+    raw = payload.get("summary") if isinstance(payload.get("summary"), dict) else {}
+    summary = {
+        "families_count": len(families),
+        "loops_count": len(loops),
+        "descriptors_count": len(descriptors),
+        "opt_in_sources_count": len(_player_profile_strings(payload.get("source_signals"), PLAYER_PROFILE_SOURCE_SIGNALS)),
+        "advisory_only": True,
+        "ranking_impact": "none",
+    }
+    taxonomy_schema = str(raw.get("taxonomy_schema") or "").strip()
+    if taxonomy_schema == "behavioral_taxonomy_v1":
+        summary["taxonomy_schema"] = taxonomy_schema
+    taxonomy_version = str(raw.get("taxonomy_version") or "").strip()
+    if taxonomy_version and len(taxonomy_version) <= 24 and "/" not in taxonomy_version and "\\" not in taxonomy_version:
+        summary["taxonomy_version"] = taxonomy_version
+    return summary
+
+
+def _player_profile_evidence_summary(payload: dict) -> dict:
+    raw = payload.get("evidence_summary") if isinstance(payload.get("evidence_summary"), dict) else {}
+    return {key: _safe_profile_count(raw.get(key)) for key in PLAYER_PROFILE_EVIDENCE_KEYS}
 
 
 def _player_behavior_profile_payload(payload: dict | None) -> dict | None:
@@ -290,26 +362,146 @@ def _player_behavior_profile_payload(payload: dict | None) -> dict | None:
     descriptors = _profile_preferences(payload.get("preferred_descriptors"))
     if not (families or loops or descriptors):
         return None
-    summary = dict(payload.get("summary") if isinstance(payload.get("summary"), dict) else {})
-    summary.update(
-        {
-            "families_count": len(families),
-            "loops_count": len(loops),
-            "descriptors_count": len(descriptors),
-            "advisory_only": True,
-            "ranking_impact": "none",
-        }
-    )
-    return {
-        **payload,
+    sources = _player_profile_strings(payload.get("source_signals"), PLAYER_PROFILE_SOURCE_SIGNALS)
+    reasons = _player_profile_strings(payload.get("reasons"), PLAYER_PROFILE_REASONS)
+    reason = str(payload.get("reason") or "").strip()
+    if reason not in PLAYER_PROFILE_REASONS:
+        reason = reasons[0] if reasons else ""
+    result = {
+        "schema": "player_behavior_profile_v1",
+        "status": payload.get("status"),
         "advisory_only": True,
         "ranking_impact": "none",
         "profile_scope": payload.get("profile_scope") or "local_run",
-        "summary": summary,
+        "confidence": payload.get("confidence") if payload.get("confidence") in {"low", "medium", "high"} else "unknown",
+        "source_signals": sources,
+        "summary": _player_profile_summary(payload, families, loops, descriptors),
         "preferred_families": families,
         "preferred_loops": loops,
         "preferred_descriptors": descriptors,
+        "evidence_summary": _player_profile_evidence_summary(payload),
+        "limitations": _player_profile_strings(payload.get("limitations"), PLAYER_PROFILE_LIMITATIONS),
     }
+    if reason:
+        result["reason"] = reason
+    if reasons:
+        result["reasons"] = reasons
+    return result
+
+
+PLAYER_BEHAVIOR_FIT_REASONS = {
+    "taxonomy_missing",
+    "taxonomy_invalid",
+    "player_profile_unavailable",
+    "player_profile_insufficient",
+    "behavioral_signals_unavailable",
+    "behavioral_signals_insufficient",
+    "insufficient_behavioral_fit_matches",
+}
+PLAYER_BEHAVIOR_FIT_REASON_CODES = {
+    "profile_family_match",
+    "profile_loop_match",
+    "profile_descriptor_match",
+}
+
+
+def _fit_level(value) -> str:
+    text = str(value or "").strip()
+    return text if text in {"weak", "medium", "strong"} else "weak"
+
+
+def _fit_confidence(value) -> str:
+    text = str(value or "").strip()
+    return text if text in {"low", "medium", "high"} else "unknown"
+
+
+def _fit_reason_codes(value) -> list[str]:
+    return _player_profile_strings(value, PLAYER_BEHAVIOR_FIT_REASON_CODES)
+
+
+def _fit_items(value) -> list[dict]:
+    if not isinstance(value, list):
+        return []
+    items = []
+    for item in value:
+        if not isinstance(item, dict):
+            continue
+        appid = str(item.get("appid") or "").strip()
+        if not appid.isdigit():
+            continue
+        families = _profile_preferences(item.get("matched_families"))
+        loops = _profile_preferences(item.get("matched_loops"))
+        descriptors = _profile_preferences(item.get("matched_descriptors"))
+        if not (families or loops or descriptors):
+            continue
+        record = {
+            "appid": appid,
+            "fit_level": _fit_level(item.get("fit_level")),
+            "confidence": _fit_confidence(item.get("confidence")),
+            "matched_families": families,
+            "matched_loops": loops,
+            "matched_descriptors": descriptors,
+            "reason_codes": _fit_reason_codes(item.get("reason_codes")),
+        }
+        name = str(item.get("name") or "").strip()
+        if name:
+            record["name"] = name
+        items.append(record)
+    return items
+
+
+def _player_behavior_fit_summary(payload: dict, items: list[dict]) -> dict:
+    raw = payload.get("summary") if isinstance(payload.get("summary"), dict) else {}
+    summary = {
+        "items_count": len(items),
+        "families_count": len({entry["id"] for item in items for entry in item.get("matched_families", [])}),
+        "loops_count": len({entry["id"] for item in items for entry in item.get("matched_loops", [])}),
+        "descriptors_count": len({entry["id"] for item in items for entry in item.get("matched_descriptors", [])}),
+        "confidence": _fit_confidence(raw.get("confidence")),
+        "advisory_only": True,
+        "ranking_impact": "none",
+    }
+    taxonomy_schema = str(raw.get("taxonomy_schema") or "").strip()
+    if taxonomy_schema == "behavioral_taxonomy_v1":
+        summary["taxonomy_schema"] = taxonomy_schema
+    taxonomy_version = str(raw.get("taxonomy_version") or "").strip()
+    if taxonomy_version and len(taxonomy_version) <= 24 and "/" not in taxonomy_version and "\\" not in taxonomy_version:
+        summary["taxonomy_version"] = taxonomy_version
+    return summary
+
+
+def _player_behavior_fit_payload(payload: dict | None) -> dict | None:
+    if not isinstance(payload, dict):
+        return None
+    if payload.get("schema") != "player_behavior_fit_v1":
+        return None
+    if payload.get("status") not in {"available", "partial"}:
+        return None
+    source_schemas = payload.get("source_schemas")
+    if source_schemas != ["player_behavior_profile_v1", "behavioral_signals_v1"]:
+        return None
+    items = _fit_items(payload.get("items"))
+    if not items:
+        return None
+    reasons = _player_profile_strings(payload.get("reasons"), PLAYER_BEHAVIOR_FIT_REASONS)
+    reason = str(payload.get("reason") or "").strip()
+    if reason not in PLAYER_BEHAVIOR_FIT_REASONS:
+        reason = reasons[0] if reasons else ""
+    result = {
+        "schema": "player_behavior_fit_v1",
+        "source_schemas": ["player_behavior_profile_v1", "behavioral_signals_v1"],
+        "status": payload.get("status"),
+        "advisory_only": True,
+        "ranking_impact": "none",
+        "summary": _player_behavior_fit_summary(payload, items),
+        "items": items,
+        "limitations": _player_profile_strings(payload.get("limitations"), PLAYER_PROFILE_LIMITATIONS),
+    }
+    if reason:
+        result["reason"] = reason
+    if reasons:
+        result["reasons"] = reasons
+    return result
 
 
 RECOMMENDATION_DIAGNOSTIC_MODES = {"behavioral", "mixed", "score_fallback"}
@@ -379,6 +571,7 @@ def generate_json(
     behavioral_signals: dict | None = None,
     behavioral_explanations: dict | None = None,
     player_behavior_profile: dict | None = None,
+    player_behavior_fit: dict | None = None,
 ) -> str:
     previous_appids = previous_appids or set()
     family_appids = family_appids or set()
@@ -413,6 +606,7 @@ def generate_json(
     behavioral_signals = _behavioral_signals_payload(behavioral_signals)
     behavioral_explanations = _behavioral_explanations_payload(behavioral_explanations)
     player_behavior_profile = _player_behavior_profile_payload(player_behavior_profile)
+    player_behavior_fit = _player_behavior_fit_payload(player_behavior_fit)
 
     payload = {
         "meta": {
@@ -450,6 +644,7 @@ def generate_json(
             "play_access_count": _play_access_total(play_access),
             "behavioral_signals_count": _behavioral_signals_total(behavioral_signals),
             "behavioral_explanations_count": _behavioral_explanations_total(behavioral_explanations),
+            "player_behavior_fit_count": len(player_behavior_fit.get("items", [])) if player_behavior_fit else 0,
         },
         "comparison": _json_safe(comparison),
         "top_picks": _json_safe(top_picks),
@@ -519,4 +714,6 @@ def generate_json(
             }
         )
         payload["player_behavior_profile"] = _json_safe(player_behavior_profile)
+    if player_behavior_fit:
+        payload["player_behavior_fit"] = _json_safe(player_behavior_fit)
     return json.dumps(payload, ensure_ascii=False, indent=2)
