@@ -2663,6 +2663,104 @@ details .details-body .field:last-child {
 .latest-taste-priority-more {
   margin-top: 0.55rem;
 }
+.latest-decision-support-section {
+  margin-top: 0.95rem;
+  padding-top: 0.95rem;
+  border-top: 1px solid rgba(255,255,255,0.06);
+}
+.latest-decision-support-head {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: flex-start;
+  justify-content: space-between;
+  gap: 0.65rem;
+  margin-bottom: 0.55rem;
+}
+.latest-decision-support-title {
+  color: var(--text);
+  font-size: 0.88rem;
+  font-weight: 700;
+  margin-bottom: 0.22rem;
+}
+.latest-decision-support-subtitle,
+.latest-decision-support-more {
+  color: var(--text2);
+  font-size: 0.76rem;
+  line-height: 1.45;
+}
+.latest-decision-support-head-badge,
+.latest-decision-support-badge {
+  display: inline-flex;
+  align-items: center;
+  padding: 0.16rem 0.48rem;
+  border-radius: 999px;
+  border: 1px solid rgba(108, 198, 68, 0.28);
+  background: rgba(108, 198, 68, 0.08);
+  color: var(--green);
+  font-size: 0.7rem;
+  font-weight: 700;
+}
+.latest-decision-support-list {
+  list-style: none;
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(210px, 1fr));
+  gap: 0.55rem;
+}
+.latest-decision-support-item {
+  padding: 0.72rem 0.8rem;
+  border-radius: 8px;
+  border: 1px solid rgba(108, 198, 68, 0.22);
+  background: var(--bg);
+}
+.latest-decision-support-main {
+  min-width: 0;
+}
+.latest-decision-support-heading {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: flex-start;
+  justify-content: space-between;
+  gap: 0.45rem;
+}
+.latest-decision-support-main strong,
+.latest-decision-support-main a {
+  color: var(--text);
+  font-size: 0.79rem;
+  text-decoration: none;
+}
+.latest-decision-support-main a:hover {
+  color: var(--accent);
+}
+.latest-decision-support-main span {
+  display: block;
+}
+.latest-decision-support-meta {
+  margin-top: 0.2rem;
+  color: var(--green);
+  font-size: 0.71rem;
+  line-height: 1.35;
+}
+.latest-decision-support-preferences,
+.latest-decision-support-reasons,
+.latest-decision-support-note,
+.latest-decision-support-more {
+  margin-top: 0.2rem;
+  color: var(--text2);
+  font-size: 0.71rem;
+  line-height: 1.35;
+}
+.latest-decision-support-preferences strong,
+.latest-decision-support-reasons strong {
+  display: inline;
+  color: var(--text);
+  font-size: 0.71rem;
+}
+.latest-decision-support-note {
+  opacity: 0.86;
+}
+.latest-decision-support-more {
+  margin-top: 0.55rem;
+}
 @media (max-width: 640px) {
   .latest-taste-priority-item {
     flex-direction: column;

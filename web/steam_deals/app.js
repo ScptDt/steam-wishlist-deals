@@ -2940,6 +2940,37 @@ const LATEST_TASTE_PRIORITY_CATEGORY_LABELS = Object.freeze({
   no_comprar_aun: 'No priorizar aún',
 });
 
+const LATEST_DECISION_SUPPORT_LABELS = Object.freeze({
+  good_fit: 'Buen encaje',
+  maybe: 'Podría encajar',
+  weak_fit: 'Encaje débil / revisar',
+});
+
+const LATEST_DECISION_SUPPORT_FIT_REASON_LABELS = Object.freeze({
+  profile_family_match: 'Familia alineada con tus gustos',
+  profile_loop_match: 'Loop de juego que sueles preferir',
+  profile_descriptor_match: 'Descriptor compatible con tus preferencias',
+});
+
+const LATEST_DECISION_SUPPORT_CAUTION_LABELS = Object.freeze({
+  partial_player_profile: 'perfil parcial',
+  low_confidence: 'confianza baja',
+  limited_preference_match: 'match limitado',
+});
+
+const LATEST_DECISION_SUPPORT_CONFIDENCE_LABELS = Object.freeze({
+  high: 'Alta',
+  medium: 'Media',
+  low: 'Baja',
+  unknown: 'Sin dato',
+});
+
+const LATEST_DECISION_SUPPORT_FIT_LEVEL_LABELS = Object.freeze({
+  strong: 'Fit fuerte',
+  medium: 'Fit medio',
+  weak: 'Fit débil',
+});
+
 const LATEST_RECOMMENDATION_DIAGNOSTIC_MODE_LABELS = Object.freeze({
   behavioral: 'Behavioral',
   mixed: 'Mixto',
@@ -3571,6 +3602,132 @@ function renderLatestTastePriority(report) {
       </div>
       <ol class="latest-taste-priority-list">${selectedItems.map(item => renderLatestTastePriorityItem(item, labels)).join('')}</ol>
       ${hiddenCount ? `<div class="latest-taste-priority-more">${escapeHtml(formatLatestCoverageCount(hiddenCount))} más en el JSON completo</div>` : ''}
+    </div>
+  `;
+}
+
+function latestDecisionSupportPayload(report) {
+  const payload = report && typeof report === 'object' ? report.decision_support : null;
+  if (!payload || typeof payload !== 'object' || Array.isArray(payload)) return null;
+  if (payload.schema !== 'decision_support_v1') return null;
+  if (!['available', 'partial'].includes(String(payload.status || '').trim())) return null;
+  if (payload.advisory_only !== true || String(payload.ranking_impact || '').trim() !== 'none') return null;
+  const sourceSchemas = Array.isArray(payload.source_schemas) ? payload.source_schemas : [];
+  if (sourceSchemas.join('|') !== 'player_behavior_profile_v1|player_behavior_fit_v1') return null;
+  return payload;
+}
+
+function latestDecisionSupportAppid(item) {
+  const source = item && typeof item === 'object' ? item : {};
+  const appid = String(source.appid || source.steam_appid || '').trim();
+  return /^\d+$/.test(appid) ? appid : '';
+}
+
+function latestDecisionSupportLabel(label) {
+  const key = String(label || '').trim();
+  return LATEST_DECISION_SUPPORT_LABELS[key] || '';
+}
+
+function latestDecisionSupportCodeLabel(code, labels) {
+  const key = String(code || '').trim();
+  return labels[key] || '';
+}
+
+function latestDecisionSupportPreferenceLabels(item) {
+  const source = item && typeof item === 'object' ? item : {};
+  return Array.isArray(source.matched_preferences)
+    ? source.matched_preferences
+      .map(preference => preference && typeof preference === 'object' ? String(preference.label || '').trim() : '')
+      .filter(Boolean)
+      .slice(0, 2)
+    : [];
+}
+
+function latestDecisionSupportReasonLabels(item) {
+  const source = item && typeof item === 'object' ? item : {};
+  const fitReasons = Array.isArray(source.fit_reasons)
+    ? source.fit_reasons
+      .map(reason => latestDecisionSupportCodeLabel(reason, LATEST_DECISION_SUPPORT_FIT_REASON_LABELS))
+      .filter(Boolean)
+    : [];
+  const cautions = Array.isArray(source.caution_reasons)
+    ? source.caution_reasons
+      .map(reason => latestDecisionSupportCodeLabel(reason, LATEST_DECISION_SUPPORT_CAUTION_LABELS))
+      .filter(Boolean)
+      .map(label => `Cuidado: ${label}`)
+    : [];
+  return [...fitReasons, ...cautions].slice(0, 2);
+}
+
+function latestDecisionSupportHasVisibleSignals(item) {
+  return latestDecisionSupportPreferenceLabels(item).length > 0 || latestDecisionSupportReasonLabels(item).length > 0;
+}
+
+function latestDecisionSupportItems(payload) {
+  return Array.isArray(payload && payload.items)
+    ? payload.items.filter(item => item && typeof item === 'object')
+      .filter(item => latestDecisionSupportAppid(item) && latestDecisionSupportLabel(item.decision_label) && latestDecisionSupportHasVisibleSignals(item))
+    : [];
+}
+
+function latestDecisionSupportConfidenceLabel(confidence) {
+  const key = String(confidence || '').trim().toLowerCase();
+  return LATEST_DECISION_SUPPORT_CONFIDENCE_LABELS[key] || LATEST_DECISION_SUPPORT_CONFIDENCE_LABELS.unknown;
+}
+
+function latestDecisionSupportFitLevelLabel(fitLevel) {
+  const key = String(fitLevel || '').trim().toLowerCase();
+  return LATEST_DECISION_SUPPORT_FIT_LEVEL_LABELS[key] || '';
+}
+
+function renderLatestDecisionSupportItem(item) {
+  const source = item && typeof item === 'object' ? item : {};
+  const appid = latestDecisionSupportAppid(source);
+  const decisionLabel = String(source.decision_label || '').trim();
+  const label = latestDecisionSupportLabel(decisionLabel);
+  const name = String(source.name || source.steam_name || (appid ? `AppID ${appid}` : 'Juego')).trim();
+  const nameHtml = appid
+    ? `<a href="${latestSteamStoreUrl(appid)}" target="_blank" rel="noopener noreferrer">${escapeHtml(name)}</a>`
+    : `<span>${escapeHtml(name)}</span>`;
+  const preferences = latestDecisionSupportPreferenceLabels(source);
+  const reasons = latestDecisionSupportReasonLabels(source);
+  const meta = [
+    latestDecisionSupportFitLevelLabel(source.fit_level),
+    `Confianza ${latestDecisionSupportConfidenceLabel(source.confidence)}`,
+  ].filter(Boolean).join(' · ');
+  return `
+    <li class="latest-decision-support-item latest-decision-support-item-${escapeHtml(decisionLabel)}" data-latest-decision-support-item="${escapeHtml(appid)}">
+      <div class="latest-decision-support-main">
+        <div class="latest-decision-support-heading">
+          <strong>${nameHtml}</strong>
+          <span class="latest-decision-support-badge">${escapeHtml(label)}</span>
+        </div>
+        <span class="latest-decision-support-meta">${escapeHtml(meta)}</span>
+        ${preferences.length ? `<span class="latest-decision-support-preferences"><strong>Preferencias:</strong> ${escapeHtml(preferences.join(' · '))}</span>` : ''}
+        ${reasons.length ? `<span class="latest-decision-support-reasons"><strong>Razones:</strong> ${escapeHtml(reasons.join(' · '))}</span>` : ''}
+        <span class="latest-decision-support-note">Advisory-only: sin impacto en ranking.</span>
+      </div>
+    </li>
+  `;
+}
+
+function renderLatestDecisionSupport(report) {
+  const payload = latestDecisionSupportPayload(report);
+  const items = latestDecisionSupportItems(payload);
+  if (!items.length) return '';
+  const selectedItems = items.slice(0, 3);
+  const hiddenCount = Math.max(0, items.length - selectedItems.length);
+  return `
+    <div class="latest-decision-support-section" data-latest-decision-support>
+      <div class="latest-decision-support-head">
+        <div>
+          <div class="latest-decision-support-title">Ayuda para decidir</div>
+          <div class="latest-decision-support-subtitle">${escapeHtml(formatLatestCoverageCount(items.length))} juego(s) desde decision_support_v1 del JSON local. Advisory-only: no cambia score, ranking, Top Picks, defaults, cache ni fetching.</div>
+        </div>
+        <span class="latest-decision-support-head-badge">Sin impacto en ranking</span>
+      </div>
+      <ol class="latest-decision-support-list">${selectedItems.map(renderLatestDecisionSupportItem).join('')}</ol>
+      ${hiddenCount ? `<div class="latest-decision-support-more">${escapeHtml(formatLatestCoverageCount(hiddenCount))} más en el JSON completo</div>` : ''}
     </div>
   `;
 }
@@ -4943,6 +5100,7 @@ function renderLatestRecommendationsPanel(report, files = null) {
     renderLatestSmartAlertDigest(report),
     renderLatestRecommendedCollections(report),
     renderLatestPersonalizedRecommendations(report, files),
+    renderLatestDecisionSupport(report),
     renderLatestRecommendationDiagnostics(report),
     renderLatestTastePriority(report),
     renderLatestGiftIdeas(report),

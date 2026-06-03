@@ -538,6 +538,50 @@ class WebAssetsTests(unittest.TestCase):
         self.assertIn(".latest-taste-priority-badge", app_css)
         self.assertIn(".latest-taste-priority-more", app_css)
 
+    def test_latest_report_renders_decision_support_inside_details(self) -> None:
+        app_js = (ROOT / "web" / "steam_deals" / "app.js").read_text(
+            encoding="utf-8"
+        )
+        app_css = (ROOT / "web" / "steam_deals" / "app.css").read_text(
+            encoding="utf-8"
+        )
+
+        self.assertIn("function renderLatestDecisionSupport", app_js)
+        self.assertIn("function latestDecisionSupportPayload", app_js)
+        self.assertIn("function latestDecisionSupportItems", app_js)
+        self.assertIn("report.decision_support", app_js)
+        self.assertIn("decision_support_v1", app_js)
+        self.assertIn("payload.source_schemas", app_js)
+        self.assertIn("player_behavior_profile_v1", app_js)
+        self.assertIn("player_behavior_fit_v1", app_js)
+        self.assertIn("payload.advisory_only !== true", app_js)
+        self.assertIn("String(payload.ranking_impact || '').trim() !== 'none'", app_js)
+        self.assertIn("data-latest-decision-support", app_js)
+        self.assertIn("data-latest-decision-support-item", app_js)
+        self.assertIn("LATEST_DECISION_SUPPORT_LABELS", app_js)
+        self.assertIn("Buen encaje", app_js)
+        self.assertIn("Podría encajar", app_js)
+        self.assertIn("Encaje débil / revisar", app_js)
+        self.assertIn("matched_preferences", app_js)
+        self.assertIn("fit_reasons", app_js)
+        self.assertIn("caution_reasons", app_js)
+        self.assertIn("items.slice(0, 3)", app_js)
+        self.assertIn("Ayuda para decidir", app_js)
+        self.assertIn("Advisory-only", app_js)
+        self.assertIn("Sin impacto en ranking", app_js)
+        self.assertIn("no cambia score, ranking, Top Picks, defaults, cache ni fetching", app_js)
+        self.assertIn("renderLatestDecisionSupport(report)", app_js)
+        self.assertIn("renderLatestReportIntentWrapper(activeReport, meta, summary, files)", app_js)
+        self.assertNotIn("data-share-decision-support", app_js)
+        self.assertNotIn("renderLatestShareDecisionSupport", app_js)
+        self.assertIn(".latest-decision-support-section", app_css)
+        self.assertIn(".latest-decision-support-list", app_css)
+        self.assertIn(".latest-decision-support-item", app_css)
+        self.assertIn(".latest-decision-support-badge", app_css)
+        self.assertIn(".latest-decision-support-preferences", app_css)
+        self.assertIn(".latest-decision-support-reasons", app_css)
+        self.assertIn(".latest-decision-support-more", app_css)
+
     def test_latest_report_renders_advisory_offer_highlights(self) -> None:
         app_js = (ROOT / "web" / "steam_deals" / "app.js").read_text(
             encoding="utf-8"
