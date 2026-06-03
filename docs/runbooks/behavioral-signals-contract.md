@@ -30,7 +30,7 @@ Mover el producto hacia un sistema de **Discovery + Decision Support**:
 | `behavioral_explanations_v1` | JSON interno + consumidores Plan F | Consume `behavioral_signals_v1` para exponer headlines, razones y cues compactos reutilizables. |
 | `player_behavior_profile_v1` | JSON interno opcional | Perfila preferencias conductuales del usuario con señales locales/opt-in; se expone solo si hay preferencias útiles. |
 | `player_behavior_fit_v1` | JSON interno opcional | Cruza perfil del jugador con señales de juego por item, sin score numérico ni impacto en ranking. |
-| Decision support | Futuro | Consume señales de juego + perfil + availability/backlog para sugerir comprar/esperar/revisar. |
+| `decision_support_v1` | JSON interno opcional | Traduce fit cualitativo en etiquetas de revisión (`good_fit`, `maybe`, `weak_fit`) sin compra automática ni impacto en ranking. |
 
 ## Contrato JSON
 
@@ -320,6 +320,18 @@ La plantilla editable versionada vive en `docs/player-preferences.example.json`.
 - se omite si no hay perfil útil, señales de juego útiles o matches entre ambos;
 - no expone rutas locales, playtime crudo, AppIDs personales ni campos debug del perfil.
 
+### Decision support JSON-only
+
+`decision_support_v1` es un payload top-level opcional que consume `player_behavior_profile_v1` + `player_behavior_fit_v1` y genera ayuda cualitativa para revisar juegos. Reglas:
+
+- `advisory_only=true` y `ranking_impact=none` obligatorios;
+- no produce score numérico, no modifica `score`, `personalized_score`, Top Picks, orden ni filtros;
+- `decision_label` permitido por item: `good_fit`, `maybe`, `weak_fit`;
+- `fit_reasons` reutiliza reason codes del fit (`profile_family_match`, `profile_loop_match`, `profile_descriptor_match`);
+- `caution_reasons` puede incluir `partial_player_profile`, `low_confidence` o `limited_preference_match`;
+- `matched_preferences` expone solo IDs/labels/strength/confidence de taxonomía, sin rutas locales, playtime crudo, AppIDs personales del perfil ni campos debug;
+- se omite si no hay profile/fit útil o contexto suficiente.
+
 ## Estados y degradación
 
 Estados permitidos:
@@ -431,7 +443,7 @@ El helper debe:
 
 ## Player profile implementado JSON-only
 
-`player_behavior_profile_v1` ya está implementado como payload JSON-only, top-level opcional, local/opt-in y con degradación explícita (`unavailable` o `insufficient_signals`) si faltan señales personales. `player_behavior_fit_v1` también está implementado como cruce cualitativo entre perfil y `behavioral_signals_v1`. Cualquier consumidor futuro debe aprobarse como slice separado y mantener `advisory_only=true` + `ranking_impact=none`.
+`player_behavior_profile_v1` ya está implementado como payload JSON-only, top-level opcional, local/opt-in y con degradación explícita (`unavailable` o `insufficient_signals`) si faltan señales personales. `player_behavior_fit_v1` también está implementado como cruce cualitativo entre perfil y `behavioral_signals_v1`. `decision_support_v1` queda como primer consumidor JSON-only cualitativo, sin UI visible. Cualquier consumidor visible futuro debe aprobarse como slice separado y mantener `advisory_only=true` + `ranking_impact=none`.
 
 ## No-hacer v1
 
@@ -453,4 +465,5 @@ El helper debe:
 6. **Player profile docs-only**: cerrado; define `player_behavior_profile_v1` local/opt-in, sin UI visible.
 7. **Player profile JSON-only**: cerrado; helper puro + payload opcional top-level, con `--player-preferences-json` para input manual explícito.
 8. **Player behavior fit JSON-only**: cerrado; cruza perfil + señales de juego con `fit_level` cualitativo y sin impacto en ranking.
-9. **Consumidores futuros**: discovery/decision support usando perfil + señales de juego, siempre en slices aprobados y sin score/ranking impact.
+9. **Decision support JSON-only**: cerrado; expone etiquetas cualitativas de revisión desde profile+fit, sin UI visible ni impacto en ranking.
+10. **Consumidores futuros visibles**: usar `decision_support_v1` o señales existentes en slices aprobados, sin score/ranking impact.

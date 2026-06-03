@@ -11,6 +11,7 @@ BEHAVIORAL_SIGNALS_SCHEMA = "behavioral_signals_v1"
 BEHAVIORAL_EXPLANATIONS_SCHEMA = "behavioral_explanations_v1"
 PLAYER_BEHAVIOR_PROFILE_SCHEMA = "player_behavior_profile_v1"
 PLAYER_BEHAVIOR_FIT_SCHEMA = "player_behavior_fit_v1"
+DECISION_SUPPORT_SCHEMA = "decision_support_v1"
 BEHAVIORAL_TAXONOMY_SCHEMA = "behavioral_taxonomy_v1"
 DEFAULT_BEHAVIORAL_TAXONOMY_PATH = (
     Path(__file__).resolve().parents[1] / "data" / "behavioral_taxonomy_v1.json"
@@ -42,6 +43,9 @@ _PROFILE_SOURCE_WEIGHTS = {
     "personalized_recommendations.profile": 1.0,
 }
 _PROFILE_LIMITATIONS = ["local_snapshot", "not_purchase_advice", "ranking_impact_none"]
+_DECISION_LIMITATIONS = ["local_snapshot", "not_purchase_advice", "ranking_impact_none"]
+_DECISION_LABEL_ORDER = ("good_fit", "maybe", "weak_fit")
+_DECISION_CAUTION_ORDER = ("partial_player_profile", "low_confidence", "limited_preference_match")
 _PROFILE_ACTIVITY_FIELDS = (
     "playtime_2weeks",
     "playtime_forever",
@@ -1067,6 +1071,137 @@ def _player_fit_contract(items: list[dict], taxonomy: dict) -> dict:
         "items": items,
         "limitations": list(_PROFILE_LIMITATIONS),
     }
+
+
+def _empty_decision_support(status: str, reason: str) -> dict:
+    return {
+        "schema": DECISION_SUPPORT_SCHEMA,
+        "source_schemas": [PLAYER_BEHAVIOR_PROFILE_SCHEMA, PLAYER_BEHAVIOR_FIT_SCHEMA],
+        "status": status,
+        "reason": reason,
+        "reasons": [reason],
+        "advisory_only": True,
+        "ranking_impact": "none",
+        "summary": {
+            "items_count": 0,
+            "good_fit_count": 0,
+            "maybe_count": 0,
+            "weak_fit_count": 0,
+            "confidence": "unknown",
+            "advisory_only": True,
+            "ranking_impact": "none",
+        },
+        "items": [],
+        "limitations": list(_DECISION_LIMITATIONS),
+    }
+
+
+def _decision_label(fit_level: str, confidence: str) -> str:
+    if fit_level == "strong" and confidence in {"medium", "high"}:
+        return "good_fit"
+    if fit_level in {"medium", "strong"}:
+        return "maybe"
+    return "weak_fit"
+
+
+def _decision_cautions(profile_status: str, fit_level: str, confidence: str) -> list[str]:
+    cautions: list[str] = []
+    if profile_status == "partial":
+        cautions.append("partial_player_profile")
+    if confidence in {"low", "unknown"}:
+        cautions.append("low_confidence")
+    if fit_level == "weak":
+        cautions.append("limited_preference_match")
+    return _ordered(cautions, _DECISION_CAUTION_ORDER)
+
+
+def _decision_preferences(item: dict) -> list[dict]:
+    preferences: list[dict] = []
+    for kind, key in (
+        ("family", "matched_families"),
+        ("behavioral_loop", "matched_loops"),
+        ("descriptor", "matched_descriptors"),
+    ):
+        for record in _as_records(item.get(key)):
+            entry_id = _clean_text(record.get("id"))
+            label = _clean_text(record.get("label"))
+            if not entry_id or not label:
+                continue
+            preferences.append(
+                {
+                    "kind": kind,
+                    "id": entry_id,
+                    "label": label,
+                    "strength": record.get("strength") if record.get("strength") in {"weak", "medium", "strong"} else "weak",
+                    "confidence": record.get("confidence") if record.get("confidence") in _CONFIDENCE_RANK else "unknown",
+                }
+            )
+    return preferences[:6]
+
+
+def _decision_item(item: dict, profile_status: str) -> dict | None:
+    appid = _record_appid(item)
+    if not appid:
+        return None
+    preferences = _decision_preferences(item)
+    if not preferences:
+        return None
+    fit_level = item.get("fit_level") if item.get("fit_level") in {"weak", "medium", "strong"} else "weak"
+    confidence = item.get("confidence") if item.get("confidence") in _CONFIDENCE_RANK else "unknown"
+    record = {
+        "appid": appid,
+        "decision_label": _decision_label(fit_level, confidence),
+        "fit_level": fit_level,
+        "confidence": "low" if confidence == "unknown" else confidence,
+        "fit_reasons": _ordered(
+            item.get("reason_codes", []),
+            ("profile_family_match", "profile_loop_match", "profile_descriptor_match"),
+        ),
+        "caution_reasons": _decision_cautions(profile_status, fit_level, confidence),
+        "matched_preferences": preferences,
+    }
+    if name := _record_name(item):
+        record["name"] = name
+    return record
+
+
+def _decision_support_contract(items: list[dict]) -> dict:
+    label_counts = {label: sum(1 for item in items if item.get("decision_label") == label) for label in _DECISION_LABEL_ORDER}
+    return {
+        "schema": DECISION_SUPPORT_SCHEMA,
+        "source_schemas": [PLAYER_BEHAVIOR_PROFILE_SCHEMA, PLAYER_BEHAVIOR_FIT_SCHEMA],
+        "status": "available",
+        "advisory_only": True,
+        "ranking_impact": "none",
+        "summary": {
+            "items_count": len(items),
+            "good_fit_count": label_counts["good_fit"],
+            "maybe_count": label_counts["maybe"],
+            "weak_fit_count": label_counts["weak_fit"],
+            "confidence": _summary_confidence(items),
+            "advisory_only": True,
+            "ranking_impact": "none",
+        },
+        "items": items,
+        "limitations": list(_DECISION_LIMITATIONS),
+    }
+
+
+def build_decision_support(player_behavior_profile: Any, player_behavior_fit: Any) -> dict:
+    """Build qualitative JSON-only decision support from local player fit signals."""
+    if not isinstance(player_behavior_profile, dict) or player_behavior_profile.get("schema") != PLAYER_BEHAVIOR_PROFILE_SCHEMA:
+        return _empty_decision_support("unavailable", "player_profile_unavailable")
+    profile_status = player_behavior_profile.get("status")
+    if profile_status not in {"available", "partial"}:
+        return _empty_decision_support("insufficient_signals", "player_profile_insufficient")
+    if not isinstance(player_behavior_fit, dict) or player_behavior_fit.get("schema") != PLAYER_BEHAVIOR_FIT_SCHEMA:
+        return _empty_decision_support("unavailable", "player_behavior_fit_unavailable")
+    if player_behavior_fit.get("status") not in {"available", "partial"}:
+        return _empty_decision_support("insufficient_signals", "player_behavior_fit_insufficient")
+    items = [item for item in (_decision_item(fit_item, str(profile_status)) for fit_item in _as_records(player_behavior_fit.get("items"))) if item]
+    if not items:
+        return _empty_decision_support("insufficient_signals", "insufficient_decision_context")
+    return _decision_support_contract(items)
 
 
 def build_player_behavior_fit(

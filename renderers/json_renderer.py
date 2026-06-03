@@ -403,6 +403,17 @@ PLAYER_BEHAVIOR_FIT_REASON_CODES = {
     "profile_loop_match",
     "profile_descriptor_match",
 }
+DECISION_SUPPORT_REASONS = {
+    "taxonomy_invalid",
+    "player_profile_unavailable",
+    "player_profile_insufficient",
+    "player_behavior_fit_unavailable",
+    "player_behavior_fit_insufficient",
+    "insufficient_decision_context",
+}
+DECISION_SUPPORT_LABELS = {"good_fit", "maybe", "weak_fit"}
+DECISION_SUPPORT_CAUTIONS = {"partial_player_profile", "low_confidence", "limited_preference_match"}
+DECISION_SUPPORT_PREFERENCE_KINDS = {"family", "behavioral_loop", "descriptor"}
 
 
 def _fit_level(value) -> str:
@@ -504,6 +515,116 @@ def _player_behavior_fit_payload(payload: dict | None) -> dict | None:
     return result
 
 
+def _decision_support_preferences(value) -> list[dict]:
+    if not isinstance(value, list):
+        return []
+    preferences = []
+    for item in value:
+        if not isinstance(item, dict):
+            continue
+        kind = str(item.get("kind") or "").strip()
+        entry_id = str(item.get("id") or "").strip()
+        label = str(item.get("label") or "").strip()
+        if kind not in DECISION_SUPPORT_PREFERENCE_KINDS or not entry_id or not label:
+            continue
+        preferences.append(
+            {
+                "kind": kind,
+                "id": entry_id,
+                "label": label,
+                "strength": item.get("strength") if item.get("strength") in {"weak", "medium", "strong"} else "weak",
+                "confidence": _fit_confidence(item.get("confidence")),
+            }
+        )
+    return preferences[:6]
+
+
+def _decision_support_items(value) -> list[dict]:
+    if not isinstance(value, list):
+        return []
+    items = []
+    for item in value:
+        if not isinstance(item, dict):
+            continue
+        appid = str(item.get("appid") or "").strip()
+        label = str(item.get("decision_label") or "").strip()
+        if not appid.isdigit() or label not in DECISION_SUPPORT_LABELS:
+            continue
+        preferences = _decision_support_preferences(item.get("matched_preferences"))
+        if not preferences:
+            continue
+        record = {
+            "appid": appid,
+            "decision_label": label,
+            "fit_level": _fit_level(item.get("fit_level")),
+            "confidence": _fit_confidence(item.get("confidence")),
+            "fit_reasons": _fit_reason_codes(item.get("fit_reasons")),
+            "caution_reasons": _player_profile_strings(item.get("caution_reasons"), DECISION_SUPPORT_CAUTIONS),
+            "matched_preferences": preferences,
+        }
+        name = str(item.get("name") or "").strip()
+        if name:
+            record["name"] = name
+        items.append(record)
+    return items
+
+
+def _decision_support_summary(items: list[dict]) -> dict:
+    confidence_rank = {"unknown": 0, "low": 1, "medium": 2, "high": 3}
+    confidence = max(
+        (item.get("confidence") for item in items),
+        default="unknown",
+        key=lambda value: confidence_rank.get(value, 0),
+    )
+    return {
+        "items_count": len(items),
+        "good_fit_count": sum(1 for item in items if item.get("decision_label") == "good_fit"),
+        "maybe_count": sum(1 for item in items if item.get("decision_label") == "maybe"),
+        "weak_fit_count": sum(1 for item in items if item.get("decision_label") == "weak_fit"),
+        "confidence": _fit_confidence(confidence),
+        "advisory_only": True,
+        "ranking_impact": "none",
+    }
+
+
+def _decision_support_payload(payload: dict | None) -> dict | None:
+    if not isinstance(payload, dict):
+        return None
+    if payload.get("schema") != "decision_support_v1":
+        return None
+    if payload.get("status") not in {"available", "partial"}:
+        return None
+    if payload.get("source_schemas") != ["player_behavior_profile_v1", "player_behavior_fit_v1"]:
+        return None
+    items = _decision_support_items(payload.get("items"))
+    if not items:
+        return None
+    reasons = _player_profile_strings(payload.get("reasons"), DECISION_SUPPORT_REASONS)
+    reason = str(payload.get("reason") or "").strip()
+    if reason not in DECISION_SUPPORT_REASONS:
+        reason = reasons[0] if reasons else ""
+    result = {
+        "schema": "decision_support_v1",
+        "source_schemas": ["player_behavior_profile_v1", "player_behavior_fit_v1"],
+        "status": payload.get("status"),
+        "advisory_only": True,
+        "ranking_impact": "none",
+        "summary": _decision_support_summary(items),
+        "items": items,
+        "limitations": _player_profile_strings(payload.get("limitations"), PLAYER_PROFILE_LIMITATIONS),
+    }
+    if reason:
+        result["reason"] = reason
+    if reasons:
+        result["reasons"] = reasons
+    return result
+
+
+def _decision_support_total(payload: dict | None) -> int:
+    normalized = _decision_support_payload(payload)
+    return len(normalized["items"]) if normalized else 0
+
+
 RECOMMENDATION_DIAGNOSTIC_MODES = {"behavioral", "mixed", "score_fallback"}
 
 
@@ -572,6 +693,7 @@ def generate_json(
     behavioral_explanations: dict | None = None,
     player_behavior_profile: dict | None = None,
     player_behavior_fit: dict | None = None,
+    decision_support: dict | None = None,
 ) -> str:
     previous_appids = previous_appids or set()
     family_appids = family_appids or set()
@@ -607,6 +729,7 @@ def generate_json(
     behavioral_explanations = _behavioral_explanations_payload(behavioral_explanations)
     player_behavior_profile = _player_behavior_profile_payload(player_behavior_profile)
     player_behavior_fit = _player_behavior_fit_payload(player_behavior_fit)
+    decision_support = _decision_support_payload(decision_support)
 
     payload = {
         "meta": {
@@ -645,6 +768,7 @@ def generate_json(
             "behavioral_signals_count": _behavioral_signals_total(behavioral_signals),
             "behavioral_explanations_count": _behavioral_explanations_total(behavioral_explanations),
             "player_behavior_fit_count": len(player_behavior_fit.get("items", [])) if player_behavior_fit else 0,
+            "decision_support_count": _decision_support_total(decision_support),
         },
         "comparison": _json_safe(comparison),
         "top_picks": _json_safe(top_picks),
@@ -716,4 +840,6 @@ def generate_json(
         payload["player_behavior_profile"] = _json_safe(player_behavior_profile)
     if player_behavior_fit:
         payload["player_behavior_fit"] = _json_safe(player_behavior_fit)
+    if decision_support:
+        payload["decision_support"] = _json_safe(decision_support)
     return json.dumps(payload, ensure_ascii=False, indent=2)

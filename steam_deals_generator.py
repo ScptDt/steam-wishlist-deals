@@ -150,6 +150,7 @@ except Exception:
 
 try:
     from steam_deals_behavioral import (
+        build_decision_support as _build_decision_support_impl,
         build_behavioral_explanations as _build_behavioral_explanations_impl,
         build_behavioral_signals as _build_behavioral_signals_impl,
         build_player_behavior_fit as _build_player_behavior_fit_impl,
@@ -157,6 +158,7 @@ try:
         load_player_manual_preferences as _load_player_manual_preferences_impl,
     )
 except Exception:
+    _build_decision_support_impl = None
     _build_behavioral_explanations_impl = None
     _build_behavioral_signals_impl = None
     _build_player_behavior_fit_impl = None
@@ -968,6 +970,32 @@ def build_player_behavior_fit(player_behavior_profile, behavioral_signals, **kwa
             "limitations": ["local_snapshot", "not_purchase_advice", "ranking_impact_none"],
         }
     return _build_player_behavior_fit_impl(player_behavior_profile, behavioral_signals, **kwargs)
+
+
+def build_decision_support(player_behavior_profile, player_behavior_fit):
+    """Build qualitative JSON-only decision support from player behavior fit."""
+    if _build_decision_support_impl is None:
+        return {
+            "schema": "decision_support_v1",
+            "source_schemas": ["player_behavior_profile_v1", "player_behavior_fit_v1"],
+            "status": "unavailable",
+            "reason": "taxonomy_invalid",
+            "reasons": ["taxonomy_invalid"],
+            "advisory_only": True,
+            "ranking_impact": "none",
+            "summary": {
+                "items_count": 0,
+                "good_fit_count": 0,
+                "maybe_count": 0,
+                "weak_fit_count": 0,
+                "confidence": "unknown",
+                "advisory_only": True,
+                "ranking_impact": "none",
+            },
+            "items": [],
+            "limitations": ["local_snapshot", "not_purchase_advice", "ranking_impact_none"],
+        }
+    return _build_decision_support_impl(player_behavior_profile, player_behavior_fit)
 
 
 def load_player_manual_preferences(json_path: Path | str | None) -> dict:
@@ -4187,6 +4215,7 @@ def generate_json(
     behavioral_explanations: dict | None = None,
     player_behavior_profile: dict | None = None,
     player_behavior_fit: dict | None = None,
+    decision_support: dict | None = None,
     player_manual_preferences: dict | None = None,
 ) -> str:
     if _generate_json_renderer is None:
@@ -4273,6 +4302,8 @@ def generate_json(
         )
     if player_behavior_fit is None:
         player_behavior_fit = build_player_behavior_fit(player_behavior_profile, behavioral_signals)
+    if decision_support is None:
+        decision_support = build_decision_support(player_behavior_profile, player_behavior_fit)
     return _generate_json_renderer(
         deals,
         backlog_on_sale,
@@ -4324,6 +4355,7 @@ def generate_json(
         behavioral_explanations=behavioral_explanations,
         player_behavior_profile=player_behavior_profile,
         player_behavior_fit=player_behavior_fit,
+        decision_support=decision_support,
     )
 
 
@@ -5208,6 +5240,7 @@ def main():
         personalized_recommendations=personalized_recommendations,
     )
     player_behavior_fit = build_player_behavior_fit(player_behavior_profile, behavioral_signals)
+    decision_support = build_decision_support(player_behavior_profile, player_behavior_fit)
     play_access = None
     if local_play_access_records:
         play_access = build_play_access_contract(
@@ -5397,6 +5430,7 @@ def main():
         behavioral_explanations=behavioral_explanations,
         player_behavior_profile=player_behavior_profile,
         player_behavior_fit=player_behavior_fit,
+        decision_support=decision_support,
         **family_renderer_kwargs,
     )
 

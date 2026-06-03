@@ -46,6 +46,7 @@ from steam_deals_access import (
     normalize_steam_access_import,
 )
 from steam_deals_behavioral import (
+    build_decision_support as module_build_decision_support,
     build_behavioral_explanations as module_build_behavioral_explanations,
     build_behavioral_signals as module_build_behavioral_signals,
     build_player_behavior_fit as module_build_player_behavior_fit,
@@ -1506,6 +1507,55 @@ class BehavioralSignalsTests(unittest.TestCase):
         self.assertEqual(no_match["status"], "insufficient_signals")
         self.assertEqual(no_match["reason"], "insufficient_behavioral_fit_matches")
         self.assertEqual(no_match["items"], [])
+        self.assertEqual(missing_profile["status"], "unavailable")
+        self.assertEqual(missing_profile["reason"], "player_profile_unavailable")
+
+    def test_build_decision_support_labels_fit_without_purchase_advice(self) -> None:
+        profile = module_build_player_behavior_profile(
+            manual_preferences={
+                "preferred_families": ["coop_teamwork"],
+                "preferred_loops": ["shared_objective_pressure"],
+                "preferred_terms": ["Co-op"],
+            }
+        )
+        signals = module_build_behavioral_signals(
+            [{"appid": "1966720", "name": "Lethal Company", "tags": ["Co-op", "Online Co-op"]}]
+        )
+        fit = module_build_player_behavior_fit(profile, signals)
+
+        payload = module_build_decision_support(profile, fit)
+        item = payload["items"][0]
+        dumped = json.dumps(payload)
+
+        self.assertEqual(payload["schema"], "decision_support_v1")
+        self.assertEqual(payload["source_schemas"], ["player_behavior_profile_v1", "player_behavior_fit_v1"])
+        self.assertTrue(payload["advisory_only"])
+        self.assertEqual(payload["ranking_impact"], "none")
+        self.assertEqual(payload["summary"]["items_count"], 1)
+        self.assertEqual(item["appid"], "1966720")
+        self.assertEqual(item["decision_label"], "good_fit")
+        self.assertEqual(item["fit_level"], "strong")
+        self.assertIn("profile_family_match", item["fit_reasons"])
+        self.assertTrue(any(record["id"] == "coop_teamwork" for record in item["matched_preferences"]))
+        self.assertNotIn("score", item)
+        self.assertNotIn("buy", dumped.lower())
+        self.assertNotIn("playtime_2weeks", dumped)
+
+    def test_build_decision_support_degrades_without_useful_fit(self) -> None:
+        profile = module_build_player_behavior_profile(
+            manual_preferences={"preferred_families": ["horror_tension"]}
+        )
+        empty_fit = module_build_player_behavior_fit(
+            profile,
+            module_build_behavioral_signals([{"appid": "10", "tags": ["Puzzle"]}]),
+        )
+
+        payload = module_build_decision_support(profile, empty_fit)
+        missing_profile = module_build_decision_support({}, empty_fit)
+
+        self.assertEqual(payload["status"], "insufficient_signals")
+        self.assertEqual(payload["reason"], "player_behavior_fit_insufficient")
+        self.assertEqual(payload["items"], [])
         self.assertEqual(missing_profile["status"], "unavailable")
         self.assertEqual(missing_profile["reason"], "player_profile_unavailable")
 
@@ -7906,9 +7956,11 @@ class StopApiContractTests(unittest.TestCase):
 
         data = json.loads(payload)
         fit = data["player_behavior_fit"]
+        decision_support = data["decision_support"]
         item = fit["items"][0]
 
         self.assertEqual(data["summary"]["player_behavior_fit_count"], 1)
+        self.assertEqual(data["summary"]["decision_support_count"], 1)
         self.assertEqual(fit["schema"], "player_behavior_fit_v1")
         self.assertEqual(fit["source_schemas"], ["player_behavior_profile_v1", "behavioral_signals_v1"])
         self.assertTrue(fit["advisory_only"])
@@ -7916,8 +7968,13 @@ class StopApiContractTests(unittest.TestCase):
         self.assertEqual(item["appid"], "1966720")
         self.assertEqual(item["fit_level"], "strong")
         self.assertIn("profile_family_match", item["reason_codes"])
+        self.assertEqual(decision_support["schema"], "decision_support_v1")
+        self.assertTrue(decision_support["advisory_only"])
+        self.assertEqual(decision_support["ranking_impact"], "none")
+        self.assertEqual(decision_support["items"][0]["decision_label"], "good_fit")
         self.assertEqual(data["deals"], deals)
         self.assertNotIn("player_behavior_fit", data["behavioral_signals"])
+        self.assertNotIn("decision_support", data["player_behavior_fit"])
 
     def test_generate_json_omits_invalid_player_behavior_fit_payload(self) -> None:
         payload = generate_json(
@@ -7990,6 +8047,83 @@ class StopApiContractTests(unittest.TestCase):
         self.assertEqual(fit["ranking_impact"], "none")
         self.assertEqual(fit["limitations"], ["local_snapshot"])
         self.assertEqual(fit["items"][0]["reason_codes"], ["profile_family_match"])
+        self.assertNotIn("/home/example-user", dumped)
+        self.assertNotIn("raw_playtime", dumped)
+        self.assertNotIn("playtime_2weeks", dumped)
+
+    def test_generate_json_omits_invalid_decision_support_payload(self) -> None:
+        payload = generate_json(
+            deals=[],
+            backlog_on_sale=[],
+            have_on_sale=[],
+            vanity="gaben",
+            owned={},
+            wishlist_appids=[],
+            min_discount=0,
+            genres=[],
+            decision_support={
+                "schema": "decision_support_v1",
+                "source_schemas": ["player_behavior_profile_v1", "player_behavior_fit_v1"],
+                "status": "insufficient_signals",
+                "items": [],
+            },
+        )
+
+        data = json.loads(payload)
+
+        self.assertEqual(data["summary"]["decision_support_count"], 0)
+        self.assertNotIn("decision_support", data)
+
+    def test_generate_json_sanitizes_decision_support_payload(self) -> None:
+        payload = generate_json(
+            deals=[],
+            backlog_on_sale=[],
+            have_on_sale=[],
+            vanity="gaben",
+            owned={},
+            wishlist_appids=[],
+            min_discount=0,
+            genres=[],
+            decision_support={
+                "schema": "decision_support_v1",
+                "source_schemas": ["player_behavior_profile_v1", "player_behavior_fit_v1"],
+                "status": "available",
+                "advisory_only": False,
+                "ranking_impact": "score",
+                "items": [
+                    {
+                        "appid": "1966720",
+                        "name": "Lethal Company",
+                        "decision_label": "good_fit",
+                        "fit_level": "strong",
+                        "confidence": "medium",
+                        "fit_reasons": ["profile_family_match", "/home/example-user/private-code"],
+                        "caution_reasons": ["low_confidence", "/home/example-user/private-caution"],
+                        "matched_preferences": [
+                            {
+                                "kind": "family",
+                                "id": "coop_teamwork",
+                                "label": "Co-op / teamwork",
+                                "strength": "strong",
+                                "confidence": "medium",
+                                "local_path": "/home/example-user/private.json",
+                            }
+                        ],
+                        "raw_playtime": [{"appid": "1966720", "playtime_2weeks": 180}],
+                    }
+                ],
+                "limitations": ["local_snapshot", "/home/example-user/private-limitation"],
+            },
+        )
+
+        decision_support = json.loads(payload)["decision_support"]
+        dumped = json.dumps(decision_support)
+
+        self.assertTrue(decision_support["advisory_only"])
+        self.assertEqual(decision_support["ranking_impact"], "none")
+        self.assertEqual(decision_support["limitations"], ["local_snapshot"])
+        self.assertEqual(decision_support["items"][0]["fit_reasons"], ["profile_family_match"])
+        self.assertEqual(decision_support["items"][0]["caution_reasons"], ["low_confidence"])
         self.assertNotIn("/home/example-user", dumped)
         self.assertNotIn("raw_playtime", dumped)
         self.assertNotIn("playtime_2weeks", dumped)
