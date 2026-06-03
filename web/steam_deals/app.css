@@ -2996,6 +2996,20 @@ details .details-body .field:last-child {
   font-size: 0.71rem;
   line-height: 1.35;
 }
+.latest-wishlist-access-decision {
+  padding: 0.38rem 0.48rem;
+  border-radius: 8px;
+  border: 1px solid rgba(102, 192, 244, 0.22);
+  background: rgba(102, 192, 244, 0.08);
+  color: var(--text2);
+  font-size: 0.71rem;
+  line-height: 1.35;
+}
+.latest-wishlist-access-decision strong {
+  display: inline;
+  color: var(--accent);
+  font-size: 0.71rem;
+}
 .latest-wishlist-item-badge {
   flex: 0 0 auto;
 }

@@ -239,6 +239,13 @@ El payload visible sigue esta semántica base:
         "reasons": ["ya está en tu biblioteca"],
         "action": "review",
         "advisory_only": true,
+        "access_decision": {
+          "code": "owned",
+          "label": "Ya lo tienes",
+          "detail": "Comprar solo si quieres otra copia o soporte adicional.",
+          "advisory_only": true,
+          "ranking_impact": "none"
+        },
         "wishlist_index": 0
       }
     ],
@@ -253,6 +260,14 @@ El payload visible sigue esta semántica base:
 ```
 
 Cualquier ampliación multi-store o `play_access` debe ser compatible hacia atrás: los consumidores que solo lean `signals`, `reasons`, `action` y `advisory_only` deben seguir funcionando. Cuando hay `play_access`, `source_signals` puede incluir `play_access` y cada item puede adjuntar metadata pública bajo `play_access` sin reemplazar `signals` ni `reasons`.
+
+`access_decision` es opcional y solo resume copy visible para decidir compra. Códigos actuales:
+
+- `owned` → “Ya lo tienes” / comprar solo si quieres otra copia o soporte adicional.
+- `family` → “Disponible por Steam Family” / comprar solo si quieres copia propia.
+- `probable_family_shared` → “Probable acceso local” / revisar acceso local antes de comprar.
+
+La acción sigue siendo `review` y el badge operativo debe seguir diciendo `Solo revisión`; `access_decision` no borra, no oculta, no auto-excluye y no cambia score/ranking/defaults.
 
 ## Extensión propuesta por item
 

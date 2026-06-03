@@ -40,6 +40,25 @@ _MANUAL_EXPORT_COLLECTION_KEYS = (
     "purchases",
     "bundles",
 )
+_ACCESS_DECISION_COPY = {
+    "owned": {
+        "label": "Ya lo tienes",
+        "detail": "Comprar solo si quieres otra copia o soporte adicional.",
+    },
+    "family": {
+        "label": "Disponible por Steam Family",
+        "detail": "Comprar solo si quieres copia propia.",
+    },
+    "probable_family_shared": {
+        "label": "Probable acceso local",
+        "detail": "Revisa el acceso local antes de comprar.",
+    },
+    "playable_without_buying": {
+        "label": "Jugable sin compra local",
+        "detail": "Revisa el acceso local antes de comprar.",
+    },
+}
+_ACCESS_DECISION_PRIORITY = ("owned", "family", "probable_family_shared", "playable_without_buying")
 
 
 def _appid(record) -> str:
@@ -662,6 +681,21 @@ def _append_signal(signals: list[str], reasons: list[str], signal: str, reason: 
         reasons.append(reason)
 
 
+def _access_decision(signals: list[str]) -> dict | None:
+    for code in _ACCESS_DECISION_PRIORITY:
+        if code not in signals:
+            continue
+        copy = _ACCESS_DECISION_COPY[code]
+        return {
+            "code": code,
+            "label": copy["label"],
+            "detail": copy["detail"],
+            "advisory_only": True,
+            "ranking_impact": "none",
+        }
+    return None
+
+
 def _missing_local_name_reason() -> str:
     return "No tenemos nombre local para este AppID; revisa si quieres mantenerlo en wishlist"
 
@@ -778,6 +812,8 @@ def build_wishlist_hygiene_signals(
             "advisory_only": True,
             "wishlist_index": index,
         }
+        if access_decision := _access_decision(signals):
+            item["access_decision"] = access_decision
         if missing_local_name:
             item["missing_local_name"] = True
         if accepted_external_matches:

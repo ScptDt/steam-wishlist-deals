@@ -2416,6 +2416,8 @@ class WishlistHygieneTests(unittest.TestCase):
 
         self.assertEqual(item["signals"], ["probable_family_shared"])
         self.assertEqual(item["reasons"], ["probablemente ya puedes jugarlo sin comprarlo"])
+        self.assertEqual(item["access_decision"]["label"], "Probable acceso local")
+        self.assertEqual(item["access_decision"]["ranking_impact"], "none")
         self.assertEqual(item["play_access"]["access_type"], "probable_family_shared")
         self.assertEqual(item["play_access"]["source"], "installed_or_playable_not_owned")
         self.assertTrue(item["play_access"]["advisory_only"])
@@ -7696,8 +7698,10 @@ class StopApiContractTests(unittest.TestCase):
         self.assertTrue(hygiene["summary"]["advisory_only"])
         self.assertEqual(by_appid["10"]["signals"], ["hltb_match"])
         self.assertIn("owned", by_appid["20"]["signals"])
+        self.assertEqual(by_appid["20"]["access_decision"]["label"], "Ya lo tienes")
         self.assertIn("library_match", by_appid["20"]["signals"])
         self.assertEqual(by_appid["30"]["signals"], ["family"])
+        self.assertEqual(by_appid["30"]["access_decision"]["label"], "Disponible por Steam Family")
         self.assertTrue(all(item["action"] == "review" for item in hygiene["items"]))
 
     def test_generate_json_serializes_play_access_and_feeds_wishlist_hygiene(self) -> None:
@@ -7728,6 +7732,8 @@ class StopApiContractTests(unittest.TestCase):
         self.assertEqual(data["play_access"]["ranking_impact"], "none")
         self.assertEqual(data["play_access"]["summary"]["items_count"], 1)
         self.assertEqual(hygiene_item["signals"], ["probable_family_shared"])
+        self.assertEqual(hygiene_item["access_decision"]["label"], "Probable acceso local")
+        self.assertTrue(hygiene_item["access_decision"]["advisory_only"])
         self.assertEqual(hygiene_item["play_access"]["access_type"], "probable_family_shared")
         self.assertEqual(data["deals"], deals)
 
@@ -8175,7 +8181,9 @@ class StopApiContractTests(unittest.TestCase):
         self.assertIn("Sugerencias locales **advisory-only**", md)
         self.assertIn("no borra, no auto-excluye juegos y no cambia el score", md)
         self.assertIn("[Owned Local](https://store.steampowered.com/app/20/)", md)
-        self.assertIn("Ya está en biblioteca", md)
+        self.assertIn("Ya lo tienes", md)
+        self.assertIn("Disponible por Steam Family", md)
+        self.assertIn("Probable acceso local", md)
         self.assertIn("Solo revisión", md)
         self.assertIn("[Abrir en Steam](https://store.steampowered.com/app/20/)", md)
 
@@ -8208,6 +8216,8 @@ class StopApiContractTests(unittest.TestCase):
         self.assertIn("Sugerencias locales advisory-only", html)
         self.assertIn("no borra ni auto-excluye juegos", html)
         self.assertIn("Owned &lt;Game&gt; &amp; Co", html)
+        self.assertIn("Ya lo tienes", html)
+        self.assertIn("Comprar solo si quieres otra copia", html)
         self.assertIn("ya &lt;owned&gt; &amp; local", html)
         self.assertIn("Abrir en Steam", html)
         self.assertIn("Solo revisión", html)
@@ -8233,6 +8243,8 @@ class StopApiContractTests(unittest.TestCase):
 
         self.assertIn('data-wishlist-hygiene-section', html)
         self.assertIn("Installed Only", html)
+        self.assertIn("Probable acceso local", html)
+        self.assertIn("Revisa el acceso local antes de comprar", html)
         self.assertIn("probablemente ya puedes jugarlo sin comprarlo", html)
         self.assertIn("Solo revisión", html)
 

@@ -202,8 +202,10 @@ _PROMO_CATEGORY_LABELS = {
 }
 
 _WISHLIST_HYGIENE_SIGNAL_LABELS = {
-    "owned": "Ya está en biblioteca",
-    "family": "Biblioteca familiar",
+    "owned": "Ya lo tienes",
+    "family": "Disponible por Steam Family",
+    "probable_family_shared": "Probable acceso local",
+    "playable_without_buying": "Jugable sin compra local",
     "library_match": "Match biblioteca local",
     "hltb_match": "HLTB local",
     "other_store": "Otra tienda",
@@ -211,6 +213,13 @@ _WISHLIST_HYGIENE_SIGNAL_LABELS = {
     "catalog_missing": "No está en catálogo local",
     "invalid_appid": "AppID inválido",
 }
+_WISHLIST_ACCESS_DECISION_DETAILS = {
+    "owned": "Comprar solo si quieres otra copia o soporte adicional.",
+    "family": "Comprar solo si quieres copia propia.",
+    "probable_family_shared": "Revisa el acceso local antes de comprar.",
+    "playable_without_buying": "Revisa el acceso local antes de comprar.",
+}
+_WISHLIST_ACCESS_DECISION_PRIORITY = ("owned", "family", "probable_family_shared", "playable_without_buying")
 
 _FREE_WEEKEND_CONFIDENCE_LABELS = {
     "high": "Alta",
@@ -485,6 +494,26 @@ def _wishlist_hygiene_action_text(item: dict) -> str:
     return action
 
 
+def _wishlist_hygiene_access_decision(item: dict) -> dict | None:
+    explicit = item.get("access_decision") if isinstance(item, dict) else None
+    if isinstance(explicit, dict):
+        code = str(explicit.get("code") or "").strip()
+        label = str(explicit.get("label") or "").strip()
+        if code and label:
+            detail = str(explicit.get("detail") or _WISHLIST_ACCESS_DECISION_DETAILS.get(code, "")).strip()
+            return {"code": code, "label": label, "detail": detail}
+    signals = item.get("signals") if isinstance(item, dict) else []
+    signal_set = {str(signal or "").strip() for signal in signals if str(signal or "").strip()}
+    for code in _WISHLIST_ACCESS_DECISION_PRIORITY:
+        if code in signal_set:
+            return {
+                "code": code,
+                "label": _wishlist_hygiene_signal_label(code),
+                "detail": _WISHLIST_ACCESS_DECISION_DETAILS.get(code, ""),
+            }
+    return None
+
+
 def _build_wishlist_hygiene_lines(payload: dict | None) -> list[str]:
     items, total_items, hidden_count = _wishlist_hygiene_items(payload)
     if not items:
@@ -495,7 +524,7 @@ def _build_wishlist_hygiene_lines(payload: dict | None) -> list[str]:
     lines = [
         "## 🧹 Revisar wishlist",
         "",
-        f"> **{total_items:,} sugerencias{total_hint}**. Sugerencias locales **advisory-only**: no borra, no auto-excluye juegos y no cambia el score.",
+        f"> **{total_items:,} sugerencias{total_hint}**. Sugerencias locales **advisory-only**: no borra, no auto-excluye juegos y no cambia el score. Las señales de acceso pueden indicar **Ya lo tienes**, **Disponible por Steam Family** o **Probable acceso local**.",
         "",
         "| Juego | Señales | Motivos | Acción |",
         "|-------|---------|---------|--------|",

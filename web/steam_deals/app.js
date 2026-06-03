@@ -4511,8 +4511,10 @@ function renderLatestGiftIdeas(report) {
 
 function latestWishlistHygieneSignalLabel(signal) {
   const labels = {
-    owned: 'Ya está en biblioteca',
-    family: 'Biblioteca familiar',
+    owned: 'Ya lo tienes',
+    family: 'Disponible por Steam Family',
+    probable_family_shared: 'Probable acceso local',
+    playable_without_buying: 'Jugable sin compra local',
     library_match: 'Match biblioteca local',
     hltb_match: 'HLTB local',
     other_store: 'Otra tienda',
@@ -4522,6 +4524,45 @@ function latestWishlistHygieneSignalLabel(signal) {
   };
   const key = String(signal || '').trim();
   return labels[key] || key.replace(/_/g, ' ');
+}
+
+function latestWishlistAccessDecisionDetail(code) {
+  const details = {
+    owned: 'Comprar solo si quieres otra copia o soporte adicional.',
+    family: 'Comprar solo si quieres copia propia.',
+    probable_family_shared: 'Revisa el acceso local antes de comprar.',
+    playable_without_buying: 'Revisa el acceso local antes de comprar.',
+  };
+  return details[String(code || '').trim()] || '';
+}
+
+function latestWishlistAccessDecision(item) {
+  const source = item && typeof item === 'object' ? item : {};
+  const explicit = source.access_decision && typeof source.access_decision === 'object'
+    ? source.access_decision
+    : null;
+  if (explicit) {
+    const code = String(explicit.code || '').trim();
+    const label = String(explicit.label || '').trim();
+    if (code && label) {
+      return {
+        code,
+        label,
+        detail: String(explicit.detail || latestWishlistAccessDecisionDetail(code)).trim(),
+      };
+    }
+  }
+  const signals = Array.isArray(source.signals)
+    ? source.signals.map(signal => String(signal || '').trim()).filter(Boolean)
+    : [];
+  const priority = ['owned', 'family', 'probable_family_shared', 'playable_without_buying'];
+  const code = priority.find(signal => signals.includes(signal)) || '';
+  if (!code) return null;
+  return {
+    code,
+    label: latestWishlistHygieneSignalLabel(code),
+    detail: latestWishlistAccessDecisionDetail(code),
+  };
 }
 
 function latestWishlistHygieneCounts(payload, items) {
@@ -4563,6 +4604,7 @@ function renderLatestWishlistHygieneItem(item) {
   const signals = Array.isArray(source.signals)
     ? source.signals.map(latestWishlistHygieneSignalLabel).filter(Boolean).slice(0, 3)
     : [];
+  const accessDecision = latestWishlistAccessDecision(source);
   const nameHtml = safeAppid
     ? `<a href="https://store.steampowered.com/app/${escapeHtml(safeAppid)}/" target="_blank" rel="noopener noreferrer">${escapeHtml(name)}</a>`
     : `<span>${escapeHtml(name)}</span>`;
@@ -4581,6 +4623,7 @@ function renderLatestWishlistHygieneItem(item) {
         </div>
         <span class="latest-wishlist-item-meta">${escapeHtml(appidMeta)}</span>
         ${signals.length ? `<span class="latest-wishlist-item-signals">${signals.map(signal => `<em>${escapeHtml(signal)}</em>`).join('')}</span>` : ''}
+        ${accessDecision ? `<span class="latest-wishlist-access-decision"><strong>${escapeHtml(accessDecision.label)}:</strong> ${escapeHtml(accessDecision.detail)}</span>` : ''}
         <span class="latest-wishlist-item-reason-label">Razón para revisar</span>
         <span class="latest-wishlist-item-reasons">${escapeHtml((visibleReasons.length ? visibleReasons : ['revisar manualmente antes de limpiar']).join(' · '))}</span>
         <div class="latest-wishlist-item-actions">
@@ -4613,7 +4656,7 @@ function renderLatestWishlistHygiene(report) {
             <span class="latest-wishlist-badge">Solo revisión</span>
           </div>
           <div class="latest-wishlist-count">${escapeHtml(countLabel)}</div>
-          <div class="latest-wishlist-subtitle">Advisory-only: No borra ni auto-excluye juegos, y no cambia el score.</div>
+          <div class="latest-wishlist-subtitle">Advisory-only: No borra ni auto-excluye juegos, y no cambia el score. Las señales de acceso pueden indicar Ya lo tienes, Disponible por Steam Family o Probable acceso local.</div>
         </div>
       </div>
       <ol class="latest-wishlist-list">
