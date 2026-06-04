@@ -321,6 +321,93 @@ Guardrails implementados/esperados:
 - Copy/save son acciones manuales del usuario; no hay background scraping, persistencia de sesión ni envío a endpoint local/remoto.
 - La evidencia de cierre usa fixtures y checks estáticos; no requiere live login, red real ni páginas Steam privadas.
 
+### Plan 7A: threat model endpoint directo helper → app local
+
+Este corte es **docs-only**. Define el contrato mínimo antes de permitir que la extensión envíe un import directamente a la app local. Plan 7A no implementa endpoint, no cambia permisos de la extensión y no habilita envío directo todavía.
+
+#### Objetivo y límites
+
+Objetivo futuro de Plan 7B: permitir que el usuario, desde el popup del helper, envíe un JSON `steam_access_import_v1` AppID-only a un endpoint import-only de Steam Tools corriendo en `127.0.0.1`.
+
+No permitido en Plan 7:
+
+- endpoint de comandos generales o ejecución arbitraria;
+- envío de cookies, tokens, passwords, headers autenticados, raw responses, HTML, SteamID/perfil, nombres de familiares, friends o emails;
+- login automatizado, scraping desde Python, SteamKit2 o mutaciones Steam;
+- cambios en score/ranking/defaults/cache/fetching;
+- aceptar requests desde `0.0.0.0`, interfaces LAN o CORS wildcard.
+
+#### Superficies y permisos futuros
+
+Si se implementa Plan 7B, la extensión deberá usar el service worker o una página de extensión para llamar a la app local; no content-script fetch. Los permisos futuros deben ser explícitos y estrechos:
+
+```json
+{
+  "host_permissions": ["http://127.0.0.1/*"]
+}
+```
+
+`localhost` solo se agregaría si hay una razón documentada; operacionalmente se prefiere `127.0.0.1` para evitar sorpresas de resolución. La app debe seguir ligada a loopback y nunca a `0.0.0.0`.
+
+#### Pairing y autenticación local
+
+Diseño requerido para Plan 7B:
+
+1. El usuario habilita explícitamente “recibir import desde helper” en la app local.
+2. La app genera un pairing token/código corto, aleatorio, de un solo uso y con expiración breve.
+3. El helper envía un request de pairing a `http://127.0.0.1:{port}/...` con `Content-Type: application/json` y `X-Pairing-Token` o `Authorization: Bearer ...`.
+4. La app valida loopback, Origin permitido y token vigente; luego devuelve un token de sesión local de alcance import-only.
+5. Cada import posterior debe enviar `Authorization: Bearer <local-session-token>` o header custom equivalente.
+6. El usuario puede revocar/desconectar el pairing desde la app local.
+
+No usar cookies para autenticar este flujo; token explícito en header reduce exposición CSRF y deja claro que no se reutiliza sesión Steam ni sesión web general.
+
+#### Endpoint import-only futuro
+
+Contrato preliminar de Plan 7B:
+
+```http
+POST /api/steam-access/import
+Origin: chrome-extension://<extension-id>
+Content-Type: application/json
+Authorization: Bearer <local-session-token>
+```
+
+Payload permitido: el mismo contrato AppID-only `steam_access_import_v1` de Plan 6B. El server debe validar schema estricta, límites de tamaño, arrays de AppIDs numéricos, `advisory_only=true`, `ranking_impact="none"` y ausencia de claves prohibidas.
+
+Respuesta exitosa sugerida:
+
+```json
+{
+  "ok": true,
+  "imported": true,
+  "summary": {
+    "owned_count": 2,
+    "family_shared_count": 1,
+    "wishlist_count": 0,
+    "advisory_only": true,
+    "ranking_impact": "none"
+  }
+}
+```
+
+Errores deben ser accionables pero no filtrar rutas locales, tokens, stack traces ni payloads crudos. Usar 400 para schema inválida, 401 para token faltante/inválido, 403 para Origin no permitido, 405 para método no permitido, 413 para payload demasiado grande y 429 para rate limit.
+
+#### CORS, CSRF y checks obligatorios
+
+Plan 7B debe probar con fixtures/mocks:
+
+- server ligado a `127.0.0.1` y rechazo de hosts/origins no permitidos;
+- CORS allowlist exacta para `chrome-extension://...` / `moz-extension://...` cuando exista Origin; nunca `Access-Control-Allow-Origin: *` para import;
+- rechazo de `GET`, `PUT`, `PATCH`, `DELETE` para mutaciones/import;
+- rechazo de POST sin token, con token expirado o con Origin web normal (`https://...`);
+- request no simple: JSON + Authorization/custom header;
+- límites de tamaño/rate limit por endpoint;
+- no logging ni responses con tokens, cookies, raw responses, HTML, perfil, nombres de familiares o rutas locales;
+- persistencia solo tras confirmación explícita del usuario y solo para el import local.
+
+Plan 7B no puede avanzar sin tests de seguridad dedicados y stop-on-failure activo.
+
 ## Contrato actual que se debe preservar
 
 El payload visible sigue esta semántica base:
