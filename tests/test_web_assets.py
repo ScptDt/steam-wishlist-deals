@@ -281,6 +281,32 @@ class WebAssetsTests(unittest.TestCase):
             app_js,
         )
 
+    def test_steam_openid_signin_is_visible_and_guardrailed(self) -> None:
+        index_html = (ROOT / "web" / "steam_deals" / "index.html").read_text(
+            encoding="utf-8"
+        )
+        app_js = (ROOT / "web" / "steam_deals" / "app.js").read_text(
+            encoding="utf-8"
+        )
+        app_css = (ROOT / "web" / "steam_deals" / "app.css").read_text(
+            encoding="utf-8"
+        )
+
+        self.assertIn("Conectar Steam", index_html)
+        self.assertIn("OpenID oficial solo enlaza tu SteamID/perfil", index_html)
+        self.assertIn("No pedimos password", index_html)
+        self.assertIn("no leemos cookies/tokens", index_html)
+        self.assertIn("no automatizamos login", index_html)
+        self.assertIn("btn-steam-openid-start", index_html)
+        self.assertIn("btn-steam-openid-disconnect", index_html)
+        self.assertIn("/api/steam-openid/status", app_js)
+        self.assertIn("/api/steam-openid/start", app_js)
+        self.assertIn("/api/steam-openid/disconnect", app_js)
+        self.assertIn("window.location.href = data.login_url", app_js)
+        self.assertIn("OpenID no entrega Steam Family ni wishlist privada", app_js)
+        self.assertIn("No da Steam Family, wishlist privada ni owned privado", app_js)
+        self.assertIn(".steam-openid-card", app_css)
+
     def test_latest_report_recommendation_diagnostics_are_visible_and_advisory_only(self) -> None:
         app_js = (ROOT / "web" / "steam_deals" / "app.js").read_text(
             encoding="utf-8"

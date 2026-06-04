@@ -8,10 +8,12 @@ import time
 import unittest
 from datetime import date
 from datetime import datetime
+from datetime import timezone
 from pathlib import Path
 from tempfile import TemporaryDirectory
 from types import SimpleNamespace
 import urllib.error
+import urllib.parse
 
 import app.steam_deals_prices as prices_module
 import steam_deals_generator as generator_module
@@ -62,6 +64,17 @@ from steam_deals_recommendations import (
 )
 from steam_deals_promo_highlights import (
     build_promo_highlights as module_build_promo_highlights,
+)
+from steam_deals_openid import (
+    STEAM_OPENID_ENDPOINT,
+    STEAM_OPENID_NS,
+    build_steam_openid_check_authentication_payload,
+    build_steam_openid_pending_state,
+    build_steam_openid_start_response,
+    consume_steam_openid_callback,
+    extract_steamid_from_claimed_id,
+    is_steam_openid_check_authentication_valid,
+    validate_steam_openid_callback,
 )
 from steam_deals_external_offers import diagnose_external_offers_contract
 from steam_deals_external_offers import normalize_external_offers
@@ -2080,6 +2093,121 @@ class ExternalOffersTests(unittest.TestCase):
 
 
 class AccessLayerTests(unittest.TestCase):
+    def _valid_steam_openid_params(self, pending: dict, *, now: float) -> dict[str, str]:
+        steamid = "76561198000000000"
+        claimed_id = f"http://steamcommunity.com/openid/id/{steamid}"
+        nonce = datetime.fromtimestamp(now, timezone.utc).strftime("%Y-%m-%dT%H:%M:%SZ") + "abc123"
+        return {
+            "state": pending["state"],
+            "openid.ns": STEAM_OPENID_NS,
+            "openid.mode": "id_res",
+            "openid.op_endpoint": STEAM_OPENID_ENDPOINT,
+            "openid.claimed_id": claimed_id,
+            "openid.identity": claimed_id,
+            "openid.return_to": pending["return_to"],
+            "openid.response_nonce": nonce,
+            "openid.assoc_handle": "assoc-handle",
+            "openid.signed": "assoc_handle,claimed_id,identity,op_endpoint,response_nonce,return_to",
+            "openid.sig": "signed-by-steam",
+        }
+
+    def test_steam_openid_start_response_is_local_and_limited(self) -> None:
+        payload, pending = build_steam_openid_start_response(
+            "state-123",
+            base_url="http://127.0.0.1:8080",
+            now=1_700_000_000,
+        )
+
+        parsed = urllib.parse.urlparse(payload["login_url"])
+        query = urllib.parse.parse_qs(parsed.query)
+
+        self.assertEqual(f"{parsed.scheme}://{parsed.netloc}{parsed.path}", STEAM_OPENID_ENDPOINT)
+        self.assertEqual(query["openid.ns"][0], STEAM_OPENID_NS)
+        self.assertEqual(query["openid.mode"][0], "checkid_setup")
+        self.assertEqual(query["openid.realm"][0], "http://127.0.0.1:8080/")
+        self.assertEqual(query["openid.return_to"][0], pending["return_to"])
+        self.assertIn("Steam OpenID solo identifica SteamID/perfil", payload["notes"][0])
+        self.assertIn("no pide password", payload["notes"][1])
+
+    def test_consume_steam_openid_callback_validates_nonce_and_signature_check(self) -> None:
+        now = 1_700_000_000.0
+        pending = build_steam_openid_pending_state(
+            "state-123",
+            base_url="http://127.0.0.1:8080",
+            now=now - 10,
+        )
+        params = self._valid_steam_openid_params(pending, now=now)
+        used_nonces: dict[str, float] = {}
+        seen_payloads: list[dict[str, str]] = []
+
+        profile = consume_steam_openid_callback(
+            params,
+            {pending["state"]: pending},
+            now=now,
+            used_nonces=used_nonces,
+            verify_authentication=lambda payload: seen_payloads.append(payload) or True,
+        )
+
+        self.assertEqual(profile["steamid"], "76561198000000000")
+        self.assertEqual(profile["family_access"], "not_available_via_openid")
+        self.assertIn(params["openid.response_nonce"], used_nonces)
+        self.assertEqual(seen_payloads[0]["openid.mode"], "check_authentication")
+        self.assertNotIn("state", seen_payloads[0])
+        self.assertTrue(is_steam_openid_check_authentication_valid("ns:http://specs.openid.net/auth/2.0\nis_valid:true\n"))
+
+    def test_steam_openid_callback_rejects_unsigned_replay_and_failed_check(self) -> None:
+        now = 1_700_000_000.0
+        pending = build_steam_openid_pending_state(
+            "state-123",
+            base_url="http://127.0.0.1:8080",
+            now=now,
+        )
+        params = self._valid_steam_openid_params(pending, now=now)
+        unsigned = dict(params)
+        unsigned["openid.signed"] = "claimed_id,identity"
+
+        with self.assertRaisesRegex(ValueError, "campos firmados OpenID insuficientes"):
+            validate_steam_openid_callback(unsigned, pending, now=now)
+
+        with self.assertRaisesRegex(ValueError, "firma OpenID no validada"):
+            consume_steam_openid_callback(
+                params,
+                {pending["state"]: pending},
+                now=now,
+                verify_authentication=lambda payload: False,
+            )
+
+        used_nonces = {params["openid.response_nonce"]: now - 5}
+        replay_pending = build_steam_openid_pending_state(
+            "state-456",
+            base_url="http://127.0.0.1:8080",
+            now=now,
+        )
+        replay_params = dict(params)
+        replay_params["state"] = replay_pending["state"]
+        replay_params["openid.return_to"] = replay_pending["return_to"]
+
+        with self.assertRaisesRegex(ValueError, "nonce OpenID ya usado"):
+            validate_steam_openid_callback(
+                replay_params,
+                replay_pending,
+                now=now,
+                used_nonces=used_nonces,
+            )
+
+    def test_build_steam_openid_check_payload_uses_only_openid_fields(self) -> None:
+        payload = build_steam_openid_check_authentication_payload(
+            {
+                "state": "local-state",
+                "openid.mode": "id_res",
+                "openid.sig": "signature",
+            }
+        )
+
+        self.assertEqual(payload["openid.mode"], "check_authentication")
+        self.assertEqual(payload["openid.sig"], "signature")
+        self.assertNotIn("state", payload)
+
     def test_normalize_local_play_access_import_accepts_explicit_local_shapes(self) -> None:
         records = normalize_local_play_access_import(
             {

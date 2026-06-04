@@ -13,6 +13,7 @@ import subprocess
 import sys
 import threading
 import urllib.parse
+import urllib.request
 import webbrowser
 from collections.abc import Iterable
 from datetime import datetime
@@ -38,6 +39,14 @@ from steam_deals_paths import (
 )
 from desktop_doctor import apply_desktop_doctor_fixes, build_desktop_doctor_report
 from app.steam_deals_history_dashboard import compare_history_runs, list_history_runs
+from app.steam_deals_openid import (
+    STEAM_OPENID_ENDPOINT,
+    build_steam_openid_start_response,
+    consume_steam_openid_callback,
+    is_steam_openid_check_authentication_valid,
+    public_steam_openid_profile,
+    steam_openid_base_url,
+)
 from app.steam_deals_recommendations import build_selection_review
 from shared.tool_modules import PAYDAY2_TOOL_ID, get_tool_entrypoint
 
@@ -105,6 +114,8 @@ PROTECTED_POST_PATHS = frozenset(
         "/api/stop",
         "/api/open-output-folder",
         "/api/config",
+        "/api/steam-openid/start",
+        "/api/steam-openid/disconnect",
         "/api/watchlist",
         "/api/watchlist/delete",
         "/api/selection-review",
@@ -114,6 +125,8 @@ PROTECTED_POST_PATHS = frozenset(
 
 _running_proc = None
 _proc_lock = threading.Lock()
+_steam_openid_pending_states: dict[str, dict] = {}
+_steam_openid_used_nonces: dict[str, float] = {}
 
 
 def _build_stop_response(status: str, message: str) -> dict[str, str]:
@@ -549,6 +562,59 @@ def build_public_config_response(config: dict) -> dict:
     }
 
 
+def steam_openid_status_payload(config: dict) -> dict:
+    return {
+        "profile": public_steam_openid_profile(config.get("steam_openid_profile")),
+        "family_available": False,
+        "message": "Steam Sign-in solo identifica tu perfil; no entrega Steam Family ni wishlist privada.",
+    }
+
+
+def steam_openid_result_page(title: str, message: str, *, status: str) -> str:
+    safe_title = html.escape(title)
+    safe_message = html.escape(message)
+    safe_status = html.escape(status)
+    return f"""<!doctype html>
+<html lang="es">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>{safe_title}</title>
+  <style>
+    body {{ font-family: system-ui, -apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif; background: #1b2838; color: #f5f5f5; margin: 0; padding: 2rem; }}
+    main {{ max-width: 680px; margin: 10vh auto; background: #16202d; border: 1px solid rgba(102,192,244,.25); border-radius: 12px; padding: 1.25rem; }}
+    a {{ color: #66c0f4; }}
+    .badge {{ display: inline-block; margin-bottom: .75rem; color: #66c0f4; font-weight: 700; text-transform: uppercase; font-size: .75rem; letter-spacing: .08em; }}
+  </style>
+</head>
+<body>
+  <main data-steam-openid-result="{safe_status}">
+    <span class="badge">Steam Sign-in</span>
+    <h1>{safe_title}</h1>
+    <p>{safe_message}</p>
+    <p>Este flujo no da acceso a Steam Family, wishlist privada, cookies ni tokens.</p>
+    <a href="/">Volver a Steam Tools</a>
+  </main>
+</body>
+</html>"""
+
+
+def verify_steam_openid_check_authentication(payload: dict[str, str], *, timeout: int = 8) -> bool:
+    data = urllib.parse.urlencode(payload).encode("utf-8")
+    request = urllib.request.Request(
+        STEAM_OPENID_ENDPOINT,
+        data=data,
+        method="POST",
+        headers={"Content-Type": "application/x-www-form-urlencoded"},
+    )
+    try:
+        with urllib.request.urlopen(request, timeout=timeout) as response:
+            text = response.read(4096).decode("utf-8", errors="replace")
+    except OSError:
+        return False
+    return is_steam_openid_check_authentication_valid(text)
+
+
 def _config_redaction_values(config: dict, env: dict[str, str] | None = None) -> list[str]:
     values: list[str] = []
     for config_key, env_name in CONFIG_SECRET_ENV_VARS.items():
@@ -961,6 +1027,10 @@ class Handler(BaseHTTPRequestHandler):
             serve_text_asset(self, STEAM_DEALS_JS_FILE, JS_CONTENT_TYPE)
         elif path == "/api/config":
             self._send_json(build_public_config_response(load_config()))
+        elif path == "/api/steam-openid/status":
+            self._send_json(steam_openid_status_payload(load_config()))
+        elif path == "/api/steam-openid/callback":
+            self._serve_steam_openid_callback()
         elif path == "/api/ui-state":
             self._send_json(
                 {
@@ -1009,6 +1079,10 @@ class Handler(BaseHTTPRequestHandler):
             self._serve_open_output_folder()
         elif path == "/api/config":
             self._serve_config_save()
+        elif path == "/api/steam-openid/start":
+            self._serve_steam_openid_start()
+        elif path == "/api/steam-openid/disconnect":
+            self._serve_steam_openid_disconnect()
         elif path == "/api/watchlist":
             self._serve_watchlist_add()
         elif path == "/api/watchlist/delete":
@@ -1029,6 +1103,53 @@ class Handler(BaseHTTPRequestHandler):
         cfg = merge_config_preserving_secrets(load_config(), body)
         save_config(cfg)
         self._send_json({"status": "saved"})
+
+    def _serve_steam_openid_start(self):
+        state = create_local_session_token(24)
+        payload, pending = build_steam_openid_start_response(
+            state,
+            base_url=steam_openid_base_url(self._server_port()),
+        )
+        _steam_openid_pending_states[state] = pending
+        self._send_json(payload)
+
+    def _serve_steam_openid_disconnect(self):
+        cfg = dict(load_config())
+        cfg.pop("steam_openid_profile", None)
+        save_config(cfg)
+        self._send_json({"status": "disconnected", **steam_openid_status_payload(cfg)})
+
+    def _serve_steam_openid_callback(self):
+        parsed = urllib.parse.urlparse(self.path)
+        params = urllib.parse.parse_qs(parsed.query, keep_blank_values=True)
+        try:
+            profile = consume_steam_openid_callback(
+                params,
+                _steam_openid_pending_states,
+                used_nonces=_steam_openid_used_nonces,
+                verify_authentication=verify_steam_openid_check_authentication,
+            )
+        except ValueError as exc:
+            self._send_html(
+                steam_openid_result_page(
+                    "No se pudo conectar Steam",
+                    str(exc),
+                    status="error",
+                ),
+                status=400,
+            )
+            return
+        cfg = dict(load_config())
+        cfg["steam_openid_profile"] = profile
+        cfg["vanity"] = profile["profile_url"]
+        save_config(cfg)
+        self._send_html(
+            steam_openid_result_page(
+                "Steam conectado",
+                f"Perfil enlazado localmente: SteamID {profile['steamid']}. Ya puedes volver y generar reportes con esa identidad.",
+                status="ok",
+            )
+        )
 
     def _serve_preflight(self):
         body = self._read_json_body()

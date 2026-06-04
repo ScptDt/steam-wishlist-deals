@@ -571,6 +571,7 @@ Promise.all([
   fetch('/api/ui-state').then(r => r.json()),
 ]).then(([cfg, state]) => {
   fillForm(cfg);
+  renderSteamOpenIdStatus({profile: cfg && cfg.steam_openid_profile});
   enforceTransientFilterDefaults();
   prefillWizard(cfg, false);
   if (state) {
@@ -586,6 +587,7 @@ Promise.all([
 }).catch(() => {
   fetch('/api/config').then(r => r.json()).then(cfg => {
     fillForm(cfg);
+    renderSteamOpenIdStatus({profile: cfg && cfg.steam_openid_profile});
     enforceTransientFilterDefaults();
     prefillWizard(cfg, false);
     setModeBanner(false, !!(cfg && cfg.vanity));
@@ -609,6 +611,9 @@ const btnClearCache = $('btn-clear-cache');
 const btnOpenLast = $('btn-open-last');
 const btnOpenOutputFolder = $('btn-open-output-folder');
 const btnRunPd2 = $('btn-run-pd2');
+const btnSteamOpenIdStart = $('btn-steam-openid-start');
+const btnSteamOpenIdDisconnect = $('btn-steam-openid-disconnect');
+const steamOpenIdStatus = $('steam-openid-status');
 const historyLeft = $('history-left');
 const historyRight = $('history-right');
 const historyIncludeSame = $('history-include-same');
@@ -647,6 +652,68 @@ let executionLogEntries = [];
 let runStatusHeartbeatTimer = null;
 let runStatusHeartbeatOptions = null;
 let runStatusHeartbeatStartedAt = 0;
+
+function renderSteamOpenIdStatus(payload) {
+  const profile = payload && payload.profile && typeof payload.profile === 'object'
+    ? payload.profile
+    : null;
+  if (!steamOpenIdStatus) return;
+  if (profile && profile.steamid) {
+    const label = profile.persona_name || `SteamID ${profile.steamid}`;
+    steamOpenIdStatus.textContent = `Perfil conectado: ${label}. OpenID no entrega Steam Family ni wishlist privada.`;
+    if (btnSteamOpenIdStart) btnSteamOpenIdStart.textContent = 'Reconectar Steam';
+    if (btnSteamOpenIdDisconnect) btnSteamOpenIdDisconnect.classList.remove('hidden');
+    const vanityInput = $('vanity');
+    if (vanityInput && profile.profile_url && !vanityInput.value.trim()) {
+      vanityInput.value = profile.profile_url;
+    }
+    return;
+  }
+  steamOpenIdStatus.textContent = 'OpenID oficial solo enlaza tu SteamID/perfil. No da Steam Family, wishlist privada ni owned privado.';
+  if (btnSteamOpenIdStart) btnSteamOpenIdStart.textContent = 'Conectar con Steam';
+  if (btnSteamOpenIdDisconnect) btnSteamOpenIdDisconnect.classList.add('hidden');
+}
+
+async function refreshSteamOpenIdStatus() {
+  try {
+    const resp = await fetch('/api/steam-openid/status');
+    renderSteamOpenIdStatus(await resp.json());
+  } catch (e) {
+    renderSteamOpenIdStatus(null);
+  }
+}
+
+async function startSteamOpenIdFlow() {
+  if (!btnSteamOpenIdStart) return;
+  btnSteamOpenIdStart.disabled = true;
+  try {
+    const resp = await localMutableFetch('/api/steam-openid/start', {method: 'POST'});
+    const data = await resp.json();
+    if (!resp.ok || !data.login_url) {
+      throw new Error(data.message || 'No se pudo iniciar Steam Sign-in.');
+    }
+    window.location.href = data.login_url;
+  } catch (e) {
+    appendLine('No se pudo iniciar Steam Sign-in: ' + e.message, 'err');
+    btnSteamOpenIdStart.disabled = false;
+  }
+}
+
+async function disconnectSteamOpenIdProfile() {
+  if (!btnSteamOpenIdDisconnect) return;
+  btnSteamOpenIdDisconnect.disabled = true;
+  try {
+    const resp = await localMutableFetch('/api/steam-openid/disconnect', {method: 'POST'});
+    const data = await resp.json();
+    if (!resp.ok) throw new Error(data.message || 'No se pudo desconectar Steam.');
+    renderSteamOpenIdStatus(data);
+    appendLine('Perfil Steam desconectado localmente.', 'ok');
+  } catch (e) {
+    appendLine('No se pudo desconectar Steam: ' + e.message, 'err');
+  } finally {
+    btnSteamOpenIdDisconnect.disabled = false;
+  }
+}
 let runStatusHeartbeatLastActivityAt = 0;
 let historyPage = 1;
 let latestHistoryComparisonPayload = null;
@@ -2121,6 +2188,10 @@ btnPreflight.addEventListener('click', async () => {
     appendLine('No se pudo ejecutar preflight: ' + e.message, 'err');
   }
 });
+
+if (btnSteamOpenIdStart) btnSteamOpenIdStart.addEventListener('click', startSteamOpenIdFlow);
+if (btnSteamOpenIdDisconnect) btnSteamOpenIdDisconnect.addEventListener('click', disconnectSteamOpenIdProfile);
+refreshSteamOpenIdStatus();
 
 const hltbField = $('hltb');
 if (hltbField) hltbField.addEventListener('input', () => {
