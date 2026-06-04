@@ -164,10 +164,28 @@ def _owned_games_url(api_key: str, steam_id: str) -> str:
 
 
 def owned_game_records_from_payload(data: dict) -> list[dict]:
+    response = data.get("response") if isinstance(data, dict) else None
+    if not isinstance(response, dict):
+        raise ValueError(
+            "Respuesta Steam owned pública inválida; la biblioteca no se importó."
+        )
+    if "games" not in response:
+        try:
+            game_count = int(response.get("game_count") or 0)
+        except (TypeError, ValueError):
+            game_count = -1
+        if game_count == 0 and "game_count" in response:
+            return []
+        raise ValueError(
+            "Steam no devolvió juegos propios visibles. Revisa privacidad de Game details "
+            "o usa Steam Access local (JSON); no se asume que tengas 0 juegos."
+        )
     records: list[dict] = []
-    for game in data.get("response", {}).get("games", []):
+    for game in response.get("games") or []:
+        if not isinstance(game, dict):
+            continue
         appid = str(game.get("appid") or "").strip()
-        if not appid:
+        if not appid or not appid.isdigit():
             continue
         record = {
             "appid": appid,
@@ -194,12 +212,17 @@ def get_owned_game_records(api_key: str, steam_id: str, *, get_json) -> list[dic
     try:
         data = get_json(url)
     except urllib.error.HTTPError as exc:
-        if exc.code in (401, 403):
+        if exc.code in (400, 401, 403, 429, 500, 503):
             raise ValueError(
-                f"Steam rechazó la API key al obtener tu biblioteca (HTTP {exc.code}). "
-                "El reporte puede continuar sin marcar juegos ya comprados; revisa/regenera la API key si quieres esa señal."
+                f"No se pudo importar tu biblioteca pública de Steam (HTTP {exc.code}). "
+                "El reporte puede continuar sin marcar juegos ya comprados; revisa API key/privacidad o usa Steam Access local (JSON)."
             ) from exc
         raise
+    except urllib.error.URLError as exc:
+        raise ValueError(
+            "No se pudo importar tu biblioteca pública de Steam por un fallo de red/API. "
+            "El reporte puede continuar sin marcar juegos ya comprados."
+        ) from exc
     return owned_game_records_from_payload(data)
 
 

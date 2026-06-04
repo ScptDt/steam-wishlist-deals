@@ -10021,8 +10021,34 @@ class SteamAdapterTests(unittest.TestCase):
         def fake_get_json(_url):
             raise urllib.error.HTTPError(_url, 401, "Unauthorized", hdrs=None, fp=None)
 
-        with self.assertRaisesRegex(ValueError, "biblioteca"):
+        with self.assertRaisesRegex(ValueError, "biblioteca pública"):
             module_get_owned_games("bad-key", "steam-id", get_json=fake_get_json)
+
+    def test_get_owned_games_warns_when_library_is_private_or_missing_games(self) -> None:
+        with self.assertRaisesRegex(ValueError, "no devolvió juegos propios visibles"):
+            module_get_owned_games(
+                "key",
+                "steam-id",
+                get_json=lambda _url: {"response": {}},
+            )
+
+        owned, records = module_get_owned_games_with_records(
+            "key",
+            "steam-id",
+            get_json=lambda _url: {"response": {"game_count": 0}},
+        )
+        self.assertEqual(owned, {})
+        self.assertEqual(records, [])
+
+    def test_get_owned_games_converts_rate_limit_without_leaking_key(self) -> None:
+        def fake_get_json(url):
+            self.assertIn("SECRET-KEY", url)
+            raise urllib.error.HTTPError(url, 429, "Too Many Requests", hdrs=None, fp=None)
+
+        with self.assertRaisesRegex(ValueError, "HTTP 429") as ctx:
+            module_get_owned_games("SECRET-KEY", "steam-id", get_json=fake_get_json)
+
+        self.assertNotIn("SECRET-KEY", str(ctx.exception))
 
     def test_compare_wishlists_returns_friend_payload(self) -> None:
         comparison = module_compare_wishlists(

@@ -153,6 +153,8 @@ python3 steam_deals_generator.py --vanity gaben --md-frontmatter
 
 En la Web UI puedes usar **Conectar Steam** para enlazar tu SteamID/perfil con OpenID oficial y evitar pegar el vanity manualmente. Ese flujo no pide password, no lee cookies/tokens, no automatiza login y no entrega Steam Family, wishlist privada ni biblioteca privada; para señales Family usa el import local `--steam-access-json`/`Steam Access local (JSON)`.
 
+Con Steam API key, la app intenta importar tus juegos propios visibles vía Steam Web API para marcar “Ya lo tienes” de forma advisory-only. Si tu biblioteca/Game details está privada, la key falla o Steam rate-limitea, el reporte continúa con warning y no asume que tienes 0 juegos. Esta API tampoco entrega Steam Family.
+
 `--max-workers` controla el paralelismo de fetch en enrichment. Recomendación práctica: dejar `16` (default actual), bajar a `12` o `8` si notas rate limits/red inestable, y evitar valores muy altos para reducir riesgo de fallos externos. Este ajuste ya está expuesto también en **Filtros avanzados** de la UI compartida (web + desktop), y los presets sugieren valores rápidos (`rapido=12`, `completo=16`, `ahorro=8`).
 
 ### Comparativa externa desde caché ITAD local
