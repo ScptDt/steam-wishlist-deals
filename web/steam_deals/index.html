@@ -182,10 +182,10 @@
       <input type="text" id="vanity" placeholder="Pega aquí tu perfil, Steam ID o URL del perfil">
       <div class="hint">Puedes pegar tu perfil de Steam, tu Steam ID (17 dígitos) o la URL completa del perfil.</div>
     </div>
-    <div class="steam-openid-card" data-steam-openid-card>
+    <div class="steam-openid-card" data-steam-openid-card data-steam-openid-state="disconnected">
       <div class="steam-openid-main">
         <strong>Conectar Steam</strong>
-        <span id="steam-openid-status">OpenID oficial solo enlaza tu SteamID/perfil. No da Steam Family, wishlist privada ni owned privado.</span>
+        <span id="steam-openid-status" aria-live="polite">Desconectado: puedes seguir usando el perfil manual. OpenID oficial solo enlaza tu SteamID/perfil; no da Steam Family, wishlist privada ni acceso a juegos propios privados (owned-private).</span>
         <span class="steam-openid-guardrail">No pedimos password, no leemos cookies/tokens y no automatizamos login.</span>
       </div>
       <div class="steam-openid-actions">

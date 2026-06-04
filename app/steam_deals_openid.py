@@ -3,7 +3,8 @@ from __future__ import annotations
 import re
 import time
 import urllib.parse
-from collections.abc import Mapping, MutableMapping
+import urllib.request
+from collections.abc import Callable, Mapping, MutableMapping
 from datetime import datetime, timezone
 
 
@@ -11,10 +12,20 @@ STEAM_OPENID_ENDPOINT = "https://steamcommunity.com/openid/login"
 STEAM_OPENID_NS = "http://specs.openid.net/auth/2.0"
 STEAM_OPENID_IDENTIFIER_SELECT = "http://specs.openid.net/auth/2.0/identifier_select"
 STEAM_OPENID_CLAIMED_ID_RE = re.compile(r"^https?://steamcommunity\.com/openid/id/(\d+)$")
+STEAM_OPENID_NONCE_RE = re.compile(r"^(\d{4}-\d{2}-\d{2}T\d{2}:\d{2}:\d{2}Z).+")
 STEAM_OPENID_STATE_TTL_SECONDS = 15 * 60
 STEAM_OPENID_REQUIRED_SIGNED_FIELDS = frozenset(
-    {"assoc_handle", "claimed_id", "identity", "op_endpoint", "response_nonce", "return_to"}
+    {
+        "assoc_handle",
+        "claimed_id",
+        "identity",
+        "op_endpoint",
+        "response_nonce",
+        "return_to",
+    }
 )
+
+SteamOpenIdVerifier = Callable[[Mapping[str, object]], bool]
 
 
 def _clean_text(value) -> str:
@@ -28,6 +39,10 @@ def _param(params: Mapping[str, object], key: str) -> str:
     return _clean_text(value)
 
 
+def _current_time(now: float | None) -> float:
+    return float(time.time() if now is None else now)
+
+
 def _signed_fields(params: Mapping[str, object]) -> set[str]:
     return {
         field.strip()
@@ -36,19 +51,19 @@ def _signed_fields(params: Mapping[str, object]) -> set[str]:
     }
 
 
-def _nonce_timestamp(value: str) -> float | None:
-    nonce = _clean_text(value)
-    if len(nonce) < 20:
-        return None
+def _nonce_timestamp(value: str) -> float:
+    match = STEAM_OPENID_NONCE_RE.match(_clean_text(value))
+    if not match:
+        raise ValueError("nonce OpenID inválido")
     try:
-        dt = datetime.strptime(nonce[:20], "%Y-%m-%dT%H:%M:%SZ")
-    except ValueError:
-        return None
-    return dt.replace(tzinfo=timezone.utc).timestamp()
+        nonce_datetime = datetime.strptime(match.group(1), "%Y-%m-%dT%H:%M:%SZ")
+    except ValueError as exc:
+        raise ValueError("nonce OpenID inválido") from exc
+    return nonce_datetime.replace(tzinfo=timezone.utc).timestamp()
 
 
-def _prune_used_nonces(used_nonces: MutableMapping[str, float], now: float) -> None:
-    cutoff = float(now) - STEAM_OPENID_STATE_TTL_SECONDS
+def _prune_used_nonces(used_nonces: MutableMapping[str, float], current_time: float) -> None:
+    cutoff = current_time - STEAM_OPENID_STATE_TTL_SECONDS
     for nonce, seen_at in list(used_nonces.items()):
         try:
             if float(seen_at) < cutoff:
@@ -60,16 +75,14 @@ def _prune_used_nonces(used_nonces: MutableMapping[str, float], now: float) -> N
 def _validate_response_nonce(
     nonce: str,
     *,
-    now: float,
+    current_time: float,
     used_nonces: Mapping[str, float] | None = None,
 ) -> None:
     clean_nonce = _clean_text(nonce)
     if not clean_nonce or len(clean_nonce) > 255:
         raise ValueError("nonce OpenID inválido")
-    nonce_ts = _nonce_timestamp(clean_nonce)
-    if nonce_ts is None:
-        raise ValueError("nonce OpenID inválido")
-    if abs(float(now) - nonce_ts) > STEAM_OPENID_STATE_TTL_SECONDS:
+    nonce_time = _nonce_timestamp(clean_nonce)
+    if current_time - nonce_time > STEAM_OPENID_STATE_TTL_SECONDS or nonce_time - current_time > 60:
         raise ValueError("nonce OpenID expirado")
     if used_nonces is not None and clean_nonce in used_nonces:
         raise ValueError("nonce OpenID ya usado")
@@ -98,8 +111,9 @@ def build_steam_openid_login_url(return_to: str, realm: str) -> str:
 def build_steam_openid_check_authentication_payload(params: Mapping[str, object]) -> dict[str, str]:
     payload: dict[str, str] = {}
     for key in params:
-        if str(key).startswith("openid."):
-            payload[str(key)] = _param(params, str(key))
+        clean_key = _clean_text(key)
+        if clean_key.startswith("openid."):
+            payload[clean_key] = _param(params, clean_key)
     payload["openid.mode"] = "check_authentication"
     return payload
 
@@ -114,6 +128,24 @@ def is_steam_openid_check_authentication_valid(response_text: str) -> bool:
     return values.get("is_valid") == "true"
 
 
+def verify_steam_openid_check_authentication(payload: Mapping[str, object]) -> bool:
+    encoded = urllib.parse.urlencode(
+        {str(key): _clean_text(value) for key, value in payload.items()}
+    ).encode("utf-8")
+    request = urllib.request.Request(
+        STEAM_OPENID_ENDPOINT,
+        data=encoded,
+        headers={"Content-Type": "application/x-www-form-urlencoded"},
+        method="POST",
+    )
+    try:
+        with urllib.request.urlopen(request, timeout=10) as response:
+            body = response.read().decode("utf-8", errors="replace")
+    except OSError:
+        return False
+    return is_steam_openid_check_authentication_valid(body)
+
+
 def build_steam_openid_pending_state(state: str, *, base_url: str, now: float | None = None) -> dict:
     clean_state = _clean_text(state)
     realm = f"{base_url.rstrip('/')}/"
@@ -122,7 +154,7 @@ def build_steam_openid_pending_state(state: str, *, base_url: str, now: float | 
         "state": clean_state,
         "return_to": return_to,
         "realm": realm,
-        "created_at": float(time.time() if now is None else now),
+        "created_at": _current_time(now),
     }
 
 
@@ -192,9 +224,10 @@ def validate_steam_openid_callback(
     pending: Mapping[str, object],
     *,
     now: float | None = None,
-    used_nonces: Mapping[str, float] | None = None,
+    used_nonces: MutableMapping[str, float] | None = None,
+    verify_authentication: SteamOpenIdVerifier | None = None,
 ) -> dict:
-    current_time = float(time.time() if now is None else now)
+    current_time = _current_time(now)
     state = _param(params, "state")
     expected_state = _clean_text(pending.get("state"))
     if not state or state != expected_state:
@@ -214,11 +247,20 @@ def validate_steam_openid_callback(
         raise ValueError("proveedor OpenID inválido")
     if _param(params, "openid.return_to") != _clean_text(pending.get("return_to")):
         raise ValueError("return_to OpenID inválido")
-    _validate_response_nonce(_param(params, "openid.response_nonce"), now=current_time, used_nonces=used_nonces)
+    _validate_response_nonce(
+        _param(params, "openid.response_nonce"),
+        current_time=current_time,
+        used_nonces=used_nonces,
+    )
     claimed_steamid = extract_steamid_from_claimed_id(_param(params, "openid.claimed_id"))
     identity_steamid = extract_steamid_from_claimed_id(_param(params, "openid.identity"))
     if not claimed_steamid or claimed_steamid != identity_steamid:
         raise ValueError("SteamID OpenID inválido")
+    verifier = verify_authentication or verify_steam_openid_check_authentication
+    if not verifier(build_steam_openid_check_authentication_payload(params)):
+        raise ValueError("firma OpenID no validada")
+    if used_nonces is not None:
+        used_nonces[_param(params, "openid.response_nonce")] = current_time
     return steam_openid_profile(claimed_steamid)
 
 
@@ -228,25 +270,19 @@ def consume_steam_openid_callback(
     *,
     now: float | None = None,
     used_nonces: MutableMapping[str, float] | None = None,
-    verify_authentication=None,
+    verify_authentication: SteamOpenIdVerifier | None = None,
 ) -> dict:
-    current_time = float(time.time() if now is None else now)
+    current_time = _current_time(now)
     state = _param(params, "state")
     pending = pending_states.pop(state, None) if state else None
     if not pending:
         raise ValueError("state OpenID inválido o expirado")
     if used_nonces is not None:
         _prune_used_nonces(used_nonces, current_time)
-    profile = validate_steam_openid_callback(
+    return validate_steam_openid_callback(
         params,
         pending,
         now=current_time,
         used_nonces=used_nonces,
+        verify_authentication=verify_authentication,
     )
-    if verify_authentication is not None and not verify_authentication(
-        build_steam_openid_check_authentication_payload(params)
-    ):
-        raise ValueError("firma OpenID no validada por Steam")
-    if used_nonces is not None:
-        used_nonces[_param(params, "openid.response_nonce")] = current_time
-    return profile

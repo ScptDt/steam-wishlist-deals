@@ -614,6 +614,7 @@ const btnRunPd2 = $('btn-run-pd2');
 const btnSteamOpenIdStart = $('btn-steam-openid-start');
 const btnSteamOpenIdDisconnect = $('btn-steam-openid-disconnect');
 const steamOpenIdStatus = $('steam-openid-status');
+const steamOpenIdCard = document.querySelector('[data-steam-openid-card]');
 const historyLeft = $('history-left');
 const historyRight = $('history-right');
 const historyIncludeSame = $('history-include-same');
@@ -660,7 +661,8 @@ function renderSteamOpenIdStatus(payload) {
   if (!steamOpenIdStatus) return;
   if (profile && profile.steamid) {
     const label = profile.persona_name || `SteamID ${profile.steamid}`;
-    steamOpenIdStatus.textContent = `Perfil conectado: ${label}. OpenID no entrega Steam Family ni wishlist privada.`;
+    steamOpenIdStatus.textContent = `Conectado: ${label}. OpenID solo enlaza tu perfil; no entrega Steam Family, wishlist privada ni acceso a juegos propios privados (owned-private).`;
+    if (steamOpenIdCard) steamOpenIdCard.dataset.steamOpenidState = 'connected';
     if (btnSteamOpenIdStart) btnSteamOpenIdStart.textContent = 'Reconectar Steam';
     if (btnSteamOpenIdDisconnect) btnSteamOpenIdDisconnect.classList.remove('hidden');
     const vanityInput = $('vanity');
@@ -669,9 +671,22 @@ function renderSteamOpenIdStatus(payload) {
     }
     return;
   }
-  steamOpenIdStatus.textContent = 'OpenID oficial solo enlaza tu SteamID/perfil. No da Steam Family, wishlist privada ni owned privado.';
+  steamOpenIdStatus.textContent = 'Desconectado: puedes seguir usando el perfil manual. OpenID oficial solo enlaza tu SteamID/perfil; no da Steam Family, wishlist privada ni acceso a juegos propios privados (owned-private).';
+  if (steamOpenIdCard) steamOpenIdCard.dataset.steamOpenidState = 'disconnected';
   if (btnSteamOpenIdStart) btnSteamOpenIdStart.textContent = 'Conectar con Steam';
   if (btnSteamOpenIdDisconnect) btnSteamOpenIdDisconnect.classList.add('hidden');
+}
+
+function safeSteamOpenIdUiError() {
+  return 'No se pudo iniciar Steam Sign-in. Revisa que el servidor local tenga habilitado el endpoint protegido y vuelve a intentar.';
+}
+
+async function steamOpenIdJsonOrEmpty(resp) {
+  try {
+    return await resp.json();
+  } catch (e) {
+    return {};
+  }
 }
 
 async function refreshSteamOpenIdStatus() {
@@ -688,13 +703,13 @@ async function startSteamOpenIdFlow() {
   btnSteamOpenIdStart.disabled = true;
   try {
     const resp = await localMutableFetch('/api/steam-openid/start', {method: 'POST'});
-    const data = await resp.json();
+    const data = await steamOpenIdJsonOrEmpty(resp);
     if (!resp.ok || !data.login_url) {
-      throw new Error(data.message || 'No se pudo iniciar Steam Sign-in.');
+      throw new Error(safeSteamOpenIdUiError());
     }
     window.location.href = data.login_url;
   } catch (e) {
-    appendLine('No se pudo iniciar Steam Sign-in: ' + e.message, 'err');
+    appendLine(safeSteamOpenIdUiError(), 'err');
     btnSteamOpenIdStart.disabled = false;
   }
 }
@@ -704,12 +719,12 @@ async function disconnectSteamOpenIdProfile() {
   btnSteamOpenIdDisconnect.disabled = true;
   try {
     const resp = await localMutableFetch('/api/steam-openid/disconnect', {method: 'POST'});
-    const data = await resp.json();
-    if (!resp.ok) throw new Error(data.message || 'No se pudo desconectar Steam.');
+    const data = await steamOpenIdJsonOrEmpty(resp);
+    if (!resp.ok) throw new Error('No se pudo desconectar Steam.');
     renderSteamOpenIdStatus(data);
     appendLine('Perfil Steam desconectado localmente.', 'ok');
   } catch (e) {
-    appendLine('No se pudo desconectar Steam: ' + e.message, 'err');
+    appendLine('No se pudo desconectar Steam. No se muestran respuestas OpenID crudas.', 'err');
   } finally {
     btnSteamOpenIdDisconnect.disabled = false;
   }

@@ -94,6 +94,27 @@ class _FakeRunHandler(_FakeJsonHandler):
         return self.wfile.getvalue().decode("utf-8")
 
 
+def _make_openid_handler(path: str):
+    handler = Handler.__new__(Handler)
+    handler.path = path
+    handler.server = type("FakeServer", (), {"server_port": 8765})()
+    handler.status = None
+    handler.json = None
+    handler.html = None
+
+    def fake_send_json(data, status=200):
+        handler.status = status
+        handler.json = data
+
+    def fake_send_html(html, status=200):
+        handler.status = status
+        handler.html = html
+
+    handler._send_json = fake_send_json
+    handler._send_html = fake_send_html
+    return handler
+
+
 class _FakeStreamProcess:
     def __init__(self, lines: list[str]) -> None:
         self.stdout = iter(lines)
@@ -422,6 +443,131 @@ class GeneratedFilesServingTests(unittest.TestCase):
         self.assertNotIn(secret_token, payload)
         self.assertNotIn("Traceback", payload)
         self.assertNotIn("_MEIPASS", payload)
+
+    def test_steam_openid_status_payload_is_public_and_limited(self) -> None:
+        payload = web.steam_openid_status_payload(
+            {
+                "steam_openid_profile": {
+                    "schema": "steam_openid_profile_v1",
+                    "steamid": "76561198000000000",
+                    "profile_url": "https://steamcommunity.com/profiles/76561198000000000/",
+                    "source": "steam_openid",
+                    "family_access": "not_available_via_openid",
+                    "advisory_only": True,
+                    "ranking_impact": "none",
+                    "openid.sig": "raw-signature",
+                    "cookies": "steamLoginSecure=secret",
+                }
+            }
+        )
+
+        serialized = json.dumps(payload, ensure_ascii=False)
+        self.assertEqual(payload["profile"]["steamid"], "76561198000000000")
+        self.assertFalse(payload["family_available"])
+        self.assertIn("no entrega Steam Family", payload["message"])
+        self.assertNotIn("raw-signature", serialized)
+        self.assertNotIn("steamLoginSecure", serialized)
+
+    def test_steam_openid_start_stores_pending_state_without_login_secrets(self) -> None:
+        original_token_fn = web.create_local_session_token
+        original_pending_states = web._steam_openid_pending_states
+        web.create_local_session_token = lambda _size=32: "state-123"
+        web._steam_openid_pending_states = {}
+        handler = _make_openid_handler("/api/steam-openid/start")
+        try:
+            Handler._serve_steam_openid_start(handler)
+        finally:
+            web.create_local_session_token = original_token_fn
+            pending_states = web._steam_openid_pending_states
+            web._steam_openid_pending_states = original_pending_states
+
+        self.assertEqual(handler.status, 200)
+        self.assertEqual(handler.json["state"], "state-123")
+        self.assertIn("https://steamcommunity.com/openid/login", handler.json["login_url"])
+        self.assertIn("state-123", pending_states)
+        serialized = json.dumps(handler.json, ensure_ascii=False)
+        self.assertIn("no lee cookies/tokens", serialized)
+        self.assertNotIn("steamLoginSecure", serialized)
+        self.assertNotIn("secret-token", serialized)
+
+    def test_steam_openid_disconnect_removes_only_local_openid_profile(self) -> None:
+        original_load_config = web.load_config
+        original_save_config = web.save_config
+        saved_configs = []
+        web.load_config = lambda: {
+            "vanity": "https://steamcommunity.com/profiles/76561198000000000/",
+            "key": "SAVED-SECRET",
+            "steam_openid_profile": {"steamid": "76561198000000000"},
+        }
+        web.save_config = lambda cfg: saved_configs.append(cfg)
+        handler = _make_openid_handler("/api/steam-openid/disconnect")
+        try:
+            Handler._serve_steam_openid_disconnect(handler)
+        finally:
+            web.load_config = original_load_config
+            web.save_config = original_save_config
+
+        self.assertEqual(handler.status, 200)
+        self.assertEqual(handler.json["status"], "disconnected")
+        self.assertIsNone(handler.json["profile"])
+        self.assertNotIn("steam_openid_profile", saved_configs[0])
+        self.assertEqual(saved_configs[0]["key"], "SAVED-SECRET")
+
+    def test_steam_openid_callback_saves_profile_without_exposing_raw_response(self) -> None:
+        original_consume = web.consume_steam_openid_callback
+        original_load_config = web.load_config
+        original_save_config = web.save_config
+        original_pending_states = web._steam_openid_pending_states
+        original_used_nonces = web._steam_openid_used_nonces
+        saved_configs = []
+        consume_calls = []
+
+        def fake_consume(params, pending_states, *, used_nonces=None, verify_authentication=None):
+            consume_calls.append(
+                {
+                    "params": params,
+                    "pending_states": pending_states,
+                    "used_nonces": used_nonces,
+                    "verify_authentication": verify_authentication,
+                }
+            )
+            self.assertIn("state-123", pending_states)
+            return {
+                "schema": "steam_openid_profile_v1",
+                "steamid": "76561198000000000",
+                "profile_url": "https://steamcommunity.com/profiles/76561198000000000/",
+                "source": "steam_openid",
+                "family_access": "not_available_via_openid",
+                "advisory_only": True,
+                "ranking_impact": "none",
+            }
+
+        web.consume_steam_openid_callback = fake_consume
+        web.load_config = lambda: {"key": "SAVED-SECRET"}
+        web.save_config = lambda cfg: saved_configs.append(cfg)
+        web._steam_openid_pending_states = {"state-123": {"state": "state-123"}}
+        web._steam_openid_used_nonces = {}
+        active_used_nonces = web._steam_openid_used_nonces
+        handler = _make_openid_handler(
+            "/api/steam-openid/callback?state=state-123&openid.mode=id_res&openid.sig=raw-signature"
+        )
+        try:
+            Handler._serve_steam_openid_callback(handler)
+        finally:
+            web.consume_steam_openid_callback = original_consume
+            web.load_config = original_load_config
+            web.save_config = original_save_config
+            web._steam_openid_pending_states = original_pending_states
+            web._steam_openid_used_nonces = original_used_nonces
+
+        serialized = json.dumps(saved_configs, ensure_ascii=False)
+        self.assertEqual(handler.status, 200)
+        self.assertIn("Steam conectado", handler.html)
+        self.assertEqual(saved_configs[0]["steam_openid_profile"]["steamid"], "76561198000000000")
+        self.assertEqual(saved_configs[0]["vanity"], "https://steamcommunity.com/profiles/76561198000000000/")
+        self.assertIs(consume_calls[0]["used_nonces"], active_used_nonces)
+        self.assertIs(consume_calls[0]["verify_authentication"], web.verify_steam_openid_check_authentication)
+        self.assertNotIn("raw-signature", serialized)
 
     def test_preflight_sanitizes_public_path_fields_and_messages(self) -> None:
         original_load_config = web.load_config

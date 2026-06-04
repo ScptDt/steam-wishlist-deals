@@ -46,6 +46,7 @@ from app.steam_deals_openid import (
     is_steam_openid_check_authentication_valid,
     public_steam_openid_profile,
     steam_openid_base_url,
+    verify_steam_openid_check_authentication,
 )
 from app.steam_deals_recommendations import build_selection_review
 from shared.tool_modules import PAYDAY2_TOOL_ID, get_tool_entrypoint

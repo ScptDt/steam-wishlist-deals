@@ -296,6 +296,8 @@ class WebAssetsTests(unittest.TestCase):
         self.assertIn("OpenID oficial solo enlaza tu SteamID/perfil", index_html)
         self.assertIn("No pedimos password", index_html)
         self.assertIn("no leemos cookies/tokens", index_html)
+        self.assertIn("no da Steam Family, wishlist privada", index_html)
+        self.assertIn("owned-private", index_html)
         self.assertIn("no automatizamos login", index_html)
         self.assertIn("btn-steam-openid-start", index_html)
         self.assertIn("btn-steam-openid-disconnect", index_html)
@@ -303,8 +305,9 @@ class WebAssetsTests(unittest.TestCase):
         self.assertIn("/api/steam-openid/start", app_js)
         self.assertIn("/api/steam-openid/disconnect", app_js)
         self.assertIn("window.location.href = data.login_url", app_js)
-        self.assertIn("OpenID no entrega Steam Family ni wishlist privada", app_js)
-        self.assertIn("No da Steam Family, wishlist privada ni owned privado", app_js)
+        self.assertIn("No se muestran respuestas OpenID crudas", app_js)
+        self.assertIn("no entrega Steam Family, wishlist privada", app_js)
+        self.assertIn("owned-private", app_js)
         self.assertIn(".steam-openid-card", app_css)
 
     def test_latest_report_recommendation_diagnostics_are_visible_and_advisory_only(self) -> None:
@@ -420,6 +423,8 @@ class WebAssetsTests(unittest.TestCase):
             "/api/cache/clear",
             "/api/open-output-folder",
             "/api/log/export",
+            "/api/steam-openid/start",
+            "/api/steam-openid/disconnect",
             "/api/run",
             "/api/stop",
             "/api/run-pd2",

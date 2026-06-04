@@ -233,6 +233,8 @@ class ConfigSecretRedactionTests(unittest.TestCase):
             "/api/stop",
             "/api/open-output-folder",
             "/api/config",
+            "/api/steam-openid/start",
+            "/api/steam-openid/disconnect",
             "/api/watchlist",
             "/api/watchlist/delete",
             "/api/log/export",
