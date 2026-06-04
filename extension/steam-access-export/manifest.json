@@ -1,0 +1,14 @@
+{
+  "manifest_version": 3,
+  "name": "Steam Access Export",
+  "version": "0.1.0",
+  "description": "Optional read-only helper scaffold for manual Steam Access JSON export.",
+  "action": {
+    "default_title": "Steam Access Export",
+    "default_popup": "popup.html"
+  },
+  "background": {
+    "service_worker": "service_worker.js"
+  },
+  "permissions": ["activeTab", "scripting"]
+}

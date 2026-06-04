@@ -1,0 +1,63 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>Steam Access Export</title>
+  <link rel="stylesheet" href="popup.css">
+</head>
+<body>
+  <main class="popup_shell" aria-labelledby="popup_title">
+    <header class="popup_header">
+      <p class="eyebrow">Manual helper</p>
+      <h1 id="popup_title">Steam Access Export</h1>
+      <p class="intro">
+        Creates a sanitized <code>steam_access_import_v1</code> JSON from AppIDs visible on the active Steam page.
+      </p>
+    </header>
+
+    <section class="guardrail_card" aria-label="Safety guardrails">
+      <ul>
+        <li>Advisory-only: <strong>ranking impact none</strong>.</li>
+        <li>Read-only: no Steam mutations, purchases, wishlist edits, or settings changes.</li>
+        <li>AppID-only: no cookies, tokens, passwords, raw HTML, raw responses, names, or private profile data.</li>
+        <li>Manual only: copy or save JSON yourself; no local endpoint direct-send.</li>
+      </ul>
+    </section>
+
+    <section class="controls" aria-label="Export controls">
+      <label for="collection_select">Treat visible AppIDs as</label>
+      <select id="collection_select">
+        <option value="auto">Auto-detect from page</option>
+        <option value="wishlist_appids">Wishlist AppIDs</option>
+        <option value="owned_appids">Owned AppIDs</option>
+        <option value="family_shared_appids">Family-shared AppIDs</option>
+      </select>
+
+      <button type="button" class="primary_button" id="extract_button">
+        Extract sanitized JSON from active Steam tab
+      </button>
+    </section>
+
+    <section class="result_panel" aria-label="Sanitized export result">
+      <div class="result_header">
+        <strong>Sanitized JSON</strong>
+        <span id="appid_count" class="count_badge">0 AppIDs</span>
+      </div>
+      <textarea id="export_text" rows="12" spellcheck="false" readonly aria-label="Sanitized JSON output"></textarea>
+      <div class="actions">
+        <button type="button" id="copy_button" disabled>Copy JSON</button>
+        <button type="button" id="save_button" disabled>Save JSON</button>
+      </div>
+    </section>
+
+    <p id="status_message" class="status_message" role="status" aria-live="polite">
+      Open a Steam page, then use the extract button. Nothing runs automatically.
+    </p>
+  </main>
+
+  <script src="src/export-schema.js"></script>
+  <script src="src/sanitize.js"></script>
+  <script src="popup.js"></script>
+</body>
+</html>

@@ -1,0 +1,40 @@
+{
+  "generated_at": "2026-06-04T12:00:00Z",
+  "steamid": "76561198000000000",
+  "cookies": "steamLoginSecure=do-not-export",
+  "steamLoginSecure": "do-not-export",
+  "sessionid": "do-not-export",
+  "token": "do-not-export",
+  "request_headers": {
+    "Authorization": "Bearer do-not-export",
+    "Cookie": "do-not-export"
+  },
+  "raw_response": {
+    "rgOwnedApps": [{ "appid": "10", "name": "Raw private response should not export" }]
+  },
+  "raw_html": "<html>private account page</html>",
+  "profile": {
+    "email": "person@example.invalid",
+    "persona_name": "Private Persona"
+  },
+  "family_members": [
+    { "name": "Private Family Member", "steamid": "76561198000000001" }
+  ],
+  "friends": ["Private Friend"],
+  "owned_appids": [
+    { "appid": "10", "name": "Ignored public-ish game title", "raw_response": { "secret": true } },
+    { "steam_appid": "20", "profile_url": "https://steamcommunity.example/private" },
+    "20",
+    "invalid"
+  ],
+  "family_shared_appids": [
+    { "appid": "30", "family_member_name": "Private Family Member" },
+    "30",
+    "40"
+  ],
+  "wishlist_appids": [
+    { "appid": "50", "notes": "Names and notes are ignored" },
+    "not-an-appid",
+    "60"
+  ]
+}

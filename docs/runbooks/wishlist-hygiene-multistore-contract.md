@@ -272,7 +272,6 @@ El export futuro debe ser un objeto JSON pequeño y AppID-only:
 {
   "schema": "steam_access_import_v1",
   "source": "steam_browser_helper_export",
-  "steamid": "76561198000000000",
   "generated_at": "2026-06-04T12:00:00Z",
   "provenance": "browser_helper_manual_export",
   "owned_appids": ["10", "20"],
@@ -287,7 +286,8 @@ Reglas de minimización:
 
 - `owned_appids`, `family_shared_appids` y `wishlist_appids` son listas de strings numéricos.
 - `wishlist_appids` es opcional y solo si el helper puede obtenerlo sin aumentar riesgos.
-- Nombres de juegos son opcionales y solo si ya son públicos/no sensibles; el contrato preferido sigue siendo AppID-only.
+- El helper Plan 6B no infiere ni exporta SteamID/perfil; otros imports locales pueden traer `steamid` manual si el usuario lo aporta fuera del helper.
+- Nombres de juegos no se exportan en Plan 6B; el contrato preferido sigue siendo AppID-only.
 - No incluir campos de sesión, headers, cookies, tokens, family member names, raw endpoint payloads, HTML, URLs autenticadas ni debug logs.
 - `family_shared_appids` significa “observado por helper con sesión de navegador”; sigue siendo advisory-only y puede quedar vacío si Steam cambia permisos/endpoints.
 
@@ -301,6 +301,25 @@ Antes de implementar la extensión real:
 4. Probar que el export no contiene claves prohibidas (`cookies`, `token`, `raw_response`, `family_members`, headers).
 5. Validar que el import existente acepta el JSON y mantiene `advisory_only=true` / `ranking_impact=none`.
 6. Cierre sin live login obligatorio, sin red real como evidencia, sin endpoint local directo y sin mutaciones Steam.
+
+### Plan 6B helper local/dev
+
+El helper vive en `extension/steam-access-export/` y se carga como extensión desempaquetada durante desarrollo. Su flujo esperado es manual:
+
+1. Abrir una página Steam Store/Community que muestre AppIDs.
+2. Abrir el popup **Steam Access Export**.
+3. Elegir si los AppIDs visibles deben tratarse como `owned_appids`, `family_shared_appids`, `wishlist_appids` o autodetección conservadora por URL.
+4. Extraer, revisar y copiar/guardar `steam-access-import.json`.
+5. Importar ese archivo en Steam Tools con `--steam-access-json` o el campo Web `Steam Access local (JSON)`.
+
+Guardrails implementados/esperados:
+
+- `manifest.json` usa MV3 con popup manual y permisos mínimos `activeTab` + `scripting`.
+- No declara `host_permissions`, `content_scripts`, `cookies`, `webRequest`, `nativeMessaging`, permisos locales ni `<all_urls>`.
+- El popup solo inyecta una función de extracción bajo acción explícita del usuario.
+- El export se construye con sanitizer local y queda AppID-only; no exporta SteamID/perfil, cookies/tokens, respuestas crudas, HTML, nombres de familiares, friends ni emails.
+- Copy/save son acciones manuales del usuario; no hay background scraping, persistencia de sesión ni envío a endpoint local/remoto.
+- La evidencia de cierre usa fixtures y checks estáticos; no requiere live login, red real ni páginas Steam privadas.
 
 ## Contrato actual que se debe preservar
 

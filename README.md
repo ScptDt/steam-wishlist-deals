@@ -240,15 +240,19 @@ Shape mínima aceptada:
 ```json
 {
   "source": "steam_browser_helper_export",
-  "steamid": "76561198000000000",
   "generated_at": "2026-06-03T12:00:00Z",
+  "provenance": "browser_helper_manual_export",
   "owned_appids": ["10", "20"],
   "family_shared_appids": ["30"],
-  "wishlist_appids": ["40"]
+  "wishlist_appids": ["40"],
+  "advisory_only": true,
+  "ranking_impact": "none"
 }
 ```
 
 La app solo conserva AppIDs y metadata segura. Campos como cookies, tokens, raw responses o nombres de familiares se omiten.
+
+Helper opcional para armar ese JSON manualmente: `extension/steam-access-export/`. Es una extensión MV3 local/dev, de uso explícito desde el popup, que intenta extraer AppIDs visibles en la pestaña Steam activa y permite copiar/guardar un JSON sanitizado. No se ejecuta automáticamente, no usa endpoint local, no pide password, no solicita permisos de cookies/webRequest/`<all_urls>` y no exporta cookies/tokens/raw responses, HTML, SteamID/perfil ni nombres de familiares. Carga la carpeta como extensión desempaquetada solo si quieres usar este helper; el import principal sigue siendo `--steam-access-json` o el campo Web `Steam Access local (JSON)`.
 
 Contrato completo y ejemplos: `docs/runbooks/wishlist-hygiene-multistore-contract.md`.
 

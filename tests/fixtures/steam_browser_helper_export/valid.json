@@ -1,0 +1,30 @@
+{
+  "generated_at": "2026-06-04T12:00:00Z",
+  "owned_appids": [
+    "10",
+    20,
+    "10",
+    " 30 ",
+    "not-an-appid",
+    0,
+    -1,
+    { "appid": "40", "title": "Ignored title" },
+    { "steam_appid": "50" },
+    { "app_id": "60" }
+  ],
+  "family_shared_appids": {
+    "70": "fallback key appid",
+    "80": { "name": "Fallback key wins when record has no appid" },
+    "invalid": { "appid": "90" },
+    "100": { "appid": "100" },
+    "duplicate": { "steam_appid": "70" }
+  },
+  "wishlist_appids": [
+    "110",
+    "110",
+    { "steam_appid": "120" },
+    null,
+    "",
+    "130abc"
+  ]
+}
