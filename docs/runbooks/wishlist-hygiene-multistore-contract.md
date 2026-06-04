@@ -223,6 +223,85 @@ Reglas de interpretación:
 - AppIDs inválidos se ignoran; duplicados se deduplican preservando orden.
 - `owned_appids` y `family_shared_appids` alimentan `play_access`/`wishlist_hygiene` como señales advisory-only; no cambian score, ranking, filtros, defaults, wishlist deletion ni auto-exclusión.
 
+## Plan 6A: contrato futuro del helper/browser extension Steam
+
+Este corte es **docs-only** para dejar listo el threat model antes de implementar un helper real. El objetivo del helper futuro es producir un archivo manual compatible con `steam_access_import_v1`; la app Python/Web nunca debe manejar sesión Steam, cookies, tokens ni respuestas crudas.
+
+### Threat model y límites
+
+Activos sensibles que no deben salir del navegador:
+
+- cookies de Steam, `steamLoginSecure`, session IDs, bearer tokens o cabeceras autenticadas;
+- respuestas crudas de endpoints privados o payloads con datos personales;
+- nombres de familiares, perfiles de miembros, emails, friends u otros datos que no sean AppIDs;
+- password o prompts de credenciales.
+
+Superficies permitidas:
+
+- helper/extensión opcional, ejecutado por el usuario en su navegador ya autenticado;
+- lectura puntual y explícita para armar un export local;
+- descarga/copia manual de JSON AppID-only;
+- import posterior vía `--steam-access-json` o campo Web `Steam Access local (JSON)`.
+
+No permitido en Plan 6 ni en la app principal:
+
+- login automatizado, scraping desde Python, SteamKit2 o captura de cookies/tokens;
+- enviar raw responses al server local;
+- mutar wishlist, ignore/follow, carrito, Family, settings o compras;
+- endpoint local de recepción directa sin pairing/threat model separado;
+- score/ranking/defaults/cache/fetching basados en estas señales.
+
+### Permisos mínimos esperados para el helper futuro
+
+El helper debe justificar cada permiso antes de implementarse:
+
+| Permiso/superficie | Uso permitido | No usar para |
+|---|---|---|
+| Host Steam limitado | Leer endpoints estrictamente necesarios desde la sesión del navegador | Acceso amplio a cualquier dominio o scraping general |
+| Acción manual/browser action | Botón `Exportar Steam Access JSON` | Ejecución automática en background |
+| Descarga o clipboard opcional | Entregar JSON al usuario | Mandar datos a la app sin confirmación |
+| Storage local mínimo opcional | Preferencias no sensibles del helper | Guardar cookies, tokens o raw responses |
+
+Si la extensión necesita permisos más amplios, debe abrirse un nuevo threat model antes de código.
+
+### Export JSON permitido
+
+El export futuro debe ser un objeto JSON pequeño y AppID-only:
+
+```json
+{
+  "schema": "steam_access_import_v1",
+  "source": "steam_browser_helper_export",
+  "steamid": "76561198000000000",
+  "generated_at": "2026-06-04T12:00:00Z",
+  "provenance": "browser_helper_manual_export",
+  "owned_appids": ["10", "20"],
+  "family_shared_appids": ["30"],
+  "wishlist_appids": ["40"],
+  "advisory_only": true,
+  "ranking_impact": "none"
+}
+```
+
+Reglas de minimización:
+
+- `owned_appids`, `family_shared_appids` y `wishlist_appids` son listas de strings numéricos.
+- `wishlist_appids` es opcional y solo si el helper puede obtenerlo sin aumentar riesgos.
+- Nombres de juegos son opcionales y solo si ya son públicos/no sensibles; el contrato preferido sigue siendo AppID-only.
+- No incluir campos de sesión, headers, cookies, tokens, family member names, raw endpoint payloads, HTML, URLs autenticadas ni debug logs.
+- `family_shared_appids` significa “observado por helper con sesión de navegador”; sigue siendo advisory-only y puede quedar vacío si Steam cambia permisos/endpoints.
+
+### Validación esperada para Plan 6B implementación
+
+Antes de implementar la extensión real:
+
+1. Consultar docs actuales de WebExtensions/MV3 y revisar permisos con ExternalScout.
+2. Crear fixtures JSON locales para exports válidos, vacíos y malformados.
+3. Probar que el helper filtra/deduplica AppIDs antes del export.
+4. Probar que el export no contiene claves prohibidas (`cookies`, `token`, `raw_response`, `family_members`, headers).
+5. Validar que el import existente acepta el JSON y mantiene `advisory_only=true` / `ranking_impact=none`.
+6. Cierre sin live login obligatorio, sin red real como evidencia, sin endpoint local directo y sin mutaciones Steam.
+
 ## Contrato actual que se debe preservar
 
 El payload visible sigue esta semántica base:
