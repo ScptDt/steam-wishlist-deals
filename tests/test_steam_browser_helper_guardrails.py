@@ -31,6 +31,7 @@ def _extension_source(*, include_guardrail_copy: bool = False) -> str:
         "popup.js",
         "src/export-schema.js",
         "src/sanitize.js",
+        "src/collector.js",
     )
     source = "\n".join(_read_helper_text(path) for path in paths)
     return source if include_guardrail_copy else _strip_safe_guardrail_copy(source)
@@ -41,6 +42,7 @@ def _extension_js_source(*, include_service_worker: bool = True) -> str:
         "popup.js",
         "src/export-schema.js",
         "src/sanitize.js",
+        "src/collector.js",
     ]
     if include_service_worker:
         paths.insert(0, "service_worker.js")
@@ -58,9 +60,10 @@ class SteamBrowserHelperGuardrailTests(unittest.TestCase):
 
         # Assert: positive Plan 7B helper contract and negative capability checks.
         self.assertEqual(manifest.get("manifest_version"), 3)
-        self.assertEqual(permissions, {"activeTab", "scripting"})
+        self.assertEqual(permissions, {"activeTab", "scripting", "storage"})
         self.assertEqual(manifest.get("host_permissions"), ["http://127.0.0.1/*"])
         self.assertNotIn("optional_host_permissions", manifest)
+        self.assertIn("storage", permissions)
         for forbidden in (
             "cookies",
             "webRequest",
@@ -99,6 +102,64 @@ class SteamBrowserHelperGuardrailTests(unittest.TestCase):
         for name, pattern in forbidden_patterns.items():
             with self.subTest(name=name):
                 self.assertIsNone(re.search(pattern, source, flags=re.IGNORECASE))
+
+    def test_collector_storage_is_appid_only_and_non_sensitive(self) -> None:
+        # Arrange
+        collector_source = _strip_safe_guardrail_copy(_read_helper_text("src/collector.js"))
+
+        # Assert: storage is scoped to sanitized collector state, never local auth/session data.
+        self.assertIn("chrome.storage?.local", collector_source)
+        self.assertIn("browser.storage?.local", collector_source)
+        self.assertIn("COLLECTOR_STORAGE_KEY", collector_source)
+        self.assertIn('COLLECTOR_STORAGE_KEY = "steam_access_collector_state"', collector_source)
+        self.assertIn("normalize_collector_state(state)", collector_source)
+        self.assertIn("write_collector_state", collector_source)
+        self.assertIn("clear_collector_storage", collector_source)
+        self.assertIn("owned_appids", collector_source)
+        self.assertIn("family_shared_appids", collector_source)
+        self.assertIn("wishlist_appids", collector_source)
+        for forbidden in (
+            "pairing_token",
+            "session_token",
+            "local_session_token",
+            "Authorization",
+            "X-Pairing-Token",
+            "Cookie",
+            "raw_response",
+            "raw_html",
+            "profile_url",
+            "family_member_names",
+        ):
+            with self.subTest(forbidden=forbidden):
+                self.assertNotIn(forbidden, collector_source)
+
+    def test_storage_permission_is_collector_scoped_not_auth_or_worker_storage(self) -> None:
+        # Arrange
+        manifest = json.loads(_read_helper_text("manifest.json"))
+        popup_source = _strip_safe_guardrail_copy(_read_helper_text("popup.js"))
+        service_worker_source = _strip_safe_guardrail_copy(_read_helper_text("service_worker.js"))
+        collector_source = _strip_safe_guardrail_copy(_read_helper_text("src/collector.js"))
+
+        # Assert: storage is the only new permission and is not used by direct-send/auth code.
+        self.assertEqual(set(manifest.get("permissions", [])), {"activeTab", "scripting", "storage"})
+        self.assertIn("chrome.storage?.local", collector_source)
+        self.assertIn("browser.storage?.local", collector_source)
+        for source_name, source in (
+            ("popup", popup_source),
+            ("service_worker", service_worker_source),
+        ):
+            with self.subTest(source=source_name):
+                self.assertNotIn("chrome.storage", source)
+                self.assertNotIn("browser.storage", source)
+        for auth_marker in (
+            "pairing_token",
+            "session_token",
+            "local_session_token",
+            "Authorization",
+            "X-Pairing-Token",
+        ):
+            with self.subTest(auth_marker=auth_marker):
+                self.assertNotIn(auth_marker, collector_source)
 
     def test_extension_sources_do_not_declare_steam_mutation_verbs(self) -> None:
         # Arrange
@@ -171,6 +232,8 @@ class SteamBrowserHelperGuardrailTests(unittest.TestCase):
         self.assertRegex(service_worker_source, r"Authorization:\s*`Bearer \$\{clean_token\}`")
         self.assertIn("chrome.runtime.onMessage.addListener", service_worker_source)
         self.assertIn("chrome.runtime.sendMessage", popup_source)
+        self.assertIn('current_export_source !== "collector"', popup_source)
+        self.assertIn("Export combined collector JSON before direct send", popup_source)
         self.assertIsNone(re.search(r"\bfetch\s*\(|\bXMLHttpRequest\b", popup_source, flags=re.IGNORECASE))
 
     def test_guardrail_checks_are_static_and_do_not_touch_runtime_paths(self) -> None:

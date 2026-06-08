@@ -39,11 +39,39 @@
       </button>
     </section>
 
+    <section class="collector_panel" aria-label="Manual AppID collector">
+      <div class="collector_header">
+        <div>
+          <strong>Manual collector</strong>
+          <p>Add visible AppIDs across Steam pages, then export a combined JSON later.</p>
+        </div>
+        <span class="mode_badge">AppID-only</span>
+      </div>
+
+      <p id="collector_counts" class="collector_counts">
+        Collector: 0 owned · 0 family · 0 wishlist · 0 total
+      </p>
+      <button type="button" id="collector_add_button" disabled>
+        Add current capture to collector
+      </button>
+      <div class="collector_actions">
+        <button type="button" id="collector_export_button">
+          Export combined collector JSON
+        </button>
+        <button type="button" id="collector_clear_button">
+          Clear collector
+        </button>
+      </div>
+      <p id="collector_status" class="collector_status" role="status" aria-live="polite">
+        Capture pages manually. Stored collector data is local AppIDs only and may not be complete.
+      </p>
+    </section>
+
     <section class="direct_send_panel" aria-label="Optional local direct send">
       <div class="direct_send_header">
         <div>
           <strong>Optional local direct send</strong>
-          <p>Explicit only: pair with Steam Tools on <code>127.0.0.1</code>, then send the sanitized JSON.</p>
+          <p>Explicit only: pair with Steam Tools on <code>127.0.0.1</code>, then send the combined collector JSON.</p>
         </div>
         <span class="mode_badge">Import-only</span>
       </div>
@@ -56,14 +84,14 @@
 
       <div class="direct_actions">
         <button type="button" id="pair_button">Pair with local app</button>
-        <button type="button" id="send_button" disabled>Send sanitized JSON</button>
+        <button type="button" id="send_button" disabled>Send combined JSON</button>
       </div>
 
       <p class="direct_hint">
         No Steam cookies/tokens/raw HTML are sent. Local session tokens stay in popup memory only.
       </p>
       <p id="direct_status" class="direct_status" role="status" aria-live="polite">
-        Direct send is optional. Extract JSON first, or use Copy/Save at any time.
+        Direct send is optional. Export combined collector JSON first, or use Copy/Save at any time.
       </p>
     </section>
 
@@ -86,6 +114,7 @@
 
   <script src="src/export-schema.js"></script>
   <script src="src/sanitize.js"></script>
+  <script src="src/collector.js"></script>
   <script src="popup.js"></script>
 </body>
 </html>

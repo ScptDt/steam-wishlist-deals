@@ -323,6 +323,8 @@ Guardrails implementados en Plan 6B inicial:
 
 Plan 7B amplía este helper con envío directo opcional, pero mantiene Copy/Save como fallback manual. Desde Plan 7B, el único `host_permissions` permitido es `"http://127.0.0.1/*"`, el fetch local vive en el service worker, y el endpoint sigue siendo import-only con pairing/session token local.
 
+Plan 8B agrega un collector manual para reducir el trabajo de armar JSONs a mano: el usuario extrae AppIDs visibles en una página, los agrega explícitamente a un bucket (`owned_appids`, `family_shared_appids` o `wishlist_appids`), repite el proceso en otras páginas y exporta un JSON combinado `steam_access_import_v1`. El collector puede usar el permiso `storage`, pero solo para persistir AppIDs/metadata mínima local de la extensión; no puede guardar pairing/session tokens, cookies, request headers, raw responses, HTML, SteamID/perfil, family member names, friends ni emails. Direct-send queda reservado para el JSON combinado del collector y sigue usando el service worker, `127.0.0.1`, `credentials: "omit"`, pairing/auth explícitos y endpoint import-only. El collector no promete completitud: si Steam pagina, virtualiza, oculta o no expone todos los juegos, el helper solo observa lo visible bajo acción manual.
+
 ### Plan 7A: threat model endpoint directo helper → app local
 
 Este corte es **docs-only**. Define el contrato mínimo antes de permitir que la extensión envíe un import directamente a la app local. Plan 7A no implementa endpoint, no cambia permisos de la extensión y no habilita envío directo todavía.

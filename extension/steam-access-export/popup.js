@@ -14,6 +14,11 @@ const COLLECTION_KEYS = Object.freeze([
 const dom = Object.freeze({
   collection_select: document.getElementById("collection_select"),
   extract_button: document.getElementById("extract_button"),
+  collector_add_button: document.getElementById("collector_add_button"),
+  collector_export_button: document.getElementById("collector_export_button"),
+  collector_clear_button: document.getElementById("collector_clear_button"),
+  collector_counts: document.getElementById("collector_counts"),
+  collector_status: document.getElementById("collector_status"),
   pair_button: document.getElementById("pair_button"),
   send_button: document.getElementById("send_button"),
   copy_button: document.getElementById("copy_button"),
@@ -27,6 +32,8 @@ const dom = Object.freeze({
 });
 
 let current_export_data = null;
+let current_collection_key = "";
+let current_export_source = "";
 let local_session_token = "";
 
 const set_status = (message, state = "info") => {
@@ -39,8 +46,26 @@ const set_direct_status = (message, state = "info") => {
   dom.direct_status.dataset.state = state;
 };
 
+const has_appids = (export_data) => count_appids(export_data || {}) > 0;
+
+const set_collector_status = (message, state = "info") => {
+  dom.collector_status.textContent = message;
+  dom.collector_status.dataset.state = state;
+};
+
 const update_direct_send_state = () => {
-  dom.send_button.disabled = !current_export_data || !local_session_token;
+  dom.send_button.disabled = current_export_source !== "collector" || !has_appids(current_export_data) || !local_session_token;
+};
+
+const update_collector_add_state = () => {
+  dom.collector_add_button.disabled = !current_export_data || !current_collection_key;
+};
+
+const reset_current_export = () => {
+  current_export_data = null;
+  current_collection_key = "";
+  current_export_source = "";
+  set_export_text("", 0);
 };
 
 const set_busy = (is_busy) => {
@@ -55,7 +80,31 @@ const set_export_text = (text, appid_count) => {
   dom.appid_count.textContent = `${appid_count} AppID${appid_count === 1 ? "" : "s"}`;
   dom.copy_button.disabled = !text;
   dom.save_button.disabled = !text;
+  update_collector_add_state();
   update_direct_send_state();
+};
+
+const collector_api = () => {
+  if (!globalThis.SteamAccessCollector) {
+    throw new Error("Collector helpers are not available in this extension context.");
+  }
+  return globalThis.SteamAccessCollector;
+};
+
+const render_collector_counts = (state = {}) => {
+  const counts = collector_api().collector_counts(state);
+  dom.collector_counts.textContent = [
+    `Collector: ${counts.owned_count || 0} owned`,
+    `${counts.family_shared_count || 0} family`,
+    `${counts.wishlist_count || 0} wishlist`,
+    `${counts.total_count || 0} total`,
+  ].join(" · ");
+};
+
+const refresh_collector_state = async () => {
+  const state = await collector_api().read_collector_state();
+  render_collector_counts(state);
+  return state;
 };
 
 const send_local_app_message = async (message) => {
@@ -183,15 +232,91 @@ const extract_export = async () => {
     const appid_count = count_appids(export_data);
 
     current_export_data = export_data;
+    current_collection_key = collection_key;
+    current_export_source = "single_capture";
     set_export_text(text, appid_count);
-    set_status(`Ready: ${appid_count} sanitized AppIDs in ${collection_key}. Review, copy, or save manually.`, "success");
-    set_direct_status("Sanitized JSON is ready. Pair with the local app only if you want direct send.", "info");
+    set_status(`Ready: ${appid_count} sanitized AppIDs in ${collection_key}. Review, copy, save, or add to the manual collector.`, "success");
+    set_direct_status("Direct send uses combined collector JSON. Add this capture to the collector and export combined JSON, or use Copy/Save.", "info");
   } catch (error) {
-    current_export_data = null;
-    update_direct_send_state();
+    reset_current_export();
     set_status(error instanceof Error ? error.message : "Unable to extract AppIDs.", "error");
   } finally {
     set_busy(false);
+  }
+};
+
+const export_collector_json = async () => {
+  try {
+    const api = collector_api();
+    const state = await api.read_collector_state();
+    const export_data = api.build_collector_export(state, {
+      generated_at: new Date().toISOString(),
+    });
+    const appid_count = count_appids(export_data);
+    current_export_data = export_data;
+    current_collection_key = "";
+    current_export_source = "collector";
+    set_export_text(JSON.stringify(export_data, null, 2), appid_count);
+    render_collector_counts(state);
+    set_collector_status(
+      `Combined collector JSON ready with ${appid_count} AppIDs. Copy/Save is manual; direct send remains optional after pairing.`,
+      "success",
+    );
+    set_direct_status(
+      appid_count > 0
+        ? "Combined collector JSON is ready. Pair with the local app if you want direct send."
+        : "Collector export is empty. Add visible AppIDs before direct send.",
+      appid_count > 0 ? "info" : "error",
+    );
+    set_status("Combined collector JSON is displayed. Use Copy JSON or Save JSON if you want manual import.", "success");
+  } catch (error) {
+    set_collector_status(error instanceof Error ? error.message : "Unable to export collector JSON.", "error");
+  }
+};
+
+const clear_collector = async () => {
+  try {
+    const api = collector_api();
+    const cleared_state = await api.clear_collector_storage(undefined, {
+      updated_at: new Date().toISOString(),
+    });
+    render_collector_counts(cleared_state);
+    if (current_export_source === "collector") {
+      reset_current_export();
+      set_status("Collector state cleared. The combined JSON display was cleared to avoid sending stale data.", "info");
+    }
+    set_collector_status("Collector cleared. Only local AppID collector state was reset.", "success");
+  } catch (error) {
+    set_collector_status(error instanceof Error ? error.message : "Unable to clear collector.", "error");
+  }
+};
+
+const add_current_capture_to_collector = async () => {
+  try {
+    if (!current_export_data || !current_collection_key) {
+      throw new Error("Extract visible AppIDs before adding to the collector.");
+    }
+    dom.collector_add_button.disabled = true;
+    const api = collector_api();
+    const previous_state = await api.read_collector_state();
+    const previous_count = (previous_state[current_collection_key] || []).length;
+    const next_state = api.add_appids_to_collector(
+      previous_state,
+      current_collection_key,
+      current_export_data[current_collection_key] || [],
+      { updated_at: new Date().toISOString() },
+    );
+    const saved_state = await api.write_collector_state(next_state);
+    const next_count = (saved_state[current_collection_key] || []).length;
+    render_collector_counts(saved_state);
+    set_collector_status(
+      `Added ${Math.max(0, next_count - previous_count)} new AppIDs to ${current_collection_key}. Capture pages manually; completeness is not guaranteed.`,
+      "success",
+    );
+  } catch (error) {
+    set_collector_status(error instanceof Error ? error.message : "Unable to update collector.", "error");
+  } finally {
+    update_collector_add_state();
   }
 };
 
@@ -224,8 +349,11 @@ const pair_local_app = async () => {
 
 const send_direct_import = async () => {
   try {
-    if (!current_export_data) {
-      throw new Error("Extract sanitized JSON before direct send.");
+    if (current_export_source !== "collector") {
+      throw new Error("Export combined collector JSON before direct send.");
+    }
+    if (!has_appids(current_export_data)) {
+      throw new Error("Combined collector JSON has no AppIDs to send.");
     }
     dom.send_button.disabled = true;
     await send_local_app_message({
@@ -233,7 +361,7 @@ const send_direct_import = async () => {
       payload: current_export_data,
       session_token: local_session_token,
     });
-    set_direct_status("Sanitized AppID-only JSON sent to local app. Review the local confirmation/result.", "success");
+    set_direct_status("Combined AppID-only collector JSON sent to local app. Review the local confirmation/result.", "success");
   } catch (error) {
     set_direct_status(
       `${error instanceof Error ? error.message : "Unable to send to local app."} Copy/Save remains available.`,
@@ -267,7 +395,14 @@ const save_export = () => {
 };
 
 dom.extract_button.addEventListener("click", extract_export);
+dom.collector_add_button.addEventListener("click", add_current_capture_to_collector);
+dom.collector_export_button.addEventListener("click", export_collector_json);
+dom.collector_clear_button.addEventListener("click", clear_collector);
 dom.pair_button.addEventListener("click", pair_local_app);
 dom.send_button.addEventListener("click", send_direct_import);
 dom.copy_button.addEventListener("click", copy_export);
 dom.save_button.addEventListener("click", save_export);
+
+refresh_collector_state().catch((error) => {
+  set_collector_status(error instanceof Error ? error.message : "Unable to load collector state.", "error");
+});
