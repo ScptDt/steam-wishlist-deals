@@ -16,6 +16,7 @@ const {
   has_sensitive_key,
   sanitize_steam_access_input,
 } = require("../extension/steam-access-export/src/sanitize.js");
+const service_worker = require("../extension/steam-access-export/service_worker.js");
 
 const FIXTURE_DIR = path.join(__dirname, "fixtures", "steam_browser_helper_export");
 const GENERATED_AT = "2026-06-04T12:00:00Z";
@@ -48,6 +49,11 @@ const read_fixture_text = (name) => {
   const fixture_path = path.join(FIXTURE_DIR, name);
   return fs.readFileSync(fixture_path, "utf8");
 };
+
+const read_helper_text = (name) => fs.readFileSync(
+  path.join(__dirname, "..", "extension", "steam-access-export", name),
+  "utf8",
+);
 
 const assert_export_contract = (export_json) => {
   assert.equal(export_json.schema, STEAM_ACCESS_SCHEMA);
@@ -189,4 +195,77 @@ test("sensitive-key detection rejects prohibited names while allowing family_sha
   assert.equal(has_sensitive_key("family_shared_appids"), false);
   assert.equal(has_sensitive_key("owned_appids"), false);
   assert.equal(has_sensitive_key("wishlist_appids"), false);
+});
+
+test("direct-send request builder is loopback-only with JSON and explicit token headers", () => {
+  // Arrange / Act
+  const pairing_request = service_worker.build_local_json_request(
+    { pairing_token: "PAIR" },
+    "PAIR",
+    { pairing: true },
+  );
+  const import_request = service_worker.build_local_json_request(
+    { schema: STEAM_ACCESS_SCHEMA },
+    "SESSION",
+  );
+
+  // Assert
+  assert.equal(service_worker.local_endpoint_url("/api/steam-access/import"), "http://127.0.0.1:8080/api/steam-access/import");
+  assert.throws(() => service_worker.normalize_local_base_url("http://localhost:8080"), /127\.0\.0\.1/);
+  assert.throws(() => service_worker.normalize_local_base_url("http://0.0.0.0:8080"), /127\.0\.0\.1/);
+  assert.throws(() => service_worker.normalize_local_base_url("https://127.0.0.1:8080"), /127\.0\.0\.1/);
+  assert.equal(pairing_request.method, "POST");
+  assert.equal(pairing_request.credentials, "omit");
+  assert.equal(pairing_request.headers["Content-Type"], "application/json");
+  assert.equal(pairing_request.headers["X-Pairing-Token"], "PAIR");
+  assert.equal(import_request.headers.Authorization, "Bearer SESSION");
+});
+
+test("service worker sends sanitized AppID-only body to import endpoint", async () => {
+  // Arrange
+  const fixture = read_fixture_json("sensitive_keys.json");
+  const export_json = build_sanitized_steam_access_export(fixture, {
+    generated_at: fixture.generated_at,
+  });
+  const calls = [];
+  const original_fetch = global.fetch;
+  global.fetch = async (url, request) => {
+    calls.push({ url, request });
+    return { ok: true, json: async () => ({ ok: true }) };
+  };
+
+  try {
+    // Act
+    await service_worker.send_steam_access_import(export_json, "SESSION", { base_url: "http://127.0.0.1:9876" });
+  } finally {
+    global.fetch = original_fetch;
+  }
+
+  // Assert
+  assert.equal(calls.length, 1);
+  assert.equal(calls[0].url, "http://127.0.0.1:9876/api/steam-access/import");
+  assert.equal(calls[0].request.headers.Authorization, "Bearer SESSION");
+  const body = JSON.parse(calls[0].request.body);
+  assert_export_contract(body);
+  assert.deepEqual(body.owned_appids, ["10", "20"]);
+  assert_no_forbidden_data(body);
+});
+
+test("popup direct-send remains explicit and copy/save fallback stays available", () => {
+  // Arrange
+  const popup_source = read_helper_text("popup.js");
+  const popup_html = read_helper_text("popup.html");
+
+  // Assert
+  assert.match(popup_source, /pair_button\.addEventListener\("click", pair_local_app\)/);
+  assert.match(popup_source, /send_button\.addEventListener\("click", send_direct_import\)/);
+  assert.match(popup_source, /copy_button\.addEventListener\("click", copy_export\)/);
+  assert.match(popup_source, /save_button\.addEventListener\("click", save_export\)/);
+  assert.match(popup_source, /Copy\/Save remains available/);
+  assert.match(popup_source, /URL\.createObjectURL/);
+  assert.match(popup_source, /chrome\.runtime\.sendMessage/);
+  assert.doesNotMatch(popup_source, /\bfetch\s*\(/);
+  assert.match(popup_html, /Optional local direct send/);
+  assert.match(popup_html, /Copy JSON/);
+  assert.match(popup_html, /Save JSON/);
 });

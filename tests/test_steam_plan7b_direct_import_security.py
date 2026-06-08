@@ -97,7 +97,11 @@ def _start_pairing() -> str:
 
 
 def _pair_extension(pairing_token: str, origin: str = EXTENSION_ORIGIN) -> str:
-    handler = _make_handler(PAIR_PATH, headers={"Origin": origin}, body={"pairing_token": pairing_token})
+    handler = _make_handler(
+        PAIR_PATH,
+        headers={"Origin": origin, "X-Pairing-Token": pairing_token},
+        body={"pairing_token": pairing_token},
+    )
     steam_deals_web.Handler.do_POST(handler)
     return _response_json(handler)["session_token"]
 
@@ -139,19 +143,22 @@ class SteamPlan7BDirectImportSecurityTests(unittest.TestCase):
         for origin in (None, "", EVIL_ORIGIN, "null"):
             with self.subTest(origin=origin):
                 pairing_token = _start_pairing()
-                headers = {} if origin is None else {"Origin": origin}
+                headers = {"X-Pairing-Token": pairing_token}
+                if origin is not None:
+                    headers["Origin"] = origin
                 handler = _make_handler(PAIR_PATH, headers=headers, body={"pairing_token": pairing_token})
                 steam_deals_web.Handler.do_POST(handler)
                 self.assertEqual(handler.status, 403)
                 self.assertNotIn(pairing_token, handler.wfile.getvalue().decode("utf-8"))
 
     def test_preflight_allows_only_extension_origin_expected_method_and_headers(self) -> None:
+        _start_pairing()
         handler = _make_handler(
             PAIR_PATH,
             headers={
                 "Origin": EXTENSION_ORIGIN,
                 "Access-Control-Request-Method": "POST",
-                "Access-Control-Request-Headers": "Content-Type, Authorization",
+                "Access-Control-Request-Headers": "Content-Type, X-Pairing-Token",
             },
         )
         steam_deals_web.Handler.do_OPTIONS(handler)
@@ -160,6 +167,21 @@ class SteamPlan7BDirectImportSecurityTests(unittest.TestCase):
         self.assertEqual(headers.get("Access-Control-Allow-Origin"), EXTENSION_ORIGIN)
         self.assertIn("Origin", headers.get("Vary", ""))
         self.assertNotEqual(headers.get("Access-Control-Allow-Origin"), "*")
+
+        session_token = _pair_extension(_start_pairing())
+        import_preflight = _make_handler(
+            IMPORT_PATH,
+            headers={
+                "Origin": EXTENSION_ORIGIN,
+                "Access-Control-Request-Method": "POST",
+                "Access-Control-Request-Headers": "Content-Type, Authorization",
+            },
+        )
+        steam_deals_web.Handler.do_OPTIONS(import_preflight)
+        import_headers = _headers(import_preflight)
+        self.assertIn(import_preflight.status, {200, 204})
+        self.assertEqual(import_headers.get("Access-Control-Allow-Origin"), EXTENSION_ORIGIN)
+        self.assertNotIn(session_token, json.dumps(import_headers))
 
         evil = _make_handler(
             IMPORT_PATH,
@@ -172,6 +194,18 @@ class SteamPlan7BDirectImportSecurityTests(unittest.TestCase):
         steam_deals_web.Handler.do_OPTIONS(evil)
         self.assertEqual(evil.status, 403)
         self.assertNotEqual(_headers(evil).get("Access-Control-Allow-Origin"), "*")
+
+    def test_import_routes_reject_get_and_unsafe_mutation_methods(self) -> None:
+        for method_name in ("do_GET", "do_PUT", "do_PATCH", "do_DELETE"):
+            with self.subTest(method_name=method_name):
+                handler = _make_handler(
+                    IMPORT_PATH,
+                    headers={"Origin": EXTENSION_ORIGIN},
+                    body=None,
+                )
+                getattr(steam_deals_web.Handler, method_name)(handler)
+                self.assertEqual(handler.status, 405)
+                self.assertNotEqual(_headers(handler).get("Access-Control-Allow-Origin"), "*")
 
     def test_import_rejects_missing_invalid_revoked_or_expired_session_tokens(self) -> None:
         session_token = _pair_extension(_start_pairing())
@@ -196,6 +230,36 @@ class SteamPlan7BDirectImportSecurityTests(unittest.TestCase):
         steam_deals_web.Handler.do_POST(handler)
         self.assertEqual(handler.status, 401)
 
+    def test_pairing_and_import_reject_cookie_auth_even_with_valid_tokens(self) -> None:
+        pairing_token = _start_pairing()
+        pair = _make_handler(
+            PAIR_PATH,
+            headers={
+                "Origin": EXTENSION_ORIGIN,
+                "X-Pairing-Token": pairing_token,
+                "Cookie": "local_session=SECRET",
+            },
+            body={"pairing_token": pairing_token},
+        )
+        steam_deals_web.Handler.do_POST(pair)
+        self.assertEqual(pair.status, 401)
+
+        session_token = _pair_extension(_start_pairing())
+        imp = _make_handler(
+            IMPORT_PATH,
+            headers={
+                "Origin": EXTENSION_ORIGIN,
+                "Authorization": f"Bearer {session_token}",
+                "Cookie": "local_session=SECRET",
+            },
+            body=_valid_import_payload(),
+        )
+        steam_deals_web.Handler.do_POST(imp)
+        serialized = imp.wfile.getvalue().decode("utf-8")
+        self.assertEqual(imp.status, 401)
+        self.assertNotIn(session_token, serialized)
+        self.assertNotIn("SECRET", serialized)
+
     def test_import_rejects_wrong_content_type_invalid_json_and_oversized_body(self) -> None:
         session_token = _pair_extension(_start_pairing())
         headers = {"Origin": EXTENSION_ORIGIN, "Authorization": f"Bearer {session_token}"}
@@ -209,9 +273,46 @@ class SteamPlan7BDirectImportSecurityTests(unittest.TestCase):
         self.assertEqual(invalid_json.status, 400)
 
         oversized = _make_handler(IMPORT_PATH, headers=headers, raw_body=b"{}")
-        oversized.headers["Content-Length"] = str(steam_deals_web.Handler.max_json_body_bytes + 1)
+        oversized.headers["Content-Length"] = str(steam_deals_web.STEAM_ACCESS_DIRECT_IMPORT_MAX_BODY_BYTES + 1)
         steam_deals_web.Handler.do_POST(oversized)
         self.assertEqual(oversized.status, 413)
+
+    def test_invalid_schema_sensitive_keys_and_behavior_keys_do_not_save(self) -> None:
+        session_token = _pair_extension(_start_pairing())
+        saved_configs: list[dict] = []
+        writes: list[dict] = []
+        original_load_config = steam_deals_web.load_config
+        original_save_config = steam_deals_web.save_config
+        original_write_import = steam_deals_web.write_steam_access_direct_import
+        steam_deals_web.load_config = lambda: {"vanity": "gaben"}
+        steam_deals_web.save_config = lambda cfg: saved_configs.append(dict(cfg))
+        steam_deals_web.write_steam_access_direct_import = lambda contract: writes.append(dict(contract)) or Path("/tmp/steam-access-direct-import.json")
+        invalid_payloads = [
+            {**_valid_import_payload(), "schema": "other_schema"},
+            {**_valid_import_payload(), "raw_response": "SECRET-RAW"},
+            {**_valid_import_payload(), "score": 999, "ranking": ["10"], "cache": {"ttl": 0}, "fetching": {"enabled": True}},
+            {**_valid_import_payload(), "advisory_only": False},
+            {**_valid_import_payload(), "ranking_impact": "score"},
+        ]
+        try:
+            for payload in invalid_payloads:
+                with self.subTest(payload_keys=sorted(payload)):
+                    handler = _make_handler(
+                        IMPORT_PATH,
+                        headers={"Origin": EXTENSION_ORIGIN, "Authorization": f"Bearer {session_token}"},
+                        body=payload,
+                    )
+                    steam_deals_web.Handler.do_POST(handler)
+                    serialized = handler.wfile.getvalue().decode("utf-8")
+                    self.assertEqual(handler.status, 400)
+                    self.assertNotIn("SECRET-RAW", serialized)
+        finally:
+            steam_deals_web.load_config = original_load_config
+            steam_deals_web.save_config = original_save_config
+            steam_deals_web.write_steam_access_direct_import = original_write_import
+
+        self.assertEqual(saved_configs, [])
+        self.assertEqual(writes, [])
 
     def test_valid_import_returns_summary_only_and_updates_existing_import_config(self) -> None:
         session_token = _pair_extension(_start_pairing())
@@ -244,6 +345,8 @@ class SteamPlan7BDirectImportSecurityTests(unittest.TestCase):
         self.assertNotIn("STEAM-SECRET", serialized)
         self.assertNotIn(session_token, serialized)
         self.assertNotIn("owned_appids", payload)
+        self.assertNotIn("family_shared_appids", payload)
+        self.assertNotIn("wishlist_appids", payload)
         self.assertIn("steam_access_json", saved_configs[-1])
 
     def test_import_rate_limit_rejects_repeated_requests_without_extra_side_effects(self) -> None:
