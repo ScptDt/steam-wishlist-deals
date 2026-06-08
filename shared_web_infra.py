@@ -20,6 +20,80 @@ SSE_CONTENT_TYPE = "text/event-stream"
 LOCAL_CSRF_HEADER = "X-Steam-Tools-Local-Token"
 LOCAL_CSRF_TOKEN_BYTES = 32
 LOCAL_CSRF_HOSTS = frozenset({"localhost", "127.0.0.1", "::1"})
+STEAM_ACCESS_IMPORT_SCHEMA = "steam_access_import_v1"
+STEAM_ACCESS_IMPORT_ADVISORY_ONLY = True
+STEAM_ACCESS_IMPORT_RANKING_IMPACT = "none"
+STEAM_ACCESS_IMPORT_COLLECTION_KEYS = (
+    "owned_appids",
+    "family_shared_appids",
+    "wishlist_appids",
+)
+STEAM_ACCESS_LOCAL_LOOPBACK_HOST = "127.0.0.1"
+STEAM_ACCESS_LOCAL_PAIR_ROUTE = "/api/steam-access/pair"
+STEAM_ACCESS_LOCAL_PAIR_STATUS_ROUTE = "/api/steam-access/pair/status"
+STEAM_ACCESS_LOCAL_IMPORT_ROUTE = "/api/steam-access/import"
+STEAM_ACCESS_LOCAL_AUTH_HEADER = "Authorization"
+STEAM_ACCESS_LOCAL_PAIRING_TOKEN_HEADER = "X-Pairing-Token"
+STEAM_ACCESS_LOCAL_PAIRING_TOKEN_BYTES = 18
+STEAM_ACCESS_LOCAL_IMPORT_SESSION_TOKEN_BYTES = 24
+STEAM_ACCESS_LOCAL_PAIRING_TTL_SECONDS = 5 * 60
+STEAM_ACCESS_LOCAL_IMPORT_SESSION_TTL_SECONDS = 30 * 60
+STEAM_ACCESS_LOCAL_ALLOWED_EXTENSION_ORIGINS = frozenset()
+STEAM_ACCESS_LOCAL_ALLOWED_ORIGIN_SCHEMES = frozenset(
+    {"chrome-extension", "moz-extension"}
+)
+STEAM_ACCESS_LOCAL_IMPORT_ALLOWED_METHODS = ("POST", "OPTIONS")
+STEAM_ACCESS_LOCAL_IMPORT_CORS_ALLOW_HEADERS = (
+    STEAM_ACCESS_LOCAL_AUTH_HEADER,
+    "Content-Type",
+    STEAM_ACCESS_LOCAL_PAIRING_TOKEN_HEADER,
+)
+STEAM_ACCESS_LOCAL_IMPORT_CORS_ALLOW_METHODS = ("POST", "OPTIONS")
+STEAM_ACCESS_LOCAL_IMPORT_CONTENT_TYPE = "application/json"
+STEAM_ACCESS_LOCAL_IMPORT_MAX_BODY_BYTES = 64 * 1024
+STEAM_ACCESS_LOCAL_IMPORT_RATE_LIMIT = 3
+STEAM_ACCESS_LOCAL_FORBIDDEN_PAYLOAD_KEYS = frozenset(
+    {
+        "cookie",
+        "cookies",
+        "steam_token",
+        "steam_tokens",
+        "token",
+        "tokens",
+        "session",
+        "session_id",
+        "sessionid",
+        "headers",
+        "request_headers",
+        "raw_response",
+        "raw_html",
+        "html",
+        "password",
+        "steamid",
+        "steam_id",
+        "profile",
+        "profile_url",
+        "family_member",
+        "family_members",
+        "family_member_names",
+        "friend",
+        "friends",
+        "email",
+        "emails",
+    }
+)
+STEAM_ACCESS_LOCAL_IMPORT_SECURITY_INVARIANTS = (
+    "import_only_no_general_command_endpoint",
+    "bind_and_call_127_0_0_1_loopback_only",
+    "token_auth_required_no_cookies",
+    "strict_extension_origin_allowlist",
+    "post_json_import_only",
+    "narrow_options_preflight_only",
+    "appid_only_payload_no_steam_secrets_or_identity",
+    "advisory_only_true_ranking_impact_none",
+    "no_score_ranking_default_cache_or_fetching_changes",
+    "no_live_steam_login_network_or_mutations",
+)
 SENSITIVE_CONFIG_KEYS = frozenset(
     {"key", "itad_key", "telegram_token", "discord_webhook"}
 )
@@ -202,6 +276,334 @@ def local_anti_csrf_forbidden_payload() -> dict[str, str]:
     return {
         "error": "forbidden",
         "message": "Solicitud local no autorizada.",
+    }
+
+
+def steam_access_origin_forbidden_payload() -> dict[str, str]:
+    return {
+        "error": "forbidden_origin",
+        "message": "Origin de extensión no autorizado.",
+    }
+
+
+def steam_access_cors_forbidden_payload() -> dict[str, str]:
+    return {
+        "error": "forbidden_cors",
+        "message": "Preflight Steam Access no autorizado.",
+    }
+
+
+def steam_access_method_not_allowed_payload() -> dict[str, str]:
+    return {
+        "error": "method_not_allowed",
+        "message": "Steam Access directo acepta solo POST JSON y OPTIONS preflight.",
+    }
+
+
+def steam_access_auth_required_payload() -> dict[str, str]:
+    return {
+        "error": "invalid_session",
+        "message": "Sesión local de import inválida o expirada.",
+    }
+
+
+def steam_access_pairing_required_payload() -> dict[str, str]:
+    return {
+        "error": "invalid_pairing",
+        "message": "Pairing token local inválido o expirado.",
+    }
+
+
+def steam_access_cookie_auth_forbidden_payload() -> dict[str, str]:
+    return {
+        "error": "cookie_auth_forbidden",
+        "message": "Steam Access directo no acepta autenticación por cookies.",
+    }
+
+
+def steam_access_rate_limited_payload() -> dict[str, str]:
+    return {
+        "error": "rate_limited",
+        "message": "Límite de imports directos alcanzado.",
+    }
+
+
+def steam_access_local_import_contract() -> dict[str, Any]:
+    """Return the Plan 7B import-only local endpoint contract."""
+    return {
+        "schema": STEAM_ACCESS_IMPORT_SCHEMA,
+        "routes": {
+            "pair": STEAM_ACCESS_LOCAL_PAIR_ROUTE,
+            "pair_status": STEAM_ACCESS_LOCAL_PAIR_STATUS_ROUTE,
+            "import": STEAM_ACCESS_LOCAL_IMPORT_ROUTE,
+        },
+        "loopback_host": STEAM_ACCESS_LOCAL_LOOPBACK_HOST,
+        "auth_header": STEAM_ACCESS_LOCAL_AUTH_HEADER,
+        "pairing_token_header": STEAM_ACCESS_LOCAL_PAIRING_TOKEN_HEADER,
+        "allowed_extension_origins": sorted(
+            STEAM_ACCESS_LOCAL_ALLOWED_EXTENSION_ORIGINS
+        ),
+        "allowed_origin_schemes": sorted(STEAM_ACCESS_LOCAL_ALLOWED_ORIGIN_SCHEMES),
+        "allowed_methods": list(STEAM_ACCESS_LOCAL_IMPORT_ALLOWED_METHODS),
+        "allowed_headers": list(STEAM_ACCESS_LOCAL_IMPORT_CORS_ALLOW_HEADERS),
+        "content_type": STEAM_ACCESS_LOCAL_IMPORT_CONTENT_TYPE,
+        "max_body_bytes": STEAM_ACCESS_LOCAL_IMPORT_MAX_BODY_BYTES,
+        "rate_limit_per_session": STEAM_ACCESS_LOCAL_IMPORT_RATE_LIMIT,
+        "collection_keys": list(STEAM_ACCESS_IMPORT_COLLECTION_KEYS),
+        "advisory_only": STEAM_ACCESS_IMPORT_ADVISORY_ONLY,
+        "ranking_impact": STEAM_ACCESS_IMPORT_RANKING_IMPACT,
+        "forbidden_payload_keys": sorted(STEAM_ACCESS_LOCAL_FORBIDDEN_PAYLOAD_KEYS),
+        "security_invariants": list(STEAM_ACCESS_LOCAL_IMPORT_SECURITY_INVARIANTS),
+    }
+
+
+def normalize_steam_access_extension_origin(origin: str | None) -> str:
+    raw = str(origin or "").strip()
+    if not raw:
+        return ""
+    try:
+        parsed = urlparse(raw)
+    except ValueError:
+        return ""
+    if parsed.scheme not in STEAM_ACCESS_LOCAL_ALLOWED_ORIGIN_SCHEMES:
+        return ""
+    if not parsed.netloc or parsed.username or parsed.password:
+        return ""
+    if parsed.path not in {"", "/"} or parsed.params or parsed.query or parsed.fragment:
+        return ""
+    return f"{parsed.scheme}://{parsed.netloc}"
+
+
+def is_valid_steam_access_extension_origin(
+    origin: str | None,
+    *,
+    allowed_origins: Iterable[str] = STEAM_ACCESS_LOCAL_ALLOWED_EXTENSION_ORIGINS,
+) -> bool:
+    normalized = normalize_steam_access_extension_origin(origin)
+    if not normalized:
+        return False
+    allowed = frozenset(normalize_steam_access_extension_origin(value) for value in allowed_origins)
+    allowed = frozenset(value for value in allowed if value)
+    if not allowed:
+        return True
+    return normalized in allowed
+
+
+def steam_access_cors_headers(origin: str) -> dict[str, str]:
+    return {
+        "Access-Control-Allow-Origin": origin,
+        "Access-Control-Allow-Methods": ", ".join(STEAM_ACCESS_LOCAL_IMPORT_CORS_ALLOW_METHODS),
+        "Access-Control-Allow-Headers": ", ".join(STEAM_ACCESS_LOCAL_IMPORT_CORS_ALLOW_HEADERS),
+        "Vary": "Origin",
+    }
+
+
+def _requested_header_names(value: str | None) -> set[str]:
+    return {part.strip().lower() for part in str(value or "").split(",") if part.strip()}
+
+
+def is_valid_steam_access_preflight(
+    headers: Mapping[str, str],
+    *,
+    allowed_origins: Iterable[str] = STEAM_ACCESS_LOCAL_ALLOWED_EXTENSION_ORIGINS,
+) -> bool:
+    if not is_valid_steam_access_extension_origin(
+        headers.get("Origin"),
+        allowed_origins=allowed_origins,
+    ):
+        return False
+    method = str(headers.get("Access-Control-Request-Method") or "").strip().upper()
+    if method != "POST":
+        return False
+    requested_headers = _requested_header_names(headers.get("Access-Control-Request-Headers"))
+    allowed_headers = {header.lower() for header in STEAM_ACCESS_LOCAL_IMPORT_CORS_ALLOW_HEADERS}
+    if not requested_headers or not requested_headers <= allowed_headers:
+        return False
+    return "content-type" in requested_headers and (
+        "authorization" in requested_headers
+        or STEAM_ACCESS_LOCAL_PAIRING_TOKEN_HEADER.lower() in requested_headers
+    )
+
+
+def steam_access_bearer_token(headers: Mapping[str, str]) -> str:
+    auth = str(headers.get(STEAM_ACCESS_LOCAL_AUTH_HEADER) or "").strip()
+    prefix = "Bearer "
+    if not auth.startswith(prefix):
+        return ""
+    return auth[len(prefix) :].strip()
+
+
+def steam_access_pairing_token(headers: Mapping[str, str]) -> str:
+    return str(headers.get(STEAM_ACCESS_LOCAL_PAIRING_TOKEN_HEADER) or "").strip()
+
+
+def has_steam_access_cookie_auth(headers: Mapping[str, str]) -> bool:
+    return bool(str(headers.get("Cookie") or "").strip())
+
+
+def is_steam_access_json_content_type(headers: Mapping[str, str]) -> bool:
+    content_type = str(headers.get("Content-Type") or "").split(";")[0].strip().lower()
+    return content_type == STEAM_ACCESS_LOCAL_IMPORT_CONTENT_TYPE
+
+
+def steam_access_content_length(headers: Mapping[str, str]) -> int | None:
+    try:
+        return int(headers.get("Content-Length", "0"))
+    except (TypeError, ValueError):
+        return None
+
+
+def is_steam_access_body_within_limit(
+    headers: Mapping[str, str],
+    *,
+    max_bytes: int = STEAM_ACCESS_LOCAL_IMPORT_MAX_BODY_BYTES,
+) -> bool:
+    length = steam_access_content_length(headers)
+    return length is not None and 0 <= length <= max_bytes
+
+
+def steam_access_timestamp_iso(timestamp: float) -> str:
+    from datetime import datetime, timezone
+
+    return (
+        datetime.fromtimestamp(timestamp, timezone.utc)
+        .replace(microsecond=0)
+        .isoformat()
+        .replace("+00:00", "Z")
+    )
+
+
+def build_steam_access_pairing_record(
+    *,
+    now: float,
+    ttl_seconds: int = STEAM_ACCESS_LOCAL_PAIRING_TTL_SECONDS,
+) -> dict[str, Any]:
+    return {
+        "created_at": now,
+        "expires_at": now + ttl_seconds,
+        "used": False,
+        "pairing_confirmed_by_local_ui": True,
+    }
+
+
+def build_steam_access_import_session_record(
+    origin: str,
+    *,
+    now: float,
+    ttl_seconds: int = STEAM_ACCESS_LOCAL_IMPORT_SESSION_TTL_SECONDS,
+) -> dict[str, Any]:
+    return {
+        "origin": origin,
+        "created_at": now,
+        "expires_at": now + ttl_seconds,
+        "import_count": 0,
+        "revoked": False,
+        "paired": True,
+        "pairing_confirmed_by_local_ui": True,
+        "direct_import_confirmed_by_local_ui": False,
+    }
+
+
+def is_steam_access_pairing_active(record: Mapping[str, Any], *, now: float) -> bool:
+    return bool(record.get("expires_at", 0) > now and not record.get("used"))
+
+
+def is_steam_access_import_session_active(
+    record: Mapping[str, Any],
+    *,
+    now: float,
+) -> bool:
+    return bool(record.get("expires_at", 0) > now and not record.get("revoked"))
+
+
+def steam_access_import_session_for_token(
+    sessions: Mapping[str, Mapping[str, Any]],
+    token: str,
+    *,
+    now: float,
+) -> tuple[str, Mapping[str, Any] | None]:
+    if not token:
+        return "", None
+    for stored_token, record in sessions.items():
+        if hmac.compare_digest(str(stored_token), str(token)):
+            if is_steam_access_import_session_active(record, now=now):
+                return stored_token, record
+            return stored_token, None
+    return "", None
+
+
+def is_steam_access_rate_limited(
+    session_record: Mapping[str, Any],
+    *,
+    max_imports: int = STEAM_ACCESS_LOCAL_IMPORT_RATE_LIMIT,
+) -> bool:
+    try:
+        import_count = int(session_record.get("import_count") or 0)
+    except (TypeError, ValueError):
+        import_count = max_imports
+    return import_count >= max_imports
+
+
+def is_steam_access_direct_import_confirmed(record: Mapping[str, Any]) -> bool:
+    return bool(
+        record.get("paired")
+        and record.get("pairing_confirmed_by_local_ui")
+        and record.get("direct_import_confirmed_by_local_ui")
+    )
+
+
+def steam_access_local_status_payload(
+    pairings: Mapping[str, Mapping[str, Any]],
+    sessions: Mapping[str, Mapping[str, Any]],
+    *,
+    now: float,
+) -> dict[str, Any]:
+    active_pairings = [
+        record
+        for record in pairings.values()
+        if is_steam_access_pairing_active(record, now=now)
+    ]
+    active_sessions = [
+        record
+        for record in sessions.values()
+        if is_steam_access_import_session_active(record, now=now)
+    ]
+    import_ready = any(
+        is_steam_access_direct_import_confirmed(record) for record in active_sessions
+    )
+    next_pairing_expiry = min(
+        (record["expires_at"] for record in active_pairings),
+        default=None,
+    )
+    next_session_expiry = min(
+        (record["expires_at"] for record in active_sessions),
+        default=None,
+    )
+    return {
+        "status": "ready_for_confirmation" if active_pairings or active_sessions else "idle",
+        "loopback_host": STEAM_ACCESS_LOCAL_LOOPBACK_HOST,
+        "pairing": {
+            "active": bool(active_pairings),
+            "active_count": len(active_pairings),
+            "expires_at": steam_access_timestamp_iso(next_pairing_expiry)
+            if next_pairing_expiry
+            else None,
+        },
+        "session": {
+            "active": bool(active_sessions),
+            "active_count": len(active_sessions),
+            "expires_at": steam_access_timestamp_iso(next_session_expiry)
+            if next_session_expiry
+            else None,
+        },
+        "direct_import": {
+            "ready": import_ready,
+            "requires_pairing": not bool(active_sessions),
+            "requires_user_confirmation": not import_ready,
+            "accepts_payload": False,
+        },
+        "advisory_only": STEAM_ACCESS_IMPORT_ADVISORY_ONLY,
+        "ranking_impact": STEAM_ACCESS_IMPORT_RANKING_IMPACT,
     }
 
 

@@ -1,6 +1,10 @@
 "use strict";
 
 const FILE_NAME = "steam-access-import.json";
+const LOCAL_DIRECT_MESSAGE_TYPES = Object.freeze({
+  PAIR: "steam_access_pair_local_app",
+  IMPORT: "steam_access_import_local_app",
+});
 const COLLECTION_KEYS = Object.freeze([
   "owned_appids",
   "family_shared_appids",
@@ -10,16 +14,33 @@ const COLLECTION_KEYS = Object.freeze([
 const dom = Object.freeze({
   collection_select: document.getElementById("collection_select"),
   extract_button: document.getElementById("extract_button"),
+  pair_button: document.getElementById("pair_button"),
+  send_button: document.getElementById("send_button"),
   copy_button: document.getElementById("copy_button"),
   save_button: document.getElementById("save_button"),
   export_text: document.getElementById("export_text"),
   appid_count: document.getElementById("appid_count"),
+  local_base_url: document.getElementById("local_base_url"),
+  pairing_token: document.getElementById("pairing_token"),
+  direct_status: document.getElementById("direct_status"),
   status_message: document.getElementById("status_message"),
 });
+
+let current_export_data = null;
+let local_session_token = "";
 
 const set_status = (message, state = "info") => {
   dom.status_message.textContent = message;
   dom.status_message.dataset.state = state;
+};
+
+const set_direct_status = (message, state = "info") => {
+  dom.direct_status.textContent = message;
+  dom.direct_status.dataset.state = state;
+};
+
+const update_direct_send_state = () => {
+  dom.send_button.disabled = !current_export_data || !local_session_token;
 };
 
 const set_busy = (is_busy) => {
@@ -34,6 +55,18 @@ const set_export_text = (text, appid_count) => {
   dom.appid_count.textContent = `${appid_count} AppID${appid_count === 1 ? "" : "s"}`;
   dom.copy_button.disabled = !text;
   dom.save_button.disabled = !text;
+  update_direct_send_state();
+};
+
+const send_local_app_message = async (message) => {
+  const response = await chrome.runtime.sendMessage({
+    ...message,
+    base_url: dom.local_base_url.value,
+  });
+  if (!response?.ok) {
+    throw new Error(response?.message || "The local app rejected direct send.");
+  }
+  return response.data || {};
 };
 
 const get_active_tab = async () => {
@@ -149,12 +182,65 @@ const extract_export = async () => {
     const text = JSON.stringify(export_data, null, 2);
     const appid_count = count_appids(export_data);
 
+    current_export_data = export_data;
     set_export_text(text, appid_count);
     set_status(`Ready: ${appid_count} sanitized AppIDs in ${collection_key}. Review, copy, or save manually.`, "success");
+    set_direct_status("Sanitized JSON is ready. Pair with the local app only if you want direct send.", "info");
   } catch (error) {
+    current_export_data = null;
+    update_direct_send_state();
     set_status(error instanceof Error ? error.message : "Unable to extract AppIDs.", "error");
   } finally {
     set_busy(false);
+  }
+};
+
+const pair_local_app = async () => {
+  const pairing_token = dom.pairing_token.value.trim();
+  try {
+    dom.pair_button.disabled = true;
+    local_session_token = "";
+    update_direct_send_state();
+    const response = await send_local_app_message({
+      type: LOCAL_DIRECT_MESSAGE_TYPES.PAIR,
+      pairing_token,
+    });
+    local_session_token = typeof response.session_token === "string" ? response.session_token : "";
+    if (!local_session_token) {
+      throw new Error("The local app did not return a direct-send session.");
+    }
+    dom.pairing_token.value = "";
+    set_direct_status("Paired with local app. Session is held in popup memory only.", "success");
+  } catch (error) {
+    set_direct_status(
+      `${error instanceof Error ? error.message : "Unable to pair with local app."} Copy/Save remains available.`,
+      "error",
+    );
+  } finally {
+    dom.pair_button.disabled = false;
+    update_direct_send_state();
+  }
+};
+
+const send_direct_import = async () => {
+  try {
+    if (!current_export_data) {
+      throw new Error("Extract sanitized JSON before direct send.");
+    }
+    dom.send_button.disabled = true;
+    await send_local_app_message({
+      type: LOCAL_DIRECT_MESSAGE_TYPES.IMPORT,
+      payload: current_export_data,
+      session_token: local_session_token,
+    });
+    set_direct_status("Sanitized AppID-only JSON sent to local app. Review the local confirmation/result.", "success");
+  } catch (error) {
+    set_direct_status(
+      `${error instanceof Error ? error.message : "Unable to send to local app."} Copy/Save remains available.`,
+      "error",
+    );
+  } finally {
+    update_direct_send_state();
   }
 };
 
@@ -181,5 +267,7 @@ const save_export = () => {
 };
 
 dom.extract_button.addEventListener("click", extract_export);
+dom.pair_button.addEventListener("click", pair_local_app);
+dom.send_button.addEventListener("click", send_direct_import);
 dom.copy_button.addEventListener("click", copy_export);
 dom.save_button.addEventListener("click", save_export);

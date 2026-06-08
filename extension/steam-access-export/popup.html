@@ -21,7 +21,7 @@
         <li>Advisory-only: <strong>ranking impact none</strong>.</li>
         <li>Read-only: no Steam mutations, purchases, wishlist edits, or settings changes.</li>
         <li>AppID-only: no cookies, tokens, passwords, raw HTML, raw responses, names, or private profile data.</li>
-        <li>Manual only: copy or save JSON yourself; no local endpoint direct-send.</li>
+        <li>Manual fallback stays available: copy or save JSON yourself if direct send fails.</li>
       </ul>
     </section>
 
@@ -37,6 +37,34 @@
       <button type="button" class="primary_button" id="extract_button">
         Extract sanitized JSON from active Steam tab
       </button>
+    </section>
+
+    <section class="direct_send_panel" aria-label="Optional local direct send">
+      <div class="direct_send_header">
+        <div>
+          <strong>Optional local direct send</strong>
+          <p>Explicit only: pair with Steam Tools on <code>127.0.0.1</code>, then send the sanitized JSON.</p>
+        </div>
+        <span class="mode_badge">Import-only</span>
+      </div>
+
+      <label for="local_base_url">Local Steam Tools URL</label>
+      <input id="local_base_url" type="url" value="http://127.0.0.1:8080" spellcheck="false" autocomplete="off">
+
+      <label for="pairing_token">Pairing code from local app</label>
+      <input id="pairing_token" type="text" inputmode="text" spellcheck="false" autocomplete="off" placeholder="Paste local pairing code after confirming locally">
+
+      <div class="direct_actions">
+        <button type="button" id="pair_button">Pair with local app</button>
+        <button type="button" id="send_button" disabled>Send sanitized JSON</button>
+      </div>
+
+      <p class="direct_hint">
+        No Steam cookies/tokens/raw HTML are sent. Local session tokens stay in popup memory only.
+      </p>
+      <p id="direct_status" class="direct_status" role="status" aria-live="polite">
+        Direct send is optional. Extract JSON first, or use Copy/Save at any time.
+      </p>
     </section>
 
     <section class="result_panel" aria-label="Sanitized export result">

@@ -17,6 +17,56 @@ _LOCAL_PLAY_ACCESS_DEFAULT_SOURCE = "local_play_access_import"
 _STEAM_ACCESS_IMPORT_DEFAULT_SOURCE = "steam_access_import"
 _STEAM_ACCESS_COLLECTION_KEYS = ("owned_appids", "family_shared_appids", "wishlist_appids")
 _STEAM_ACCESS_WRAPPER_KEYS = ("steam_access_import", "steam_access", "access")
+_STEAM_ACCESS_DIRECT_ALLOWED_KEYS = frozenset(
+    {
+        "schema",
+        "source",
+        "generated_at",
+        "observed_at",
+        "imported_at",
+        "provenance",
+        "owned_appids",
+        "family_shared_appids",
+        "wishlist_appids",
+        "advisory_only",
+        "ranking_impact",
+        "summary",
+    }
+)
+_STEAM_ACCESS_DIRECT_FORBIDDEN_KEYS = frozenset(
+    {
+        "cookie",
+        "cookies",
+        "steamloginsecure",
+        "token",
+        "tokens",
+        "session",
+        "session_id",
+        "sessionid",
+        "headers",
+        "request_headers",
+        "raw_response",
+        "raw_html",
+        "html",
+        "password",
+        "steamid",
+        "steam_id",
+        "profile",
+        "profile_url",
+        "family_member",
+        "family_members",
+        "family_member_name",
+        "friend",
+        "friends",
+        "email",
+        "emails",
+        "command",
+        "commands",
+        "action",
+        "mutation",
+        "method",
+    }
+)
 
 
 def _clean_text(value) -> str:
@@ -126,6 +176,82 @@ def _empty_steam_access_contract() -> dict:
 
 def _has_steam_access_signal(payload: dict) -> bool:
     return any(key in payload for key in _STEAM_ACCESS_COLLECTION_KEYS)
+
+
+def _iter_json_keys(value) -> list[str]:
+    if isinstance(value, dict):
+        keys: list[str] = []
+        for key, nested in value.items():
+            keys.append(str(key))
+            keys.extend(_iter_json_keys(nested))
+        return keys
+    if isinstance(value, list):
+        keys: list[str] = []
+        for nested in value:
+            keys.extend(_iter_json_keys(nested))
+        return keys
+    return []
+
+
+def _contains_forbidden_direct_key(key: str) -> bool:
+    normalized = str(key or "").strip().lower().replace("-", "_")
+    if normalized in _STEAM_ACCESS_COLLECTION_KEYS:
+        return False
+    return normalized in _STEAM_ACCESS_DIRECT_FORBIDDEN_KEYS
+
+
+def _strict_direct_appids(values, field: str) -> list[str]:
+    if values is None:
+        return []
+    if not isinstance(values, list):
+        raise ValueError(f"{field} debe ser una lista de AppIDs numéricos")
+    appids: list[str] = []
+    seen: set[str] = set()
+    for raw in values:
+        appid = _numeric_appid(raw)
+        if not appid:
+            raise ValueError(f"{field} incluye un AppID inválido")
+        if appid in seen:
+            continue
+        seen.add(appid)
+        appids.append(appid)
+    return appids
+
+
+def validate_steam_access_direct_import(payload) -> dict:
+    """Validate a direct helper import before any persistence side effect."""
+    if not isinstance(payload, dict):
+        raise ValueError("import directo Steam Access debe ser un objeto JSON")
+    unknown_keys = set(payload) - _STEAM_ACCESS_DIRECT_ALLOWED_KEYS
+    if unknown_keys:
+        raise ValueError("import directo Steam Access incluye campos no permitidos")
+    forbidden_keys = [key for key in _iter_json_keys(payload) if _contains_forbidden_direct_key(key)]
+    if forbidden_keys:
+        raise ValueError("import directo Steam Access incluye campos sensibles o acciones no permitidas")
+    if payload.get("schema") != "steam_access_import_v1":
+        raise ValueError("import directo Steam Access debe usar schema steam_access_import_v1")
+    if payload.get("advisory_only") is not True:
+        raise ValueError("import directo Steam Access debe declarar advisory_only=true")
+    if payload.get("ranking_impact") != "none":
+        raise ValueError("import directo Steam Access debe declarar ranking_impact=none")
+    if not _has_steam_access_signal(payload):
+        raise ValueError("import directo Steam Access debe incluir AppIDs")
+    safe_payload = {
+        "schema": "steam_access_import_v1",
+        "source": _metadata_text(payload.get("source")) or "steam_browser_helper_export",
+        "owned_appids": _strict_direct_appids(payload.get("owned_appids"), "owned_appids"),
+        "family_shared_appids": _strict_direct_appids(
+            payload.get("family_shared_appids"),
+            "family_shared_appids",
+        ),
+        "wishlist_appids": _strict_direct_appids(payload.get("wishlist_appids"), "wishlist_appids"),
+        "advisory_only": True,
+        "ranking_impact": "none",
+    }
+    for field in ("generated_at", "observed_at", "imported_at", "provenance"):
+        if value := _metadata_text(payload.get(field)):
+            safe_payload[field] = value
+    return normalize_steam_access_import(safe_payload)
 
 
 def normalize_steam_access_import(payload) -> dict:

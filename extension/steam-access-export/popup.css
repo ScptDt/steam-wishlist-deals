@@ -7,6 +7,7 @@
   --accent: #66c0f4;
   --accent-strong: #8bc53f;
   --danger: #ff8f8f;
+  --warning: #ffd580;
   --border: #30445a;
   --shadow: 0 16px 42px rgba(0, 0, 0, 0.35);
 }
@@ -51,6 +52,7 @@ code {
 .popup_header,
 .guardrail_card,
 .controls,
+.direct_send_panel,
 .result_panel {
   border: 1px solid var(--border);
   border-radius: 16px;
@@ -97,6 +99,7 @@ h1 {
 }
 
 .controls,
+.direct_send_panel,
 .result_panel {
   display: flex;
   flex-direction: column;
@@ -110,6 +113,7 @@ label,
 }
 
 select,
+input,
 textarea {
   width: 100%;
   border: 1px solid var(--border);
@@ -119,6 +123,11 @@ textarea {
 }
 
 select {
+  min-height: 44px;
+  padding: 0 12px;
+}
+
+input {
   min-height: 44px;
   padding: 0 12px;
 }
@@ -157,15 +166,39 @@ button:disabled {
 }
 
 .result_header,
-.actions {
+.actions,
+.direct_send_header,
+.direct_actions {
   display: flex;
   align-items: center;
   justify-content: space-between;
   gap: 10px;
 }
 
-.actions button {
+.actions button,
+.direct_actions button {
   flex: 1;
+}
+
+.direct_send_header {
+  align-items: flex-start;
+}
+
+.direct_send_header p,
+.direct_hint {
+  margin: 4px 0 0;
+  color: var(--muted);
+  font-size: 12px;
+}
+
+.mode_badge {
+  border: 1px solid rgba(139, 197, 63, 0.65);
+  border-radius: 999px;
+  padding: 3px 8px;
+  color: #d9ffc7;
+  font-size: 11px;
+  font-weight: 700;
+  white-space: nowrap;
 }
 
 .count_badge {
@@ -176,7 +209,8 @@ button:disabled {
   font-size: 12px;
 }
 
-.status_message {
+.status_message,
+.direct_status {
   min-height: 42px;
   margin: 0;
   border: 1px solid var(--border);
@@ -186,12 +220,19 @@ button:disabled {
   color: var(--muted);
 }
 
-.status_message[data-state="success"] {
+.status_message[data-state="success"],
+.direct_status[data-state="success"] {
   border-color: rgba(139, 197, 63, 0.7);
   color: #d9ffc7;
 }
 
-.status_message[data-state="error"] {
+.status_message[data-state="error"],
+.direct_status[data-state="error"] {
   border-color: rgba(255, 143, 143, 0.7);
   color: var(--danger);
+}
+
+.direct_status[data-state="info"] {
+  border-color: rgba(255, 213, 128, 0.55);
+  color: var(--warning);
 }

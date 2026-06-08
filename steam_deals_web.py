@@ -6,12 +6,14 @@ Abre: http://127.0.0.1:8080
 """
 
 import html
+import hmac
 import json
 import os
 import re
 import subprocess
 import sys
 import threading
+import time
 import urllib.parse
 import urllib.request
 import webbrowser
@@ -48,10 +50,13 @@ from app.steam_deals_openid import (
     steam_openid_base_url,
     verify_steam_openid_check_authentication,
 )
+from app.steam_deals_access import validate_steam_access_direct_import
 from app.steam_deals_recommendations import build_selection_review
 from shared.tool_modules import PAYDAY2_TOOL_ID, get_tool_entrypoint
 
 from shared_web_infra import (
+    build_steam_access_import_session_record,
+    build_steam_access_pairing_record,
     build_missing_assets_html,
     build_secret_subprocess_env,
     CONFIG_SECRET_ENV_VARS,
@@ -59,15 +64,24 @@ from shared_web_infra import (
     create_local_session_token,
     CSS_CONTENT_TYPE,
     hydrate_config_secrets,
+    has_steam_access_cookie_auth,
+    is_steam_access_body_within_limit,
+    is_steam_access_direct_import_confirmed,
+    is_steam_access_json_content_type,
+    is_steam_access_pairing_active,
+    is_steam_access_rate_limited,
     is_valid_local_anti_csrf_request,
     is_valid_loopback_host_header,
     is_redacted_config_secret,
+    is_valid_steam_access_extension_origin,
+    is_valid_steam_access_preflight,
     JS_CONTENT_TYPE,
     load_html_with_fallback,
     local_anti_csrf_forbidden_payload,
     local_host_forbidden_payload,
     LOCAL_CSRF_HEADER,
     merge_config_preserving_secrets,
+    normalize_steam_access_extension_origin,
     ProcessStreamUnavailable,
     public_config,
     read_json_body,
@@ -78,6 +92,30 @@ from shared_web_infra import (
     send_sse_event,
     serve_text_asset,
     start_text_subprocess,
+    steam_access_local_import_contract,
+    steam_access_local_status_payload,
+    steam_access_timestamp_iso,
+    steam_access_auth_required_payload,
+    steam_access_bearer_token,
+    steam_access_content_length,
+    steam_access_cookie_auth_forbidden_payload,
+    steam_access_cors_forbidden_payload,
+    steam_access_cors_headers,
+    steam_access_import_session_for_token,
+    steam_access_method_not_allowed_payload,
+    steam_access_origin_forbidden_payload,
+    steam_access_pairing_required_payload,
+    steam_access_pairing_token,
+    steam_access_rate_limited_payload,
+    STEAM_ACCESS_LOCAL_IMPORT_ROUTE,
+    STEAM_ACCESS_LOCAL_IMPORT_MAX_BODY_BYTES,
+    STEAM_ACCESS_LOCAL_IMPORT_RATE_LIMIT,
+    STEAM_ACCESS_LOCAL_IMPORT_SESSION_TOKEN_BYTES,
+    STEAM_ACCESS_LOCAL_IMPORT_SECURITY_INVARIANTS,
+    STEAM_ACCESS_LOCAL_PAIRING_TOKEN_BYTES,
+    STEAM_ACCESS_LOCAL_PAIRING_TTL_SECONDS,
+    STEAM_ACCESS_LOCAL_PAIR_ROUTE,
+    STEAM_ACCESS_LOCAL_PAIR_STATUS_ROUTE,
     stop_process,
     stream_process_as_sse,
 )
@@ -104,6 +142,20 @@ HLTB_AUTODETECT_RELATIVE_DIRS = (
     Path("Downloads"),
 )
 LOCAL_SESSION_TOKEN = create_local_session_token()
+STEAM_ACCESS_LOCAL_ENDPOINT_CONTRACT = steam_access_local_import_contract()
+STEAM_ACCESS_LOCAL_ENDPOINT_ROUTES = frozenset(
+    {
+        STEAM_ACCESS_LOCAL_PAIR_ROUTE,
+        STEAM_ACCESS_LOCAL_PAIR_STATUS_ROUTE,
+        STEAM_ACCESS_LOCAL_IMPORT_ROUTE,
+    }
+)
+STEAM_ACCESS_LOCAL_ENDPOINT_SECURITY_INVARIANTS = STEAM_ACCESS_LOCAL_IMPORT_SECURITY_INVARIANTS
+STEAM_ACCESS_PAIRING_START_PATH = "/api/steam-access/pairing/start"
+STEAM_ACCESS_PAIRING_REVOKE_PATH = "/api/steam-access/pairing/revoke"
+STEAM_ACCESS_PAIRING_TTL_SECONDS = STEAM_ACCESS_LOCAL_PAIRING_TTL_SECONDS
+STEAM_ACCESS_DIRECT_IMPORT_MAX_BODY_BYTES = STEAM_ACCESS_LOCAL_IMPORT_MAX_BODY_BYTES
+STEAM_ACCESS_DIRECT_IMPORT_RATE_LIMIT = STEAM_ACCESS_LOCAL_IMPORT_RATE_LIMIT
 PROTECTED_POST_PATHS = frozenset(
     {
         "/api/run",
@@ -117,6 +169,8 @@ PROTECTED_POST_PATHS = frozenset(
         "/api/config",
         "/api/steam-openid/start",
         "/api/steam-openid/disconnect",
+        STEAM_ACCESS_PAIRING_START_PATH,
+        STEAM_ACCESS_PAIRING_REVOKE_PATH,
         "/api/watchlist",
         "/api/watchlist/delete",
         "/api/selection-review",
@@ -128,6 +182,41 @@ _running_proc = None
 _proc_lock = threading.Lock()
 _steam_openid_pending_states: dict[str, dict] = {}
 _steam_openid_used_nonces: dict[str, float] = {}
+_steam_access_pairings: dict[str, dict] = {}
+_steam_access_import_sessions: dict[str, dict] = {}
+
+
+def _now_seconds() -> float:
+    return time.time()
+
+
+def _same_local_token(left: str, right: str) -> bool:
+    try:
+        return hmac.compare_digest(str(left), str(right))
+    except TypeError:
+        return False
+
+
+def _prune_steam_access_direct_import_state() -> None:
+    now = _now_seconds()
+    for token, pending in list(_steam_access_pairings.items()):
+        expires_at = pending.get("expires_at", 0)
+        if expires_at <= now or pending.get("used"):
+            _steam_access_pairings.pop(token, None)
+    for token, session in list(_steam_access_import_sessions.items()):
+        expires_at = session.get("expires_at", 0)
+        if expires_at <= now or session.get("revoked"):
+            _steam_access_import_sessions.pop(token, None)
+
+
+def reset_steam_access_direct_import_state_for_tests() -> None:
+    _steam_access_pairings.clear()
+    _steam_access_import_sessions.clear()
+
+
+def revoke_steam_access_direct_import_sessions_for_tests() -> None:
+    for session in _steam_access_import_sessions.values():
+        session["revoked"] = True
 
 
 def _build_stop_response(status: str, message: str) -> dict[str, str]:
@@ -548,6 +637,23 @@ def save_config(cfg: dict) -> None:
     CONFIG_FILE.write_text(
         json.dumps(cfg, ensure_ascii=False, indent=2), encoding="utf-8"
     )
+
+
+def write_steam_access_direct_import(contract: dict) -> Path:
+    """Persist a sanitized Steam Access helper import for the existing import flow."""
+    import_path = CONFIG_FILE.parent / "steam-access-direct-import.json"
+    tmp_path = import_path.with_suffix(f"{import_path.suffix}.tmp")
+    import_path.parent.mkdir(parents=True, exist_ok=True)
+    try:
+        tmp_path.write_text(
+            json.dumps(contract, ensure_ascii=False, indent=2),
+            encoding="utf-8",
+        )
+        tmp_path.replace(import_path)
+    except OSError:
+        tmp_path.unlink(missing_ok=True)
+        raise
+    return import_path
 
 
 def build_public_config_response(config: dict) -> dict:
@@ -1014,7 +1120,229 @@ class Handler(BaseHTTPRequestHandler):
         self._send_json(local_host_forbidden_payload(), status=403)
         return False
 
+    def _send_steam_access_cors_headers(self, origin: str) -> None:
+        for header, value in steam_access_cors_headers(origin).items():
+            self.send_header(header, value)
+
+    def _send_steam_access_json(self, data, *, status=200, origin: str | None = None):
+        body = json.dumps(data, ensure_ascii=False).encode("utf-8")
+        self.send_response(status)
+        self.send_header("Content-Type", "application/json; charset=utf-8")
+        self.send_header("Content-Length", str(len(body)))
+        if normalized_origin := normalize_steam_access_extension_origin(origin):
+            self._send_steam_access_cors_headers(normalized_origin)
+        self.end_headers()
+        self.wfile.write(body)
+
+    def _has_active_steam_access_pairing(self) -> bool:
+        _prune_steam_access_direct_import_state()
+        now = _now_seconds()
+        return any(
+            is_steam_access_pairing_active(record, now=now)
+            for record in _steam_access_pairings.values()
+        )
+
+    def _active_steam_access_session_origins(self) -> frozenset[str]:
+        _prune_steam_access_direct_import_state()
+        return frozenset(
+            normalize_steam_access_extension_origin(record.get("origin"))
+            for record in _steam_access_import_sessions.values()
+            if record.get("origin")
+        ) - {""}
+
+    def _steam_access_origin_for_route(self, path: str) -> str:
+        origin = normalize_steam_access_extension_origin(self.headers.get("Origin"))
+        if not origin:
+            return ""
+        if path in {STEAM_ACCESS_LOCAL_PAIR_ROUTE, STEAM_ACCESS_LOCAL_IMPORT_ROUTE}:
+            return origin
+        if origin in self._active_steam_access_session_origins():
+            return origin
+        return ""
+
+    def _serve_steam_access_options(self) -> None:
+        if not self._require_loopback_host():
+            return
+        path = urllib.parse.urlparse(self.path).path
+        origin = self._steam_access_origin_for_route(path)
+        if not origin:
+            self._send_steam_access_json(steam_access_origin_forbidden_payload(), status=403)
+            return
+        if not is_valid_steam_access_preflight(self.headers, allowed_origins={origin}):
+            self._send_steam_access_json(
+                steam_access_cors_forbidden_payload(),
+                status=403,
+                origin=origin,
+            )
+            return
+        self.send_response(204)
+        self._send_steam_access_cors_headers(origin)
+        self.send_header("Content-Length", "0")
+        self.end_headers()
+
+    def _steam_access_extension_origin(self) -> str:
+        path = urllib.parse.urlparse(self.path).path
+        return self._steam_access_origin_for_route(path)
+
+    def _serve_steam_access_method_not_allowed(self) -> None:
+        if not self._require_loopback_host():
+            return
+        origin = self._steam_access_extension_origin()
+        self._send_steam_access_json(
+            steam_access_method_not_allowed_payload(),
+            status=405,
+            origin=origin or None,
+        )
+
+    def _require_steam_access_origin(self) -> str:
+        origin = self._steam_access_extension_origin()
+        if not origin:
+            self._send_steam_access_json(steam_access_origin_forbidden_payload(), status=403)
+        return origin
+
+    def _require_steam_access_json_envelope(self, origin: str) -> bool:
+        if not is_steam_access_json_content_type(self.headers):
+            self._send_steam_access_json(
+                {
+                    "error": "unsupported_media_type",
+                    "message": "Content-Type debe ser application/json.",
+                },
+                status=415,
+                origin=origin,
+            )
+            return False
+        if steam_access_content_length(self.headers) is None:
+            self._send_steam_access_json(
+                {"error": "invalid_content_length", "message": "Content-Length invalido."},
+                status=400,
+                origin=origin,
+            )
+            return False
+        if not is_steam_access_body_within_limit(
+            self.headers,
+            max_bytes=STEAM_ACCESS_DIRECT_IMPORT_MAX_BODY_BYTES,
+        ):
+            self._send_steam_access_json(
+                {
+                    "error": "payload_too_large",
+                    "message": f"Payload excede {STEAM_ACCESS_DIRECT_IMPORT_MAX_BODY_BYTES} bytes.",
+                },
+                status=413,
+                origin=origin,
+            )
+            return False
+        return True
+
+    def _read_steam_access_json_body(self, origin: str) -> dict | None:
+        length = steam_access_content_length(self.headers)
+        if length is None:
+            self._send_steam_access_json(
+                {"error": "invalid_content_length", "message": "Content-Length invalido."},
+                status=400,
+                origin=origin,
+            )
+            return None
+        if length <= 0:
+            return {}
+        try:
+            payload = json.loads(self.rfile.read(length))
+        except (json.JSONDecodeError, UnicodeDecodeError):
+            self._send_steam_access_json(
+                {"error": "invalid_json", "message": "JSON invalido en el body."},
+                status=400,
+                origin=origin,
+            )
+            return None
+        if not isinstance(payload, dict):
+            self._send_steam_access_json(
+                {"error": "invalid_payload", "message": "Se esperaba un objeto JSON."},
+                status=400,
+                origin=origin,
+            )
+            return None
+        return payload
+
+    def _steam_access_pairing_record(self, pairing_token: str) -> tuple[str, dict] | tuple[str, None]:
+        _prune_steam_access_direct_import_state()
+        now = _now_seconds()
+        for stored_token, record in _steam_access_pairings.items():
+            if _same_local_token(stored_token, pairing_token) and record.get("expires_at", 0) > now:
+                if not record.get("used"):
+                    return stored_token, record
+        return "", None
+
+    def _steam_access_import_session_record(self, token: str) -> dict | None:
+        _prune_steam_access_direct_import_state()
+        stored_token, record = steam_access_import_session_for_token(
+            _steam_access_import_sessions,
+            token,
+            now=_now_seconds(),
+        )
+        if stored_token and record is None:
+            _steam_access_import_sessions.pop(stored_token, None)
+        return record if isinstance(record, dict) else None
+
+    def _require_steam_access_import_session(self, origin: str) -> dict | None:
+        if has_steam_access_cookie_auth(self.headers):
+            self._send_steam_access_json(
+                steam_access_cookie_auth_forbidden_payload(),
+                status=401,
+                origin=origin,
+            )
+            return None
+        session = self._steam_access_import_session_record(
+            steam_access_bearer_token(self.headers)
+        )
+        if not session or session.get("origin") != origin:
+            self._send_steam_access_json(
+                steam_access_auth_required_payload(),
+                status=401,
+                origin=origin,
+            )
+            return None
+        if not is_steam_access_direct_import_confirmed(session):
+            self._send_steam_access_json(
+                {
+                    "error": "user_confirmation_required",
+                    "message": "Import directo requiere confirmación local previa.",
+                },
+                status=403,
+                origin=origin,
+            )
+            return None
+        if is_steam_access_rate_limited(
+            session,
+            max_imports=STEAM_ACCESS_DIRECT_IMPORT_RATE_LIMIT,
+        ):
+            self._send_steam_access_json(
+                steam_access_rate_limited_payload(),
+                status=429,
+                origin=origin,
+            )
+            return None
+        return session
+
     # ── GET routes ──
+
+    def do_OPTIONS(self):
+        path = urllib.parse.urlparse(self.path).path
+        if path in {STEAM_ACCESS_LOCAL_PAIR_ROUTE, STEAM_ACCESS_LOCAL_IMPORT_ROUTE}:
+            self._serve_steam_access_options()
+        else:
+            self.send_error(404)
+
+    def do_PUT(self):
+        path = urllib.parse.urlparse(self.path).path
+        if path in STEAM_ACCESS_LOCAL_ENDPOINT_ROUTES:
+            self._serve_steam_access_method_not_allowed()
+        else:
+            self.send_error(404)
+
+    def do_PATCH(self):
+        self.do_PUT()
+
+    def do_DELETE(self):
+        self.do_PUT()
 
     def do_GET(self):
         if not self._require_loopback_host():
@@ -1030,6 +1358,10 @@ class Handler(BaseHTTPRequestHandler):
             self._send_json(build_public_config_response(load_config()))
         elif path == "/api/steam-openid/status":
             self._send_json(steam_openid_status_payload(load_config()))
+        elif path == STEAM_ACCESS_LOCAL_PAIR_STATUS_ROUTE:
+            self._serve_steam_access_pairing_status()
+        elif path in {STEAM_ACCESS_LOCAL_PAIR_ROUTE, STEAM_ACCESS_LOCAL_IMPORT_ROUTE}:
+            self._serve_steam_access_method_not_allowed()
         elif path == "/api/steam-openid/callback":
             self._serve_steam_openid_callback()
         elif path == "/api/ui-state":
@@ -1084,6 +1416,14 @@ class Handler(BaseHTTPRequestHandler):
             self._serve_steam_openid_start()
         elif path == "/api/steam-openid/disconnect":
             self._serve_steam_openid_disconnect()
+        elif path == STEAM_ACCESS_PAIRING_START_PATH:
+            self._serve_steam_access_pairing_start()
+        elif path == STEAM_ACCESS_PAIRING_REVOKE_PATH:
+            self._serve_steam_access_pairing_revoke()
+        elif path == STEAM_ACCESS_LOCAL_PAIR_ROUTE:
+            self._serve_steam_access_pair_guard()
+        elif path == STEAM_ACCESS_LOCAL_IMPORT_ROUTE:
+            self._serve_steam_access_import_guard()
         elif path == "/api/watchlist":
             self._serve_watchlist_add()
         elif path == "/api/watchlist/delete":
@@ -1119,6 +1459,168 @@ class Handler(BaseHTTPRequestHandler):
         cfg.pop("steam_openid_profile", None)
         save_config(cfg)
         self._send_json({"status": "disconnected", **steam_openid_status_payload(cfg)})
+
+    def _serve_steam_access_pairing_start(self):
+        _prune_steam_access_direct_import_state()
+        pairing_token = create_local_session_token(STEAM_ACCESS_LOCAL_PAIRING_TOKEN_BYTES)
+        pairing_record = build_steam_access_pairing_record(now=_now_seconds())
+        _steam_access_pairings[pairing_token] = pairing_record
+        expires_at = pairing_record["expires_at"]
+        self._send_json(
+            {
+                "status": "pairing_started",
+                "pairing_token": pairing_token,
+                "expires_at": steam_access_timestamp_iso(expires_at),
+                "expires_in_seconds": STEAM_ACCESS_PAIRING_TTL_SECONDS,
+                "pair_url": f"http://127.0.0.1:{self._server_port()}{STEAM_ACCESS_LOCAL_PAIR_ROUTE}",
+                "import_url": f"http://127.0.0.1:{self._server_port()}{STEAM_ACCESS_LOCAL_IMPORT_ROUTE}",
+                "requires_user_confirmation": True,
+                "accepts_payload": False,
+                "advisory_only": True,
+                "ranking_impact": "none",
+            }
+        )
+
+    def _serve_steam_access_pairing_status(self):
+        if not is_valid_local_anti_csrf_request(
+            self.headers,
+            LOCAL_SESSION_TOKEN,
+            self._server_port(),
+        ):
+            self._send_json(local_anti_csrf_forbidden_payload(), status=403)
+            return
+        _prune_steam_access_direct_import_state()
+        self._send_json(
+            steam_access_local_status_payload(
+                _steam_access_pairings,
+                _steam_access_import_sessions,
+                now=_now_seconds(),
+            )
+        )
+
+    def _serve_steam_access_pairing_revoke(self):
+        reset_steam_access_direct_import_state_for_tests()
+        self._send_json({"status": "revoked"})
+
+    def _serve_steam_access_pair_guard(self):
+        origin = self._require_steam_access_origin()
+        if not origin:
+            return
+        if has_steam_access_cookie_auth(self.headers):
+            self._send_steam_access_json(
+                steam_access_cookie_auth_forbidden_payload(),
+                status=401,
+                origin=origin,
+            )
+            return
+        if not self._require_steam_access_json_envelope(origin):
+            return
+        body = self._read_steam_access_json_body(origin)
+        if body is None:
+            return
+        header_pairing_token = steam_access_pairing_token(self.headers)
+        body_pairing_token = str(body.get("pairing_token") or "").strip()
+        pairing_token = header_pairing_token or body_pairing_token
+        if not pairing_token or (
+            header_pairing_token
+            and body_pairing_token
+            and not _same_local_token(header_pairing_token, body_pairing_token)
+        ):
+            self._send_steam_access_json(
+                steam_access_pairing_required_payload(),
+                status=401,
+                origin=origin,
+            )
+            return
+        stored_token, pairing_record = self._steam_access_pairing_record(pairing_token)
+        if not pairing_record:
+            self._send_steam_access_json(
+                steam_access_pairing_required_payload(),
+                status=401,
+                origin=origin,
+            )
+            return
+
+        pairing_record["used"] = True
+        session_token = create_local_session_token(
+            STEAM_ACCESS_LOCAL_IMPORT_SESSION_TOKEN_BYTES
+        )
+        session_record = build_steam_access_import_session_record(
+            origin,
+            now=_now_seconds(),
+        )
+        session_record["direct_import_confirmed_by_local_ui"] = True
+        _steam_access_pairings.pop(stored_token, None)
+        _steam_access_import_sessions[session_token] = session_record
+        self._send_steam_access_json(
+            {
+                "ok": True,
+                "status": "paired",
+                "session_token": session_token,
+                "expires_at": steam_access_timestamp_iso(session_record["expires_at"]),
+                "import_url": f"http://127.0.0.1:{self._server_port()}{STEAM_ACCESS_LOCAL_IMPORT_ROUTE}",
+                "advisory_only": True,
+                "ranking_impact": "none",
+            },
+            origin=origin,
+        )
+
+    def _serve_steam_access_import_guard(self):
+        origin = self._require_steam_access_origin()
+        if not origin:
+            return
+        session = self._require_steam_access_import_session(origin)
+        if not session:
+            return
+        if not self._require_steam_access_json_envelope(origin):
+            return
+        body = self._read_steam_access_json_body(origin)
+        if body is None:
+            return
+        try:
+            contract = validate_steam_access_direct_import(body)
+        except ValueError as exc:
+            self._send_steam_access_json(
+                safe_public_error_payload("invalid_steam_access_import", str(exc)),
+                status=400,
+                origin=origin,
+            )
+            return
+        try:
+            import_path = write_steam_access_direct_import(contract)
+            cfg = dict(load_config())
+            cfg["steam_access_json"] = str(import_path)
+            save_config(cfg)
+        except OSError as exc:
+            self._send_steam_access_json(
+                safe_public_error_payload(
+                    "steam_access_import_save_failed",
+                    "No se pudo guardar el import Steam Access local.",
+                    exc=exc,
+                    extra_values=[CONFIG_FILE],
+                ),
+                status=500,
+                origin=origin,
+            )
+            return
+
+        session["import_count"] = int(session.get("import_count", 0)) + 1
+        session["last_import_at"] = _now_seconds()
+        self._send_steam_access_json(
+            {
+                "ok": True,
+                "imported": True,
+                "status": "imported",
+                "summary": {
+                    "owned_count": len(contract.get("owned_appids") or []),
+                    "family_shared_count": len(contract.get("family_shared_appids") or []),
+                    "wishlist_count": len(contract.get("wishlist_appids") or []),
+                    "advisory_only": True,
+                    "ranking_impact": "none",
+                },
+            },
+            origin=origin,
+        )
 
     def _serve_steam_openid_callback(self):
         parsed = urllib.parse.urlparse(self.path)
