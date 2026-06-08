@@ -151,6 +151,28 @@ class SteamPlan7BDirectImportSecurityTests(unittest.TestCase):
                 self.assertEqual(handler.status, 403)
                 self.assertNotIn(pairing_token, handler.wfile.getvalue().decode("utf-8"))
 
+    def test_pairing_requires_header_token_and_rejects_body_mismatch(self) -> None:
+        pairing_token = _start_pairing()
+        body_only = _make_handler(
+            PAIR_PATH,
+            headers={"Origin": EXTENSION_ORIGIN},
+            body={"pairing_token": pairing_token},
+        )
+        steam_deals_web.Handler.do_POST(body_only)
+        self.assertEqual(body_only.status, 401)
+        self.assertNotIn(pairing_token, body_only.wfile.getvalue().decode("utf-8"))
+
+        mismatch = _make_handler(
+            PAIR_PATH,
+            headers={"Origin": EXTENSION_ORIGIN, "X-Pairing-Token": pairing_token},
+            body={"pairing_token": "DIFFERENT-PAIRING-TOKEN"},
+        )
+        steam_deals_web.Handler.do_POST(mismatch)
+        serialized = mismatch.wfile.getvalue().decode("utf-8")
+        self.assertEqual(mismatch.status, 401)
+        self.assertNotIn(pairing_token, serialized)
+        self.assertNotIn("DIFFERENT-PAIRING-TOKEN", serialized)
+
     def test_preflight_allows_only_extension_origin_expected_method_and_headers(self) -> None:
         _start_pairing()
         handler = _make_handler(

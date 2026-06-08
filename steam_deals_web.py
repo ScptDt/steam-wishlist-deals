@@ -1520,11 +1520,8 @@ class Handler(BaseHTTPRequestHandler):
             return
         header_pairing_token = steam_access_pairing_token(self.headers)
         body_pairing_token = str(body.get("pairing_token") or "").strip()
-        pairing_token = header_pairing_token or body_pairing_token
-        if not pairing_token or (
-            header_pairing_token
-            and body_pairing_token
-            and not _same_local_token(header_pairing_token, body_pairing_token)
+        if not header_pairing_token or (
+            body_pairing_token and not _same_local_token(header_pairing_token, body_pairing_token)
         ):
             self._send_steam_access_json(
                 steam_access_pairing_required_payload(),
@@ -1532,7 +1529,7 @@ class Handler(BaseHTTPRequestHandler):
                 origin=origin,
             )
             return
-        stored_token, pairing_record = self._steam_access_pairing_record(pairing_token)
+        stored_token, pairing_record = self._steam_access_pairing_record(header_pairing_token)
         if not pairing_record:
             self._send_steam_access_json(
                 steam_access_pairing_required_payload(),
