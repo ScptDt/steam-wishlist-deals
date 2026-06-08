@@ -179,6 +179,8 @@ class WebAssetsTests(unittest.TestCase):
         self.assertIn(".latest-report-history-card", app_css)
         self.assertIn(".latest-report-sections", app_css)
         self.assertIn(".latest-report-primary-action", app_css)
+        self.assertIn(".latest-report-primary-action {\n  min-height: 44px;", app_css)
+        self.assertIn(".latest-report-action {\n  min-height: 44px;", app_css)
         self.assertIn(".latest-report-actions", app_css)
         self.assertIn(".latest-report-action-row-secondary", app_css)
         self.assertIn(".metrics-guide-summary-hint", app_css)

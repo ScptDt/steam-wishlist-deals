@@ -1031,7 +1031,7 @@ details .details-body .field:last-child {
   margin-bottom: 0.75rem;
 }
 .latest-report-primary-action {
-  min-height: 40px;
+  min-height: 44px;
   align-items: center;
   font-weight: 700;
 }
@@ -1639,6 +1639,10 @@ details .details-body .field:last-child {
 }
 .latest-report-action-row-secondary .latest-report-action {
   background: rgba(12, 20, 30, 0.18);
+}
+.latest-report-action {
+  min-height: 44px;
+  align-items: center;
 }
 .latest-report-action-primary {
   background: var(--accent);
