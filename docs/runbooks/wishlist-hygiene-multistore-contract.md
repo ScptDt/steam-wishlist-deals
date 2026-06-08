@@ -312,7 +312,7 @@ El helper vive en `extension/steam-access-export/` y se carga como extensión de
 4. Extraer, revisar y copiar/guardar `steam-access-import.json`.
 5. Importar ese archivo en Steam Tools con `--steam-access-json` o el campo Web `Steam Access local (JSON)`.
 
-Guardrails implementados/esperados:
+Guardrails implementados en Plan 6B inicial:
 
 - `manifest.json` usa MV3 con popup manual y permisos mínimos `activeTab` + `scripting`.
 - No declara `host_permissions`, `content_scripts`, `cookies`, `webRequest`, `nativeMessaging`, permisos locales ni `<all_urls>`.
@@ -320,6 +320,8 @@ Guardrails implementados/esperados:
 - El export se construye con sanitizer local y queda AppID-only; no exporta SteamID/perfil, cookies/tokens, respuestas crudas, HTML, nombres de familiares, friends ni emails.
 - Copy/save son acciones manuales del usuario; no hay background scraping, persistencia de sesión ni envío a endpoint local/remoto.
 - La evidencia de cierre usa fixtures y checks estáticos; no requiere live login, red real ni páginas Steam privadas.
+
+Plan 7B amplía este helper con envío directo opcional, pero mantiene Copy/Save como fallback manual. Desde Plan 7B, el único `host_permissions` permitido es `"http://127.0.0.1/*"`, el fetch local vive en el service worker, y el endpoint sigue siendo import-only con pairing/session token local.
 
 ### Plan 7A: threat model endpoint directo helper → app local
 
@@ -407,6 +409,28 @@ Plan 7B debe probar con fixtures/mocks:
 - persistencia solo tras confirmación explícita del usuario y solo para el import local.
 
 Plan 7B no puede avanzar sin tests de seguridad dedicados y stop-on-failure activo.
+
+### Plan 7B: endpoint directo implementado helper → app local
+
+Plan 7B habilita el flujo directo opt-in sin cambiar el contrato AppID-only:
+
+1. La app local genera un pairing token one-time desde `/api/steam-access/pairing/start` protegido por el token local anti-CSRF.
+2. El helper llama `POST /api/steam-access/pair` en `127.0.0.1` con JSON, Origin de extensión y `X-Pairing-Token` obligatorio; si el body incluye `pairing_token`, debe coincidir.
+3. La app devuelve un `session_token` local import-only, corto, revocable y ligado al Origin de la extensión.
+4. El helper llama `POST /api/steam-access/import` con `Authorization: Bearer <session_token>` y payload `steam_access_import_v1` sanitizado.
+5. La app valida Host loopback, Origin/CORS sin wildcard, método, Content-Type, tamaño, rate-limit, schema, `advisory_only=true`, `ranking_impact="none"` y ausencia de campos sensibles antes de guardar el import como `steam_access_json` local.
+
+Respuestas exitosas devuelven solo `ok`, `status`/`imported` y summary/counts. Errores no deben incluir tokens, rutas locales, payload crudo, cookies, raw responses, HTML, perfiles ni nombres de familiares.
+
+La extensión Plan 7B puede declarar solo:
+
+```json
+{
+  "host_permissions": ["http://127.0.0.1/*"]
+}
+```
+
+El popup no hace `fetch` directo: envía un mensaje al service worker. El service worker usa endpoint fijo en `127.0.0.1`, `credentials: "omit"`, JSON y headers explícitos. No se agrega `localhost`, `<all_urls>`, `cookies`, `webRequest`, `nativeMessaging`, `content_scripts`, host Steam amplio ni endpoint de comandos generales.
 
 ## Contrato actual que se debe preservar
 

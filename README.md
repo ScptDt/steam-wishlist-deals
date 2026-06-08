@@ -250,9 +250,9 @@ Shape mínima aceptada:
 }
 ```
 
-La app solo conserva AppIDs y metadata segura. Campos como cookies, tokens, raw responses o nombres de familiares se omiten.
+La app solo conserva AppIDs y metadata segura. Campos como cookies, tokens Steam, request headers Steam, raw responses, HTML, SteamID/perfil, friends, emails o nombres de familiares se omiten.
 
-Helper opcional para armar ese JSON manualmente: `extension/steam-access-export/`. Es una extensión MV3 local/dev, de uso explícito desde el popup, que intenta extraer AppIDs visibles en la pestaña Steam activa y permite copiar/guardar un JSON sanitizado. No se ejecuta automáticamente, no usa endpoint local, no pide password, no solicita permisos de cookies/webRequest/`<all_urls>` y no exporta cookies/tokens/raw responses, HTML, SteamID/perfil ni nombres de familiares. Carga la carpeta como extensión desempaquetada solo si quieres usar este helper; el import principal sigue siendo `--steam-access-json` o el campo Web `Steam Access local (JSON)`.
+Helper opcional para armar ese JSON: `extension/steam-access-export/`. Es una extensión MV3 local/dev, de uso explícito desde el popup, que intenta extraer AppIDs visibles en la pestaña Steam activa y permite copiar/guardar un JSON sanitizado. También puede enviar el import directamente a Steam Tools en `http://127.0.0.1:<puerto>` si el usuario empareja primero la app local con un pairing code: el envío usa `X-Pairing-Token`/`Authorization`, Origin/CORS de extensión sin wildcard, schema `steam_access_import_v1`, límite de tamaño/rate-limit, permiso estrecho `host_permissions: ["http://127.0.0.1/*"]` y respuestas con summary/counts only. No se ejecuta automáticamente, no usa endpoint de comandos generales, no pide password, no solicita permisos de cookies/webRequest/`<all_urls>` y no exporta cookies/tokens Steam, request headers Steam, raw responses, HTML, SteamID/perfil, friends, emails ni nombres de familiares. Copy/Save sigue disponible como fallback y el import principal sigue siendo `--steam-access-json` o el campo Web `Steam Access local (JSON)`.
 
 Contrato completo y ejemplos: `docs/runbooks/wishlist-hygiene-multistore-contract.md`.
 
