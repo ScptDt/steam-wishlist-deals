@@ -3179,6 +3179,81 @@ class ConfigTests(unittest.TestCase):
         self.assertEqual(result[11]["alert_global_margin_pct"], 3.0)
         self.assertEqual(result[11]["alert_score_min"], 80.0)
 
+    def test_get_config_defaults_source_output_to_project_output_dir(self) -> None:
+        class FakeStdin:
+            def isatty(self):
+                return False
+
+        result = module_get_config(
+            script_path=Path("/workspace/deals/steam_deals_generator.py"),
+            load_user_config_fn=lambda: {},
+            save_user_config_fn=lambda _cfg: None,
+            handle_watchlist_command_fn=lambda _args: None,
+            input_fn=lambda _prompt: "",
+            stdin=FakeStdin(),
+            exit_fn=lambda _code: None,
+            argv=["--vanity", "gaben"],
+            environ={},
+        )
+
+        self.assertEqual(result[5], Path("/workspace/deals/output"))
+
+    def test_get_config_uses_output_env_override_when_no_output_is_configured(self) -> None:
+        class FakeStdin:
+            def isatty(self):
+                return False
+
+        result = module_get_config(
+            script_path=Path("/workspace/deals/steam_deals_generator.py"),
+            load_user_config_fn=lambda: {},
+            save_user_config_fn=lambda _cfg: None,
+            handle_watchlist_command_fn=lambda _args: None,
+            input_fn=lambda _prompt: "",
+            stdin=FakeStdin(),
+            exit_fn=lambda _code: None,
+            argv=["--vanity", "gaben"],
+            environ={"STEAM_DEALS_OUTPUT_DIR": "/tmp/steam-output"},
+        )
+
+        self.assertEqual(result[5], Path("/tmp/steam-output"))
+
+    def test_calculate_progress_total_covers_normal_and_warm_cache_steps(self) -> None:
+        self.assertEqual(
+            generator_module.calculate_progress_total(
+                warm_cache=False,
+                warm_cache_full=False,
+                warm_cache_full_max_passes=5,
+            ),
+            12,
+        )
+        self.assertEqual(
+            generator_module.calculate_progress_total(
+                warm_cache=False,
+                warm_cache_full=False,
+                warm_cache_full_max_passes=5,
+                has_key=True,
+                has_itad_key=True,
+                has_compare_targets=True,
+            ),
+            15,
+        )
+        self.assertEqual(
+            generator_module.calculate_progress_total(
+                warm_cache=True,
+                warm_cache_full=False,
+                warm_cache_full_max_passes=5,
+            ),
+            3,
+        )
+        self.assertEqual(
+            generator_module.calculate_progress_total(
+                warm_cache=True,
+                warm_cache_full=True,
+                warm_cache_full_max_passes=4,
+            ),
+            6,
+        )
+
     def test_get_config_enables_full_warm_cache_with_max_passes(self) -> None:
         class FakeStdin:
             def isatty(self):

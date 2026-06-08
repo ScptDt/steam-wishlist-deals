@@ -286,6 +286,7 @@ def _resolve_output_dir(
     can_prompt: bool,
     interactive_keys: list[str],
     input_fn,
+    environ=None,
 ) -> Path:
     if args.output:
         return Path(args.output).expanduser()
@@ -293,10 +294,10 @@ def _resolve_output_dir(
         return Path(cfg["output_dir"]).expanduser()
     if can_prompt:
         interactive_keys.append("output_dir")
-    default_output_dir = (
-        resolve_reports_output_dir(script_path.parent, frozen=True)
-        if getattr(sys, "frozen", False)
-        else script_path.parent
+    default_output_dir = resolve_reports_output_dir(
+        script_path.parent,
+        env=environ,
+        frozen=bool(getattr(sys, "frozen", False)),
     )
     raw = _ask(
         input_fn,
@@ -476,6 +477,7 @@ def get_config(
         can_prompt=can_prompt,
         interactive_keys=interactive_keys,
         input_fn=input_fn,
+        environ=environ,
     )
     discount = _resolve_discount(
         args,

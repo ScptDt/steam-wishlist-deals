@@ -4779,6 +4779,40 @@ def send_notifications(filters: dict, summary: dict) -> None:
 # ─────────────────────────────────────────────
 
 
+NORMAL_RUN_BASE_PROGRESS_STEPS = 12
+WARM_CACHE_INITIAL_PROGRESS_STEPS = 2
+
+
+def calculate_progress_total(
+    *,
+    warm_cache: bool,
+    warm_cache_full: bool,
+    warm_cache_full_max_passes: int,
+    has_key: bool = False,
+    has_family_json: bool = False,
+    has_hltb_csv: bool = False,
+    has_itad_key: bool = False,
+    has_csv: bool = False,
+    has_notifications: bool = False,
+    has_compare_targets: bool = False,
+) -> int:
+    if warm_cache:
+        return WARM_CACHE_INITIAL_PROGRESS_STEPS + (
+            warm_cache_full_max_passes if warm_cache_full else 1
+        )
+
+    return (
+        NORMAL_RUN_BASE_PROGRESS_STEPS
+        + (1 if has_key else 0)
+        + (1 if has_family_json else 0)
+        + (1 if has_hltb_csv else 0)
+        + (1 if has_itad_key else 0)
+        + (1 if has_csv else 0)
+        + (1 if has_notifications else 0)
+        + (1 if has_compare_targets else 0)
+    )
+
+
 def main():
     global WEB_EVENT_MODE
     sys.stdout.reconfigure(line_buffering=True)
@@ -4833,24 +4867,19 @@ def main():
     RATE_LIMIT = 1.5
     t0 = time.monotonic()
 
-    # Calcular total de pasos dinámicamente (+2 reviews/deck, +1 protondb/ac, +1 tags, +1 HTML, owned solo con key)
-    TOTAL = (
-        2 + (WARM_CACHE_FULL_MAX_PASSES if WARM_CACHE_FULL else 1)
-        if WARM_CACHE_ONLY
-        else (
-            11
-            + (1 if KEY else 0)
-            + (1 if FAMILY_JSON else 0)
-            + (1 if HLTB_CSV else 0)
-            + (1 if ITAD_KEY else 0)
-            + (1 if FILTERS.get("csv") else 0)
-            + (
-                1
-                if FILTERS.get("telegram_token") or FILTERS.get("discord_webhook")
-                else 0
-            )
-            + (1 if COMPARE_TARGETS else 0)
-        )
+    TOTAL = calculate_progress_total(
+        warm_cache=WARM_CACHE_ONLY,
+        warm_cache_full=WARM_CACHE_FULL,
+        warm_cache_full_max_passes=WARM_CACHE_FULL_MAX_PASSES,
+        has_key=bool(KEY),
+        has_family_json=bool(FAMILY_JSON),
+        has_hltb_csv=bool(HLTB_CSV),
+        has_itad_key=bool(ITAD_KEY),
+        has_csv=bool(FILTERS.get("csv")),
+        has_notifications=bool(
+            FILTERS.get("telegram_token") or FILTERS.get("discord_webhook")
+        ),
+        has_compare_targets=bool(COMPARE_TARGETS),
     )
 
     if not KEY:
