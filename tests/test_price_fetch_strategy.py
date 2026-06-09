@@ -2,6 +2,7 @@ from __future__ import annotations
 
 import unittest
 
+from steam_deals_price_fetch_strategy import DEFAULT_REPEATED_HTTP_400_THRESHOLD
 from steam_deals_price_fetch_strategy import FETCH_PLAN_BUCKETS
 from steam_deals_price_fetch_strategy import PLAN_SCHEMA
 from steam_deals_price_fetch_strategy import build_proactive_price_fetch_plan
@@ -51,6 +52,54 @@ class ProactivePriceFetchPlannerTests(unittest.TestCase):
 
         self.assertEqual(plan["cooldown"], ["10"])
         self.assertEqual(plan["batch"], ["20"])
+
+    def test_repeated_http_400_routes_batch_candidates_to_planned_individual(
+        self,
+    ) -> None:
+        plan = build_proactive_price_fetch_plan(
+            ["10", {"appid": "20", "state": "batch"}],
+            planner_context={
+                "http_400_degradation_streak": DEFAULT_REPEATED_HTTP_400_THRESHOLD,
+            },
+        )
+
+        self.assertEqual(plan["batch"], [])
+        self.assertEqual(plan["individual_planificado"], ["10", "20"])
+        self.assertEqual(plan["signals"], {"repeated_http_400": True})
+        self.assertEqual(plan["summary"]["planned_fetch_count"], 2)
+
+    def test_repeated_http_400_preserves_non_batch_buckets(self) -> None:
+        plan = build_proactive_price_fetch_plan(
+            [
+                {"appid": "10", "state": "cooldown"},
+                {"appid": "20", "use_stale": True},
+                {"appid": "30", "deferred": True},
+                {"appid": "40", "state": "reactive_fallback"},
+                {"appid": "50", "state": "planned_individual"},
+                {"appid": "60", "state": "batch"},
+            ],
+            planner_context={"repeated_http_400": True},
+        )
+
+        self.assertEqual(plan["cooldown"], ["10"])
+        self.assertEqual(plan["usar_stale"], ["20"])
+        self.assertEqual(plan["defer"], ["30"])
+        self.assertEqual(plan["fallback_reactivo"], ["40"])
+        self.assertEqual(plan["individual_planificado"], ["50", "60"])
+        self.assertEqual(plan["batch"], [])
+
+    def test_http_400_streak_below_threshold_keeps_batch_candidates(self) -> None:
+        plan = build_proactive_price_fetch_plan(
+            ["10", "20"],
+            planner_context={
+                "http_400_degradation_streak": DEFAULT_REPEATED_HTTP_400_THRESHOLD - 1,
+                "http_400_circuit_breaker_threshold": DEFAULT_REPEATED_HTTP_400_THRESHOLD,
+            },
+        )
+
+        self.assertEqual(plan["batch"], ["10", "20"])
+        self.assertEqual(plan["individual_planificado"], [])
+        self.assertEqual(plan["signals"], {"repeated_http_400": False})
 
     def test_blank_candidates_are_ignored(self) -> None:
         plan = build_proactive_price_fetch_plan(["", None, {"appid": ""}, {"id": "30"}])
