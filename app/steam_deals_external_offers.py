@@ -54,6 +54,8 @@ _STORE_REGISTRY = {
     "greenmangaming": {"store_name": "Green Man Gaming", "store_type": "authorized_key_reseller"},
     "gamesplanet": {"store_name": "Gamesplanet", "store_type": "authorized_key_reseller"},
     "itad": {"store_name": "IsThereAnyDeal", "store_type": "aggregator"},
+    "gg_deals": {"store_name": "GG.deals", "store_type": "aggregator"},
+    "gg_deals_keyshops": {"store_name": "GG.deals keyshops", "store_type": "marketplace_keyshop"},
     "g2a": {"store_name": "G2A", "store_type": "marketplace_keyshop"},
     "kinguin": {"store_name": "Kinguin", "store_type": "marketplace_keyshop"},
     "eneba": {"store_name": "Eneba", "store_type": "marketplace_keyshop"},
@@ -72,6 +74,9 @@ _STORE_ALIASES = {
     "gmg": "greenmangaming",
     "isthereanydeal": "itad",
     "itad": "itad",
+    "ggdeals": "gg_deals",
+    "ggdealsretail": "gg_deals",
+    "ggdealskeyshops": "gg_deals_keyshops",
     "manual": "manual_import",
     "manualimport": "manual_import",
 }
