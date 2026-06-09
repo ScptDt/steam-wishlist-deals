@@ -325,6 +325,11 @@
           <div class="hint">Import local explícito de AppIDs propios o disponibles por Steam Family. No hace login, no lee cookies/tokens, no hace red, no borra ni cambia score/ranking.</div>
         </div>
         <div class="field">
+          <label>Preferencias manuales del jugador (JSON) <span class="optional">(opcional)</span></label>
+          <input type="text" id="player_preferences_json" placeholder="~/player-preferences.json">
+          <div class="hint">Import local opt-in para perfilar gustos y explicar encaje de juegos. Es advisory-only: no cambia score, ranking, Top Picks, cache ni fetching.</div>
+        </div>
+        <div class="field">
           <label>Caché ITAD external_offers (JSON) <span class="optional">(opcional)</span></label>
           <input type="text" id="itad_external_offers_cache" placeholder="~/itad-external-offers.json">
           <div class="hint">Import local de precios externos ya descargados con ITAD para mostrar comparativa. Es distinto de ownership/wishlist hygiene: no hace red live por sí solo, no prueba que tengas el juego y no cambia score ni ranking.</div>

@@ -283,6 +283,25 @@ class WebAssetsTests(unittest.TestCase):
             app_js,
         )
 
+    def test_player_preferences_import_is_visible_and_advisory_only(self) -> None:
+        index_html = (ROOT / "web" / "steam_deals" / "index.html").read_text(
+            encoding="utf-8"
+        )
+        app_js = (ROOT / "web" / "steam_deals" / "app.js").read_text(
+            encoding="utf-8"
+        )
+
+        self.assertIn("Preferencias manuales del jugador (JSON)", index_html)
+        self.assertIn('id="player_preferences_json"', index_html)
+        self.assertIn("Import local opt-in", index_html)
+        self.assertIn("advisory-only", index_html)
+        self.assertIn("no cambia score, ranking, Top Picks, cache ni fetching", index_html)
+        self.assertIn("player_preferences_json", app_js)
+        self.assertIn(
+            "'player_preferences_json'",
+            app_js,
+        )
+
     def test_steam_openid_signin_is_visible_and_guardrailed(self) -> None:
         index_html = (ROOT / "web" / "steam_deals" / "index.html").read_text(
             encoding="utf-8"

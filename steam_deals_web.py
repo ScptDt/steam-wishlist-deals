@@ -970,6 +970,11 @@ def build_command(config: dict, filters: dict) -> list[str]:
     steam_access_json = normalize_optional_local_path_value(config.get("steam_access_json"))
     if steam_access_json:
         cmd += ["--steam-access-json", steam_access_json]
+    player_preferences_json = normalize_optional_local_path_value(
+        config.get("player_preferences_json")
+    )
+    if player_preferences_json:
+        cmd += ["--player-preferences-json", player_preferences_json]
     itad_external_offers_cache = normalize_optional_local_path_value(
         config.get("itad_external_offers_cache")
     )
@@ -1739,6 +1744,18 @@ class Handler(BaseHTTPRequestHandler):
                 )
             )
 
+        player_preferences_json = normalize_optional_local_path_value(
+            config.get("player_preferences_json")
+        )
+        if player_preferences_json and not Path(player_preferences_json).expanduser().exists():
+            issues.append(
+                "No se encontró JSON local de preferencias del jugador: "
+                + redact_sensitive_text(
+                    player_preferences_json,
+                    extra_values=[Path(player_preferences_json).expanduser()],
+                )
+            )
+
         itad_external_offers_cache = normalize_optional_local_path_value(
             config.get("itad_external_offers_cache")
         )
@@ -2185,6 +2202,7 @@ class Handler(BaseHTTPRequestHandler):
             "wishlist_external_matches_json",
             "play_access_json",
             "steam_access_json",
+            "player_preferences_json",
             "itad_external_offers_cache",
             "itad_key",
         ):

@@ -14,6 +14,14 @@ FETCH_PLAN_BUCKETS = (
     "cooldown",
     "fallback_reactivo",
 )
+_BUCKET_COPY_LABELS = {
+    "batch": "batch",
+    "individual_planificado": "individual planificado",
+    "usar_stale": "usar stale útil",
+    "defer": "diferidos",
+    "cooldown": "cooldown",
+    "fallback_reactivo": "fallback reactivo",
+}
 
 _DEFAULT_BUCKET = "batch"
 _STATE_ALIASES = {
@@ -151,15 +159,84 @@ def _empty_plan() -> dict[str, Any]:
     }
 
 
+def _bucket_count(plan: Mapping[str, Any], bucket: str) -> int:
+    values = plan.get(bucket, [])
+    return len(values) if isinstance(values, list) else 0
+
+
 def _summarize_plan(plan: Mapping[str, Any]) -> dict[str, int | str]:
     counts = {f"{bucket}_count": len(plan.get(bucket, [])) for bucket in FETCH_PLAN_BUCKETS}
     return {
         "schema": PLAN_SCHEMA,
         "total_candidates": sum(counts.values()),
+        "batch_fetch_count": counts["batch_count"],
+        "planned_individual_count": counts["individual_planificado_count"],
+        "reactive_fallback_count": counts["fallback_reactivo_count"],
         "planned_fetch_count": counts["batch_count"] + counts["individual_planificado_count"],
         "non_fetch_count": counts["usar_stale_count"] + counts["defer_count"] + counts["cooldown_count"],
         **counts,
     }
+
+
+def _format_count_part(count: int, label: str) -> str:
+    return f"{count:,} {label}"
+
+
+def _planner_signal(plan: Mapping[str, Any], signal: str) -> bool:
+    signals = plan.get("signals")
+    return isinstance(signals, Mapping) and bool(signals.get(signal))
+
+
+def format_proactive_price_fetch_plan_summary(plan: Mapping[str, Any]) -> str:
+    """Format fixture-only planner metrics without changing runtime behavior."""
+    counts = {bucket: _bucket_count(plan, bucket) for bucket in FETCH_PLAN_BUCKETS}
+    total = sum(counts.values())
+    lines = ["Plan proactivo de precios:"]
+    if total <= 0:
+        lines.append("- Sin candidatos para planificar.")
+    else:
+        lines.append(
+            "- Fetch planificado: "
+            + ", ".join(
+                (
+                    _format_count_part(counts["batch"], _BUCKET_COPY_LABELS["batch"]),
+                    _format_count_part(
+                        counts["individual_planificado"],
+                        _BUCKET_COPY_LABELS["individual_planificado"],
+                    ),
+                )
+            )
+            + "."
+        )
+        lines.append(
+            "- Sin fetch ahora: "
+            + ", ".join(
+                (
+                    _format_count_part(counts["usar_stale"], _BUCKET_COPY_LABELS["usar_stale"]),
+                    _format_count_part(counts["defer"], _BUCKET_COPY_LABELS["defer"]),
+                    _format_count_part(counts["cooldown"], _BUCKET_COPY_LABELS["cooldown"]),
+                )
+            )
+            + "."
+        )
+
+    if _planner_signal(plan, "repeated_http_400") and counts["individual_planificado"]:
+        lines.append(
+            "- Señal HTTP 400 repetido: se prioriza `individual_planificado` "
+            f"para {counts['individual_planificado']:,} candidato(s) antes de llenar logs de splits."
+        )
+
+    fallback_count = counts["fallback_reactivo"]
+    if fallback_count:
+        lines.append(
+            "- Fallback reactivo: "
+            f"{_format_count_part(fallback_count, _BUCKET_COPY_LABELS['fallback_reactivo'])}; "
+            "queda como safety net para fallos no previstos."
+        )
+    else:
+        lines.append("- Fallback reactivo: 0 candidatos; se conserva solo como safety net.")
+    lines.append("- Guardrail: no cambia defaults, score, ranking, cache policy ni fetching por sí solo.")
+    return "\n".join(lines)
 
 
 def build_proactive_price_fetch_plan(
@@ -192,4 +269,5 @@ __all__ = [
     "DEFAULT_REPEATED_HTTP_400_THRESHOLD",
     "PLAN_SCHEMA",
     "build_proactive_price_fetch_plan",
+    "format_proactive_price_fetch_plan_summary",
 ]

@@ -295,6 +295,21 @@ class GeneratedFilesServingTests(unittest.TestCase):
             "/tmp/steam-access.json",
         )
 
+    def test_build_command_passes_player_preferences_json(self) -> None:
+        cmd = build_command(
+            {
+                "vanity": "gaben",
+                "player_preferences_json": " /tmp/player-preferences.json ",
+            },
+            {},
+        )
+
+        self.assertIn("--player-preferences-json", cmd)
+        self.assertEqual(
+            cmd[cmd.index("--player-preferences-json") + 1],
+            "/tmp/player-preferences.json",
+        )
+
     def test_build_command_passes_itad_external_offers_cache(self) -> None:
         cmd = build_command(
             {
@@ -576,6 +591,7 @@ class GeneratedFilesServingTests(unittest.TestCase):
         wishlist_matches_path = "/private/tmp/wishlist-external-missing.json"
         play_access_path = "/private/tmp/play-access-missing.json"
         steam_access_path = "/private/tmp/steam-access-missing.json"
+        player_preferences_path = "/private/tmp/player-preferences-missing.json"
         itad_external_offers_cache_path = "/private/tmp/itad-external-offers-missing.json"
         output_path = "/srv/app/steamtools-output-secret"
 
@@ -589,6 +605,7 @@ class GeneratedFilesServingTests(unittest.TestCase):
                     "wishlist_external_matches_json": wishlist_matches_path,
                     "play_access_json": play_access_path,
                     "steam_access_json": steam_access_path,
+                    "player_preferences_json": player_preferences_path,
                     "itad_external_offers_cache": itad_external_offers_cache_path,
                     "output": output_path,
                 }
@@ -608,6 +625,7 @@ class GeneratedFilesServingTests(unittest.TestCase):
         self.assertNotIn(wishlist_matches_path, payload)
         self.assertNotIn(play_access_path, payload)
         self.assertNotIn(steam_access_path, payload)
+        self.assertNotIn(player_preferences_path, payload)
         self.assertNotIn(itad_external_offers_cache_path, payload)
         self.assertNotIn(output_path, payload)
         self.assertIn("[ruta]", payload)
@@ -615,6 +633,7 @@ class GeneratedFilesServingTests(unittest.TestCase):
         self.assertIn("JSON de matches externos wishlist", payload)
         self.assertIn("JSON local de play_access", payload)
         self.assertIn("JSON local Steam Access", payload)
+        self.assertIn("JSON local de preferencias del jugador", payload)
         self.assertIn("caché ITAD external_offers local", payload)
 
     def test_preflight_reports_missing_play_access_json_redacted(self) -> None:

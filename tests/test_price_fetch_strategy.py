@@ -6,6 +6,7 @@ from steam_deals_price_fetch_strategy import DEFAULT_REPEATED_HTTP_400_THRESHOLD
 from steam_deals_price_fetch_strategy import FETCH_PLAN_BUCKETS
 from steam_deals_price_fetch_strategy import PLAN_SCHEMA
 from steam_deals_price_fetch_strategy import build_proactive_price_fetch_plan
+from steam_deals_price_fetch_strategy import format_proactive_price_fetch_plan_summary
 
 
 class ProactivePriceFetchPlannerTests(unittest.TestCase):
@@ -40,6 +41,9 @@ class ProactivePriceFetchPlannerTests(unittest.TestCase):
         self.assertEqual(plan["fallback_reactivo"], [])
         self.assertEqual(plan["summary"]["total_candidates"], 5)
         self.assertEqual(plan["summary"]["planned_fetch_count"], 2)
+        self.assertEqual(plan["summary"]["batch_fetch_count"], 1)
+        self.assertEqual(plan["summary"]["planned_individual_count"], 1)
+        self.assertEqual(plan["summary"]["reactive_fallback_count"], 0)
         self.assertEqual(plan["summary"]["non_fetch_count"], 3)
 
     def test_http_429_failure_reason_routes_to_cooldown(self) -> None:
@@ -106,6 +110,49 @@ class ProactivePriceFetchPlannerTests(unittest.TestCase):
 
         self.assertEqual(plan["batch"], ["30"])
         self.assertEqual(plan["summary"]["total_candidates"], 1)
+
+    def test_plan_summary_copy_distinguishes_planned_individual_and_reactive_fallback(
+        self,
+    ) -> None:
+        plan = build_proactive_price_fetch_plan(
+            [
+                {"appid": "10", "state": "batch"},
+                {"appid": "20", "state": "planned_individual"},
+                {"appid": "30", "state": "reactive_fallback"},
+                {"appid": "40", "use_stale": True},
+            ]
+        )
+
+        copy = format_proactive_price_fetch_plan_summary(plan)
+
+        self.assertEqual(plan["summary"]["planned_individual_count"], 1)
+        self.assertEqual(plan["summary"]["reactive_fallback_count"], 1)
+        self.assertIn("1 batch", copy)
+        self.assertIn("1 individual planificado", copy)
+        self.assertIn("1 fallback reactivo", copy)
+        self.assertIn("safety net", copy)
+        self.assertIn("no cambia defaults, score, ranking, cache policy ni fetching", copy)
+
+    def test_plan_summary_copy_mentions_http_400_planned_individual_signal(self) -> None:
+        plan = build_proactive_price_fetch_plan(
+            ["10", "20"],
+            planner_context={"repeated_http_400": True},
+        )
+
+        copy = format_proactive_price_fetch_plan_summary(plan)
+
+        self.assertIn("Señal HTTP 400 repetido", copy)
+        self.assertIn("`individual_planificado`", copy)
+        self.assertIn("2 candidato(s)", copy)
+        self.assertNotIn("Fallback reactivo: 2", copy)
+
+    def test_plan_summary_copy_handles_empty_plan(self) -> None:
+        plan = build_proactive_price_fetch_plan([])
+
+        copy = format_proactive_price_fetch_plan_summary(plan)
+
+        self.assertIn("Sin candidatos para planificar", copy)
+        self.assertIn("Fallback reactivo: 0 candidatos", copy)
 
 
 if __name__ == "__main__":
