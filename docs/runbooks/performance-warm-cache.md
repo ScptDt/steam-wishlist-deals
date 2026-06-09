@@ -148,6 +148,27 @@ python3 steam_deals_warm_cache_summary.py \
 - Si hay degradación repetida por HTTP 400, optimizar batching/fallback antes de diseñar cache por promo.
 - Si una promo activa parece correlacionar con mejores oportunidades, documentarlo como observación; no invalidar cache por promo hasta tener evidencia suficiente.
 
+## Proactive price fetch planner
+
+Motivación: los logs reales muestran que, cuando Steam degrada batches con HTTP 400, el flujo actual puede imprimir muchos splits fallidos (`20 -> 10 -> 5 -> fallback`) antes de llegar al comportamiento útil. El objetivo futuro no es eliminar el fallback, sino convertirlo en red de seguridad y mover la decisión principal a un planner proactivo.
+
+Contrato deseado del planner:
+
+- Entrada: candidatos priorizados, estado de caché/fallos, tuning vigente y métricas de la corrida.
+- Salida: buckets explícitos `batch`, `individual_planificado`, `usar_stale`, `defer`, `cooldown` y `fallback_reactivo` solo para fallos no previstos.
+- Invariante: `missing` sigue siendo más crítico que stale no crítico; `http_429` y fallos recientes respetan cooldown; datos viejos útiles se preservan si Steam falla.
+- Métricas nuevas esperadas: batches planificados, individuales planificados, batches evitados, stale reutilizado proactivamente, diferidos proactivos y fallback reactivo restante.
+
+Orden de implementación recomendado:
+
+1. Docs/contrato: definir buckets, no-go y fixtures mínimas antes de tocar runtime.
+2. Helper puro sin cambio de comportamiento, idealmente en `app/steam_deals_price_fetch_strategy.py` o una sección aislada de `app/steam_deals_prices.py`.
+3. Primera regla real: si los fixtures existentes demuestran HTTP 400 repetido, rutear los siguientes grupos como `individual_planificado` antes de llenar logs de splits.
+4. Copy/métricas: diferenciar “individual planificado” de “fallback reactivo” en logs, JSON/resumen y runbook.
+5. Benchmark aislado solo si fixtures pasan y se aprueba explícitamente cache/log/objetivo.
+
+No hacer: no bajar `STEAM_DEALS_PRICE_BATCH_SIZE` global, no forzar `--no-cache`, no invalidar cache por promo, no tratar `HTTP 400` como ausencia definitiva de oferta, no borrar protecciones de cooldown/fallback budget/stale-while-revalidate y no usar `BG00G` o red real para cerrar los primeros slices.
+
 ## Interpretación de `Warm-cache next actions`
 
 - `HTTP 400 repetido`: sigue el valor sugerido (`STEAM_DEALS_PRICE_BATCH_SIZE=N`, normalmente la mitad del batch actual/base) solo si no existe ya evidencia negativa de batch menor; no cambies cache por promo todavía.
