@@ -130,6 +130,10 @@ python3 steam_deals_generator.py --vanity gaben --itad-key TU_ITAD_KEY
 python3 steam_deals_generator.py --vanity gaben \
   --itad-external-offers-cache ./itad-external-offers.json
 
+# Comparativa externa desde caché local GG.deals (fixture/local, sin red ni key)
+python3 steam_deals_generator.py --vanity gaben \
+  --gg-deals-external-offers-cache ./gg-deals-external-offers.json
+
 # Refrescar esa caché ITAD bajo opt-in explícito
 STEAM_TOOLS_ITAD_API_KEY="tu-key-local" \
 python3 steam_deals_generator.py --vanity gaben \
@@ -157,9 +161,11 @@ Con Steam API key, la app intenta importar tus juegos propios visibles vía Stea
 
 `--max-workers` controla el paralelismo de fetch en enrichment. Recomendación práctica: dejar `16` (default actual), bajar a `12` o `8` si notas rate limits/red inestable, y evitar valores muy altos para reducir riesgo de fallos externos. Este ajuste ya está expuesto también en **Filtros avanzados** de la UI compartida (web + desktop), y los presets sugieren valores rápidos (`rapido=12`, `completo=16`, `ahorro=8`).
 
-### Comparativa externa desde caché ITAD local
+### Comparativa externa desde caché local ITAD/GG.deals
 
 `--itad-external-offers-cache` permite sumar precios externos desde una caché JSON ITAD local. Leer esa caché no hace red live por sí solo y la comparativa es informativa: no prueba ownership, no abre carrito/checkout y no cambia score/ranking.
+
+`--gg-deals-external-offers-cache` permite sumar precios desde un JSON local con shape tipo GG.deals ya descargado/fixtureado. También es offline: no hace requests, no usa key y no refresca datos. Steam Tools trata GG.deals como fuente agregadora (`aggregator`), no como tienda final; los keyshops quedan separados como marketplace/keyshop y ocultos/review por defecto.
 
 La Web UI expone el flujo en **Archivos opcionales** → `Caché ITAD external_offers (JSON)`. Si necesitas poblarla o actualizarla desde ITAD, marca explícitamente **Filtros avanzados** → `Refrescar caché ITAD external_offers en vivo (opt-in, solo precios)`; ese refresh requiere `ITAD key` y ruta de caché, y puede crear/actualizar el archivo indicado.
 
@@ -702,6 +708,7 @@ Flags más usados:
 | `--key` / `--itad-key` | API keys para más datos y mínimo histórico |
 | `--itad-external-offers-cache` | Caché JSON local ITAD para `external_offers`, sin red live por defecto |
 | `--itad-refresh-external-offers-cache` | Opt-in live para poblar esa caché ITAD; requiere `--itad-key` y ruta de caché |
+| `--gg-deals-external-offers-cache` | Caché JSON local GG.deals para `external_offers`, sin red ni key |
 | `--discount` / `--max-price` | Filtros principales de precio/oferta |
 | `--deck-only` / `--deck-verified` | Filtros Steam Deck |
 | `--top` / `--sort` | Cantidad y orden de picks destacados |

@@ -1,9 +1,129 @@
+from pathlib import Path
 import unittest
 
+from steam_deals_config import get_config
 from steam_deals_gg_deals import gg_deals_prices_to_external_offers
+from steam_deals_generator import (
+    merge_external_offers_payloads,
+    resolve_gg_deals_external_offers_cache,
+)
+
+
+class FakeStdin:
+    def isatty(self):
+        return False
 
 
 class GGDealsExternalOffersFlowTests(unittest.TestCase):
+    def test_get_config_exposes_local_gg_deals_external_offers_cache_flag(self) -> None:
+        result = get_config(
+            script_path=Path("/tmp/fake_script.py"),
+            load_user_config_fn=lambda: {},
+            save_user_config_fn=lambda _cfg: None,
+            handle_watchlist_command_fn=lambda _args: None,
+            input_fn=lambda _prompt: "",
+            stdin=FakeStdin(),
+            exit_fn=lambda _code: None,
+            argv=[
+                "--vanity",
+                "gaben",
+                "--gg-deals-external-offers-cache",
+                "./gg-deals-external-offers.json",
+            ],
+        )
+
+        self.assertEqual(
+            result[11]["gg_deals_external_offers_cache"],
+            Path("gg-deals-external-offers.json"),
+        )
+
+    def test_resolve_gg_deals_external_offers_cache_loads_local_cache_without_network(self) -> None:
+        cache_payload = {
+            "success": True,
+            "data": {
+                "1145360": {
+                    "title": "Hades",
+                    "url": "https://gg.deals/game/hades/",
+                    "prices": {"currentRetail": "8.99", "currency": "USD"},
+                },
+                "999999": {
+                    "title": "Out of scope",
+                    "url": "https://gg.deals/game/out/",
+                    "prices": {"currentRetail": "1.99", "currency": "USD"},
+                },
+            },
+        }
+        emitted: list[str] = []
+
+        external_offers = resolve_gg_deals_external_offers_cache(
+            Path("gg-deals-cache.json"),
+            ["1145360"],
+            load_cache_fn=lambda _path: cache_payload,
+            emit_fn=emitted.append,
+        )
+
+        self.assertIsNotNone(external_offers)
+        self.assertEqual(len(external_offers["items"]), 1)
+        item = external_offers["items"][0]
+        self.assertEqual(item["appid"], "1145360")
+        self.assertEqual(item["store_id"], "gg_deals")
+        self.assertEqual(item["store_type"], "aggregator")
+        self.assertEqual(item["visibility"], "hidden")
+        self.assertEqual(external_offers["summary"]["ranking_impact"], "none")
+        self.assertIn("Ofertas externas GG.deals desde caché local: 1", emitted[0])
+
+    def test_resolve_gg_deals_external_offers_cache_degrades_on_cache_error(self) -> None:
+        emitted: list[str] = []
+
+        def broken_loader(_path):
+            raise ValueError("JSON inválido")
+
+        external_offers = resolve_gg_deals_external_offers_cache(
+            Path("gg-deals-cache.json"),
+            ["10"],
+            load_cache_fn=broken_loader,
+            emit_fn=emitted.append,
+        )
+
+        self.assertIsNone(external_offers)
+        self.assertIn("No se pudo cargar caché GG.deals external_offers", emitted[0])
+
+    def test_merge_external_offers_payloads_keeps_itad_and_gg_deals_items_advisory(self) -> None:
+        itad_external_offers = {
+            "items": [
+                {
+                    "appid": "1145360",
+                    "name": "Hades",
+                    "store_id": "fanatical",
+                    "price": 8.99,
+                    "currency": "USD",
+                    "drm": "steam",
+                    "region": "global",
+                    "source": "itad",
+                    "confidence": "high",
+                }
+            ]
+        }
+        gg_external_offers = gg_deals_prices_to_external_offers(
+            {
+                "data": {
+                    "1145360": {
+                        "title": "Hades",
+                        "prices": {"currentRetail": "7.99", "currency": "USD"},
+                    }
+                }
+            }
+        )
+
+        merged = merge_external_offers_payloads(itad_external_offers, gg_external_offers)
+
+        self.assertIsNotNone(merged)
+        items = {item["store_id"]: item for item in merged["items"]}
+        self.assertEqual(items["fanatical"]["visibility"], "highlight")
+        self.assertEqual(items["gg_deals"]["visibility"], "hidden")
+        self.assertFalse(items["gg_deals"]["eligible_for_best_external_price"])
+        self.assertEqual(merged["summary"]["ranking_impact"], "none")
+
     def test_prices_payload_normalizes_retail_and_keyshops_as_hidden_advisory_sources(self) -> None:
         payload = {
             "success": True,

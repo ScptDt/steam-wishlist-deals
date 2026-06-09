@@ -1,5 +1,7 @@
 from __future__ import annotations
 
+from pathlib import Path
+
 from app.steam_deals_external_offers import normalize_external_offers
 
 
@@ -25,6 +27,52 @@ def gg_deals_prices_to_external_offers(
         {"offers": records},
         include_marketplaces=include_marketplaces,
     )
+
+
+def gg_deals_external_offers_from_cache(
+    cache_payload,
+    *,
+    appids: list[str] | set[str] | tuple[str, ...] | None = None,
+    region: str = "us",
+    include_keyshops: bool = True,
+    include_marketplaces: bool = False,
+) -> dict | None:
+    """Return normalized external_offers from a local GG.deals cache payload."""
+    if not isinstance(cache_payload, dict):
+        return None
+    offers = gg_deals_prices_to_external_offers(
+        _gg_deals_cache_payload_for_appids(cache_payload, appids),
+        region=region,
+        include_keyshops=include_keyshops,
+        include_marketplaces=include_marketplaces,
+    )
+    return offers if offers.get("items") else None
+
+
+def load_gg_deals_external_offers_cache(
+    cache_file: Path,
+    *,
+    load_json_file,
+) -> dict:
+    payload = load_json_file(Path(cache_file), {})
+    return payload if isinstance(payload, dict) else {}
+
+
+def _gg_deals_cache_payload_for_appids(cache_payload: dict, appids) -> dict:
+    appid_filter = {str(appid) for appid in appids or [] if appid}
+    if not appid_filter:
+        return cache_payload
+    data = cache_payload.get("data") if "data" in cache_payload else cache_payload
+    if not isinstance(data, dict):
+        return cache_payload
+    filtered = {
+        str(appid): item
+        for appid, item in data.items()
+        if str(appid) in appid_filter
+    }
+    if "data" in cache_payload:
+        return {**cache_payload, "data": filtered}
+    return filtered
 
 
 def _gg_deals_price_records(payload, *, region: str, include_keyshops: bool) -> list[dict]:

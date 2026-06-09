@@ -112,6 +112,10 @@ def build_parser() -> argparse.ArgumentParser:
         help="Ruta a caché JSON local ITAD para external_offers (sin red live)",
     )
     parser.add_argument(
+        "--gg-deals-external-offers-cache",
+        help="Ruta a caché JSON local GG.deals para external_offers (sin red live)",
+    )
+    parser.add_argument(
         "--itad-refresh-external-offers-cache",
         action="store_true",
         help="Opt-in: refresca en vivo la caché local ITAD external_offers",
@@ -353,6 +357,9 @@ def _build_filters(args, cfg: dict, *, environ=None) -> dict:
     itad_external_offers_cache = (
         args.itad_external_offers_cache or cfg.get("itad_external_offers_cache")
     )
+    gg_deals_external_offers_cache = (
+        args.gg_deals_external_offers_cache or cfg.get("gg_deals_external_offers_cache")
+    )
     alert_rise_pct = (
         args.alert_rise_pct
         if args.alert_rise_pct is not None
@@ -397,6 +404,9 @@ def _build_filters(args, cfg: dict, *, environ=None) -> dict:
         else None,
         "itad_external_offers_cache": Path(itad_external_offers_cache).expanduser()
         if itad_external_offers_cache
+        else None,
+        "gg_deals_external_offers_cache": Path(gg_deals_external_offers_cache).expanduser()
+        if gg_deals_external_offers_cache
         else None,
         "itad_refresh_external_offers_cache": bool(args.itad_refresh_external_offers_cache),
         "budget": args.budget,

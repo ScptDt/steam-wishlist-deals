@@ -247,6 +247,14 @@ except Exception:
 
 
 try:
+    from steam_deals_external_offers import (
+        normalize_external_offers as _normalize_external_offers_impl,
+    )
+except Exception:
+    _normalize_external_offers_impl = None
+
+
+try:
     from steam_deals_itad import (
         build_itad_external_offers_cache as _build_itad_external_offers_cache_impl,
         itad_external_offers_from_cache as _itad_external_offers_from_cache_impl,
@@ -270,6 +278,16 @@ except Exception:
     _itad_lookup_games_by_appid_impl = None
     _load_itad_external_offers_cache_impl = None
     _save_itad_external_offers_cache_impl = None
+
+
+try:
+    from steam_deals_gg_deals import (
+        gg_deals_external_offers_from_cache as _gg_deals_external_offers_from_cache_impl,
+        load_gg_deals_external_offers_cache as _load_gg_deals_external_offers_cache_impl,
+    )
+except Exception:
+    _gg_deals_external_offers_from_cache_impl = None
+    _load_gg_deals_external_offers_cache_impl = None
 
 
 try:
@@ -1515,6 +1533,36 @@ def itad_external_offers_from_cache(cache_payload, *, appids=None) -> dict | Non
     return _itad_external_offers_from_cache_impl(cache_payload, appids=appids)
 
 
+def load_gg_deals_external_offers_cache(cache_file: Path) -> dict:
+    if _load_gg_deals_external_offers_cache_impl is None:
+        raise RuntimeError("GG.deals module is not available")
+    return _load_gg_deals_external_offers_cache_impl(
+        cache_file,
+        load_json_file=load_json_file,
+    )
+
+
+def gg_deals_external_offers_from_cache(cache_payload, *, appids=None) -> dict | None:
+    if _gg_deals_external_offers_from_cache_impl is None:
+        raise RuntimeError("GG.deals module is not available")
+    return _gg_deals_external_offers_from_cache_impl(cache_payload, appids=appids)
+
+
+def merge_external_offers_payloads(*payloads) -> dict | None:
+    records: list[dict] = []
+    for payload in payloads:
+        if not isinstance(payload, dict):
+            continue
+        items = payload.get("items")
+        if isinstance(items, list):
+            records.extend(dict(item) for item in items if isinstance(item, dict))
+    if not records:
+        return None
+    if _normalize_external_offers_impl is None:
+        raise RuntimeError("external_offers module is not available")
+    return _normalize_external_offers_impl({"offers": records})
+
+
 def resolve_itad_external_offers_cache(
     cache_file: Path | None,
     deal_appids: list[str],
@@ -1538,6 +1586,32 @@ def resolve_itad_external_offers_cache(
     if external_offers and emit_fn is not None:
         count = external_offers.get("summary", {}).get("items_count", 0)
         emit_fn(f"  {_dim(f'Ofertas externas ITAD desde caché local: {count:,}')}")
+    return external_offers
+
+
+def resolve_gg_deals_external_offers_cache(
+    cache_file: Path | None,
+    deal_appids: list[str],
+    *,
+    load_cache_fn=None,
+    offers_from_cache_fn=None,
+    emit_fn=None,
+) -> dict | None:
+    """Load external_offers from local GG.deals cache only; never performs network I/O."""
+    if cache_file is None:
+        return None
+    load_cache = load_cache_fn or load_gg_deals_external_offers_cache
+    offers_from_cache = offers_from_cache_fn or gg_deals_external_offers_from_cache
+    try:
+        cache_payload = load_cache(cache_file)
+        external_offers = offers_from_cache(cache_payload, appids=deal_appids)
+    except (OSError, ValueError) as exc:
+        if emit_fn is not None:
+            emit_fn(f"  {_warn(f'No se pudo cargar caché GG.deals external_offers: {exc}')}")
+        return None
+    if external_offers and emit_fn is not None:
+        count = external_offers.get("summary", {}).get("items_count", 0)
+        emit_fn(f"  {_dim(f'Ofertas externas GG.deals desde caché local: {count:,}')}")
     return external_offers
 
 
@@ -5371,6 +5445,7 @@ def main():
     active_bundles = itad_outputs.active_bundles
     itad_ids = itad_outputs.itad_ids
     itad_external_offers_cache_file = FILTERS.get("itad_external_offers_cache")
+    gg_deals_external_offers_cache_file = FILTERS.get("gg_deals_external_offers_cache")
 
     alert_deals = deals
     alert_global_margin_pct = _resolve_alert_global_margin_pct(
@@ -5434,10 +5509,19 @@ def main():
             appid_to_itad_id=itad_ids,
             emit_fn=emit,
         )
-    external_offers = resolve_itad_external_offers_cache(
+    itad_external_offers = resolve_itad_external_offers_cache(
         itad_external_offers_cache_file,
         external_offer_appids,
         emit_fn=emit,
+    )
+    gg_deals_external_offers = resolve_gg_deals_external_offers_cache(
+        gg_deals_external_offers_cache_file,
+        external_offer_appids,
+        emit_fn=emit,
+    )
+    external_offers = merge_external_offers_payloads(
+        itad_external_offers,
+        gg_deals_external_offers,
     )
     compare_profiles: list[dict] = []
     gift_ideas_by_friend: list[dict] = []
