@@ -3579,6 +3579,57 @@ class WarmCacheTests(unittest.TestCase):
         self.assertTrue(any("Caché válida" in line for line in emitted))
         self.assertTrue(any("desde caché" in line for line in emitted))
 
+    def test_format_price_cache_status_reports_explicit_cooldown_eta(self) -> None:
+        now_ts = 1_700_000_000.0
+        policy = SimpleNamespace(
+            status="valid",
+            cache={
+                "10": {
+                    "_failed_at": now_ts - 300,
+                    "_next_retry_after": now_ts + (90 * 60),
+                }
+            },
+            missing_ids=(),
+            refresh_ids=(),
+            deferred_failure_ids=("10",),
+        )
+
+        status = generator_module.format_price_cache_status(
+            policy,
+            2.0,
+            now_ts=now_ts,
+            failure_retry_hours=2,
+        )
+
+        self.assertIn("1 fallos recientes en cooldown", status)
+        self.assertIn("próximo elegible en ~1h 30m", status)
+
+    def test_format_price_cache_status_reports_fallback_cooldown_eta(self) -> None:
+        now_ts = 1_700_000_000.0
+        policy = SimpleNamespace(
+            status="expired",
+            cache={
+                "10": {
+                    "_failed_at": now_ts - (30 * 60),
+                    "_failure_reason": "no_price_data",
+                }
+            },
+            missing_ids=("20",),
+            refresh_ids=("20",),
+            deferred_failure_ids=("10",),
+        )
+
+        status = generator_module.format_price_cache_status(
+            policy,
+            48.0,
+            now_ts=now_ts,
+            failure_retry_hours=2,
+        )
+
+        self.assertIn("1 por revalidar", status)
+        self.assertIn("1 fallos recientes en cooldown", status)
+        self.assertIn("próximo elegible en ~1h 30m", status)
+
     def test_run_warm_cache_mode_reports_summary_and_target_path(self) -> None:
         steps = []
         emitted = []

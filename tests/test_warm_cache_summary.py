@@ -70,6 +70,16 @@ class WarmCacheSummaryTests(unittest.TestCase):
 
         self.assertEqual(summary.elapsed_seconds, 3.5)
 
+    def test_parse_warm_cache_log_text_counts_cooldown_eta_copy(self) -> None:
+        text = (
+            "Caché válida (1.0h) — sin nuevos, skip fetch "
+            "(12 fallos recientes en cooldown; próximo elegible en ~1h 30m)\n"
+        )
+
+        summary = parse_warm_cache_log_text(text)
+
+        self.assertEqual(summary.deferred_failure_count, 12)
+
     def test_parse_warm_cache_log_text_accepts_ascii_discount_threshold(self) -> None:
         text = "OK  411 deals (>=50%) - caché actualizada\n"
 

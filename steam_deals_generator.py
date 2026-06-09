@@ -2434,7 +2434,91 @@ def save_price_cache(steam_id: str, fetched: dict) -> None:
     _prices_module.save_price_cache(CACHE_FILE, steam_id, fetched)
 
 
-def _format_price_refresh_details(price_cache_policy, *, action_label: str) -> str:
+PRICE_CACHE_FAILED_AT_KEY = "_failed_at"
+PRICE_CACHE_NEXT_RETRY_AFTER_KEY = "_next_retry_after"
+
+
+def _resolve_failure_retry_hours(failure_retry_hours: float | None) -> float:
+    if failure_retry_hours is None:
+        failure_retry_hours = globals().get("PRICE_FAILURE_RETRY_HOURS", 2)
+    try:
+        retry_hours = float(failure_retry_hours)
+    except (TypeError, ValueError):
+        retry_hours = 2.0
+    return max(0.0, retry_hours)
+
+
+def _price_failure_next_retry_after(
+    entry: dict | None,
+    *,
+    failure_retry_hours: float | None,
+) -> float | None:
+    if not isinstance(entry, dict):
+        return None
+    explicit_retry_after = entry.get(PRICE_CACHE_NEXT_RETRY_AFTER_KEY)
+    if isinstance(explicit_retry_after, (int, float)):
+        return float(explicit_retry_after)
+    failed_at = entry.get(PRICE_CACHE_FAILED_AT_KEY)
+    if not isinstance(failed_at, (int, float)):
+        return None
+    retry_hours = _resolve_failure_retry_hours(failure_retry_hours)
+    return float(failed_at) + (retry_hours * 3600.0)
+
+
+def _format_cooldown_duration(seconds: float) -> str:
+    minutes = max(1, int((float(seconds) + 59.999) // 60))
+    if minutes < 60:
+        return f"{minutes}m"
+    hours, remaining_minutes = divmod(minutes, 60)
+    if remaining_minutes == 0:
+        return f"{hours}h"
+    return f"{hours}h {remaining_minutes}m"
+
+
+def _format_deferred_failure_detail(
+    price_cache_policy,
+    deferred_failure_ids: tuple[str, ...],
+    *,
+    now_ts: float | None,
+    failure_retry_hours: float | None,
+) -> str:
+    count = len(deferred_failure_ids)
+    detail = f"{count} fallos recientes en cooldown"
+    cache = getattr(price_cache_policy, "cache", {}) or {}
+    if not isinstance(cache, dict):
+        return detail
+    if now_ts is None:
+        now_ts = time.time()
+    try:
+        current_ts = float(now_ts)
+    except (TypeError, ValueError):
+        return detail
+
+    remaining_seconds = []
+    for appid in deferred_failure_ids:
+        next_retry_after = _price_failure_next_retry_after(
+            cache.get(appid),
+            failure_retry_hours=failure_retry_hours,
+        )
+        if next_retry_after is None:
+            continue
+        remaining = float(next_retry_after) - current_ts
+        if remaining > 0:
+            remaining_seconds.append(remaining)
+
+    if not remaining_seconds:
+        return detail
+    eta = _format_cooldown_duration(min(remaining_seconds))
+    return f"{detail}; próximo elegible en ~{eta}"
+
+
+def _format_price_refresh_details(
+    price_cache_policy,
+    *,
+    action_label: str,
+    now_ts: float | None = None,
+    failure_retry_hours: float | None = None,
+) -> str:
     missing_ids = tuple(getattr(price_cache_policy, "missing_ids", ()) or ())
     refresh_ids = tuple(
         getattr(price_cache_policy, "refresh_ids", missing_ids) or ()
@@ -2450,12 +2534,28 @@ def _format_price_refresh_details(price_cache_policy, *, action_label: str) -> s
         if stale_count:
             details.append(f"{stale_count} stale")
         if deferred_failure_ids:
-            details.append(f"{len(deferred_failure_ids)} fallos recientes en cooldown")
+            details.append(
+                _format_deferred_failure_detail(
+                    price_cache_policy,
+                    deferred_failure_ids,
+                    now_ts=now_ts,
+                    failure_retry_hours=failure_retry_hours,
+                )
+            )
         details_msg = f" ({', '.join(details)})" if details else ""
         return f"{len(refresh_ids)} {action_label}{details_msg}"
     status_msg = _dim("sin nuevos, skip fetch")
     if deferred_failure_ids:
-        status_msg = f"{status_msg} ({len(deferred_failure_ids)} fallos recientes en cooldown)"
+        deferred_detail = _format_deferred_failure_detail(
+            price_cache_policy,
+            deferred_failure_ids,
+            now_ts=now_ts,
+            failure_retry_hours=failure_retry_hours,
+        )
+        status_msg = (
+            f"{status_msg} "
+            f"({deferred_detail})"
+        )
     return status_msg
 
 
@@ -2479,7 +2579,13 @@ def _format_ttl_jitter_bucket_counts(bucket_counts: dict[int, int]) -> str:
     )
 
 
-def format_price_cache_status(price_cache_policy, cache_age: float) -> str:
+def format_price_cache_status(
+    price_cache_policy,
+    cache_age: float,
+    *,
+    now_ts: float | None = None,
+    failure_retry_hours: float | None = None,
+) -> str:
     status = getattr(price_cache_policy, "status", "empty")
     if status == "bypass":
         return _warn("--no-cache: ignorando caché existente")
@@ -2487,12 +2593,16 @@ def format_price_cache_status(price_cache_policy, cache_age: float) -> str:
         status_msg = _format_price_refresh_details(
             price_cache_policy,
             action_label="por fetchear",
+            now_ts=now_ts,
+            failure_retry_hours=failure_retry_hours,
         )
         return f"{_ok(f'Caché válida ({cache_age:.1f}h)')} — {status_msg}"
     if status == "expired":
         status_msg = _format_price_refresh_details(
             price_cache_policy,
             action_label="por revalidar",
+            now_ts=now_ts,
+            failure_retry_hours=failure_retry_hours,
         )
         return f"{_warn(f'Caché expirada ({cache_age:.0f}h)')} — {status_msg}"
     return _dim("Sin caché — fetch completo")
@@ -2544,7 +2654,15 @@ def run_price_cache_stage(
 
     if price_cache_policy.status == "bypass":
         clear_cache_files_fn(list(build_price_related_cache_files()))
-    emit_fn(f"  {format_price_cache_status(price_cache_policy, cache_age)}")
+    cache_status_msg = format_price_cache_status(
+        price_cache_policy,
+        cache_age,
+        now_ts=current_time_fn(),
+        failure_retry_hours=PRICE_FAILURE_RETRY_HOURS,
+    )
+    emit_fn(
+        f"  {cache_status_msg}"
+    )
 
     refresh_ids = tuple(getattr(price_cache_policy, "refresh_ids", ()) or ())
     missing_count = len(tuple(getattr(price_cache_policy, "missing_ids", ()) or ()))
