@@ -2235,6 +2235,27 @@ details .details-body .field:last-child {
 .latest-offer-highlight-reason {
   color: var(--text2);
 }
+.latest-share-access-note {
+  margin-top: 0.5rem;
+  padding: 0.52rem 0.58rem;
+  border: 1px solid rgba(245, 158, 11, 0.34);
+  border-radius: 8px;
+  background: rgba(245, 158, 11, 0.08);
+  color: var(--text2);
+  font-size: 0.73rem;
+  line-height: 1.4;
+}
+.latest-share-access-note span {
+  display: block;
+}
+.latest-share-access-note-label {
+  color: var(--yellow);
+  font-weight: 800;
+}
+.latest-share-access-note-detail,
+.latest-share-access-note-guardrail {
+  margin-top: 0.16rem;
+}
 .latest-share-card-actions {
   display: flex;
   flex-wrap: wrap;

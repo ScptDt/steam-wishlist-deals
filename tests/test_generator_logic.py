@@ -12260,6 +12260,108 @@ class RankTopPicksTests(unittest.TestCase):
         self.assertIn("data-top-pick-filter-count", html)
         self.assertIn("No hay Top Picks con esa recomendación.", html)
 
+    def test_generated_reports_show_access_notes_for_matching_top_picks_only(self) -> None:
+        top_picks = [
+            {
+                "appid": "10",
+                "name": "Alpha",
+                "discount": 90,
+                "price_final": "$10",
+                "score": 95.4,
+                "recommendation": "Comprar ahora",
+            },
+            {
+                "appid": "20",
+                "name": "Bravo",
+                "discount": 70,
+                "price_final": "$12",
+                "score": 82.0,
+                "recommendation": "Revisar",
+            },
+        ]
+        wishlist_hygiene = {
+            "items": [
+                {
+                    "appid": "10",
+                    "name": "Alpha",
+                    "signals": ["owned"],
+                    "reasons": ["ya está en tu biblioteca"],
+                    "action": "review",
+                    "advisory_only": True,
+                    "access_decision": {
+                        "code": "owned",
+                        "label": "Ya lo tienes",
+                        "detail": "Comprar solo si quieres otra copia o soporte adicional.",
+                        "advisory_only": True,
+                        "ranking_impact": "none",
+                    },
+                },
+                {
+                    "appid": "20",
+                    "name": "Bravo",
+                    "signals": ["owned"],
+                    "reasons": ["señal legacy sin access_decision explícito"],
+                    "action": "review",
+                    "advisory_only": True,
+                },
+                {
+                    "appid": "999",
+                    "name": "Mismatch",
+                    "signals": ["family"],
+                    "reasons": ["no es Top Pick"],
+                    "action": "review",
+                    "advisory_only": True,
+                    "access_decision": {
+                        "code": "family",
+                        "label": "Disponible por Steam Family",
+                        "detail": "Comprar solo si quieres copia propia.",
+                        "advisory_only": True,
+                        "ranking_impact": "none",
+                    },
+                },
+            ],
+            "summary": {"total_wishlist_items": 3, "review_items_count": 3, "advisory_only": True},
+        }
+
+        html = generate_html(
+            deals=[],
+            backlog_on_sale=[],
+            have_on_sale=[],
+            vanity="gaben",
+            owned={},
+            wishlist_appids=["10", "20"],
+            min_discount=50,
+            genres=[],
+            top_picks=top_picks,
+            wishlist_hygiene=wishlist_hygiene,
+        )
+        md = generate_md(
+            deals=[],
+            backlog_on_sale=[],
+            have_on_sale=[],
+            vanity="gaben",
+            owned={},
+            wishlist_appids=["10", "20"],
+            min_discount=50,
+            genres=[],
+            top_picks=top_picks,
+            wishlist_hygiene=wishlist_hygiene,
+        )
+
+        self.assertIn('data-top-pick-access-note="10"', html)
+        self.assertIn("Acceso: Ya lo tienes", html)
+        self.assertIn("Comprar solo si quieres otra copia", html)
+        self.assertIn("no cambia score, ranking, orden, defaults, cache ni fetching", html)
+        self.assertNotIn('data-top-pick-access-note="20"', html)
+        self.assertNotIn('data-top-pick-access-note="999"', html)
+
+        alpha_line = next(line for line in md.splitlines() if "Alpha" in line and "| 1 |" in line)
+        bravo_line = next(line for line in md.splitlines() if "Bravo" in line and "| 2 |" in line)
+        self.assertIn("**Acceso:** Ya lo tienes", alpha_line)
+        self.assertIn("Comprar solo si quieres otra copia", alpha_line)
+        self.assertIn("no cambia score, ranking, orden, defaults, cache ni fetching", alpha_line)
+        self.assertNotIn("**Acceso:**", bravo_line)
+
     def test_generate_html_top_pick_filters_use_rendered_recommendations(self) -> None:
         html = generate_html(
             deals=[],

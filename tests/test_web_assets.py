@@ -754,6 +754,43 @@ class WebAssetsTests(unittest.TestCase):
         self.assertIn(".latest-wishlist-item-reason-label", app_css)
         self.assertIn(".latest-wishlist-item-actions", app_css)
 
+    def test_latest_report_renders_steam_access_top_pick_notes(self) -> None:
+        app_js = (ROOT / "web" / "steam_deals" / "app.js").read_text(
+            encoding="utf-8"
+        )
+        app_css = (ROOT / "web" / "steam_deals" / "app.css").read_text(
+            encoding="utf-8"
+        )
+
+        self.assertIn("function latestExplicitWishlistAccessDecision", app_js)
+        self.assertIn("function latestWishlistAccessNotesByAppid", app_js)
+        self.assertIn("function renderLatestTopPickAccessNote", app_js)
+        self.assertIn("const accessNotesByAppid = latestWishlistAccessNotesByAppid(report);", app_js)
+        self.assertIn("renderLatestTopPickAccessNote(pick, accessNotesByAppid)", app_js)
+        self.assertIn("report.wishlist_hygiene", app_js)
+        self.assertIn("source.access_decision", app_js)
+        self.assertIn("explicit.advisory_only === false", app_js)
+        self.assertIn("rankingImpact !== 'none'", app_js)
+        self.assertIn("data-latest-top-pick-access-note", app_js)
+        self.assertIn("Acceso: ${escapeHtml(decision.label)}", app_js)
+        self.assertIn("Solo revisión · advisory-only: no cambia score, ranking, orden, defaults, cache ni fetching.", app_js)
+        self.assertIn(".latest-share-access-note", app_css)
+        self.assertIn(".latest-share-access-note-label", app_css)
+        self.assertIn(".latest-share-access-note-detail", app_css)
+        self.assertIn(".latest-share-access-note-guardrail", app_css)
+        for forbidden in (
+            "manualHide",
+            "manual_hide",
+            "autoHide",
+            "auto_hide",
+            "hideTopPick",
+            "filterTopPicksByAccess",
+            "topPickAccessStorage",
+            "persistAccessNoteState",
+        ):
+            with self.subTest(forbidden=forbidden):
+                self.assertNotIn(forbidden, app_js)
+
     def test_latest_report_surfaces_active_promo_context_inside_details(self) -> None:
         app_js = (ROOT / "web" / "steam_deals" / "app.js").read_text(
             encoding="utf-8"

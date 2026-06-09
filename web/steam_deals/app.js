@@ -4226,10 +4226,12 @@ function renderLatestBudgetSelection(preview) {
 function renderLatestShareTopPicks(report) {
   const topPicks = Array.isArray(report && report.top_picks) ? report.top_picks.slice(0, 4) : [];
   if (!topPicks.length) return '';
+  const accessNotesByAppid = latestWishlistAccessNotesByAppid(report);
   const cards = topPicks.map((pick) => {
     const shareGame = buildShareGamePayload(pick, report);
     if (!shareGame) return '';
     const highlightHtml = renderLatestOfferHighlight(pick, report);
+    const accessNoteHtml = renderLatestTopPickAccessNote(pick, accessNotesByAppid);
     const minHistText = shareGame.displayMinHist
       ? `Mín. histórico: ${shareGame.displayMinHist}`
       : 'Sin mínimo histórico en este reporte';
@@ -4239,6 +4241,7 @@ function renderLatestShareTopPicks(report) {
         <div class="latest-share-card-price">${escapeHtml(shareGame.displayPrice)}${shareGame.discount ? ` · -${escapeHtml(shareGame.discount)}%` : ''}</div>
         <div class="latest-share-card-meta">${escapeHtml(minHistText)}</div>
         ${highlightHtml}
+        ${accessNoteHtml}
         <div class="latest-share-card-actions">
           <button type="button" class="btn btn-ghost latest-share-trigger" data-share-top-pick="${escapeHtml(shareGame.appid)}">Compartir</button>
           <a class="file-link latest-share-open-link" href="${escapeHtml(shareGame.steamUrl)}" target="_blank" rel="noopener noreferrer">Abrir en Steam</a>
@@ -4620,6 +4623,53 @@ function latestWishlistAccessDecisionDetail(code) {
     playable_without_buying: 'Revisa el acceso local antes de comprar.',
   };
   return details[String(code || '').trim()] || '';
+}
+
+function latestExplicitWishlistAccessDecision(item) {
+  const source = item && typeof item === 'object' ? item : {};
+  const explicit = source.access_decision && typeof source.access_decision === 'object'
+    ? source.access_decision
+    : null;
+  if (!explicit) return null;
+  const code = String(explicit.code || '').trim();
+  const label = String(explicit.label || '').trim();
+  const rankingImpact = String(explicit.ranking_impact || 'none').trim().toLowerCase();
+  if (!code || !label || explicit.advisory_only === false || rankingImpact !== 'none') return null;
+  return {
+    code,
+    label,
+    detail: String(explicit.detail || latestWishlistAccessDecisionDetail(code)).trim(),
+  };
+}
+
+function latestWishlistAccessNotesByAppid(report) {
+  const payload = report && typeof report === 'object' ? report.wishlist_hygiene : null;
+  const items = Array.isArray(payload && payload.items) ? payload.items : [];
+  return items.reduce((notes, item) => {
+    const source = item && typeof item === 'object' ? item : {};
+    const appid = String(source.appid || source.steam_appid || '').trim();
+    if (!/^\d+$/.test(appid) || notes[appid]) return notes;
+    const decision = latestExplicitWishlistAccessDecision(source);
+    if (decision) notes[appid] = decision;
+    return notes;
+  }, {});
+}
+
+function renderLatestTopPickAccessNote(pick, accessNotesByAppid) {
+  const source = pick && typeof pick === 'object' ? pick : {};
+  const appid = String(source.appid || source.steam_appid || '').trim();
+  const decision = /^\d+$/.test(appid) && accessNotesByAppid
+    ? accessNotesByAppid[appid]
+    : null;
+  if (!decision) return '';
+  const detail = decision.detail || 'Revisa el acceso local antes de comprar.';
+  return `
+    <div class="latest-share-access-note" data-latest-top-pick-access-note="${escapeHtml(appid)}">
+      <span class="latest-share-access-note-label">Acceso: ${escapeHtml(decision.label)}</span>
+      <span class="latest-share-access-note-detail">${escapeHtml(detail)}</span>
+      <span class="latest-share-access-note-guardrail">Solo revisión · advisory-only: no cambia score, ranking, orden, defaults, cache ni fetching.</span>
+    </div>
+  `;
 }
 
 function latestWishlistAccessDecision(item) {

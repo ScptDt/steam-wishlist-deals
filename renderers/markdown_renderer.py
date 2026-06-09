@@ -292,6 +292,46 @@ def _wishlist_hygiene_items(payload: dict | None, *, limit: int = 12) -> tuple[l
     return items[:limit], total, max(0, total - limit)
 
 
+def _wishlist_hygiene_explicit_access_decision(item: dict) -> dict | None:
+    explicit = item.get("access_decision") if isinstance(item, dict) else None
+    if not isinstance(explicit, dict):
+        return None
+    code = str(explicit.get("code") or "").strip()
+    label = str(explicit.get("label") or "").strip()
+    ranking_impact = str(explicit.get("ranking_impact") or "none").strip().lower()
+    if not code or not label or explicit.get("advisory_only") is False or ranking_impact != "none":
+        return None
+    detail = str(explicit.get("detail") or _WISHLIST_ACCESS_DECISION_DETAILS.get(code, "")).strip()
+    return {"code": code, "label": label, "detail": detail}
+
+
+def _wishlist_hygiene_access_notes_by_appid(payload: dict | None) -> dict[str, dict]:
+    if not isinstance(payload, dict):
+        return {}
+    notes: dict[str, dict] = {}
+    for item in payload.get("items", []):
+        if not isinstance(item, dict):
+            continue
+        appid = str(item.get("appid") or item.get("steam_appid") or "").strip()
+        if not appid.isdigit() or appid in notes:
+            continue
+        if decision := _wishlist_hygiene_explicit_access_decision(item):
+            notes[appid] = decision
+    return notes
+
+
+def _md_top_pick_access_note(top_pick: dict, access_notes_by_appid: dict[str, dict]) -> str:
+    appid = str(top_pick.get("appid") or "").strip()
+    decision = access_notes_by_appid.get(appid) if appid.isdigit() else None
+    if not decision:
+        return ""
+    detail = decision.get("detail") or "Revisa el acceso local antes de comprar."
+    return (
+        f"<br>⚠️ **Acceso:** {_md_esc(decision['label'])} — {_md_esc(detail)} "
+        "_Solo revisión/advisory-only: no cambia score, ranking, orden, defaults, cache ni fetching._"
+    )
+
+
 def _safe_int(value, default: int = 0) -> int:
     try:
         return int(value)
@@ -1542,6 +1582,7 @@ def generate_md(
     behavioral_explanations = (
         behavioral_explanations if isinstance(behavioral_explanations, dict) else None
     )
+    access_notes_by_appid = _wishlist_hygiene_access_notes_by_appid(wishlist_hygiene)
     watchlist_alerts = watchlist_alerts or []
     comp = comparison or {}
     owned_and_wishlisted = sorted(
@@ -1632,6 +1673,7 @@ def generate_md(
             name_col = (
                 f"{_link(tp['name'], tp['appid'])}{prio}"
                 f"{_offer_highlight_note(tp, min_hist=historical_lows.get(tp['appid']), active_promo_context=active_promo_context)}"
+                f"{_md_top_pick_access_note(tp, access_notes_by_appid)}"
             )
             yr = tp.get("release_year") or "—"
             lines.append(

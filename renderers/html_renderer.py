@@ -352,6 +352,47 @@ def _wishlist_hygiene_items(payload: dict | None, *, limit: int = 12) -> tuple[l
     return items[:limit], total, max(0, total - limit)
 
 
+def _wishlist_hygiene_explicit_access_decision(item: dict) -> dict | None:
+    explicit = item.get("access_decision") if isinstance(item, dict) else None
+    if not isinstance(explicit, dict):
+        return None
+    code = str(explicit.get("code") or "").strip()
+    label = str(explicit.get("label") or "").strip()
+    ranking_impact = str(explicit.get("ranking_impact") or "none").strip().lower()
+    if not code or not label or explicit.get("advisory_only") is False or ranking_impact != "none":
+        return None
+    detail = str(explicit.get("detail") or _WISHLIST_ACCESS_DECISION_DETAILS.get(code, "")).strip()
+    return {"code": code, "label": label, "detail": detail}
+
+
+def _wishlist_hygiene_access_notes_by_appid(payload: dict | None) -> dict[str, dict]:
+    if not isinstance(payload, dict):
+        return {}
+    notes: dict[str, dict] = {}
+    for item in payload.get("items", []):
+        if not isinstance(item, dict):
+            continue
+        appid = str(item.get("appid") or item.get("steam_appid") or "").strip()
+        if not appid.isdigit() or appid in notes:
+            continue
+        if decision := _wishlist_hygiene_explicit_access_decision(item):
+            notes[appid] = decision
+    return notes
+
+
+def _html_top_pick_access_note(top_pick: dict, access_notes_by_appid: dict[str, dict]) -> str:
+    appid = str(top_pick.get("appid") or "").strip()
+    decision = access_notes_by_appid.get(appid) if appid.isdigit() else None
+    if not decision:
+        return ""
+    detail = decision.get("detail") or "Revisa el acceso local antes de comprar."
+    return f'''<div class="pick-access-note" data-top-pick-access-note="{_html_esc(appid)}">
+        <span class="pick-access-note-label">Acceso: {_html_esc(decision["label"])}</span>
+        <span class="pick-access-note-detail">{_html_esc(detail)}</span>
+        <span class="pick-access-note-guardrail">Solo revisión · advisory-only: no cambia score, ranking, orden, defaults, cache ni fetching.</span>
+      </div>'''
+
+
 def _build_promo_context_html(active_promo_context: dict | None) -> str:
     if not isinstance(active_promo_context, dict):
         return ""
@@ -2467,6 +2508,10 @@ a.pick-card:hover { border-color: var(--accent-blue); transform: translateY(-2px
 .pick-meta { font-size: .75rem; color: var(--text-secondary); margin-top: .3rem; }
 .pick-recommendation { margin-top: .45rem; font-size: .72rem; font-weight: 700; color: var(--accent-green); text-transform: uppercase; letter-spacing: .03em; }
 .pick-why { margin-top: .25rem; font-size: .73rem; color: var(--text-secondary); line-height: 1.35; }
+.pick-access-note { margin-top: .45rem; border: 1px solid rgba(240,178,50,.35); border-radius: 6px; background: rgba(240,178,50,.08); padding: .42rem .5rem; font-size: .72rem; line-height: 1.35; }
+.pick-access-note span { display: block; }
+.pick-access-note-label { color: var(--accent-yellow); font-weight: 800; }
+.pick-access-note-detail, .pick-access-note-guardrail { color: var(--text-secondary); margin-top: .15rem; }
 .offer-highlight { display: flex; flex-wrap: wrap; align-items: center; gap: .3rem; margin-top: .4rem; font-size: .72rem; line-height: 1.35; }
 .offer-highlight-label { border: 1px solid rgba(108,198,68,.4); border-radius: 999px; color: var(--accent-green); background: rgba(108,198,68,.08); padding: .08rem .45rem; font-weight: 800; letter-spacing: .02em; }
 .offer-highlight-reason { color: var(--text-secondary); }
@@ -3846,6 +3891,7 @@ def generate_html(
     has_ach = bool(achievements_data)
     has_sparklines = _has_sparkline_history(price_history_games, deals)
     deals_by_appid = {deal["appid"]: deal for deal in deals}
+    access_notes_by_appid = _wishlist_hygiene_access_notes_by_appid(wishlist_hygiene)
     profile_label = profile_display_name or vanity
 
     total_deals = len(deals)
@@ -3950,6 +3996,7 @@ def generate_html(
                 source_deal=source_deal,
                 active_promo_context=active_promo_context,
             )
+            access_note_html = _html_top_pick_access_note(tp, access_notes_by_appid)
             why_html = (
                 f'<div class="pick-recommendation">{recommendation}</div><div class="pick-why">{why_text}</div>'
                 if recommendation or why_text
@@ -3973,6 +4020,7 @@ def generate_html(
       <div class="pick-details"><span class="pick-discount">-{display_discount}%</span><span class="pick-price">{_html_esc(display_price)}</span></div>
       <div class="pick-meta">{rev_html} &middot; {mc_html} &middot; {dk_html} &middot; {mp_html}</div>
       {highlight_html}
+      {access_note_html}
       {why_html}
     </div>
   </a>

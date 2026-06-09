@@ -325,6 +325,33 @@ Plan 7B amplía este helper con envío directo opcional, pero mantiene Copy/Save
 
 Plan 8B agrega un collector manual para reducir el trabajo de armar JSONs a mano: el usuario extrae AppIDs visibles en una página, los agrega explícitamente a un bucket (`owned_appids`, `family_shared_appids` o `wishlist_appids`), repite el proceso en otras páginas y exporta un JSON combinado `steam_access_import_v1`. El collector puede usar el permiso `storage`, pero solo para persistir AppIDs/metadata mínima local de la extensión; no puede guardar pairing/session tokens, cookies, request headers, raw responses, HTML, SteamID/perfil, family member names, friends ni emails. Direct-send queda reservado para el JSON combinado del collector y sigue usando el service worker, `127.0.0.1`, `credentials: "omit"`, pairing/auth explícitos y endpoint import-only. El collector no promete completitud: si Steam pagina, virtualiza, oculta o no expone todos los juegos, el helper solo observa lo visible bajo acción manual.
 
+### Plan 8: UX de decisión para señales de acceso
+
+El primer slice de Plan 8 puede mostrar notas de acceso en superficies de decisión, especialmente Top Picks, **solo** cuando el JSON ya contiene `wishlist_hygiene.items[*].access_decision` para el mismo AppID. La nota sirve para reforzar “revisar antes de comprar” cuando el juego parece `owned`, `family_shared`, `probable_family_shared` o `playable_without_buying`.
+
+Contrato permitido:
+
+- fuente única: `wishlist_hygiene`/`access_decision` ya calculado localmente;
+- copy advisory-only: “Ya lo tienes”, “Disponible por Steam Family”, “Probable acceso local” o “Revisa el acceso local antes de comprar”;
+- mantener `advisory_only=true`, `ranking_impact="none"`, acción `review` y badge/copy `Solo revisión`;
+- mostrar la nota sin cambiar el score, orden, ranking ni selección de Top Picks.
+
+No permitido en este slice:
+
+- filtros, manual hide persistente, auto-hide o auto-exclusión;
+- borrar wishlist, mutar ignore/follow/carrito/Family/settings/compras o abrir checkout;
+- cambiar score, pesos, ranking, orden de Top Picks, defaults, cache policy o fetching;
+- pedir login/password, leer cookies/tokens, guardar raw responses/HTML, SteamID-perfil desde helper, family member names, friends o emails;
+- usar red real, `BG00G`, `--no-cache`, builds o reportes generados como validación automática.
+
+Implementación dirigida del primer slice:
+
+- HTML generado: cada card de Top Picks puede mostrar una nota `Acceso: ...` si el AppID del Top Pick coincide con `wishlist_hygiene.items[*].access_decision` explícito y seguro.
+- Markdown generado: la tabla de Top Picks agrega la misma nota en la columna del juego, sin tocar score ni orden.
+- Web `Último reporte`: las cards de “Compartir juegos destacados” muestran la nota cuando el último JSON local trae el mismo match por AppID.
+- Los renderers/Web ignoran señales legacy sin `access_decision` explícito para evitar inferencias nuevas en la UI de Top Picks.
+- La evidencia de cierre debe ser fixture/local: `py_compile`, `node --check`, tests dirigidos de renderers/Web assets y `git diff --check`; no requiere live login, red real ni reportes generados.
+
 ### Plan 7A: threat model endpoint directo helper → app local
 
 Este corte es **docs-only**. Define el contrato mínimo antes de permitir que la extensión envíe un import directamente a la app local. Plan 7A no implementa endpoint, no cambia permisos de la extensión y no habilita envío directo todavía.
