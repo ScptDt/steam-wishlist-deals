@@ -179,6 +179,11 @@ function validateDealsFormBeforeRun() {
   const compareInput = $('compare');
   const maxWorkersInput = $('max_workers');
   const topInput = $('top');
+  const alertThresholds = [
+    {input: $('alert_rise_pct'), min: 0, label: 'Subida mínima para alertar', message: 'Subida mínima para alertar: usa un numero mayor o igual a 0.'},
+    {input: $('alert_global_margin_pct'), min: 0, label: 'Margen sobre mínimo global', message: 'Margen sobre mínimo global: usa un numero mayor o igual a 0.'},
+    {input: $('alert_score_min'), min: 0, max: 100, label: 'Score mínimo para alertas', message: 'Score mínimo para alertas: usa un numero entre 0 y 100.'},
+  ];
   const errors = [];
 
   clearFieldError(vanityInput);
@@ -217,6 +222,15 @@ function validateDealsFormBeforeRun() {
     topInput.focus();
     showFormErrorSummary(errors);
     return false;
+  }
+
+  for (const threshold of alertThresholds) {
+    if (!validateOptionalNumberRange(threshold.input, { min: threshold.min, max: threshold.max, label: threshold.label })) {
+      errors.push({message: threshold.message, fieldId: threshold.input ? threshold.input.id : ''});
+      if (threshold.input) threshold.input.focus();
+      showFormErrorSummary(errors);
+      return false;
+    }
   }
 
   hideFormErrorSummary();
@@ -268,7 +282,7 @@ function validatePd2FormBeforeRun() {
 
 // ── Config fields (saveable) ──
 const CONFIG_FIELDS = ['vanity','key','hltb','output','discount','genres','family_json','wishlist_external_matches_json','play_access_json','steam_access_json','player_preferences_json','itad_external_offers_cache','gg_deals_external_offers_cache','itad_key','compare','telegram_token','telegram_chat','discord_webhook'];
-const FILTER_FIELDS = ['max_price','min_reviews','min_review_count','max_hours','top','sort','budget','max_workers'];
+const FILTER_FIELDS = ['max_price','min_reviews','min_review_count','max_hours','top','sort','budget','max_workers','alert_rise_pct','alert_global_margin_pct','alert_score_min'];
 const CHECK_FIELDS  = ['deck_only','deck_verified','new_only','csv','md_frontmatter','no_cache','free_weekend_live','itad_refresh_external_offers_cache'];
 const GENRE_SUGGESTIONS = [
   'action', 'adventure', 'indie', 'rpg', 'strategy', 'simulation', 'casual', 'sports',

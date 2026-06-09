@@ -1023,6 +1023,15 @@ def build_command(config: dict, filters: dict) -> list[str]:
         cmd.append("--md-frontmatter")
     if filters.get("budget"):
         cmd += ["--budget", str(filters["budget"])]
+    if "alert_rise_pct" in filters and filters["alert_rise_pct"] is not None:
+        cmd += ["--alert-rise-pct", str(filters["alert_rise_pct"])]
+    if (
+        "alert_global_margin_pct" in filters
+        and filters["alert_global_margin_pct"] is not None
+    ):
+        cmd += ["--alert-global-margin-pct", str(filters["alert_global_margin_pct"])]
+    if "alert_score_min" in filters and filters["alert_score_min"] is not None:
+        cmd += ["--alert-score-min", str(filters["alert_score_min"])]
     if config.get("compare"):
         cmd += ["--compare", config["compare"]]
     if config.get("telegram_chat"):

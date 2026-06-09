@@ -388,6 +388,27 @@
           <input type="number" id="max_workers" min="1" max="64" step="1" placeholder="12">
           <div class="hint hint-compact">Si no estás seguro, déjalo en 12.</div>
         </div>
+        <div class="field">
+          <label>Alertas inteligentes — preview local <span class="optional">(opcional)</span></label>
+          <div class="hint hint-compact">Ajusta solo el preview/dry-run local: no envía Telegram/Discord por juego, no cambia score/ranking ni defaults.</div>
+        </div>
+        <div class="row">
+          <div class="field">
+            <label>Subida mínima para alertar (%)</label>
+            <input type="number" id="alert_rise_pct" min="0" step="0.1" placeholder="Ej. 10">
+            <div class="hint hint-compact">Vacío = umbral por defecto.</div>
+          </div>
+          <div class="field">
+            <label>Margen sobre mínimo global (%)</label>
+            <input type="number" id="alert_global_margin_pct" min="0" step="0.1" placeholder="Ej. 3">
+            <div class="hint hint-compact">Vacío = margen por defecto.</div>
+          </div>
+          <div class="field">
+            <label>Score mínimo para alertas</label>
+            <input type="number" id="alert_score_min" min="0" max="100" step="0.1" placeholder="Ej. 75">
+            <div class="hint hint-compact">Vacío = sin override.</div>
+          </div>
+        </div>
         <div class="checks checks-spaced">
           <label><input type="checkbox" id="deck_only"> Solo juegos que corren en Steam Deck</label>
           <label><input type="checkbox" id="deck_verified"> Solo juegos verificados para Steam Deck</label>
@@ -405,6 +426,7 @@
             <div><strong>Comparar con amigos</strong><span>Sirve para juegos en común e ideas de regalo; acepta uno o varios perfiles públicos.</span></div>
             <div><strong>Steam Deck</strong><span>Compatible puede requerir ajustes; Verified suele pedir menos ajustes.</span></div>
             <div><strong>CSV/Markdown/cache/ofertas nuevas</strong><span>CSV exporta para hojas de cálculo; frontmatter agrega metadatos YAML al Markdown para Obsidian/Notion; cache y nuevas ofertas son opciones técnicas para casos puntuales.</span></div>
+            <div><strong>Alertas inteligentes</strong><span>Ajustan solo el preview local/dry-run del próximo reporte; no envían Telegram/Discord por juego ni cambian ranking.</span></div>
             <div><strong>Free Weekend</strong><span>Opt-in: consulta señales Store JSON y usa cache separado; no cambia ranking ni precios.</span></div>
             <div><strong>Refresh ITAD external_offers</strong><span>Opt-in live: requiere ITAD key y ruta de caché; solo actualiza precios externos. No revisa bibliotecas, no prueba ownership y no cambia score ni ranking.</span></div>
           </div>

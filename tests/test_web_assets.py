@@ -317,6 +317,31 @@ class WebAssetsTests(unittest.TestCase):
         self.assertIn("md_frontmatter", app_js)
         self.assertIn("'md_frontmatter'", app_js)
 
+    def test_smart_alert_thresholds_are_visible_as_local_preview_controls(self) -> None:
+        index_html = (ROOT / "web" / "steam_deals" / "index.html").read_text(
+            encoding="utf-8"
+        )
+        app_js = (ROOT / "web" / "steam_deals" / "app.js").read_text(
+            encoding="utf-8"
+        )
+
+        self.assertIn("Alertas inteligentes — preview local", index_html)
+        self.assertIn('id="alert_rise_pct"', index_html)
+        self.assertIn('id="alert_global_margin_pct"', index_html)
+        self.assertIn('id="alert_score_min"', index_html)
+        self.assertIn("preview/dry-run local", index_html)
+        self.assertIn("no envía Telegram/Discord por juego", index_html)
+        self.assertIn("no cambia score/ranking ni defaults", index_html)
+        self.assertIn("Alertas inteligentes", index_html)
+        self.assertIn("no envían Telegram/Discord por juego ni cambian ranking", index_html)
+        self.assertIn("alert_rise_pct", app_js)
+        self.assertIn("alert_global_margin_pct", app_js)
+        self.assertIn("alert_score_min", app_js)
+        self.assertIn("'alert_rise_pct'", app_js)
+        self.assertIn("'alert_global_margin_pct'", app_js)
+        self.assertIn("'alert_score_min'", app_js)
+        self.assertIn("Score mínimo para alertas: usa un numero entre 0 y 100.", app_js)
+
     def test_steam_openid_signin_is_visible_and_guardrailed(self) -> None:
         index_html = (ROOT / "web" / "steam_deals" / "index.html").read_text(
             encoding="utf-8"

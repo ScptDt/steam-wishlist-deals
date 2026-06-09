@@ -232,6 +232,35 @@ class GeneratedFilesServingTests(unittest.TestCase):
         self.assertIn("--md-frontmatter", opt_in_cmd)
         self.assertEqual(opt_in_cmd.count("--md-frontmatter"), 1)
 
+    def test_build_command_passes_smart_alert_thresholds_only_when_requested(self) -> None:
+        default_cmd = build_command({"vanity": "gaben"}, {})
+        opt_in_cmd = build_command(
+            {"vanity": "gaben"},
+            {
+                "alert_rise_pct": 10.5,
+                "alert_global_margin_pct": 3,
+                "alert_score_min": 75,
+            },
+        )
+        zero_cmd = build_command(
+            {"vanity": "gaben"},
+            {
+                "alert_rise_pct": 0,
+                "alert_global_margin_pct": 0,
+                "alert_score_min": 0,
+            },
+        )
+
+        self.assertNotIn("--alert-rise-pct", default_cmd)
+        self.assertNotIn("--alert-global-margin-pct", default_cmd)
+        self.assertNotIn("--alert-score-min", default_cmd)
+        self.assertEqual(opt_in_cmd[opt_in_cmd.index("--alert-rise-pct") + 1], "10.5")
+        self.assertEqual(opt_in_cmd[opt_in_cmd.index("--alert-global-margin-pct") + 1], "3")
+        self.assertEqual(opt_in_cmd[opt_in_cmd.index("--alert-score-min") + 1], "75")
+        self.assertEqual(zero_cmd[zero_cmd.index("--alert-rise-pct") + 1], "0")
+        self.assertEqual(zero_cmd[zero_cmd.index("--alert-global-margin-pct") + 1], "0")
+        self.assertEqual(zero_cmd[zero_cmd.index("--alert-score-min") + 1], "0")
+
     def test_build_command_passes_itad_refresh_external_offers_only_when_requested(self) -> None:
         config = {
             "vanity": "gaben",
