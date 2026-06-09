@@ -1,6 +1,6 @@
 # Bitácora Operativa
 
-Ultima actualizacion: 2026-06-08
+Ultima actualizacion: 2026-06-09
 
 ## Proposito
 
@@ -79,6 +79,8 @@ La nota de inicio puede omitirse en `BITACORA.md` para cambios triviales que no 
 | 2026-04-16 | macOS | validado en CI (parcial) | Workflow `Desktop Cross-Platform Validation` OK en `macos-latest` (run `24487556896`): install deps, build desktop, `py_compile`, check fallback local y artifact `dist-macos-latest` publicado. Falta validacion manual en host macOS para apertura de `.app`, quarantine/codesign/notarizacion segun distribucion. | Ejecutar checklist manual macOS (apertura local, quarantine, codesign) y registrar incidencias/workarounds. |
 
 ## Bitacora
+
+- 2026-06-09: Cierre docs-only GG.deals fixture-only para `external_offers`. Autor/ejecutor original: OpenCoder. Auditoría/cierre: AudPen. Resultado: el helper GG.deals queda cerrado documentalmente como provider fixture-only: payloads locales se transforman a `external_offers` vía normalizador central, `gg_deals` queda como `aggregator`, `gg_deals_keyshops` como `marketplace_keyshop`, retail agregado no compite como tienda oficial y keyshops quedan ocultos/review por defecto. Evidencia de implementación previa: commit `aee4374`, `py_compile` OK y `tests.test_gg_deals_external_offers_flow tests.test_external_offers_rendering` (8 OK). Incidencias: se preserva el cambio previo en `PENDIENTES.md` de QWs Web UI/CLI sin mezclarlo en el cierre. Siguiente seguimiento: caché JSON local GG.deals sin red/key si se aprueba; live GG.deals requiere plan separado, key segura, rate-limit/atribución y no loggear URLs con `key`. Guardrails: sin red live, API key, scraping/login, checkout/carrito/pagos, score/ranking/defaults, ownership, `BG00G`, `--no-cache`, builds ni reportes generados.
 
 - 2026-06-09: Cierre slice Proactive price fetch planner `HTTP 400 planned individual rule`. Autor/ejecutor: OpenCoder. Resultado: el helper puro `build_proactive_price_fetch_plan(..., planner_context=...)` detecta degradación repetida HTTP 400 mediante flags/conteos/streak y rutea candidatos `batch` a `individual_planificado` en el plan fixture-only, preservando `usar_stale`, `defer`, `cooldown` y `fallback_reactivo`; expone `signals.repeated_http_400` y no conecta runtime ni cambia defaults. Evidencia: `PYTHONDONTWRITEBYTECODE=1 .venv/bin/python -m py_compile app/steam_deals_price_fetch_strategy.py tests/test_price_fetch_strategy.py` OK, `PYTHONDONTWRITEBYTECODE=1 .venv/bin/python -m unittest tests.test_price_fetch_strategy` (7 OK) y `git diff --check -- app/steam_deals_price_fetch_strategy.py tests/test_price_fetch_strategy.py` OK. Incidencias: ninguna. Guardrails: sin red real, `BG00G`, `--no-cache`, benchmarks, cambios de score/ranking/defaults/cache policy, bajar batch global, invalidar cache por promo ni borrar cooldown/fallback budget/stale-while-revalidate. Siguiente seguimiento: separar copy/métricas `individual planificado` vs `fallback reactivo` o conexión runtime solo con aprobación explícita.
 
