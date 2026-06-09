@@ -1541,6 +1541,42 @@ def resolve_itad_external_offers_cache(
     return external_offers
 
 
+def _appids_from_records(records) -> list[str]:
+    appids: list[str] = []
+    for record in records or []:
+        if isinstance(record, dict):
+            appid = str(record.get("appid") or record.get("steam_appid") or "").strip()
+        else:
+            appid = str(record or "").strip()
+        if appid:
+            appids.append(appid)
+    return appids
+
+
+def _selected_budget_records(budget_result) -> list[dict]:
+    if not isinstance(budget_result, dict):
+        return []
+    selected = budget_result.get("selected")
+    return selected if isinstance(selected, list) else []
+
+
+def prioritize_external_offer_appids(
+    deal_appids,
+    top_picks=None,
+    *,
+    budget_result=None,
+) -> list[str]:
+    """Order current deal AppIDs by recommendation priority for external price providers."""
+    deal_order = _merge_appid_values(deal_appids)
+    deal_set = set(deal_order)
+    prioritized = _merge_appid_values(
+        _appids_from_records(top_picks),
+        _appids_from_records(_selected_budget_records(budget_result)),
+        deal_order,
+    )
+    return [appid for appid in prioritized if appid in deal_set]
+
+
 def _now_iso_timestamp(now_fn) -> str:
     value = now_fn()
     try:
@@ -1558,15 +1594,16 @@ def _refresh_itad_id_mapping(
 ) -> dict[str, str]:
     wanted = [str(appid) for appid in deal_appids if appid]
     wanted_set = set(wanted)
-    known = {
+    available = {
         str(appid): str(itad_id)
         for appid, itad_id in (appid_to_itad_id or {}).items()
         if appid and itad_id and str(appid) in wanted_set
     }
-    missing = [appid for appid in wanted if appid not in known]
+    missing = [appid for appid in wanted if appid not in available]
+    resolved = dict(available)
     if missing:
-        known.update(lookup_games_fn(missing, itad_key))
-    return known
+        resolved.update(lookup_games_fn(missing, itad_key))
+    return {appid: resolved[appid] for appid in wanted if appid in resolved}
 
 
 def refresh_itad_external_offers_cache(
@@ -5216,19 +5253,6 @@ def main():
     active_bundles = itad_outputs.active_bundles
     itad_ids = itad_outputs.itad_ids
     itad_external_offers_cache_file = FILTERS.get("itad_external_offers_cache")
-    if FILTERS.get("itad_refresh_external_offers_cache"):
-        refresh_itad_external_offers_cache(
-            itad_external_offers_cache_file,
-            deal_appids,
-            ITAD_KEY,
-            appid_to_itad_id=itad_ids,
-            emit_fn=emit,
-        )
-    external_offers = resolve_itad_external_offers_cache(
-        itad_external_offers_cache_file,
-        deal_appids,
-        emit_fn=emit,
-    )
 
     alert_deals = deals
     alert_global_margin_pct = _resolve_alert_global_margin_pct(
@@ -5279,6 +5303,24 @@ def main():
     watchlist_alerts = engagement_outputs.watchlist_alerts
     budget_result = engagement_outputs.budget_result
     gift_ideas = engagement_outputs.gift_ideas
+    external_offer_appids = prioritize_external_offer_appids(
+        deal_appids,
+        top_picks,
+        budget_result=budget_result,
+    )
+    if FILTERS.get("itad_refresh_external_offers_cache"):
+        refresh_itad_external_offers_cache(
+            itad_external_offers_cache_file,
+            external_offer_appids,
+            ITAD_KEY,
+            appid_to_itad_id=itad_ids,
+            emit_fn=emit,
+        )
+    external_offers = resolve_itad_external_offers_cache(
+        itad_external_offers_cache_file,
+        external_offer_appids,
+        emit_fn=emit,
+    )
     compare_profiles: list[dict] = []
     gift_ideas_by_friend: list[dict] = []
     shared_gift_ideas: list[dict] = []

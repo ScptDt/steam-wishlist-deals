@@ -3,6 +3,7 @@ import unittest
 
 from steam_deals_config import get_config
 from steam_deals_generator import (
+    prioritize_external_offer_appids,
     refresh_itad_external_offers_cache,
     resolve_itad_external_offers_cache,
 )
@@ -126,6 +127,35 @@ class ItadExternalOffersGeneratorTests(unittest.TestCase):
         self.assertIsNone(external_offers)
         self.assertIn("No se pudo cargar caché ITAD external_offers", emitted[0])
 
+    def test_prioritize_external_offer_appids_orders_top_picks_budget_then_remaining_deals(self) -> None:
+        ordered_appids = prioritize_external_offer_appids(
+            ["10", "20", "30", "40", "50"],
+            [
+                {"appid": "30", "score": 95},
+                {"steam_appid": "10", "score": 90},
+                {"appid": "999", "score": 100},
+            ],
+            budget_result={
+                "selected": [
+                    {"appid": "40"},
+                    {"appid": "30"},
+                    {"steam_appid": "50"},
+                    {"appid": "888"},
+                ]
+            },
+        )
+
+        self.assertEqual(ordered_appids, ["30", "10", "40", "50", "20"])
+
+    def test_prioritize_external_offer_appids_degrades_to_deal_order_without_recommendations(self) -> None:
+        ordered_appids = prioritize_external_offer_appids(
+            ["10", "", None, "20", "10", "30"],
+            top_picks=[{"appid": "999"}, {}, None],
+            budget_result={"selected": "invalid"},
+        )
+
+        self.assertEqual(ordered_appids, ["10", "20", "30"])
+
     def test_refresh_itad_external_offers_cache_writes_cache_only_when_explicit(self) -> None:
         emitted: list[str] = []
         saved = {}
@@ -152,6 +182,40 @@ class ItadExternalOffersGeneratorTests(unittest.TestCase):
         self.assertEqual(saved["cache"]["appid_to_itad_id"], {"1145360": "itad-hades"})
         self.assertEqual(saved["cache"]["fetched_at"], "2026-05-22T00:00:00Z")
         self.assertIn("Caché ITAD external_offers actualizada", emitted[0])
+
+    def test_refresh_itad_external_offers_cache_preserves_prioritized_appid_order(self) -> None:
+        calls: list[tuple] = []
+
+        def fake_lookup(missing, key):
+            calls.append(("lookup", list(missing), key))
+            return {"30": "itad-30", "20": "itad-20"}
+
+        def fake_prices(itad_ids, _key, country="MX"):
+            calls.append(
+                ("prices", list(itad_ids.keys()), list(itad_ids.values()), country)
+            )
+            return [{"id": itad_id, "deals": []} for itad_id in itad_ids.values()]
+
+        payload = refresh_itad_external_offers_cache(
+            Path("itad-cache.json"),
+            ["30", "10", "20"],
+            "SECRET-ITAD",
+            appid_to_itad_id={"10": "itad-10"},
+            lookup_games_fn=fake_lookup,
+            get_prices_payload_fn=fake_prices,
+            save_cache_fn=lambda _path, _cache: calls.append(
+                ("save", list(_cache["appid_to_itad_id"].keys()))
+            ),
+            emit_fn=lambda _message: None,
+        )
+
+        self.assertIsNotNone(payload)
+        self.assertEqual(calls[0], ("lookup", ["30", "20"], "SECRET-ITAD"))
+        self.assertEqual(
+            calls[1],
+            ("prices", ["30", "10", "20"], ["itad-30", "itad-10", "itad-20"], "MX"),
+        )
+        self.assertEqual(calls[2], ("save", ["30", "10", "20"]))
 
     def test_refresh_itad_external_offers_cache_requires_key_and_cache_path(self) -> None:
         emitted: list[str] = []
