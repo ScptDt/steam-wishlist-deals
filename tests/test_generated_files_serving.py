@@ -224,6 +224,14 @@ class GeneratedFilesServingTests(unittest.TestCase):
         self.assertIn("--free-weekend-live", opt_in_cmd)
         self.assertEqual(opt_in_cmd.count("--free-weekend-live"), 1)
 
+    def test_build_command_passes_md_frontmatter_only_when_requested(self) -> None:
+        default_cmd = build_command({"vanity": "gaben"}, {})
+        opt_in_cmd = build_command({"vanity": "gaben"}, {"md_frontmatter": True})
+
+        self.assertNotIn("--md-frontmatter", default_cmd)
+        self.assertIn("--md-frontmatter", opt_in_cmd)
+        self.assertEqual(opt_in_cmd.count("--md-frontmatter"), 1)
+
     def test_build_command_passes_itad_refresh_external_offers_only_when_requested(self) -> None:
         config = {
             "vanity": "gaben",

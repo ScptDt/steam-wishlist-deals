@@ -302,6 +302,21 @@ class WebAssetsTests(unittest.TestCase):
             app_js,
         )
 
+    def test_markdown_frontmatter_export_is_visible_and_opt_in(self) -> None:
+        index_html = (ROOT / "web" / "steam_deals" / "index.html").read_text(
+            encoding="utf-8"
+        )
+        app_js = (ROOT / "web" / "steam_deals" / "app.js").read_text(
+            encoding="utf-8"
+        )
+
+        self.assertIn('id="md_frontmatter"', index_html)
+        self.assertIn("Agregar frontmatter Markdown", index_html)
+        self.assertIn("Obsidian/Notion", index_html)
+        self.assertIn("metadatos YAML", index_html)
+        self.assertIn("md_frontmatter", app_js)
+        self.assertIn("'md_frontmatter'", app_js)
+
     def test_steam_openid_signin_is_visible_and_guardrailed(self) -> None:
         index_html = (ROOT / "web" / "steam_deals" / "index.html").read_text(
             encoding="utf-8"

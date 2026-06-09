@@ -1014,6 +1014,8 @@ def build_command(config: dict, filters: dict) -> list[str]:
         cmd.append("--new-only")
     if filters.get("csv"):
         cmd.append("--csv")
+    if filters.get("md_frontmatter"):
+        cmd.append("--md-frontmatter")
     if filters.get("budget"):
         cmd += ["--budget", str(filters["budget"])]
     if config.get("compare"):
