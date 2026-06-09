@@ -386,6 +386,29 @@ class WebAssetsTests(unittest.TestCase):
             app_js,
         )
 
+    def test_gg_deals_external_offers_cache_import_is_visible_and_local_only(self) -> None:
+        index_html = (ROOT / "web" / "steam_deals" / "index.html").read_text(
+            encoding="utf-8"
+        )
+        app_js = (ROOT / "web" / "steam_deals" / "app.js").read_text(
+            encoding="utf-8"
+        )
+
+        self.assertIn("Caché GG.deals external_offers (JSON)", index_html)
+        self.assertIn('id="gg_deals_external_offers_cache"', index_html)
+        self.assertIn("Import local de precios externos", index_html)
+        self.assertIn("lectura local solamente", index_html)
+        self.assertIn("no usa API key", index_html)
+        self.assertIn("no hace red live ni refresh", index_html)
+        self.assertIn("no prueba ownership", index_html)
+        self.assertIn("no habilita keyshops/marketplaces por defecto", index_html)
+        self.assertIn("no cambia score ni ranking", index_html)
+        self.assertIn("gg_deals_external_offers_cache", app_js)
+        self.assertIn(
+            "'gg_deals_external_offers_cache'",
+            app_js,
+        )
+
     def test_hltb_path_copy_handles_windows_paths_without_quotes(self) -> None:
         index_html = (ROOT / "web" / "steam_deals" / "index.html").read_text(
             encoding="utf-8"

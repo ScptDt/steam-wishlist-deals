@@ -333,6 +333,21 @@ class GeneratedFilesServingTests(unittest.TestCase):
             "/tmp/itad-external-offers.json",
         )
 
+    def test_build_command_passes_gg_deals_external_offers_cache(self) -> None:
+        cmd = build_command(
+            {
+                "vanity": "gaben",
+                "gg_deals_external_offers_cache": " /tmp/gg-deals-external-offers.json ",
+            },
+            {},
+        )
+
+        self.assertIn("--gg-deals-external-offers-cache", cmd)
+        self.assertEqual(
+            cmd[cmd.index("--gg-deals-external-offers-cache") + 1],
+            "/tmp/gg-deals-external-offers.json",
+        )
+
     def test_build_command_preserves_hltb_windows_paths_with_spaces(self) -> None:
         path_with_slashes = "C:/Users/Bryan Grijalva/Downloads/HLTB_Games_2026-05-15.csv"
         path_with_backslashes = r"C:\Users\Bryan Grijalva\Downloads\HLTB_Games_2026-05-15.csv"
@@ -601,6 +616,7 @@ class GeneratedFilesServingTests(unittest.TestCase):
         steam_access_path = "/private/tmp/steam-access-missing.json"
         player_preferences_path = "/private/tmp/player-preferences-missing.json"
         itad_external_offers_cache_path = "/private/tmp/itad-external-offers-missing.json"
+        gg_deals_external_offers_cache_path = "/private/tmp/gg-deals-external-offers-missing.json"
         output_path = "/srv/app/steamtools-output-secret"
 
         web.load_config = lambda: {"key": "SAVED-SECRET"}
@@ -615,6 +631,7 @@ class GeneratedFilesServingTests(unittest.TestCase):
                     "steam_access_json": steam_access_path,
                     "player_preferences_json": player_preferences_path,
                     "itad_external_offers_cache": itad_external_offers_cache_path,
+                    "gg_deals_external_offers_cache": gg_deals_external_offers_cache_path,
                     "output": output_path,
                 }
             }
@@ -635,6 +652,7 @@ class GeneratedFilesServingTests(unittest.TestCase):
         self.assertNotIn(steam_access_path, payload)
         self.assertNotIn(player_preferences_path, payload)
         self.assertNotIn(itad_external_offers_cache_path, payload)
+        self.assertNotIn(gg_deals_external_offers_cache_path, payload)
         self.assertNotIn(output_path, payload)
         self.assertIn("[ruta]", payload)
         self.assertIn("ruta completa sin comillas", payload)
@@ -643,6 +661,34 @@ class GeneratedFilesServingTests(unittest.TestCase):
         self.assertIn("JSON local Steam Access", payload)
         self.assertIn("JSON local de preferencias del jugador", payload)
         self.assertIn("caché ITAD external_offers local", payload)
+        self.assertIn("caché GG.deals external_offers local", payload)
+
+    def test_preflight_reports_missing_gg_deals_external_offers_cache_redacted(self) -> None:
+        original_load_config = web.load_config
+        original_find_hltb_csv_candidates = web.find_hltb_csv_candidates
+        cache_path = "/private/tmp/gg-deals-external-offers-missing.json"
+        web.load_config = lambda: {}
+        web.find_hltb_csv_candidates = lambda: []
+        handler = _FakeJsonHandler(
+            {
+                "config": {
+                    "vanity": "gaben",
+                    "gg_deals_external_offers_cache": cache_path,
+                }
+            }
+        )
+        try:
+            Handler._serve_preflight(handler)
+        finally:
+            web.load_config = original_load_config
+            web.find_hltb_csv_candidates = original_find_hltb_csv_candidates
+
+        payload = str(handler.json)
+        self.assertEqual(handler.status, 200)
+        self.assertFalse(handler.json["ok"])
+        self.assertNotIn(cache_path, payload)
+        self.assertIn("caché GG.deals external_offers local", payload)
+        self.assertIn("[ruta]", payload)
 
     def test_preflight_reports_missing_play_access_json_redacted(self) -> None:
         original_load_config = web.load_config

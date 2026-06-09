@@ -980,6 +980,11 @@ def build_command(config: dict, filters: dict) -> list[str]:
     )
     if itad_external_offers_cache:
         cmd += ["--itad-external-offers-cache", itad_external_offers_cache]
+    gg_deals_external_offers_cache = normalize_optional_local_path_value(
+        config.get("gg_deals_external_offers_cache")
+    )
+    if gg_deals_external_offers_cache:
+        cmd += ["--gg-deals-external-offers-cache", gg_deals_external_offers_cache]
     warm_cache_full = bool(filters.get("warm_cache_full"))
     warm_cache = bool(filters.get("warm_cache"))
     if warm_cache_full:
@@ -1789,6 +1794,19 @@ class Handler(BaseHTTPRequestHandler):
                     + cache_label
                 )
 
+        gg_deals_external_offers_cache = normalize_optional_local_path_value(
+            config.get("gg_deals_external_offers_cache")
+        )
+        if gg_deals_external_offers_cache and not Path(gg_deals_external_offers_cache).expanduser().exists():
+            cache_label = redact_sensitive_text(
+                gg_deals_external_offers_cache,
+                extra_values=[Path(gg_deals_external_offers_cache).expanduser()],
+            )
+            issues.append(
+                "No se encontró caché GG.deals external_offers local: "
+                + cache_label
+            )
+
         output_dir = resolve_output_dir(config.get("output"))
         output_label = redact_sensitive_text(
             output_folder_display_name(output_dir),
@@ -2206,6 +2224,7 @@ class Handler(BaseHTTPRequestHandler):
             "steam_access_json",
             "player_preferences_json",
             "itad_external_offers_cache",
+            "gg_deals_external_offers_cache",
             "itad_key",
         ):
             if config.get(k) and not is_redacted_config_secret(config.get(k)):

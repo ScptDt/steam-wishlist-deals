@@ -2,7 +2,7 @@
 
 Track priorizado para ampliar la comparativa multi-tienda hacia Fanatical y más stores sin mezclarla con `wishlist_hygiene` ni con flujos de compra.
 
-Estado actual: Fase 0/docs, Fase 1 normalizador fixture-only, Fase 1B JSON interno opcional, Fase 1C diagnóstico JSON-consumer, primer render visible mínimo risk-gated, Share HTML, adaptador ITAD fixture-only, lectura de caché ITAD local por flag, configuración Web de esa caché, refresh live opt-in/acotado, trigger Web explícito, pulido UX no-checkout, diagnóstico offline de caché ITAD, helper GG.deals fixture-only y lectura de caché GG.deals local por flag cerrados entre 2026-05-21 y 2026-06-09. El siguiente paso requiere elegir explícitamente si hacer un live smoke acotado/aprobado con key oficial, exponer la caché GG.deals en Web UI o ampliar otra superficie local bajo los mismos gates.
+Estado actual: Fase 0/docs, Fase 1 normalizador fixture-only, Fase 1B JSON interno opcional, Fase 1C diagnóstico JSON-consumer, primer render visible mínimo risk-gated, Share HTML, adaptador ITAD fixture-only, lectura de caché ITAD local por flag, configuración Web de esa caché, refresh live opt-in/acotado, trigger Web explícito, pulido UX no-checkout, diagnóstico offline de caché ITAD, helper GG.deals fixture-only, lectura de caché GG.deals local por flag y configuración Web de esa caché cerrados entre 2026-05-21 y 2026-06-09. El siguiente paso requiere elegir explícitamente si hacer un live smoke acotado/aprobado con key oficial, diseñar live GG.deals/API/refresh en plan separado o ampliar otra superficie local bajo los mismos gates.
 
 Enfoque de ejecución: **feature-sliced + risk-gated**. La feature avanza por cortes pequeños, pero cada corte debe pasar gates de riesgo antes de exponerse al usuario, tocar ranking o usar fuentes live.
 
@@ -445,12 +445,13 @@ Corte diagnóstico offline de caché ITAD cerrado 2026-06-02:
 - El summary conserva `advisory_only=true` y `ranking_impact=none`; el helper no toca CLI/Web, renderers, score, ranking, ownership ni `wishlist_hygiene`.
 - El diagnóstico usa fixtures/caché local únicamente; live smoke ITAD sigue bloqueado sin key oficial configurada y aprobación explícita.
 
-Corte GG.deals fixture/local cerrado 2026-06-09:
+Corte GG.deals fixture/local + Web UI cerrado 2026-06-09:
 
 - `gg_deals_prices_to_external_offers` adapta payloads locales tipo GG.deals a `external_offers` usando el normalizador central.
 - `--gg-deals-external-offers-cache` lee una caché JSON local y la filtra a los deals actuales antes de mezclarla con otros providers.
+- Web/Desktop expone `Caché GG.deals external_offers (JSON)` para seleccionar esa caché local; el preflight valida archivo faltante con ruta redactada.
 - GG.deals se clasifica como `aggregator`; `gg_deals_keyshops` se clasifica como `marketplace_keyshop`, sin competir como mejor precio oficial/autorizado.
-- El corte no hace red live, no usa key, no refresca caché, no agrega Web UI y no cambia score/ranking/defaults, ownership ni `wishlist_hygiene`.
+- El corte no hace red live, no usa key, no refresca caché y no cambia score/ranking/defaults, ownership ni `wishlist_hygiene`.
 
 ### Fase 3 — render visible mínimo — primer cierre 2026-05-21
 

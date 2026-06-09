@@ -335,6 +335,11 @@
           <div class="hint">Import local de precios externos ya descargados con ITAD para mostrar comparativa. Es distinto de ownership/wishlist hygiene: no hace red live por sí solo, no prueba que tengas el juego y no cambia score ni ranking.</div>
         </div>
         <div class="field">
+          <label>Caché GG.deals external_offers (JSON) <span class="optional">(opcional)</span></label>
+          <input type="text" id="gg_deals_external_offers_cache" placeholder="~/gg-deals-external-offers.json">
+          <div class="hint">Import local de precios externos ya descargados/exportados desde GG.deals para mostrar comparativa. Es lectura local solamente: no usa API key, no hace red live ni refresh, no prueba ownership, no habilita keyshops/marketplaces por defecto y no cambia score ni ranking.</div>
+        </div>
+        <div class="field">
           <label>Dónde guardar los reportes</label>
           <input type="text" id="output" placeholder="output/">
           <div class="hint">Si lo dejas vacío, los reportes se guardan en <code>output/</code>. Cambia esta ruta solo si quieres una carpeta personalizada.</div>
