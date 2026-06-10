@@ -1,3 +1,4 @@
+import urllib.error
 import unittest
 
 from steam_deals_itad import (
@@ -5,6 +6,7 @@ from steam_deals_itad import (
     diagnose_itad_external_offers_cache,
     itad_external_offers_from_cache,
     itad_get_prices_payload,
+    itad_lookup_games,
     itad_lookup_games_by_appid,
 )
 
@@ -273,6 +275,48 @@ class ItadExternalOffersCacheTests(unittest.TestCase):
         self.assertNotIn("SECRET-ITAD", calls[0][0])
         self.assertEqual(calls[0][1], {"ITAD-API-Key": "SECRET-ITAD"})
 
+    def test_itad_lookup_games_by_appid_stops_after_auth_error_without_key_leak(self) -> None:
+        calls = []
+        errors = []
+
+        def forbidden_get_json(url, headers=None):
+            calls.append((url, headers))
+            raise urllib.error.HTTPError(url, 403, "Forbidden", hdrs=None, fp=None)
+
+        result = itad_lookup_games_by_appid(
+            ["10", "20", "30"],
+            "SECRET-ITAD",
+            get_json=forbidden_get_json,
+            sleep_fn=lambda _seconds: None,
+            on_error=errors.append,
+        )
+
+        self.assertEqual(result, {})
+        self.assertEqual(len(calls), 1)
+        self.assertIn("ITAD appid lookup auth error: HTTP 403", errors[0])
+        self.assertNotIn("SECRET-ITAD", errors[0])
+
+    def test_itad_lookup_games_stops_batches_after_auth_error_without_key_leak(self) -> None:
+        calls = []
+        errors = []
+
+        def forbidden_post_json(url, body):
+            calls.append((url, body))
+            raise urllib.error.HTTPError(url, 401, "Unauthorized", hdrs=None, fp=None)
+
+        result = itad_lookup_games(
+            [str(appid) for appid in range(1, 80)],
+            "SECRET-ITAD",
+            post_json=forbidden_post_json,
+            sleep_fn=lambda _seconds: None,
+            on_error=errors.append,
+        )
+
+        self.assertEqual(result, {})
+        self.assertEqual(len(calls), 1)
+        self.assertIn("ITAD lookup auth error: HTTP 401", errors[0])
+        self.assertNotIn("SECRET-ITAD", errors[0])
+
     def test_itad_get_prices_payload_raises_on_fetch_error_to_preserve_stale_cache(self) -> None:
         errors = []
 
@@ -289,6 +333,29 @@ class ItadExternalOffersCacheTests(unittest.TestCase):
             )
 
         self.assertIn("ITAD external offers prices error", errors[0])
+
+    def test_itad_get_prices_payload_stops_after_auth_error_without_key_leak(self) -> None:
+        calls = []
+        errors = []
+
+        def forbidden_post_json(url, body, headers=None):
+            calls.append((url, body, headers))
+            raise urllib.error.HTTPError(url, 403, "Forbidden", hdrs=None, fp=None)
+
+        with self.assertRaises(RuntimeError) as context:
+            itad_get_prices_payload(
+                {str(appid): f"itad-{appid}" for appid in range(1, 205)},
+                "SECRET-ITAD",
+                post_json=forbidden_post_json,
+                sleep_fn=lambda _seconds: None,
+                on_error=errors.append,
+            )
+
+        self.assertEqual(len(calls), 1)
+        self.assertIn("ITAD external offers prices auth error: HTTP 403", str(context.exception))
+        self.assertIn("ITAD external offers prices auth error: HTTP 403", errors[0])
+        self.assertNotIn("SECRET-ITAD", str(context.exception))
+        self.assertNotIn("SECRET-ITAD", errors[0])
 
     def test_cache_payload_keeps_risky_itad_offers_hidden_and_advisory_only(self) -> None:
         cache_payload = build_itad_external_offers_cache(

@@ -11,6 +11,7 @@ ITAD_BATCH = 50
 ITAD_PRICES_BATCH = 200
 ITAD_EXTERNAL_OFFERS_CACHE_VERSION = 1
 ITAD_EXTERNAL_OFFERS_DEFAULT_CAPACITY = 3
+ITAD_AUTH_HTTP_CODES = {401, 403}
 _STEAM_SHOP_KEYS = {"steam", "steamstore"}
 
 
@@ -583,6 +584,30 @@ def _emit_error(on_error, message: str) -> None:
         on_error(message)
 
 
+def _http_status_code(exc) -> int | None:
+    code = getattr(exc, "code", None)
+    if code is None:
+        code = getattr(exc, "status", None)
+    try:
+        return int(code)
+    except (TypeError, ValueError):
+        return None
+
+
+def _is_itad_auth_error(exc) -> bool:
+    return _http_status_code(exc) in ITAD_AUTH_HTTP_CODES
+
+
+def _itad_auth_error_message(operation: str, exc) -> str:
+    code = _http_status_code(exc)
+    status = f"HTTP {code}" if code is not None else "HTTP auth"
+    return (
+        f"{operation}: {status} "
+        "(ITAD rechazó la API key; rota/regenera STEAM_TOOLS_ITAD_API_KEY "
+        "o revisa la config local)"
+    )
+
+
 def _id_map(itad_ids: dict[str, str]) -> tuple[dict[str, str], list[str]]:
     return {itad_id: appid for appid, itad_id in itad_ids.items()}, list(itad_ids.values())
 
@@ -606,6 +631,9 @@ def itad_lookup_games(
                     if item and isinstance(item, dict) and item.get("found"):
                         result[appid] = item["game"]["id"]
         except Exception as exc:
+            if _is_itad_auth_error(exc):
+                _emit_error(on_error, _itad_auth_error_message("ITAD lookup auth error", exc))
+                break
             _emit_error(on_error, f"ITAD lookup error: {exc}")
         _sleep_after_batch(sleep_fn)
     return result
@@ -631,6 +659,9 @@ def itad_lookup_games_by_appid(
             if isinstance(game, dict) and data.get("found") and game.get("id"):
                 result[appid] = str(game["id"])
         except Exception as exc:
+            if _is_itad_auth_error(exc):
+                _emit_error(on_error, _itad_auth_error_message("ITAD appid lookup auth error", exc))
+                break
             _emit_error(on_error, f"ITAD appid lookup error: {exc}")
         _sleep_after_batch(sleep_fn)
     return result
@@ -669,6 +700,9 @@ def itad_get_store_lows(
                             "date": (low.get("timestamp") or "")[:10],
                         }
         except Exception as exc:
+            if _is_itad_auth_error(exc):
+                _emit_error(on_error, _itad_auth_error_message("ITAD storelow auth error", exc))
+                break
             _emit_error(on_error, f"ITAD storelow error: {exc}")
         _sleep_after_batch(sleep_fn)
     return result
@@ -719,6 +753,9 @@ def itad_get_current_prices(
                     if best_other and steam_price is not None and best_other["price"] < steam_price:
                         result[appid] = best_other
         except Exception as exc:
+            if _is_itad_auth_error(exc):
+                _emit_error(on_error, _itad_auth_error_message("ITAD prices auth error", exc))
+                break
             _emit_error(on_error, f"ITAD prices error: {exc}")
         _sleep_after_batch(sleep_fn)
     return result
@@ -755,6 +792,14 @@ def itad_get_prices_payload(
             errors.append(message)
             _emit_error(on_error, message)
         except Exception as exc:
+            if _is_itad_auth_error(exc):
+                message = _itad_auth_error_message(
+                    "ITAD external offers prices auth error",
+                    exc,
+                )
+                errors.append(message)
+                _emit_error(on_error, message)
+                break
             message = f"ITAD external offers prices error: {exc}"
             errors.append(message)
             _emit_error(on_error, message)
@@ -805,6 +850,9 @@ def itad_get_active_bundles(
                         if not any(bundle_entry["title"] == title for bundle_entry in result[appid]):
                             result[appid].append(entry)
         except Exception as exc:
+            if _is_itad_auth_error(exc):
+                _emit_error(on_error, _itad_auth_error_message("ITAD bundles auth error", exc))
+                break
             _emit_error(on_error, f"ITAD bundles error: {exc}")
         _sleep_after_batch(sleep_fn)
     return result

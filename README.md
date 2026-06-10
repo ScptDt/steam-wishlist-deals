@@ -167,7 +167,7 @@ Con Steam API key, la app intenta importar tus juegos propios visibles vía Stea
 
 `--gg-deals-external-offers-cache` permite sumar precios desde un JSON local con shape tipo GG.deals ya descargado/fixtureado. También es offline: no hace requests, no usa key y no refresca datos. Steam Tools trata GG.deals como fuente agregadora (`aggregator`), no como tienda final; los keyshops quedan separados como marketplace/keyshop y ocultos/review por defecto.
 
-La Web UI expone el flujo en **Archivos opcionales** → `Caché ITAD external_offers (JSON)`. Si necesitas poblarla o actualizarla desde ITAD, marca explícitamente **Filtros avanzados** → `Refrescar caché ITAD external_offers en vivo (opt-in, solo precios)`; ese refresh requiere `ITAD key`. Si dejas la ruta de caché vacía, Steam Tools usa una caché local base y puede crear/actualizar ese archivo.
+La Web UI expone el flujo en **Archivos opcionales** → `Caché ITAD external_offers (JSON)`. Si necesitas poblarla o actualizarla desde ITAD, marca explícitamente **Filtros avanzados** → `Refrescar caché ITAD external_offers en vivo (opt-in, solo precios)`; ese refresh requiere `ITAD key`. Si dejas la ruta de caché vacía, Steam Tools usa una caché local base y puede crear/actualizar ese archivo. Si ITAD responde `401/403`, el refresh corta temprano para no repetir requests con una key rechazada y conserva la caché local previa.
 
 Este flujo es solo para **precios externos** (`external_offers`). No revisa bibliotecas ni órdenes, y nunca debe interpretarse como “ya tengo el juego”. Para ownership/revisión de wishlist usa el import local `external_matches` de la sección siguiente.
 

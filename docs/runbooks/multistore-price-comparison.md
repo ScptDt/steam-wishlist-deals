@@ -421,6 +421,7 @@ Corte refresh live opt-in cerrado 2026-05-22:
 - Reutiliza IDs ITAD ya resueltos por el flujo existente o hace lookup por Steam appid con `ITAD-API-Key` en header; no pone la key en URLs nuevas.
 - Obtiene `/games/prices/v3` con header auth, `deals=true` y `capacity=3`, y guarda una caché local con país, timestamp, opciones, `appid_to_itad_id` y payloads tipo `prices/v3`.
 - Si falta key/ruta, no hay IDs ITAD o falla fetch/429, no sobreescribe la caché existente y el reporte continúa usando lo local disponible.
+- Si ITAD devuelve `401/403`, los helpers cortan temprano el lookup/refresh para evitar cientos de requests repetidos y mensajes gigantes; el usuario debe revisar/rotar la key y la caché local previa se conserva.
 - No se agregó live smoke real, scraping, credenciales Fanatical, checkout/carrito, ownership, ranking ni defaults.
 
 Credenciales ITAD seguras:
