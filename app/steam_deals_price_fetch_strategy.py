@@ -5,6 +5,7 @@ from typing import Any
 
 
 PLAN_SCHEMA = "proactive_price_fetch_plan_v1"
+COMPARISON_SCHEMA = "proactive_price_fetch_plan_comparison_v1"
 DEFAULT_REPEATED_HTTP_400_THRESHOLD = 3
 FETCH_PLAN_BUCKETS = (
     "batch",
@@ -49,6 +50,13 @@ _REPEATED_HTTP_400_FLAG_KEYS = (
     "repeated_http_400",
     "http_400_repeated",
     "use_planned_individual_after_http_400",
+)
+_REACTIVE_BASELINE_COUNT_KEYS = (
+    "reactive_fallback_count",
+    "fallback_reactivo_count",
+    "fallback_individual_count",
+    "fallback_total",
+    "fallback_count",
 )
 
 
@@ -187,6 +195,22 @@ def _planner_signal(plan: Mapping[str, Any], signal: str) -> bool:
     return isinstance(signals, Mapping) and bool(signals.get(signal))
 
 
+def _baseline_reactive_count(metrics: Mapping[str, Any] | None) -> int | None:
+    if not isinstance(metrics, Mapping):
+        return None
+    for key in _REACTIVE_BASELINE_COUNT_KEYS:
+        value = _safe_int(metrics.get(key))
+        if value is not None and value >= 0:
+            return value
+    return None
+
+
+def _percent_part(value: int, total: int) -> float:
+    if total <= 0:
+        return 0.0
+    return round((value / total) * 100, 1)
+
+
 def format_proactive_price_fetch_plan_summary(plan: Mapping[str, Any]) -> str:
     """Format fixture-only planner metrics without changing runtime behavior."""
     counts = {bucket: _bucket_count(plan, bucket) for bucket in FETCH_PLAN_BUCKETS}
@@ -239,6 +263,65 @@ def format_proactive_price_fetch_plan_summary(plan: Mapping[str, Any]) -> str:
     return "\n".join(lines)
 
 
+def build_proactive_price_fetch_plan_comparison(
+    plan: Mapping[str, Any],
+    *,
+    reactive_baseline: Mapping[str, Any] | None = None,
+) -> dict[str, int | float | str]:
+    """Compare fixture-only proactive planning against reactive fallback counts."""
+    counts = {bucket: _bucket_count(plan, bucket) for bucket in FETCH_PLAN_BUCKETS}
+    planned_individual = counts["individual_planificado"]
+    reactive_remaining = counts["fallback_reactivo"]
+    internal_baseline = planned_individual + reactive_remaining
+    external_baseline = _baseline_reactive_count(reactive_baseline)
+    baseline_count = external_baseline if external_baseline is not None else internal_baseline
+    baseline_source = "external" if external_baseline is not None else "plan"
+    reactive_reduction = max(0, baseline_count - reactive_remaining)
+    return {
+        "schema": COMPARISON_SCHEMA,
+        "baseline_source": baseline_source,
+        "baseline_reactive_fallback_count": baseline_count,
+        "planned_individual_count": planned_individual,
+        "reactive_fallback_count": reactive_remaining,
+        "batch_fetch_count": counts["batch"],
+        "planned_fetch_count": counts["batch"] + planned_individual,
+        "non_fetch_count": counts["usar_stale"] + counts["defer"] + counts["cooldown"],
+        "reactive_dependency_reduction_count": reactive_reduction,
+        "reactive_remaining_pct": _percent_part(reactive_remaining, baseline_count),
+        "planned_individual_pct": _percent_part(planned_individual, baseline_count),
+    }
+
+
+def format_proactive_price_fetch_plan_comparison(
+    comparison: Mapping[str, Any],
+) -> str:
+    baseline = _safe_int(comparison.get("baseline_reactive_fallback_count")) or 0
+    planned_individual = _safe_int(comparison.get("planned_individual_count")) or 0
+    reactive_remaining = _safe_int(comparison.get("reactive_fallback_count")) or 0
+    reduction = _safe_int(comparison.get("reactive_dependency_reduction_count")) or 0
+    batch_count = _safe_int(comparison.get("batch_fetch_count")) or 0
+    baseline_label = "baseline externo" if comparison.get("baseline_source") == "external" else "baseline del plan"
+    lines = ["Comparación offline planificado vs reactivo:"]
+    lines.append(f"- Fallback reactivo base ({baseline_label}): {baseline:,} candidato(s).")
+    lines.append(
+        "- Plan actual: "
+        f"{batch_count:,} batch, {planned_individual:,} individual_planificado, "
+        f"{reactive_remaining:,} fallback_reactivo como safety net."
+    )
+    if reduction:
+        lines.append(
+            f"- Delta offline: {reduction:,} candidato(s) dejan de depender "
+            "del fallback reactivo en este fixture."
+        )
+    else:
+        lines.append("- Delta offline: no reduce dependencia del fallback reactivo en este fixture.")
+    lines.append(
+        "- Guardrail: resumen offline; no cambia runtime, defaults, score, "
+        "ranking, cache policy ni fetching."
+    )
+    return "\n".join(lines)
+
+
 def build_proactive_price_fetch_plan(
     candidates: Iterable[Any],
     *,
@@ -266,8 +349,11 @@ def build_proactive_price_fetch_plan(
 
 __all__ = [
     "FETCH_PLAN_BUCKETS",
+    "COMPARISON_SCHEMA",
     "DEFAULT_REPEATED_HTTP_400_THRESHOLD",
     "PLAN_SCHEMA",
+    "build_proactive_price_fetch_plan_comparison",
     "build_proactive_price_fetch_plan",
+    "format_proactive_price_fetch_plan_comparison",
     "format_proactive_price_fetch_plan_summary",
 ]

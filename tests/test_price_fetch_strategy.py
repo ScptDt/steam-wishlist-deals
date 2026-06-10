@@ -3,9 +3,12 @@ from __future__ import annotations
 import unittest
 
 from steam_deals_price_fetch_strategy import DEFAULT_REPEATED_HTTP_400_THRESHOLD
+from steam_deals_price_fetch_strategy import COMPARISON_SCHEMA
 from steam_deals_price_fetch_strategy import FETCH_PLAN_BUCKETS
 from steam_deals_price_fetch_strategy import PLAN_SCHEMA
 from steam_deals_price_fetch_strategy import build_proactive_price_fetch_plan
+from steam_deals_price_fetch_strategy import build_proactive_price_fetch_plan_comparison
+from steam_deals_price_fetch_strategy import format_proactive_price_fetch_plan_comparison
 from steam_deals_price_fetch_strategy import format_proactive_price_fetch_plan_summary
 
 
@@ -153,6 +156,69 @@ class ProactivePriceFetchPlannerTests(unittest.TestCase):
 
         self.assertIn("Sin candidatos para planificar", copy)
         self.assertIn("Fallback reactivo: 0 candidatos", copy)
+
+    def test_plan_comparison_uses_external_reactive_baseline(self) -> None:
+        plan = build_proactive_price_fetch_plan(
+            [
+                {"appid": "10", "state": "batch"},
+                {"appid": "20", "state": "planned_individual"},
+                {"appid": "30", "state": "reactive_fallback"},
+                {"appid": "40", "state": "cooldown"},
+            ]
+        )
+
+        comparison = build_proactive_price_fetch_plan_comparison(
+            plan,
+            reactive_baseline={"reactive_fallback_count": 5},
+        )
+        copy = format_proactive_price_fetch_plan_comparison(comparison)
+
+        self.assertEqual(comparison["schema"], COMPARISON_SCHEMA)
+        self.assertEqual(comparison["baseline_source"], "external")
+        self.assertEqual(comparison["baseline_reactive_fallback_count"], 5)
+        self.assertEqual(comparison["planned_individual_count"], 1)
+        self.assertEqual(comparison["reactive_fallback_count"], 1)
+        self.assertEqual(comparison["reactive_dependency_reduction_count"], 4)
+        self.assertEqual(comparison["planned_fetch_count"], 2)
+        self.assertEqual(comparison["non_fetch_count"], 1)
+        self.assertIn("baseline externo", copy)
+        self.assertIn("1 individual_planificado", copy)
+        self.assertIn("1 fallback_reactivo", copy)
+        self.assertIn("4 candidato(s)", copy)
+        self.assertIn("resumen offline", copy)
+
+    def test_plan_comparison_uses_plan_distribution_without_external_baseline(self) -> None:
+        plan = build_proactive_price_fetch_plan(
+            [
+                {"appid": "10", "state": "planned_individual"},
+                {"appid": "20", "state": "planned_individual"},
+                {"appid": "30", "state": "reactive_fallback"},
+            ]
+        )
+
+        comparison = build_proactive_price_fetch_plan_comparison(plan)
+        copy = format_proactive_price_fetch_plan_comparison(comparison)
+
+        self.assertEqual(comparison["baseline_source"], "plan")
+        self.assertEqual(comparison["baseline_reactive_fallback_count"], 3)
+        self.assertEqual(comparison["planned_individual_count"], 2)
+        self.assertEqual(comparison["reactive_fallback_count"], 1)
+        self.assertEqual(comparison["reactive_dependency_reduction_count"], 2)
+        self.assertEqual(comparison["planned_individual_pct"], 66.7)
+        self.assertEqual(comparison["reactive_remaining_pct"], 33.3)
+        self.assertIn("baseline del plan", copy)
+        self.assertIn("2 candidato(s)", copy)
+
+    def test_plan_comparison_handles_empty_plan_without_overclaiming(self) -> None:
+        plan = build_proactive_price_fetch_plan([])
+
+        comparison = build_proactive_price_fetch_plan_comparison(plan)
+        copy = format_proactive_price_fetch_plan_comparison(comparison)
+
+        self.assertEqual(comparison["baseline_reactive_fallback_count"], 0)
+        self.assertEqual(comparison["reactive_dependency_reduction_count"], 0)
+        self.assertIn("no reduce dependencia", copy)
+        self.assertIn("no cambia runtime, defaults, score, ranking, cache policy ni fetching", copy)
 
 
 if __name__ == "__main__":
