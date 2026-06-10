@@ -722,14 +722,17 @@ Flags más usados:
 | `--csv` / `--md-frontmatter` | Exports extra para Sheets, Obsidian o Notion |
 | `--wishlist-external-matches-json` | Import local advisory-only para sugerencias `Revisar wishlist` |
 | `--play-access-json` / `--steam-access-json` | Imports locales para acceso jugable/Steam Family sin login/red |
+| `--player-preferences-json` | Import local opt-in de preferencias del jugador; advisory-only |
+| `--free-weekend-live` | Opt-in live/cache separado para candidatos Free Weekend |
 | `--max-workers` | Paralelismo de enrichment; default actual: 16 |
 | `--warm-cache` | Precalentar caché de precios sin generar reportes |
 | `--warm-cache-full` | Repetir warm-cache en pasadas resumibles con la misma caché |
 | `--warm-cache-full-max-passes` | Cap seguro de pasadas para `--warm-cache-full` |
+| `--schedule` / `--alert-*` | Automatización foreground y thresholds de alertas inteligentes |
 | `--interactive` | Habilitar prompts de configuración en terminal |
 | `--no-cache` | Forzar re-fetch cuando haga falta |
 
-También existen flags avanzados para HLTB, familia, notificaciones, scheduler y alertas inteligentes; consulta `--help` antes de automatizar. Si combinas scheduler/notificaciones con Alertas inteligentes v2, primero valida el volumen en el resumen/JSON y evita enviar alertas por-juego sin límites explícitos.
+También existen flags avanzados para HLTB, familia y notificaciones; consulta `--help` para ver el mapa agrupado por imports locales, comparativa externa, exports, automatización y alertas antes de automatizar. Si combinas scheduler/notificaciones con Alertas inteligentes v2, primero valida el volumen en el resumen/JSON y evita enviar alertas por-juego sin límites explícitos.
 
 ## PAYDAY 2 DLC Tracker
 

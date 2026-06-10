@@ -33,7 +33,13 @@ def build_parser() -> argparse.ArgumentParser:
             "Warm-cache modes:\n"
             "  --warm-cache       una pasada: precalienta caché y sale sin generar reportes.\n"
             "  --warm-cache-full  varias pasadas resumibles con la misma caché; no usa --no-cache ni genera reportes.\n"
-            "  --no-cache         fuerza re-fetch; úsalo solo para refresh/benchmark explícito, no para completar warm-cache."
+            "  --no-cache         fuerza re-fetch; úsalo solo para refresh/benchmark explícito, no para completar warm-cache.\n\n"
+            "Capability map:\n"
+            "  Imports locales/advisory: --wishlist-external-matches-json, --play-access-json, --steam-access-json, --player-preferences-json\n"
+            "  Comparativa externa: --itad-external-offers-cache, --gg-deals-external-offers-cache, --itad-refresh-external-offers-cache\n"
+            "  Exports: --csv, --md-frontmatter\n"
+            "  Automatización local: --warm-cache, --warm-cache-full, --schedule\n"
+            "  Alertas inteligentes: --alert-rise-pct, --alert-global-margin-pct, --alert-score-min"
         ),
     )
     parser.add_argument("--web-run", action="store_true", help=argparse.SUPPRESS)

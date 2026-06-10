@@ -3297,6 +3297,21 @@ class ConfigTests(unittest.TestCase):
         self.assertIn("misma caché", help_text)
         self.assertIn("no usa --no-cache", help_text)
 
+    def test_build_parser_documents_capability_map(self) -> None:
+        help_text = module_build_parser().format_help()
+
+        self.assertIn("Capability map", help_text)
+        self.assertIn("Imports locales/advisory", help_text)
+        self.assertIn("--player-preferences-json", help_text)
+        self.assertIn("Comparativa externa", help_text)
+        self.assertIn("--gg-deals-external-offers-cache", help_text)
+        self.assertIn("Exports", help_text)
+        self.assertIn("--md-frontmatter", help_text)
+        self.assertIn("Automatización local", help_text)
+        self.assertIn("--schedule", help_text)
+        self.assertIn("Alertas inteligentes", help_text)
+        self.assertIn("--alert-score-min", help_text)
+
     def test_build_parser_documents_multi_profile_compare_input(self) -> None:
         parser = module_build_parser()
         action = next(
