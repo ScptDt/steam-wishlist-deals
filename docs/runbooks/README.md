@@ -27,7 +27,7 @@
 | `stop-on-failure.md` | Cuando falla una validación, smoke o build | Detener, reportar, proponer, pedir aprobación y escalar |
 | `performance-warm-cache.md` | Preparar o medir corridas grandes/wishlists grandes | Warm-cache, logs, fallback individual, duración y artifacts |
 | `free-weekend-source-strategy.md` | Definir fuente/cache/contrato antes de implementar `Free Weekend ahora` global | Fuentes candidatas, schema local, confianza/vigencia y no-go contra scraping frágil |
-| `features-validation.md` | Validar features específicas sin cargar el README | Frontmatter Obsidian/Notion, `Tu Presupuesto Ideal`, share E2E |
+| `features-validation.md` | Validar features específicas sin cargar el README | Frontmatter Obsidian/Notion, `Tu Presupuesto Ideal`, share E2E, contrato Scheduler Web/Desktop |
 | `wishlist-hygiene-windows-validation.md` | Validar en Windows que `wishlist_hygiene` se vea en Web UI/reportes y que el import local opcional funcione como revisión | JSON `wishlist_hygiene.items`, sección `Revisar wishlist`, `external_matches` advisory-only |
 | `wishlist-hygiene-multistore-contract.md` | Consultar contrato y uso local de señales multi-store/play_access/steam_access para `wishlist_hygiene` | `--wishlist-external-matches-json`, `--play-access-json`, `--steam-access-json`, shapes aceptadas, señales aceptables/rechazadas y guardrails advisory-only |
 | `multistore-price-comparison.md` | Planificar la comparativa de precios multi-tienda separada de `wishlist_hygiene` | Contrato `external_offers`, taxonomía de tiendas, ITAD/Fanatical, keyshops opt-in y no-checkout |

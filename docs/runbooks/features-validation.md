@@ -128,6 +128,41 @@ Cerrar el flujo E2E de compartir desde Web UI, HTML interactivo y Share HTML, ma
     - Revisar que el mismo deal mantenga campos clave entre superficies: `appid`, `name` / `steam_name`, `price` / `price_final`, `price_original` / `original_price`, `min_hist` / `min_historical`, `discount` y `url`.
     - Confirmar que `steamtools://share?data=...` sigue siendo decodificable por `steam_tools_desktop.py`.
 
+## Scheduler Web/Desktop
+
+### Objetivo
+
+Definir el contrato antes de exponer `--schedule` en Web/Desktop. El soporte actual es CLI en primer plano; la UI compartida todavía no debe activar ejecución recurrente hasta que este contrato tenga implementación y tests.
+
+### Contrato UX esperado
+
+1. **Opt-in explícito**
+   - El scheduler debe estar apagado por defecto.
+   - No debe guardarse como auto-start silencioso ni arrancar al abrir Web/Desktop.
+   - La UI debe explicar que solo funciona mientras Steam Tools siga abierto.
+2. **Ejecución local y visible**
+   - No crear daemon, servicio del sistema, tarea de cron/Task Scheduler ni proceso oculto.
+   - Mostrar intervalo, estado actual, último run y próximo run cuando exista.
+   - Validar intervalo como número positivo; `0`, vacío o inválido no deben iniciar loop desde Web/Desktop.
+3. **Stop/lock**
+   - `Detener` debe cancelar el run activo y evitar la siguiente repetición.
+   - No permitir runs solapados: si ya hay una ejecución activa, conservar el lock/409 o estado equivalente.
+   - Si el usuario cierra la ventana/app, no prometer continuidad.
+4. **Notificaciones y anti-spam**
+   - Telegram/Discord deben seguir enviando resumen agregado, no alertas por juego.
+   - Smart Alerts v2 permanece como preview/dry-run salvo un slice separado con límites anti-spam, digest y evidencia real.
+5. **No-go**
+   - No cambiar defaults de filtros, ranking, score, cache ni fetching.
+   - No usar red real, `BG00G`, `--no-cache`, builds ni reportes generados para cerrar la UI del scheduler.
+
+### Cobertura automatizada mínima si se implementa
+
+- `build_command(...)` pasa `--schedule HOURS` solo cuando el usuario lo activa explícitamente.
+- Tests Web assets verifican copy de primer plano/local, sin daemon/autostart y sin notificaciones por juego.
+- Validación JS rechaza intervalos vacíos/`0`/negativos/inválidos cuando el toggle está activo.
+- Preflight o endpoint equivalente reporta estado claro si ya hay run activo.
+- Tests de stop/lock confirman que no se programan runs solapados.
+
 ## PAYDAY 2 data/cache y diagnóstico
 
 ### Objetivo

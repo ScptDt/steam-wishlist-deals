@@ -685,12 +685,16 @@ Las notificaciones Telegram/Discord actuales usan un resumen compacto de cambios
 
 ## Scheduler
 
+Actualmente el scheduler está disponible por CLI y corre en primer plano dentro del mismo proceso: no instala daemon, no queda en background al cerrar la terminal/app y se detiene con `Ctrl+C`. Usa valores positivos; `--schedule 0`, valores inválidos o ausencia de `--schedule` equivalen a una ejecución normal.
+
 ```bash
 # Ejecutar cada 6 horas con notificaciones
 python3 steam_deals_generator.py --vanity gaben \
   --telegram-token BOT_TOKEN --telegram-chat CHAT_ID \
   --schedule 6
 ```
+
+Contrato antes de exponerlo en Web/Desktop: debe ser opt-in, visible como ejecución recurrente local mientras Steam Tools esté abierto, sin auto-start del sistema, sin runs solapados y con `Detener` cancelando el run activo y la siguiente repetición. Si se combina con notificaciones, mantener resumen agregado; Smart Alerts v2 sigue como preview/dry-run salvo un slice anti-spam separado. Checklist completo: `docs/runbooks/features-validation.md#scheduler-webdesktop`.
 
 ## Flags comunes (Steam Deals CLI)
 
