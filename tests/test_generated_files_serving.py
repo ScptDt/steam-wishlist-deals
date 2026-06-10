@@ -232,6 +232,46 @@ class GeneratedFilesServingTests(unittest.TestCase):
         self.assertIn("--md-frontmatter", opt_in_cmd)
         self.assertEqual(opt_in_cmd.count("--md-frontmatter"), 1)
 
+    def test_build_command_passes_schedule_only_when_explicit_positive(self) -> None:
+        default_cmd = build_command({"vanity": "gaben", "schedule": 6}, {})
+        disabled_cmd = build_command(
+            {"vanity": "gaben"},
+            {"schedule_enabled": False, "schedule_hours": 6},
+        )
+        opt_in_cmd = build_command(
+            {"vanity": "gaben"},
+            {"schedule_enabled": True, "schedule_hours": 6},
+        )
+        fractional_cmd = build_command(
+            {"vanity": "gaben"},
+            {"schedule_enabled": "true", "schedule_hours": "0.5"},
+        )
+
+        self.assertNotIn("--schedule", default_cmd)
+        self.assertNotIn("--schedule", disabled_cmd)
+        self.assertEqual(opt_in_cmd[opt_in_cmd.index("--schedule") + 1], "6")
+        self.assertEqual(opt_in_cmd.count("--schedule"), 1)
+        self.assertEqual(fractional_cmd[fractional_cmd.index("--schedule") + 1], "0.5")
+
+    def test_build_command_rejects_invalid_web_schedule_values(self) -> None:
+        invalid_filters = [
+            {"schedule_hours": 6},
+            {"schedule_enabled": True},
+            {"schedule_enabled": True, "schedule_hours": ""},
+            {"schedule_enabled": True, "schedule_hours": "0"},
+            {"schedule_enabled": True, "schedule_hours": "-1"},
+            {"schedule_enabled": True, "schedule_hours": "oops"},
+            {"schedule_enabled": True, "schedule_hours": "nan"},
+            {"schedule_enabled": True, "schedule_hours": "inf"},
+            {"schedule_enabled": "false", "schedule_hours": 6},
+        ]
+
+        for filters in invalid_filters:
+            with self.subTest(filters=filters):
+                cmd = build_command({"vanity": "gaben"}, filters)
+
+                self.assertNotIn("--schedule", cmd)
+
     def test_build_command_passes_smart_alert_thresholds_only_when_requested(self) -> None:
         default_cmd = build_command({"vanity": "gaben"}, {})
         opt_in_cmd = build_command(

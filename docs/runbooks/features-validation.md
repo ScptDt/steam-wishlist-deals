@@ -132,7 +132,7 @@ Cerrar el flujo E2E de compartir desde Web UI, HTML interactivo y Share HTML, ma
 
 ### Objetivo
 
-Definir el contrato antes de exponer `--schedule` en Web/Desktop. El soporte actual es CLI en primer plano; la UI compartida todavía no debe activar ejecución recurrente hasta que este contrato tenga implementación y tests.
+Definir y validar el contrato para exponer `--schedule` en Web/Desktop. El soporte CLI corre en primer plano; la UI compartida solo puede activar ejecución recurrente como opt-in local/visible con tests de comando, validación y stop/lock.
 
 ### Contrato UX esperado
 
@@ -162,6 +162,16 @@ Definir el contrato antes de exponer `--schedule` en Web/Desktop. El soporte act
 - Validación JS rechaza intervalos vacíos/`0`/negativos/inválidos cuando el toggle está activo.
 - Preflight o endpoint equivalente reporta estado claro si ya hay run activo.
 - Tests de stop/lock confirman que no se programan runs solapados.
+
+### Corte Web/Desktop cerrado 2026-06-10
+
+- La UI compartida expone `Programación local` como opt-in desactivado por defecto y un intervalo positivo en horas.
+- `build_command(...)` pasa `--schedule HOURS` solo si `schedule_enabled=true` y `schedule_hours` es finito y mayor que 0; valores vacíos, `0`, negativos, `nan`, `inf` o texto no se envían.
+- `app.js` valida el intervalo antes de ejecutar, no guarda el scheduler como config persistente y resetea el opt-in como filtro transitorio.
+- El copy conserva `Foreground/local-only`: sin daemon, servicio, cron, Task Scheduler, proceso oculto, autostart ni promesa de continuidad al cerrar Web/Desktop.
+- Los tests de stop/lock verifican que un run programado usa el mismo `_running_proc`, rechaza solapamientos con 409 y que **Detener** limpia el lock cuando el proceso se detiene.
+- Al cerrar Desktop, el wrapper pide `/api/stop` con token local antes de terminar el servidor lanzado para evitar dejar un run programado huérfano.
+- No se usó red real, `BG00G`, `--no-cache`, builds ni reportes generados para cerrar el slice.
 
 ## PAYDAY 2 data/cache y diagnóstico
 

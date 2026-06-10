@@ -500,6 +500,139 @@ class DesktopLauncherFallbackTests(unittest.TestCase):
         self.assertIn("Fallback web forzado", stdout.getvalue())
         self.assertIn("URL fallback: http://127.0.0.1:8090", stdout.getvalue())
 
+    def test_main_window_close_requests_server_stop_before_terminating_spawned_web_server(self) -> None:
+        class _FakeProc:
+            def __init__(self):
+                self.terminate_called = 0
+                self.kill_called = 0
+                self.wait_calls = []
+
+            def poll(self):
+                return None
+
+            def terminate(self):
+                events.append("terminate")
+                self.terminate_called += 1
+
+            def wait(self, timeout=None):
+                self.wait_calls.append(timeout)
+                return 0
+
+            def kill(self):
+                self.kill_called += 1
+
+        class _FakeResponse:
+            def __init__(self, body=b"{}", status=200):
+                self._body = body
+                self.status = status
+
+            def __enter__(self):
+                return self
+
+            def __exit__(self, exc_type, exc, tb):
+                return False
+
+            def read(self):
+                return self._body
+
+        class _FakeWebview:
+            def create_window(self, title, url, **kwargs):
+                events.append(("create_window", title, url, kwargs))
+
+            def start(self, debug=False):
+                events.append(("start", debug))
+
+        class _FakeTimer:
+            def __init__(self, *_args, **_kwargs):
+                pass
+
+            def start(self):
+                return None
+
+        events = []
+        fake_proc = _FakeProc()
+        stop_requests = []
+        html_with_token = (
+            b'<html><head><meta name="steam-tools-local-token" '
+            b'content="local-token"></head><body></body></html>'
+        )
+
+        def fake_urlopen(target, timeout=0):
+            if isinstance(target, urllib.request.Request):
+                headers = {
+                    key.lower(): value
+                    for key, value in target.header_items()
+                }
+                stop_requests.append(
+                    {
+                        "url": target.full_url,
+                        "method": target.get_method(),
+                        "headers": headers,
+                        "data": target.data,
+                        "timeout": timeout,
+                    }
+                )
+                events.append("stop_request")
+                return _FakeResponse(status=200)
+            events.append(("token_fetch", target, timeout))
+            return _FakeResponse(body=html_with_token, status=200)
+
+        original_argv = sys.argv[:]
+        original_webview = sys.modules.get("webview")
+        original_resolve_server_target = desktop_module._resolve_server_target
+        original_discover_live_url = desktop_module._discover_live_url
+        original_popen = desktop_module.subprocess.Popen
+        original_timer = desktop_module.threading.Timer
+        original_urlopen = desktop_module.urllib.request.urlopen
+        original_should_force_web_fallback = desktop_module._should_force_web_fallback
+        try:
+            sys.argv = ["desktop"]
+            sys.modules["webview"] = _FakeWebview()
+            desktop_module._resolve_server_target = lambda _port: {
+                "reuse_existing": False,
+                "active_url": "http://127.0.0.1:8092",
+                "launch_port": 8092,
+                "discover_start_port": 8092,
+            }
+            desktop_module._discover_live_url = (
+                lambda _port, timeout=0.0: "http://127.0.0.1:8092"
+            )
+            desktop_module.subprocess.Popen = lambda *args, **kwargs: fake_proc
+            desktop_module.threading.Timer = _FakeTimer
+            desktop_module.urllib.request.urlopen = fake_urlopen
+            desktop_module._should_force_web_fallback = lambda: False
+
+            desktop_main()
+        finally:
+            sys.argv = original_argv
+            if original_webview is None:
+                sys.modules.pop("webview", None)
+            else:
+                sys.modules["webview"] = original_webview
+            desktop_module._resolve_server_target = original_resolve_server_target
+            desktop_module._discover_live_url = original_discover_live_url
+            desktop_module.subprocess.Popen = original_popen
+            desktop_module.threading.Timer = original_timer
+            desktop_module.urllib.request.urlopen = original_urlopen
+            desktop_module._should_force_web_fallback = original_should_force_web_fallback
+
+        self.assertIn(
+            ("token_fetch", "http://127.0.0.1:8092/", 1.5),
+            events,
+        )
+        self.assertEqual(len(stop_requests), 1)
+        self.assertEqual(stop_requests[0]["url"], "http://127.0.0.1:8092/api/stop")
+        self.assertEqual(stop_requests[0]["method"], "POST")
+        self.assertEqual(stop_requests[0]["data"], b"{}")
+        self.assertEqual(stop_requests[0]["headers"]["x-steam-tools-local-token"], "local-token")
+        self.assertEqual(stop_requests[0]["headers"]["origin"], "http://127.0.0.1:8092")
+        self.assertEqual(stop_requests[0]["headers"]["referer"], "http://127.0.0.1:8092/")
+        self.assertEqual(stop_requests[0]["headers"]["host"], "127.0.0.1:8092")
+        self.assertLess(events.index("stop_request"), events.index("terminate"))
+        self.assertEqual(fake_proc.terminate_called, 1)
+        self.assertEqual(fake_proc.wait_calls, [4])
+        self.assertEqual(fake_proc.kill_called, 0)
+
     def test_main_force_web_fallback_skips_browser_for_root_graphical_session(self) -> None:
         class _FakeProc:
             def __init__(self):

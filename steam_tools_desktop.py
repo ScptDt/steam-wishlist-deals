@@ -9,6 +9,7 @@ This is a first baseline for desktop packaging:
 
 from __future__ import annotations
 
+from html.parser import HTMLParser
 import os
 import shlex
 import subprocess
@@ -37,6 +38,9 @@ FORCE_WEB_FALLBACK_ENV = "STEAM_TOOLS_FORCE_WEB_FALLBACK"
 FORCE_WEB_FALLBACK_FLAG = "--force-web-fallback"
 CF_UNICODETEXT = 13
 GMEM_MOVEABLE = 0x0002
+LOCAL_TOKEN_META_NAME = "steam-tools-local-token"
+LOCAL_CSRF_HEADER_NAME = "X-Steam-Tools-Local-Token"
+STOP_REQUEST_TIMEOUT_SECONDS = 1.5
 
 FALLBACK_REASON_MESSAGES = {
     "forced-web-fallback": "Fallback web forzado para validacion. Abriendo Steam Tools en el navegador.",
@@ -61,6 +65,92 @@ def _desktop_window_url(base_url: str) -> str:
     query = dict(urllib.parse.parse_qsl(parsed.query, keep_blank_values=True))
     query["desktop_native"] = "1"
     return urllib.parse.urlunparse(parsed._replace(query=urlencode(query)))
+
+
+class _LocalSessionTokenParser(HTMLParser):
+    def __init__(self) -> None:
+        super().__init__()
+        self.token = ""
+
+    def handle_starttag(self, tag: str, attrs) -> None:
+        if self.token or tag.lower() != "meta":
+            return
+        attr_map = {
+            str(name).lower(): str(value or "")
+            for name, value in attrs
+        }
+        if attr_map.get("name", "").lower() == LOCAL_TOKEN_META_NAME:
+            self.token = attr_map.get("content", "")
+
+
+def _extract_local_session_token(html_text: object) -> str:
+    parser = _LocalSessionTokenParser()
+    try:
+        parser.feed(str(html_text or ""))
+    except Exception:
+        return ""
+    return parser.token.strip()
+
+
+def _read_response_text(response: object) -> str:
+    try:
+        body = response.read()
+    except Exception:
+        return ""
+    if isinstance(body, bytes):
+        return body.decode("utf-8", errors="replace")
+    return str(body or "")
+
+
+def _desktop_server_origin(base_url: str) -> str:
+    parsed = urllib.parse.urlparse(str(base_url or ""))
+    if parsed.scheme not in {"http", "https"} or not parsed.netloc:
+        return ""
+    return urllib.parse.urlunparse((parsed.scheme, parsed.netloc, "", "", "", ""))
+
+
+def _request_stop_active_run(
+    base_url: str,
+    *,
+    timeout: float = STOP_REQUEST_TIMEOUT_SECONDS,
+    urlopen_fn=None,
+    request_cls=urllib.request.Request,
+) -> bool:
+    origin = _desktop_server_origin(base_url)
+    if not origin:
+        return False
+
+    urlopen = urllib.request.urlopen if urlopen_fn is None else urlopen_fn
+    root_url = f"{origin}/"
+    stop_url = f"{origin}/api/stop"
+    parsed = urllib.parse.urlparse(origin)
+
+    try:
+        with urlopen(root_url, timeout=timeout) as response:
+            token = _extract_local_session_token(_read_response_text(response))
+        if not token:
+            return False
+
+        request = request_cls(
+            stop_url,
+            data=b"{}",
+            headers={
+                "Accept": "application/json",
+                "Content-Type": "application/json",
+                LOCAL_CSRF_HEADER_NAME: token,
+                "Origin": origin,
+                "Referer": root_url,
+                "Host": parsed.netloc,
+            },
+            method="POST",
+        )
+        with urlopen(request, timeout=timeout) as response:
+            status = getattr(response, "status", None)
+            if status is None and hasattr(response, "getcode"):
+                status = response.getcode()
+            return 200 <= int(status or 200) < 500
+    except Exception:
+        return False
 
 
 def _is_truthy_flag(value: object) -> bool:
@@ -691,6 +781,7 @@ def main() -> None:
 
     finally:
         if proc and proc.poll() is None and not keep_server_alive:
+            _request_stop_active_run(active_url)
             proc.terminate()
             try:
                 proc.wait(timeout=4)

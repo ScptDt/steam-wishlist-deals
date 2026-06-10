@@ -174,11 +174,86 @@ function parseCompareProfileInputs(value) {
     .filter(Boolean);
 }
 
+const SCHEDULER_INTERVAL_ERROR = 'Programación local: ingresa un intervalo en horas mayor que 0.';
+const SCHEDULER_DEFAULT_CONFLICT_MESSAGE = 'Ya hay una ejecucion en curso.';
+
+function getSchedulerControls() {
+  return {
+    enabledInput: $('schedule_enabled'),
+    hoursInput: $('schedule_hours'),
+  };
+}
+
+function syncSchedulerIntervalState() {
+  const {enabledInput, hoursInput} = getSchedulerControls();
+  const enabled = !!(enabledInput && enabledInput.checked);
+  if (!hoursInput) return;
+  hoursInput.disabled = !enabled;
+  hoursInput.setAttribute('aria-disabled', enabled ? 'false' : 'true');
+  if (!enabled) clearFieldError(hoursInput);
+}
+
+function bindSchedulerControls() {
+  const {enabledInput, hoursInput} = getSchedulerControls();
+  if (enabledInput) enabledInput.addEventListener('change', syncSchedulerIntervalState);
+  if (hoursInput) hoursInput.addEventListener('input', () => clearFieldError(hoursInput));
+  syncSchedulerIntervalState();
+}
+
+function getSchedulerFilters() {
+  const {enabledInput, hoursInput} = getSchedulerControls();
+  if (!enabledInput || !enabledInput.checked) return {};
+  const rawScheduleHours = hoursInput ? String(hoursInput.value || '').trim() : '';
+  return {schedule_enabled: true, schedule_hours: rawScheduleHours};
+}
+
+function schedulerHoursFromFilters(filters = {}) {
+  const scheduleHours = Number(filters && filters.schedule_hours);
+  return Number.isFinite(scheduleHours) && scheduleHours > 0 ? scheduleHours : null;
+}
+
+function isSchedulerEnabledFromFilters(filters = {}) {
+  return !!(filters && filters.schedule_enabled === true && schedulerHoursFromFilters(filters) != null);
+}
+
+function schedulerIntervalLabel(filters = {}) {
+  const scheduleHours = schedulerHoursFromFilters(filters);
+  if (scheduleHours == null) return '';
+  return String(scheduleHours);
+}
+
+function schedulerRunIntroMessage(filters = {}) {
+  const interval = schedulerIntervalLabel(filters);
+  if (!interval) return '';
+  return `Programación local activada: intervalo elegido ${interval} hora(s). Foreground/local-only: corre en primer plano local solo mientras esta Web/Desktop permanezca abierta; al cerrar Web/Desktop no continúa ni queda daemon/servicio/cron/Task Scheduler/proceso oculto. Usa Detener para cancelar la ejecución activa y evitar la siguiente repetición.`;
+}
+
+function schedulerRunConflictMessage(filters = {}) {
+  if (!isSchedulerEnabledFromFilters(filters)) return SCHEDULER_DEFAULT_CONFLICT_MESSAGE;
+  return 'Programación local: no se puede iniciar el ciclo programado porque ya hay una ejecución activa. Los ciclos programados no se solapan con una ejecución existente; espera a que termine o usa Detener.';
+}
+
+function validateSchedulerIntervalWhenEnabled() {
+  const {enabledInput, hoursInput} = getSchedulerControls();
+  if (!enabledInput || !enabledInput.checked) return true;
+  if (!hoursInput) return false;
+  clearFieldError(hoursInput);
+  const rawScheduleHours = String(hoursInput.value || '').trim();
+  const scheduleHours = Number(rawScheduleHours);
+  if (!rawScheduleHours || !Number.isFinite(scheduleHours) || scheduleHours <= 0) {
+    setFieldError(hoursInput, SCHEDULER_INTERVAL_ERROR);
+    clearFieldErrorLater(hoursInput);
+    return false;
+  }
+  return true;
+}
+
 function validateDealsFormBeforeRun() {
   const vanityInput = $('vanity');
   const compareInput = $('compare');
   const maxWorkersInput = $('max_workers');
   const topInput = $('top');
+  const {hoursInput: scheduleHoursInput} = getSchedulerControls();
   const alertThresholds = [
     {input: $('alert_rise_pct'), min: 0, label: 'Subida mínima para alertar', message: 'Subida mínima para alertar: usa un numero mayor o igual a 0.'},
     {input: $('alert_global_margin_pct'), min: 0, label: 'Margen sobre mínimo global', message: 'Margen sobre mínimo global: usa un numero mayor o igual a 0.'},
@@ -220,6 +295,13 @@ function validateDealsFormBeforeRun() {
   if (!validateOptionalNumberRange(topInput, { min: 1, max: 50, integer: true, label: 'Top picks' })) {
     errors.push({message: 'Top picks: usa un entero entre 1 y 50.', fieldId: 'top'});
     topInput.focus();
+    showFormErrorSummary(errors);
+    return false;
+  }
+
+  if (!validateSchedulerIntervalWhenEnabled()) {
+    errors.push({message: SCHEDULER_INTERVAL_ERROR, fieldId: scheduleHoursInput ? scheduleHoursInput.id : ''});
+    if (scheduleHoursInput) scheduleHoursInput.focus();
     showFormErrorSummary(errors);
     return false;
   }
@@ -353,6 +435,7 @@ function getFilters() {
     const el = $(k);
     if (el) f[k] = el.checked;
   });
+  Object.assign(f, getSchedulerFilters());
   return f;
 }
 
@@ -392,6 +475,11 @@ function applyDefaultTransientFilters() {
   if (noCacheEl) noCacheEl.checked = false;
   const itadRefreshEl = $('itad_refresh_external_offers_cache');
   if (itadRefreshEl) itadRefreshEl.checked = false;
+  const scheduleEnabledEl = $('schedule_enabled');
+  if (scheduleEnabledEl) scheduleEnabledEl.checked = false;
+  const scheduleHoursEl = $('schedule_hours');
+  if (scheduleHoursEl) scheduleHoursEl.value = '';
+  syncSchedulerIntervalState();
   const pd2NoCacheEl = $('pd2_no_cache');
   if (pd2NoCacheEl) pd2NoCacheEl.checked = false;
 }
@@ -408,12 +496,26 @@ function enforceTransientFilterDefaults() {
     itadRefreshEl.defaultChecked = false;
     itadRefreshEl.removeAttribute('checked');
   }
+  const scheduleEnabledEl = $('schedule_enabled');
+  if (scheduleEnabledEl) {
+    scheduleEnabledEl.defaultChecked = false;
+    scheduleEnabledEl.removeAttribute('checked');
+  }
+  const scheduleHoursEl = $('schedule_hours');
+  if (scheduleHoursEl) {
+    scheduleHoursEl.defaultValue = '';
+    scheduleHoursEl.removeAttribute('value');
+    scheduleHoursEl.disabled = true;
+    scheduleHoursEl.setAttribute('aria-disabled', 'true');
+  }
   const pd2NoCacheEl = $('pd2_no_cache');
   if (pd2NoCacheEl) {
     pd2NoCacheEl.defaultChecked = false;
     pd2NoCacheEl.removeAttribute('checked');
   }
 }
+
+bindSchedulerControls();
 
 const genresInput = $('genres');
 const genresSuggestions = $('genres-suggestions');
@@ -2046,7 +2148,10 @@ async function streamSteamDealsRunResponse(resp, options = {}) {
 async function runSteamDealsUI(options = {}) {
   const filters = options.filters || getFilters();
   const startLabel = options.startLabel || 'Iniciando...';
-  const conflictMessage = options.conflictMessage || 'Ya hay una ejecucion en curso.';
+  const schedulerEnabled = isSchedulerEnabledFromFilters(filters);
+  const conflictMessage = schedulerEnabled
+    ? schedulerRunConflictMessage(filters)
+    : (options.conflictMessage || schedulerRunConflictMessage(filters));
   const triggerButton = options.triggerButton || null;
 
   if (options.validateForm !== false && !validateDealsFormBeforeRun()) {
@@ -2056,6 +2161,8 @@ async function runSteamDealsUI(options = {}) {
   shownErrorHints = new Set();
   resetExecutionLog();
   if (options.introLine) appendLine(options.introLine, 'step');
+  const schedulerIntroMessage = schedulerRunIntroMessage(filters);
+  if (schedulerIntroMessage) appendLine(schedulerIntroMessage, 'step');
   if (options.heartbeat) startRunStatusHeartbeat(options.heartbeat);
   progressBar.style.width = '0%';
   progressText.textContent = startLabel;

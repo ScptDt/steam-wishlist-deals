@@ -8,6 +8,7 @@ Abre: http://127.0.0.1:8080
 import html
 import hmac
 import json
+import math
 import os
 import re
 import subprocess
@@ -952,6 +953,27 @@ def build_hltb_autodetect_public_suggestion(candidate: Path | None) -> dict | No
 # ─── Build CLI command ───────────────────────────
 
 
+def web_schedule_hours_from_filters(filters: dict) -> str | None:
+    if not _is_truthy_filter_flag(filters.get("schedule_enabled")):
+        return None
+    raw_value = str(filters.get("schedule_hours") or "").strip()
+    if not raw_value:
+        return None
+    try:
+        parsed = float(raw_value)
+    except (TypeError, ValueError):
+        return None
+    if not math.isfinite(parsed) or parsed <= 0:
+        return None
+    return raw_value
+
+
+def _is_truthy_filter_flag(value: object) -> bool:
+    if isinstance(value, bool):
+        return value
+    return str(value or "").strip().lower() in {"1", "true", "yes", "on"}
+
+
 def build_command(config: dict, filters: dict) -> list[str]:
     if getattr(sys, "frozen", False):
         cmd = [sys.executable, "--run-script", "steam_deals_generator.py", "--web-run"]
@@ -1046,6 +1068,9 @@ def build_command(config: dict, filters: dict) -> list[str]:
         cmd += ["--alert-global-margin-pct", str(filters["alert_global_margin_pct"])]
     if "alert_score_min" in filters and filters["alert_score_min"] is not None:
         cmd += ["--alert-score-min", str(filters["alert_score_min"])]
+    schedule_hours = web_schedule_hours_from_filters(filters)
+    if schedule_hours:
+        cmd += ["--schedule", schedule_hours]
     if config.get("compare"):
         cmd += ["--compare", config["compare"]]
     if config.get("telegram_chat"):

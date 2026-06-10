@@ -342,6 +342,109 @@ class WebAssetsTests(unittest.TestCase):
         self.assertIn("'alert_score_min'", app_js)
         self.assertIn("Score mínimo para alertas: usa un numero entre 0 y 100.", app_js)
 
+    def test_scheduler_controls_are_visible_foreground_local_only(self) -> None:
+        index_html = (ROOT / "web" / "steam_deals" / "index.html").read_text(
+            encoding="utf-8"
+        )
+
+        self.assertIn("Programación local", index_html)
+        self.assertIn('id="schedule_enabled"', index_html)
+        self.assertIn('id="schedule_hours"', index_html)
+        self.assertIn('type="number"', index_html)
+        self.assertIn('min="0.1"', index_html)
+        self.assertIn("desactivada por defecto", index_html)
+        self.assertIn("Foreground/local-only", index_html)
+        self.assertIn("works only while Steam Tools remains open", index_html)
+        self.assertIn("daemon", index_html)
+        self.assertIn("service/servicio", index_html)
+        self.assertIn("cron", index_html)
+        self.assertIn("Task Scheduler", index_html)
+        self.assertIn("hidden process/proceso oculto", index_html)
+        self.assertIn("autostart/auto-start", index_html)
+        self.assertNotIn('id="schedule_enabled" checked', index_html)
+
+    def test_scheduler_js_validation_contract_is_static(self) -> None:
+        app_js = (ROOT / "web" / "steam_deals" / "app.js").read_text(
+            encoding="utf-8"
+        )
+        config_start = app_js.index("const CONFIG_FIELDS")
+        config_end = app_js.index("const GENRE_SUGGESTIONS", config_start)
+        config_block = app_js[config_start:config_end]
+        validation_start = app_js.index("function validateSchedulerIntervalWhenEnabled()")
+        validation_end = app_js.index("function validateDealsFormBeforeRun()", validation_start)
+        validation_block = app_js[validation_start:validation_end]
+        filters_start = app_js.index("function getSchedulerFilters()")
+        filters_end = app_js.index("function fillForm", filters_start)
+        filters_block = app_js[filters_start:filters_end]
+
+        self.assertIn("function validateSchedulerIntervalWhenEnabled()", app_js)
+        self.assertIn("SCHEDULER_INTERVAL_ERROR", app_js)
+        self.assertIn("if (!enabledInput || !enabledInput.checked) return true;", validation_block)
+        self.assertIn("const rawScheduleHours = String(hoursInput.value || '').trim();", validation_block)
+        self.assertIn("const scheduleHours = Number(rawScheduleHours);", validation_block)
+        self.assertIn("!rawScheduleHours", validation_block)
+        self.assertIn("!Number.isFinite(scheduleHours)", validation_block)
+        self.assertIn("scheduleHours <= 0", validation_block)
+        self.assertIn("setFieldError(hoursInput, SCHEDULER_INTERVAL_ERROR)", validation_block)
+        self.assertIn("function getSchedulerFilters()", filters_block)
+        self.assertIn("if (!enabledInput || !enabledInput.checked) return {};", filters_block)
+        self.assertIn("schedule_enabled: true", filters_block)
+        self.assertIn("schedule_hours: rawScheduleHours", filters_block)
+        self.assertIn("Object.assign(f, getSchedulerFilters())", app_js)
+        self.assertIn("scheduleEnabledEl.checked = false", app_js)
+        self.assertIn("scheduleHoursEl.value = ''", app_js)
+        self.assertNotIn("schedule_enabled", config_block)
+        self.assertNotIn("schedule_hours", config_block)
+
+    def test_scheduler_run_flow_reports_foreground_and_conflicts(self) -> None:
+        app_js = (ROOT / "web" / "steam_deals" / "app.js").read_text(
+            encoding="utf-8"
+        )
+        scheduler_start = app_js.index("function schedulerHoursFromFilters")
+        scheduler_end = app_js.index(
+            "function validateSchedulerIntervalWhenEnabled()", scheduler_start
+        )
+        scheduler_block = app_js[scheduler_start:scheduler_end]
+        run_start = app_js.index("async function runSteamDealsUI")
+        run_end = app_js.index("function doctorLineClass", run_start)
+        run_block = app_js[run_start:run_end]
+        stop_start = app_js.index("btnStop.addEventListener('click'")
+        stop_end = app_js.index("if (btnRunPd2)", stop_start)
+        stop_block = app_js[stop_start:stop_end]
+
+        self.assertIn("function isSchedulerEnabledFromFilters(filters = {})", scheduler_block)
+        self.assertIn("filters.schedule_enabled === true", scheduler_block)
+        self.assertIn("schedulerHoursFromFilters(filters) != null", scheduler_block)
+        self.assertIn("function schedulerRunIntroMessage(filters = {})", scheduler_block)
+        self.assertIn("intervalo elegido ${interval} hora(s)", scheduler_block)
+        self.assertIn("Foreground/local-only", scheduler_block)
+        self.assertIn("primer plano local", scheduler_block)
+        self.assertIn("solo mientras esta Web/Desktop permanezca abierta", scheduler_block)
+        self.assertIn("al cerrar Web/Desktop no continúa", scheduler_block)
+        self.assertIn("daemon/servicio/cron/Task Scheduler/proceso oculto", scheduler_block)
+        self.assertIn("Usa Detener", scheduler_block)
+        self.assertIn("function schedulerRunConflictMessage(filters = {})", scheduler_block)
+        self.assertIn(
+            "Los ciclos programados no se solapan con una ejecución existente",
+            scheduler_block,
+        )
+        self.assertIn("const schedulerEnabled = isSchedulerEnabledFromFilters(filters);", run_block)
+        self.assertIn("schedulerRunConflictMessage(filters)", run_block)
+        self.assertIn(
+            "const schedulerIntroMessage = schedulerRunIntroMessage(filters);",
+            run_block,
+        )
+        self.assertIn(
+            "if (schedulerIntroMessage) appendLine(schedulerIntroMessage, 'step');",
+            run_block,
+        )
+        self.assertIn("btnStop.disabled = false;", run_block)
+        self.assertIn("localMutableFetch('/api/stop'", stop_block)
+        self.assertIn("señales agrupadas en digest dry-run", app_js)
+        self.assertNotIn("Telegram", scheduler_block)
+        self.assertNotIn("Discord", scheduler_block)
+        self.assertNotIn("segundo plano", scheduler_block)
+
     def test_steam_openid_signin_is_visible_and_guardrailed(self) -> None:
         index_html = (ROOT / "web" / "steam_deals" / "index.html").read_text(
             encoding="utf-8"

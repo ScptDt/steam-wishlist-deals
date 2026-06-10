@@ -1,6 +1,6 @@
 # Bitácora Operativa
 
-Ultima actualizacion: 2026-06-09
+Ultima actualizacion: 2026-06-10
 
 ## Proposito
 
@@ -79,6 +79,8 @@ La nota de inicio puede omitirse en `BITACORA.md` para cambios triviales que no 
 | 2026-04-16 | macOS | validado en CI (parcial) | Workflow `Desktop Cross-Platform Validation` OK en `macos-latest` (run `24487556896`): install deps, build desktop, `py_compile`, check fallback local y artifact `dist-macos-latest` publicado. Falta validacion manual en host macOS para apertura de `.app`, quarantine/codesign/notarizacion segun distribucion. | Ejecutar checklist manual macOS (apertura local, quarantine, codesign) y registrar incidencias/workarounds. |
 
 ## Bitacora
+
+- 2026-06-10: Cierre Ready Slice Scheduler Web/Desktop foreground/local-only. Autor/ejecutor: OpenCoder. Resultado: Web/Desktop expone `Programación local` como opt-in transitorio apagado por defecto, valida intervalo positivo, pasa `--schedule HOURS` solo bajo opt-in y muestra copy de primer plano/local sin daemon, servicio, cron, Task Scheduler, proceso oculto, autostart ni continuidad al cerrar la app. El run programado reutiliza `_running_proc`, rechaza solapamientos, `Detener` cancela el proceso activo/evita la siguiente repetición y Desktop pide `/api/stop` con token local antes de terminar su servidor lanzado. Evidencia: `PYTHONDONTWRITEBYTECODE=1 .venv/bin/python -m py_compile steam_deals_web.py steam_tools_desktop.py tests/test_generated_files_serving.py tests/test_web_assets.py tests/test_track_stop_flow.py tests/test_desktop_share.py tests/test_shared_web_infra.py` OK, `node --check web/steam_deals/app.js` OK, suite final dirigida `tests.test_generated_files_serving` + tests scheduler Web assets + `tests.test_track_stop_flow` + Desktop close + `tests.test_shared_web_infra` (106 OK) y `git diff --check` OK. Guardrails: sin red real, `BG00G`, `--no-cache`, builds, reportes generados, cambios de defaults, score/ranking/cache/fetching ni notificaciones por juego.
 
 - 2026-06-10: Cierre QW ITAD auth fail-fast. Autor/ejecutor: OpenCoder. Resultado: los helpers ITAD clasifican HTTP `401/403` como auth/key rechazada, emiten un warning compacto sin incluir la key y cortan el loop de lookup/precios/bundles para evitar cientos de requests repetidos y logs gigantes; el refresh `external_offers` preserva la caché previa al no guardar en error. Evidencia: `PYTHONDONTWRITEBYTECODE=1 .venv/bin/python -m py_compile app/steam_deals_itad.py steam_deals_itad.py tests/test_itad_external_offers_flow.py tests/test_itad_external_offers_generator.py` OK y `PYTHONDONTWRITEBYTECODE=1 .venv/bin/python -m unittest tests.test_itad_external_offers_flow tests.test_itad_external_offers_generator` (27 OK). Incidencias: el live run del usuario terminó con `403 Forbidden` repetido y `Refresh ITAD external_offers: sin IDs ITAD`, por lo que se recomienda rotar/regenerar key antes de otro smoke. Guardrails: sin live smoke nuevo desde agente, sin key real, red, `BG00G`, `--no-cache`, reportes generados, checkout/carrito/pagos, score/ranking/defaults, ownership ni `wishlist_hygiene`.
 
