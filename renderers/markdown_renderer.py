@@ -267,7 +267,7 @@ _RECOMMENDATION_DIAGNOSTIC_CONFIDENCE_LABELS = {
 
 _TASTE_PRIORITY_CATEGORY_LABELS = {
     "compra_inmediata": "Prioridad alta para revisar",
-    "espera_oferta": "Esperar mejor oferta",
+    "espera_oferta": "Prioridad baja por gusto",
     "riesgo_abandono": "Riesgo de abandono",
     "reemplaza_varios": "Solapa con varios juegos",
     "no_comprar_aun": "No priorizar aún",
@@ -998,6 +998,7 @@ def _taste_priority_labels(payload: dict) -> dict[str, str]:
     raw_labels = payload.get("category_labels")
     if isinstance(raw_labels, dict):
         labels.update({str(key): str(value) for key, value in raw_labels.items()})
+    labels["espera_oferta"] = _TASTE_PRIORITY_CATEGORY_LABELS["espera_oferta"]
     return labels
 
 
@@ -1052,7 +1053,7 @@ def _build_taste_priority_lines(payload: dict | None) -> list[str]:
     lines = [
         "## 🎯 Prioridad por gustos",
         "",
-        f"> **{total_items:,} juego(s)** desde `taste_priority` local. Señal informativa: no cambia score, ranking, Top Picks, defaults, cache ni fetching.",
+        f"> **{total_items:,} juego(s)** desde `taste_priority` local. Señal informativa: no cambia score, ranking, Top Picks, defaults, cache ni fetching. No es predicción de precio ni mínimo histórico.",
         "",
         "| Juego | Categoría | Índice | Señales locales |",
         "|-------|-----------|--------|----------------|",

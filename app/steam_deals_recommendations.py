@@ -1640,7 +1640,9 @@ def _taste_reasons(candidate: dict, category: str, factors: dict[str, float]) ->
         if factors["value"] >= 60:
             reasons.append("valor/descuento sólido para revisar hoy")
     elif category == "espera_oferta":
-        reasons.append("conviene esperar mejor oferta antes de priorizarlo")
+        reasons.append(
+            "no destaca lo suficiente frente a tus gustos locales para priorizarlo ahora"
+        )
     elif category == "riesgo_abandono":
         reasons.append("pocas señales de afinidad local para sostenerlo")
     elif category == "reemplaza_varios":

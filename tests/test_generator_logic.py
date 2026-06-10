@@ -999,6 +999,8 @@ class PersonalizedRecommendationsTests(unittest.TestCase):
         self.assertEqual(by_appid["20"]["category"], "espera_oferta")
         self.assertEqual(by_appid["30"]["category"], "reemplaza_varios")
         self.assertEqual(by_appid["40"]["category"], "no_comprar_aun")
+        self.assertIn("no destaca lo suficiente frente a tus gustos locales", " ".join(by_appid["20"]["reasons"]))
+        self.assertNotIn("esperar mejor oferta", " ".join(by_appid["20"]["reasons"]).lower())
         self.assertGreater(by_appid["10"]["taste_priority"], by_appid["20"]["taste_priority"])
         self.assertGreater(by_appid["30"]["factors"]["redundancy"], 70)
         self.assertIn("alta afinidad", " ".join(by_appid["10"]["reasons"]))
@@ -7184,6 +7186,10 @@ class RunOutputTests(unittest.TestCase):
             data["taste_priority"]["category_labels"]["compra_inmediata"],
             "Prioridad alta para revisar",
         )
+        self.assertEqual(
+            data["taste_priority"]["category_labels"]["espera_oferta"],
+            "Prioridad baja por gusto",
+        )
         self.assertTrue(data["taste_priority"]["summary"]["advisory_only"])
         self.assertEqual(data["taste_priority"]["summary"]["ranking_impact"], "none")
         self.assertEqual(data["top_picks"], top_picks)
@@ -12104,20 +12110,26 @@ class RankTopPicksTests(unittest.TestCase):
                         "appid": "10",
                         "name": "Deep Action",
                         "taste_priority": 86.4,
-                        "category": "compra_inmediata",
-                        "reasons": ["similar a Hades", "alta afinidad con tus gustos locales"],
+                        "category": "espera_oferta",
+                        "reasons": [
+                            "similar a Hades",
+                            "no destaca lo suficiente frente a tus gustos locales para priorizarlo ahora",
+                        ],
                     }
                 ],
+                "category_labels": {"espera_oferta": "Esperar mejor oferta"},
             },
         )
 
         self.assertIn("## 🎯 Prioridad por gustos", md)
         self.assertIn("desde `taste_priority` local", md)
         self.assertIn("no cambia score, ranking, Top Picks, defaults, cache ni fetching", md)
+        self.assertIn("No es predicción de precio ni mínimo histórico", md)
         self.assertIn("[Deep Action](https://store.steampowered.com/app/10/)", md)
-        self.assertIn("Prioridad alta para revisar", md)
+        self.assertIn("Prioridad baja por gusto", md)
+        self.assertNotIn("Esperar mejor oferta", md)
         self.assertIn("86.4", md)
-        self.assertIn("similar a Hades · alta afinidad con tus gustos locales", md)
+        self.assertIn("similar a Hades · no destaca lo suficiente frente a tus gustos locales para priorizarlo ahora", md)
 
     def test_generate_md_omits_empty_or_invalid_taste_priority_section(self) -> None:
         cases = [None, [], {"items": []}, {"items": None}, {"items": ["not-a-dict"]}]
@@ -13801,10 +13813,14 @@ class RankTopPicksTests(unittest.TestCase):
                         "appid": "10",
                         "name": "Deep <Action>",
                         "taste_priority": 86.4,
-                        "category": "compra_inmediata",
-                        "reasons": ["alta afinidad <local>", "valor/descuento sólido"],
+                        "category": "espera_oferta",
+                        "reasons": [
+                            "no destaca lo suficiente frente a tus gustos locales para priorizarlo ahora",
+                            "señal <advisory>",
+                        ],
                     }
                 ],
+                "category_labels": {"espera_oferta": "Esperar mejor oferta"},
             },
         )
 
@@ -13813,10 +13829,12 @@ class RankTopPicksTests(unittest.TestCase):
         self.assertIn("Sin impacto en ranking", html)
         self.assertIn("Advisory-only", html)
         self.assertIn("no cambia score, ranking, Top Picks, defaults, cache ni fetching", html)
+        self.assertIn("No es predicción de precio ni mínimo histórico", html)
         self.assertIn('data-taste-priority-appid="10"', html)
         self.assertIn("Deep &lt;Action&gt;", html)
-        self.assertIn("Prioridad alta para revisar · Índice 86.4", html)
-        self.assertIn("alta afinidad &lt;local&gt; · valor/descuento sólido", html)
+        self.assertIn("Prioridad baja por gusto · Índice 86.4", html)
+        self.assertNotIn("Esperar mejor oferta", html)
+        self.assertIn("no destaca lo suficiente frente a tus gustos locales para priorizarlo ahora · señal &lt;advisory&gt;", html)
         self.assertIn("no cambia score, ranking ni Top Picks", html)
         self.assertBlankTargetsUseNoopener(html)
         self.assertNotIn("Deep <Action>", html)

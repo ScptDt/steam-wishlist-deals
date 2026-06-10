@@ -328,7 +328,7 @@ _EXTERNAL_OFFER_CHECKOUT_RE = re.compile(
 
 _TASTE_PRIORITY_CATEGORY_LABELS = {
     "compra_inmediata": "Prioridad alta para revisar",
-    "espera_oferta": "Esperar mejor oferta",
+    "espera_oferta": "Prioridad baja por gusto",
     "riesgo_abandono": "Riesgo de abandono",
     "reemplaza_varios": "Solapa con varios juegos",
     "no_comprar_aun": "No priorizar aún",
@@ -910,6 +910,7 @@ def _taste_priority_labels(payload: dict) -> dict[str, str]:
     raw_labels = payload.get("category_labels")
     if isinstance(raw_labels, dict):
         labels.update({str(key): str(value) for key, value in raw_labels.items()})
+    labels["espera_oferta"] = _TASTE_PRIORITY_CATEGORY_LABELS["espera_oferta"]
     return labels
 
 
@@ -988,7 +989,7 @@ def _html_taste_priority(payload: dict | None) -> str:
   <div class="taste-priority-head">
     <div>
       <h2>Prioridad por gustos</h2>
-      <p class="section-desc"><strong>{total_items:,} juego(s)</strong> desde <code>taste_priority</code> local. Advisory-only: no cambia score, ranking, Top Picks, defaults, cache ni fetching.</p>
+      <p class="section-desc"><strong>{total_items:,} juego(s)</strong> desde <code>taste_priority</code> local. Advisory-only: no cambia score, ranking, Top Picks, defaults, cache ni fetching. No es predicción de precio ni mínimo histórico.</p>
     </div>
     <span class="taste-priority-head-badge">Sin impacto en ranking</span>
   </div>

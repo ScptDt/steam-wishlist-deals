@@ -3141,7 +3141,7 @@ const LATEST_EXTERNAL_OFFER_CHECKOUT_RE = /(^|[/?#&=._-])(cart|checkout|add-to-c
 
 const LATEST_TASTE_PRIORITY_CATEGORY_LABELS = Object.freeze({
   compra_inmediata: 'Prioridad alta para revisar',
-  espera_oferta: 'Esperar mejor oferta',
+  espera_oferta: 'Prioridad baja por gusto',
   riesgo_abandono: 'Riesgo de abandono',
   reemplaza_varios: 'Solapa con varios juegos',
   no_comprar_aun: 'No priorizar aún',
@@ -3731,6 +3731,7 @@ function latestTastePriorityLabels(payload) {
       labels[String(key)] = String(value);
     });
   }
+  labels.espera_oferta = LATEST_TASTE_PRIORITY_CATEGORY_LABELS.espera_oferta;
   return labels;
 }
 
@@ -3785,7 +3786,7 @@ function renderLatestTastePriorityItem(item, labels) {
         <strong>${title.nameHtml}</strong>
         <span class="latest-taste-priority-meta">${escapeHtml(category)} · Índice ${escapeHtml(latestTastePriorityScore(item))}</span>
         <span class="latest-taste-priority-signals">${escapeHtml(latestTastePrioritySignals(item))}</span>
-        <span class="latest-taste-priority-note">Señal informativa: no cambia score, ranking ni Top Picks.</span>
+        <span class="latest-taste-priority-note">Señal informativa: no cambia score, ranking ni Top Picks; no predice precio ni mínimo histórico.</span>
       </div>
       <span class="latest-taste-priority-badge">Advisory</span>
     </li>
@@ -3804,7 +3805,7 @@ function renderLatestTastePriority(report) {
       <div class="latest-taste-priority-head">
         <div>
           <div class="latest-taste-priority-title">Prioridad por gustos</div>
-          <div class="latest-taste-priority-subtitle">${escapeHtml(formatLatestCoverageCount(items.length))} juego(s) desde taste_priority local. Advisory-only: no cambia score, ranking, Top Picks, defaults, cache ni fetching.</div>
+          <div class="latest-taste-priority-subtitle">${escapeHtml(formatLatestCoverageCount(items.length))} juego(s) desde taste_priority local. Advisory-only: no cambia score, ranking, Top Picks, defaults, cache ni fetching. No es predicción de precio ni mínimo histórico.</div>
         </div>
         <span class="latest-taste-priority-head-badge">Sin impacto en ranking</span>
       </div>

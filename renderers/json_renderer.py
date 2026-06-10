@@ -68,7 +68,7 @@ def _optional_dict_list(value) -> list[dict]:
 
 TASTE_PRIORITY_CATEGORY_LABELS = {
     "compra_inmediata": "Prioridad alta para revisar",
-    "espera_oferta": "Esperar mejor oferta",
+    "espera_oferta": "Prioridad baja por gusto",
     "riesgo_abandono": "Riesgo de abandono",
     "reemplaza_varios": "Solapa con varios juegos",
     "no_comprar_aun": "No priorizar aún",
@@ -87,6 +87,7 @@ def _taste_priority_payload(payload: dict | None) -> dict | None:
     category_labels = dict(TASTE_PRIORITY_CATEGORY_LABELS)
     if isinstance(payload.get("category_labels"), dict):
         category_labels.update(payload["category_labels"])
+    category_labels["espera_oferta"] = TASTE_PRIORITY_CATEGORY_LABELS["espera_oferta"]
     summary = dict(payload.get("summary") if isinstance(payload.get("summary"), dict) else {})
     summary.update(
         {
