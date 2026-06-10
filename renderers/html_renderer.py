@@ -695,7 +695,7 @@ def _html_free_weekend_now(payload: dict | None) -> str:
         else ""
     )
     if not items:
-        body_html = '''<div class="free-weekend-empty">Sin candidatos locales de Free Weekend en el JSON actual. Este bloque no hace fetch live ni cambia score/cache; si falta vigencia o confianza, no asume disponibilidad.</div>'''
+        body_html = '''<div class="free-weekend-empty">Sin candidatos Free Weekend en el payload actual. Este bloque no hace fetch live ni cambia score/cache; si falta vigencia o confianza, no asume disponibilidad.</div>'''
     else:
         more_html = (
             f'<div class="free-weekend-more">{hidden_count:,} más en el payload completo</div>'
@@ -704,14 +704,14 @@ def _html_free_weekend_now(payload: dict | None) -> str:
         )
         body_html = f'''<ol class="free-weekend-list">{"".join(_html_free_weekend_item(item) for item in items)}</ol>
   {more_html}'''
-    count_text = f"{total_items:,} candidato(s)" if total_items else "Sin candidatos locales"
+    count_text = f"{total_items:,} candidato(s)" if total_items else "Sin candidatos"
     return f'''<section class="free-weekend-now" data-free-weekend-now-section>
   <div class="free-weekend-head">
     <div>
       <h2>Free Weekend ahora</h2>
-      <p class="section-desc"><strong>{_html_esc(count_text)}</strong> desde señales locales/cacheadas. Revisa confianza y vigencia antes de asumir disponibilidad; no cambia score, ranking ni caché de precios.</p>
+      <p class="section-desc"><strong>{_html_esc(count_text)}</strong> desde señales Store/cache. Revisa confianza y vigencia antes de asumir disponibilidad; no cambia score, ranking ni caché de precios.</p>
     </div>
-    <span class="free-weekend-head-badge">Solo señales locales</span>
+    <span class="free-weekend-head-badge">Señales Store/cache</span>
   </div>
   {policy_html}
   {body_html}

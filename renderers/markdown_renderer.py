@@ -787,6 +787,8 @@ def _free_weekend_item_reason(item: dict) -> str:
 
 
 def _build_free_weekend_now_lines(payload: dict | None) -> list[str]:
+    if payload is None:
+        return []
     items, total_items, hidden_count = _free_weekend_items(payload)
     source_policy = ""
     if isinstance(payload, dict):
@@ -797,7 +799,7 @@ def _build_free_weekend_now_lines(payload: dict | None) -> list[str]:
     ]
     if not items:
         lines += [
-            "> Sin candidatos locales de Free Weekend en el JSON actual.",
+            "> Sin candidatos Free Weekend en el payload actual.",
             "> Este bloque no hace fetch live ni cambia score/cache; si falta vigencia o confianza, no asume disponibilidad.",
             "",
             "---",
@@ -807,7 +809,7 @@ def _build_free_weekend_now_lines(payload: dict | None) -> list[str]:
 
     policy_hint = f" Política: `{_md_esc(source_policy)}`." if source_policy else ""
     lines += [
-        f"> **{total_items:,} candidato(s)** detectados por señales locales/cacheadas.{policy_hint}",
+        f"> **{total_items:,} candidato(s)** detectados por señales Store/cache.{policy_hint}",
         "> Revisa confianza y vigencia antes de asumir que sigue disponible; este bloque no cambia score, ranking ni caché de precios.",
         "",
         "| Juego | Estado | Fuentes | Motivo |",

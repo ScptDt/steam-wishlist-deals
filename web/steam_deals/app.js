@@ -3407,6 +3407,7 @@ function renderLatestFreeWeekendItem(item) {
 
 function renderLatestFreeWeekendNow(report) {
   const payload = latestFreeWeekendPayload(report);
+  if (!payload) return '';
   const items = latestFreeWeekendItems(payload);
   const totalCount = latestFreeWeekendCount(payload, items);
   const selectedItems = items.slice(0, 3);
@@ -3417,10 +3418,10 @@ function renderLatestFreeWeekendNow(report) {
     : '';
   const bodyHtml = selectedItems.length
     ? `<ol class="latest-free-weekend-list">${selectedItems.map(renderLatestFreeWeekendItem).join('')}</ol>${hiddenCount ? `<div class="latest-free-weekend-more">${escapeHtml(formatLatestCoverageCount(hiddenCount))} más en el JSON completo</div>` : ''}`
-    : '<div class="latest-free-weekend-empty">Sin candidatos locales/cacheados de Free Weekend en el JSON actual. Activa el opt-in Free Weekend al generar para consultar Store JSON; no recalcula score ni invalida caché de precios.</div>';
+    : '<div class="latest-free-weekend-empty">Sin candidatos Free Weekend en el payload actual. Activa el opt-in Free Weekend al generar para consultar Store JSON; no recalcula score ni invalida caché de precios.</div>';
   const countCopy = totalCount > 0
-    ? `${formatLatestCoverageCount(totalCount)} candidato(s) con señales locales/cacheadas`
-    : 'Sin candidatos locales con señales suficientes';
+    ? `${formatLatestCoverageCount(totalCount)} candidato(s) con señales Store/cache`
+    : 'Sin candidatos con señales Store suficientes';
   return `
     <div class="latest-free-weekend-section" data-latest-free-weekend-now>
       <div class="latest-free-weekend-head">
@@ -3428,7 +3429,7 @@ function renderLatestFreeWeekendNow(report) {
           <div class="latest-free-weekend-title">Free Weekend ahora</div>
           <div class="latest-free-weekend-subtitle">${escapeHtml(countCopy)}. Revisa confianza y vigencia antes de asumir disponibilidad; no cambia score, ranking ni caché de precios.</div>
         </div>
-        <span class="latest-free-weekend-badge">Señales locales/cache</span>
+        <span class="latest-free-weekend-badge">Señales Store/cache</span>
       </div>
       ${policyHtml}
       ${bodyHtml}

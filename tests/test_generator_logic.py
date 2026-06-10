@@ -12048,13 +12048,28 @@ class RankTopPicksTests(unittest.TestCase):
         )
 
         self.assertIn("## 🎮 Free Weekend ahora", md)
-        self.assertIn("**1 candidato(s)** detectados por señales locales/cacheadas", md)
+        self.assertIn("**1 candidato(s)** detectados por señales Store/cache", md)
         self.assertIn("Política: `fixture_or_cached_store_signals_v1`", md)
         self.assertIn("[Weekend Candidate](https://store.steampowered.com/app/1001/)", md)
         self.assertIn("Confianza Alta · Vigente hasta 2026-05-20T17:00:00Z", md)
         self.assertIn("Fuentes: featuredcategories, appdetails", md)
         self.assertIn("Señales: en tu wishlist; similar a tus gustos: Co-op", md)
         self.assertIn("no cambia score, ranking ni caché de precios", md)
+
+    def test_generate_md_omits_free_weekend_now_when_payload_absent(self) -> None:
+        md = generate_md(
+            deals=[],
+            backlog_on_sale=[],
+            have_on_sale=[],
+            vanity="gaben",
+            owned={},
+            wishlist_appids=[],
+            min_discount=50,
+            genres=[],
+        )
+
+        self.assertNotIn("## 🎮 Free Weekend ahora", md)
+        self.assertNotIn("Sin candidatos Free Weekend en el payload actual", md)
 
     def test_generate_md_shows_free_weekend_now_empty_state_for_invalid_payload(self) -> None:
         md = generate_md(
@@ -12070,7 +12085,7 @@ class RankTopPicksTests(unittest.TestCase):
         )
 
         self.assertIn("## 🎮 Free Weekend ahora", md)
-        self.assertIn("Sin candidatos locales de Free Weekend en el JSON actual", md)
+        self.assertIn("Sin candidatos Free Weekend en el payload actual", md)
         self.assertIn("no hace fetch live ni cambia score/cache", md)
 
     def test_generate_md_surfaces_taste_priority_advisory_section(self) -> None:
@@ -13725,7 +13740,7 @@ class RankTopPicksTests(unittest.TestCase):
 
         self.assertIn("data-free-weekend-now-section", html)
         self.assertIn("Free Weekend ahora", html)
-        self.assertIn("Solo señales locales", html)
+        self.assertIn("Señales Store/cache", html)
         self.assertIn('data-free-weekend-appid="1001"', html)
         self.assertIn("Weekend &lt;Candidate&gt;", html)
         self.assertIn("Confianza Media · Vigente hasta 2026-05-20T17:00:00Z", html)
@@ -13751,7 +13766,7 @@ class RankTopPicksTests(unittest.TestCase):
 
         self.assertNotIn("data-free-weekend-now-section", html)
         self.assertNotIn("Free Weekend ahora", html)
-        self.assertNotIn("Sin candidatos locales de Free Weekend en el JSON actual", html)
+        self.assertNotIn("Sin candidatos Free Weekend en el payload actual", html)
 
     def test_generate_html_shows_free_weekend_now_empty_state_for_invalid_payload(self) -> None:
         html = generate_html(
@@ -13767,7 +13782,7 @@ class RankTopPicksTests(unittest.TestCase):
         )
 
         self.assertIn("data-free-weekend-now-section", html)
-        self.assertIn("Sin candidatos locales de Free Weekend en el JSON actual", html)
+        self.assertIn("Sin candidatos Free Weekend en el payload actual", html)
         self.assertIn("no hace fetch live ni cambia score/cache", html)
 
     def test_generate_html_surfaces_taste_priority_advisory_section(self) -> None:
