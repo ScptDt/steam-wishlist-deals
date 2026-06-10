@@ -400,7 +400,9 @@ class WebAssetsTests(unittest.TestCase):
 
         self.assertIn("Caché ITAD external_offers (JSON)", index_html)
         self.assertIn('id="itad_external_offers_cache"', index_html)
+        self.assertIn(".cache/steam_deals/itad-external-offers.json", index_html)
         self.assertIn("Import local de precios externos", index_html)
+        self.assertIn("Steam Tools usará una caché local base", index_html)
         self.assertIn("Es distinto de ownership/wishlist hygiene", index_html)
         self.assertIn("no hace red live por sí solo", index_html)
         self.assertIn("no prueba que tengas el juego", index_html)

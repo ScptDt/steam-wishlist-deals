@@ -362,6 +362,19 @@ class GeneratedFilesServingTests(unittest.TestCase):
             "/tmp/itad-external-offers.json",
         )
 
+    def test_build_command_uses_default_itad_external_offers_cache_when_refreshing(self) -> None:
+        cmd = build_command(
+            {"vanity": "gaben"},
+            {"itad_refresh_external_offers_cache": True},
+        )
+
+        self.assertIn("--itad-refresh-external-offers-cache", cmd)
+        self.assertIn("--itad-external-offers-cache", cmd)
+        self.assertEqual(
+            cmd[cmd.index("--itad-external-offers-cache") + 1],
+            web.default_itad_external_offers_cache_path(),
+        )
+
     def test_build_command_passes_gg_deals_external_offers_cache(self) -> None:
         cmd = build_command(
             {
@@ -772,7 +785,7 @@ class GeneratedFilesServingTests(unittest.TestCase):
         self.assertIn("JSON local Steam Access", payload)
         self.assertIn("[ruta]", payload)
 
-    def test_preflight_requires_itad_key_and_cache_path_for_itad_refresh(self) -> None:
+    def test_preflight_requires_itad_key_but_uses_default_cache_path_for_itad_refresh(self) -> None:
         original_load_config = web.load_config
         web.load_config = lambda: {}
         handler = _FakeJsonHandler(
@@ -790,7 +803,28 @@ class GeneratedFilesServingTests(unittest.TestCase):
         self.assertEqual(handler.status, 200)
         self.assertFalse(handler.json["ok"])
         self.assertIn("Refresh ITAD external_offers requiere ITAD API Key", payload)
-        self.assertIn("Caché ITAD external_offers (JSON)", payload)
+        self.assertNotIn("requiere configurar Caché ITAD external_offers", payload)
+
+    def test_preflight_uses_default_itad_cache_target_when_refreshing(self) -> None:
+        original_load_config = web.load_config
+        web.load_config = lambda: {"itad_key": "SAVED-ITAD"}
+        handler = _FakeJsonHandler(
+            {
+                "config": {"vanity": "gaben"},
+                "filters": {"itad_refresh_external_offers_cache": True},
+            }
+        )
+        try:
+            Handler._serve_preflight(handler)
+        finally:
+            web.load_config = original_load_config
+
+        payload = str(handler.json)
+        self.assertEqual(handler.status, 200)
+        self.assertTrue(handler.json["ok"])
+        self.assertNotIn(web.default_itad_external_offers_cache_path(), payload)
+        self.assertIn("se creará o actualizará", payload)
+        self.assertIn("[ruta]", payload)
 
     def test_preflight_does_not_require_itad_key_when_itad_refresh_is_unchecked(self) -> None:
         original_load_config = web.load_config

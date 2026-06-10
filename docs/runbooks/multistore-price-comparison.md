@@ -434,7 +434,7 @@ Corte Web trigger refresh live cerrado 2026-05-22:
 
 - `Filtros avanzados` expone `Refrescar caché ITAD external_offers en vivo (opt-in)` como acción separada del uso normal de caché local.
 - `/api/run` pasa `--itad-refresh-external-offers-cache` solo cuando el usuario marca el checkbox; no se guarda como default automático.
-- `/api/preflight` exige ITAD key y ruta de caché cuando el refresh está marcado; si el archivo de caché aún no existe, avisa que se creará/actualizará con la ruta pública redactada.
+- `/api/preflight` exige ITAD key cuando el refresh está marcado; si la ruta de caché está vacía, usa una caché local base. Si el archivo de caché aún no existe, avisa que se creará/actualizará con la ruta pública redactada.
 - El copy conserva que es live opt-in, requiere key + caché, no prueba ownership y no cambia score/ranking/wishlist hygiene.
 - No se ejecutó live smoke real, no se agregó refresh automático, scraping, credenciales Fanatical, checkout/carrito, ownership, ranking ni defaults.
 

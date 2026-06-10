@@ -226,6 +226,7 @@ LOCAL_CACHE_DIR = resolve_cache_dir(
     PROJECT_DIR,
     frozen=getattr(sys, "frozen", False),
 )
+DEFAULT_ITAD_EXTERNAL_OFFERS_CACHE_FILE = "itad-external-offers.json"
 LOCAL_LOGS_DIR = resolve_logs_dir(
     PROJECT_DIR,
     frozen=getattr(sys, "frozen", False),
@@ -669,6 +670,21 @@ def build_public_config_response(config: dict) -> dict:
     }
 
 
+def default_itad_external_offers_cache_path() -> str:
+    return str(LOCAL_CACHE_DIR / DEFAULT_ITAD_EXTERNAL_OFFERS_CACHE_FILE)
+
+
+def resolve_itad_external_offers_cache_path(config: dict, filters: dict) -> str:
+    configured = normalize_optional_local_path_value(
+        config.get("itad_external_offers_cache")
+    )
+    if configured:
+        return configured
+    if filters.get("itad_refresh_external_offers_cache"):
+        return default_itad_external_offers_cache_path()
+    return ""
+
+
 def steam_openid_status_payload(config: dict) -> dict:
     return {
         "profile": public_steam_openid_profile(config.get("steam_openid_profile")),
@@ -975,9 +991,7 @@ def build_command(config: dict, filters: dict) -> list[str]:
     )
     if player_preferences_json:
         cmd += ["--player-preferences-json", player_preferences_json]
-    itad_external_offers_cache = normalize_optional_local_path_value(
-        config.get("itad_external_offers_cache")
-    )
+    itad_external_offers_cache = resolve_itad_external_offers_cache_path(config, filters)
     if itad_external_offers_cache:
         cmd += ["--itad-external-offers-cache", itad_external_offers_cache]
     gg_deals_external_offers_cache = normalize_optional_local_path_value(
@@ -1772,20 +1786,17 @@ class Handler(BaseHTTPRequestHandler):
                 )
             )
 
-        itad_external_offers_cache = normalize_optional_local_path_value(
-            config.get("itad_external_offers_cache")
-        )
         itad_refresh_external_offers_cache = bool(
             filters.get("itad_refresh_external_offers_cache")
+        )
+        itad_external_offers_cache = resolve_itad_external_offers_cache_path(
+            config,
+            filters,
         )
         if itad_refresh_external_offers_cache:
             if not (runtime_config.get("itad_key") or "").strip():
                 issues.append(
                     "Refresh ITAD external_offers requiere ITAD API Key."
-                )
-            if not itad_external_offers_cache:
-                issues.append(
-                    "Refresh ITAD external_offers requiere configurar Caché ITAD external_offers (JSON)."
                 )
         if itad_external_offers_cache and not Path(itad_external_offers_cache).expanduser().exists():
             cache_label = redact_sensitive_text(
