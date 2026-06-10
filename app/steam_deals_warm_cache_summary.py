@@ -43,6 +43,10 @@ class WarmCacheLogSummary:
     next_resume_hint: str | None = None
     http_400_direct_fallback_count: int = 0
     http_400_direct_fallback_batches: int = 0
+    planned_individual_count: int = 0
+    planned_individual_batches: int = 0
+    reactive_fallback_count: int = 0
+    reactive_fallback_batches: int = 0
     individual_fallback_worker_downgrade_count: int = 0
     individual_fallback_failure_reasons: dict[str, int] = field(default_factory=dict)
     batch_size: int | None = None
@@ -80,6 +84,8 @@ COMPARISON_COLUMNS = (
     ("Stale diferidos", "stale_refresh_deferred_count", ""),
     ("HTTP 400", "degraded_batch_count", ""),
     ("Fallback total", "individual_fallback_count", ""),
+    ("Planificado", "planned_individual_count", ""),
+    ("Reactivo", "reactive_fallback_count", ""),
     ("Fallback sin datos", "individual_fallback_failed_count", ""),
     ("Budget diferidos", "deferred_by_fallback_budget", ""),
     ("Refresh diferidos", "deferred_by_time_budget", ""),
@@ -394,6 +400,22 @@ def parse_warm_cache_log_text(
         ):
             values["http_400_direct_fallback_count"] = _parse_int(match.group("total"))
             values["http_400_direct_fallback_batches"] = _parse_int(match.group("batches"))
+
+        if match := re.search(
+            r"Planner precios runtime: individual_planificado=(?P<planned>[\d,]+) "
+            r"en (?P<planned_batches>[\d,]+) tandas · "
+            r"fallback_reactivo=(?P<reactive>[\d,]+) "
+            r"en (?P<reactive_batches>[\d,]+) tandas",
+            line,
+        ):
+            values["planned_individual_count"] = _parse_int(match.group("planned"))
+            values["planned_individual_batches"] = _parse_int(
+                match.group("planned_batches")
+            )
+            values["reactive_fallback_count"] = _parse_int(match.group("reactive"))
+            values["reactive_fallback_batches"] = _parse_int(
+                match.group("reactive_batches")
+            )
 
         if match := re.search(
             r"Fallback individual adaptativo: (?P<count>[\d,]+) bajadas de workers",
@@ -975,6 +997,14 @@ def format_warm_cache_summary(summary: WarmCacheLogSummary) -> str:
             "- Fallback directo HTTP 400: "
             f"{_format_value(summary.http_400_direct_fallback_count)} juegos en "
             f"{_format_value(summary.http_400_direct_fallback_batches)} tandas"
+        )
+    if summary.planned_individual_count or summary.reactive_fallback_count:
+        lines.append(
+            "- Planner runtime: "
+            f"individual_planificado={_format_value(summary.planned_individual_count)} "
+            f"en {_format_value(summary.planned_individual_batches)} tandas; "
+            f"fallback_reactivo={_format_value(summary.reactive_fallback_count)} "
+            f"en {_format_value(summary.reactive_fallback_batches)} tandas"
         )
     if summary.individual_fallback_worker_downgrade_count:
         lines.append(

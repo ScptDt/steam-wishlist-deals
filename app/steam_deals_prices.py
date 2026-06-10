@@ -5,6 +5,7 @@ import time
 import urllib.error
 from concurrent.futures import ThreadPoolExecutor
 
+from app.steam_deals_price_fetch_strategy import build_proactive_price_fetch_plan
 from shared.cache_utils import load_timestamped_cache as _default_load_timestamped_cache
 from shared.cache_utils import save_timestamped_cache as _default_save_timestamped_cache
 
@@ -51,6 +52,8 @@ FALLBACK_BUDGET_MIN_SAMPLES = 80
 FALLBACK_BUDGET_NO_DATA_RATIO_LIMIT = 0.85
 FALLBACK_BUDGET_NO_DATA_LIMIT = 200
 FALLBACK_BUDGET_FAILURE_REASON = "fallback_budget_deferred"
+PLANNED_INDIVIDUAL_MODE = "individual_planificado"
+REACTIVE_FALLBACK_MODE = "fallback_reactivo"
 LOW_PRIORITY_FALLBACK_CANDIDATES = frozenset(
     ("stale_without_old_deal", "failure_retry")
 )
@@ -774,10 +777,16 @@ def _handle_individual_fallback(
     process_app_entry_fn,
     individual_fallback_workers: int = DEFAULT_INDIVIDUAL_FALLBACK_WORKERS,
     failure_retry_hours: float = DEFAULT_FAILURE_RETRY_HOURS,
+    fallback_mode: str = REACTIVE_FALLBACK_MODE,
     stats_out: dict | None = None,
 ) -> dict[str, int]:
     batch_stats = _build_empty_fallback_stats()
     if isinstance(stats_out, dict):
+        mode = (
+            PLANNED_INDIVIDUAL_MODE
+            if fallback_mode == PLANNED_INDIVIDUAL_MODE
+            else REACTIVE_FALLBACK_MODE
+        )
         stats_out["individual_fallback_batches"] = (
             int(stats_out.get("individual_fallback_batches", 0) or 0) + 1
         )
@@ -787,6 +796,20 @@ def _handle_individual_fallback(
         stats_out["individual_attempts"] = (
             int(stats_out.get("individual_attempts", 0) or 0) + len(batch)
         )
+        if mode == PLANNED_INDIVIDUAL_MODE:
+            stats_out["planned_individual_batches"] = (
+                int(stats_out.get("planned_individual_batches", 0) or 0) + 1
+            )
+            stats_out["planned_individual_count"] = (
+                int(stats_out.get("planned_individual_count", 0) or 0) + len(batch)
+            )
+        else:
+            stats_out["reactive_fallback_batches"] = (
+                int(stats_out.get("reactive_fallback_batches", 0) or 0) + 1
+            )
+            stats_out["reactive_fallback_count"] = (
+                int(stats_out.get("reactive_fallback_count", 0) or 0) + len(batch)
+            )
     workers = _bounded_individual_fallback_workers(individual_fallback_workers)
     if workers <= 1 or len(batch) <= 1:
         results = [
@@ -1299,6 +1322,10 @@ def get_deals_from_wishlist(
     tracking_stats.setdefault("http_400_batch_samples", [])
     tracking_stats.setdefault("individual_fallback_worker_downgrade_count", 0)
     tracking_stats.setdefault("individual_fallback_failure_reasons", {})
+    tracking_stats.setdefault("planned_individual_count", 0)
+    tracking_stats.setdefault("planned_individual_batches", 0)
+    tracking_stats.setdefault("reactive_fallback_count", 0)
+    tracking_stats.setdefault("reactive_fallback_batches", 0)
     tracking_stats.setdefault("deferred_by_fallback_budget", 0)
     tracking_stats.setdefault("fallback_budget_reason", "")
     tracking_stats.setdefault("old_cache_used_count", 0)
@@ -1426,12 +1453,24 @@ def get_deals_from_wishlist(
                 continue
 
             if use_direct_http_400_fallback:
+                fetch_plan = build_proactive_price_fetch_plan(
+                    batch,
+                    planner_context={
+                        "repeated_http_400": True,
+                        "http_400_degradation_streak": http_400_degradation_streak,
+                        "http_400_circuit_breaker_threshold": http_400_circuit_breaker_threshold,
+                    },
+                )
+                planned_individual_batch = list(
+                    fetch_plan.get(PLANNED_INDIVIDUAL_MODE) or batch
+                )
                 if not direct_fallback_notice_emitted:
                     _emit(
                         emit,
                         "\n  "
                         + dim(
-                            "HTTP 400 repetido; usando fallback individual directo para evitar splits lentos..."
+                            "HTTP 400 repetido; usando fallback individual directo planificado "
+                            "(`individual_planificado`) para evitar splits lentos..."
                         ),
                         flush=True,
                     )
@@ -1442,10 +1481,10 @@ def get_deals_from_wishlist(
                 )
                 tracking_stats["http_400_direct_fallback_count"] = (
                     int(tracking_stats.get("http_400_direct_fallback_count", 0) or 0)
-                    + len(batch)
+                    + len(planned_individual_batch)
                 )
                 batch_fallback_stats = _handle_individual_fallback(
-                    batch,
+                    planned_individual_batch,
                     fetched_cache,
                     country=country,
                     delay=delay,
@@ -1455,6 +1494,7 @@ def get_deals_from_wishlist(
                     process_app_entry_fn=process_app_entry_fn,
                     individual_fallback_workers=current_fallback_workers,
                     failure_retry_hours=failure_retry_hours,
+                    fallback_mode=PLANNED_INDIVIDUAL_MODE,
                     stats_out=tracking_stats,
                 )
                 current_fallback_workers = _downgrade_individual_fallback_workers_if_needed(
@@ -1464,7 +1504,7 @@ def get_deals_from_wishlist(
                     emit=emit,
                     dim=dim,
                 )
-                fetched_count += len(batch)
+                fetched_count += len(planned_individual_batch)
                 if (
                     save_price_cache_fn is not None
                     and batch_index > 0

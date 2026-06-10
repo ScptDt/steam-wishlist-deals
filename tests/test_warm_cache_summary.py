@@ -98,6 +98,24 @@ class WarmCacheSummaryTests(unittest.TestCase):
         self.assertEqual(summary.http_400_direct_fallback_batches, 144)
         self.assertIn("- Fallback directo HTTP 400: 2,880 juegos en 144 tandas", output)
 
+    def test_parse_warm_cache_log_text_extracts_planner_runtime_split(self) -> None:
+        text = (
+            "Planner precios runtime: individual_planificado=20 en 1 tandas · "
+            "fallback_reactivo=60 en 3 tandas\n"
+        )
+
+        summary = parse_warm_cache_log_text(text)
+        output = format_warm_cache_summary(summary)
+
+        self.assertEqual(summary.planned_individual_count, 20)
+        self.assertEqual(summary.planned_individual_batches, 1)
+        self.assertEqual(summary.reactive_fallback_count, 60)
+        self.assertEqual(summary.reactive_fallback_batches, 3)
+        self.assertIn(
+            "- Planner runtime: individual_planificado=20 en 1 tandas; fallback_reactivo=60 en 3 tandas",
+            output,
+        )
+
     def test_parse_warm_cache_log_text_extracts_http_400_batch_breakdown(self) -> None:
         text = (
             "HTTP 400 en batch de 20 juegos; reduciendo lote\n"
@@ -421,7 +439,7 @@ class WarmCacheSummaryTests(unittest.TestCase):
 
         self.assertIn("## Warm-cache comparison", output)
         self.assertIn(
-            "| minimal.log | 2.1s (-82.1s) | 0 (-2,204) | 0 (-12) | 0 (sin cambio) | 0 (-3) | 0 (-20) | 0 (-13) | 0 (sin cambio) | 0 (sin cambio) |",
+            "| minimal.log | 2.1s (-82.1s) | 0 (-2,204) | 0 (-12) | 0 (sin cambio) | 0 (-3) | 0 (-20) | 0 (sin cambio) | 0 (sin cambio) | 0 (-13) | 0 (sin cambio) | 0 (sin cambio) |",
             output,
         )
 

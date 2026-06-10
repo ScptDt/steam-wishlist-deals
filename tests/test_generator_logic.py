@@ -3929,6 +3929,10 @@ class WarmCacheTests(unittest.TestCase):
             stats["individual_fallback_failed_count"] = 13
             stats["individual_attempts"] = 20
             stats["individual_no_data"] = 13
+            stats["planned_individual_count"] = 8
+            stats["planned_individual_batches"] = 1
+            stats["reactive_fallback_count"] = 12
+            stats["reactive_fallback_batches"] = 1
             stats["deferred_by_fallback_budget"] = 5
             stats["fallback_budget_reason"] = "no_data_ratio:13/20"
             stats["old_cache_used_count"] = 2
@@ -3988,6 +3992,10 @@ class WarmCacheTests(unittest.TestCase):
         self.assertEqual(result["individual_fallback_failed_count"], 13)
         self.assertEqual(result["individual_attempts"], 20)
         self.assertEqual(result["individual_no_data"], 13)
+        self.assertEqual(result["planned_individual_count"], 8)
+        self.assertEqual(result["planned_individual_batches"], 1)
+        self.assertEqual(result["reactive_fallback_count"], 12)
+        self.assertEqual(result["reactive_fallback_batches"], 1)
         self.assertEqual(result["deferred_by_fallback_budget"], 5)
         self.assertEqual(result["fallback_budget_reason"], "no_data_ratio:13/20")
         self.assertEqual(result["old_cache_used_count"], 2)
@@ -4016,6 +4024,12 @@ class WarmCacheTests(unittest.TestCase):
         self.assertTrue(
             any(
                 "Fallback individual aplicado a 20 juegos en 2 tandas (7 resueltos, 13 sin oferta/datos)" in line
+                for line in emitted
+            )
+        )
+        self.assertTrue(
+            any(
+                "Planner precios runtime: individual_planificado=8 en 1 tandas · fallback_reactivo=12 en 1 tandas" in line
                 for line in emitted
             )
         )
@@ -6035,9 +6049,12 @@ class PriceCacheTests(unittest.TestCase):
         self.assertEqual(single_calls, appids)
         self.assertEqual(stats["http_400_direct_fallback_batches"], 2)
         self.assertEqual(stats["http_400_direct_fallback_count"], 4)
+        self.assertEqual(stats["planned_individual_batches"], 2)
+        self.assertEqual(stats["planned_individual_count"], 4)
+        self.assertEqual(stats["reactive_fallback_count"], 4)
         self.assertEqual(stats["http_400_batch_samples"], [])
         self.assertTrue(
-            any("fallback individual directo" in line for line in emitted)
+            any("individual_planificado" in line for line in emitted)
         )
 
     def test_get_deals_from_wishlist_direct_fallback_matches_large_http_400_pattern(
@@ -6088,6 +6105,9 @@ class PriceCacheTests(unittest.TestCase):
         self.assertEqual(stats["degraded_batch_count"], 21)
         self.assertEqual(stats["http_400_direct_fallback_batches"], 1)
         self.assertEqual(stats["http_400_direct_fallback_count"], 20)
+        self.assertEqual(stats["planned_individual_batches"], 1)
+        self.assertEqual(stats["planned_individual_count"], 20)
+        self.assertEqual(stats["reactive_fallback_count"], 60)
         self.assertEqual(stats["individual_fallback_count"], 80)
         self.assertEqual(len(requested_batches), 45)
         self.assertFalse(any(batch.startswith("1060") for batch in requested_batches))
@@ -6168,6 +6188,8 @@ class PriceCacheTests(unittest.TestCase):
         self.assertEqual(stats["degraded_batch_count"], 2)
         self.assertEqual(stats["http_400_direct_fallback_batches"], 0)
         self.assertEqual(stats["http_400_direct_fallback_count"], 0)
+        self.assertEqual(stats["planned_individual_count"], 0)
+        self.assertEqual(stats["reactive_fallback_count"], 40)
         self.assertEqual(stats["individual_fallback_count"], 40)
         self.assertIn(",".join(appids[60:80]), requested_batches)
         self.assertFalse(

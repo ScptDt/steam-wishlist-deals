@@ -2845,6 +2845,10 @@ def run_price_cache_stage(
         ),
         "individual_fallback_worker_downgrade_count": 0,
         "individual_fallback_failure_reasons": {},
+        "planned_individual_count": 0,
+        "planned_individual_batches": 0,
+        "reactive_fallback_count": 0,
+        "reactive_fallback_batches": 0,
         "null_batch_count": 0,
         "temporary_failure_retry_candidate_count": 0,
         "temporary_failure_cooldown_count": 0,
@@ -2921,6 +2925,18 @@ def run_price_cache_stage(
         emit_fn(
             f"  {_dim(direct_fallback_msg)}"
         )
+    if (
+        price_fetch_stats["planned_individual_count"]
+        or price_fetch_stats["reactive_fallback_count"]
+    ):
+        planner_msg = (
+            "Planner precios runtime: "
+            f"individual_planificado={price_fetch_stats['planned_individual_count']:,} "
+            f"en {price_fetch_stats['planned_individual_batches']} tandas · "
+            f"fallback_reactivo={price_fetch_stats['reactive_fallback_count']:,} "
+            f"en {price_fetch_stats['reactive_fallback_batches']} tandas"
+        )
+        emit_fn(f"  {_dim(planner_msg)}")
     if price_fetch_stats.get("http_400_batch_samples"):
         samples_msg = "HTTP 400 diagnostic samples: " + json.dumps(
             price_fetch_stats["http_400_batch_samples"],
@@ -3029,6 +3045,10 @@ def run_price_cache_stage(
         "http_400_direct_fallback_count": price_fetch_stats["http_400_direct_fallback_count"],
         "http_400_direct_fallback_batches": price_fetch_stats["http_400_direct_fallback_batches"],
         "http_400_batch_samples": price_fetch_stats["http_400_batch_samples"],
+        "planned_individual_count": price_fetch_stats["planned_individual_count"],
+        "planned_individual_batches": price_fetch_stats["planned_individual_batches"],
+        "reactive_fallback_count": price_fetch_stats["reactive_fallback_count"],
+        "reactive_fallback_batches": price_fetch_stats["reactive_fallback_batches"],
         "individual_fallback_worker_count": price_fetch_stats["individual_fallback_worker_count"],
         "individual_fallback_worker_downgrade_count": price_fetch_stats[
             "individual_fallback_worker_downgrade_count"

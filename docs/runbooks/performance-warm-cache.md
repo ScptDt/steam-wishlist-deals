@@ -173,6 +173,12 @@ Corte offline 2026-06-10:
 - `format_proactive_price_fetch_plan_comparison(...)` produce copy offline para comparar planificado vs reactivo, siempre con guardrail explícito de que no cambia runtime, defaults, score, ranking, cache policy ni fetching.
 - Este resumen sirve para fixtures/logs ya convertidos a métricas; la integración runtime del planner sigue siendo un slice separado con aprobación explícita.
 
+Corte runtime fixture-only 2026-06-10:
+
+- Cuando el circuit breaker por HTTP 400 repetido ya está activo, el runtime construye el plan proactivo para el batch pendiente y ejecuta esos appids como `individual_planificado` antes de seguir acumulando splits.
+- Los fallbacks que ocurren dentro del flujo batch/splits siguen contándose como `fallback_reactivo`; las métricas legacy (`individual_fallback_count`, `http_400_direct_fallback_count`) se preservan para compatibilidad.
+- `run_price_cache_stage(...)` y el resumen offline separan `individual_planificado` de `fallback_reactivo` en logs/resultados, sin cambiar batch default, cache policy, score/ranking, cooldown, fallback budget ni stale-while-revalidate.
+
 No hacer: no bajar `STEAM_DEALS_PRICE_BATCH_SIZE` global, no forzar `--no-cache`, no invalidar cache por promo, no tratar `HTTP 400` como ausencia definitiva de oferta, no borrar protecciones de cooldown/fallback budget/stale-while-revalidate y no usar `BG00G` o red real para cerrar los primeros slices.
 
 ## Interpretación de `Warm-cache next actions`
