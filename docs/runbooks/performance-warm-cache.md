@@ -179,6 +179,12 @@ Corte runtime fixture-only 2026-06-10:
 - Los fallbacks que ocurren dentro del flujo batch/splits siguen contándose como `fallback_reactivo`; las métricas legacy (`individual_fallback_count`, `http_400_direct_fallback_count`) se preservan para compatibilidad.
 - `run_price_cache_stage(...)` y el resumen offline separan `individual_planificado` de `fallback_reactivo` en logs/resultados, sin cambiar batch default, cache policy, score/ranking, cooldown, fallback budget ni stale-while-revalidate.
 
+Corte benchmark real parcial 2026-06-10:
+
+- `BG00G` con caché aislada y `--warm-cache` completó OK en 607.4s, sin `--no-cache`, sin tuning de batch/workers y sin diagnostic samples.
+- Resultado parcial esperado por presupuesto resumible: 2,953 candidatos, `processed=360`, `deferred=2,593`, `exhausted=true`, `next_resume_hint=477740`, 38 deals con la cobertura disponible, 21 batches HTTP 400 degradados y planner runtime `individual_planificado=300` / `fallback_reactivo=60`.
+- Interpretación: el planner proactivo se activó en caso grande real y redujo splits posteriores, pero no cierra cobertura completa ni justifica cambiar defaults. Si se continúa, debe ser con la misma caché y `--warm-cache` bajo aprobación explícita; no usar `--no-cache` como reacción.
+
 No hacer: no bajar `STEAM_DEALS_PRICE_BATCH_SIZE` global, no forzar `--no-cache`, no invalidar cache por promo, no tratar `HTTP 400` como ausencia definitiva de oferta, no borrar protecciones de cooldown/fallback budget/stale-while-revalidate y no usar `BG00G` o red real para cerrar los primeros slices.
 
 ## Interpretación de `Warm-cache next actions`
