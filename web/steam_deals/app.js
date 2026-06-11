@@ -225,7 +225,7 @@ function schedulerIntervalLabel(filters = {}) {
 function schedulerRunIntroMessage(filters = {}) {
   const interval = schedulerIntervalLabel(filters);
   if (!interval) return '';
-  return `Programación local activada: intervalo elegido ${interval} hora(s). Foreground/local-only: corre en primer plano local solo mientras esta Web/Desktop permanezca abierta; al cerrar Web/Desktop no continúa ni queda daemon/servicio/cron/Task Scheduler/proceso oculto. Usa Detener para cancelar la ejecución activa y evitar la siguiente repetición.`;
+  return `Programación local activada: intervalo elegido ${interval} hora(s). Primer plano y solo local: corre en primer plano local solo mientras esta Web/Desktop permanezca abierta; al cerrar Web/Desktop no continúa ni queda daemon/servicio/cron/Task Scheduler/proceso oculto/arranque automático. Usa Detener para cancelar la ejecución activa y evitar la siguiente repetición.`;
 }
 
 function schedulerRunConflictMessage(filters = {}) {
@@ -2408,7 +2408,7 @@ btnOpenLast.addEventListener('click', async () => {
     window.open('/files/' + encodeURIComponent(name), '_blank');
     appendLine('Abriendo reporte HTML interactivo: ' + name, 'ok');
   } catch(e) {
-    appendLine('No se pudo abrir ultimo reporte HTML: ' + e.message, 'err');
+    appendLine('No se pudo abrir último reporte HTML: ' + e.message, 'err');
   }
 });
 
@@ -6325,7 +6325,7 @@ function appendQuickOpenButtons(files) {
     openHtmlBtn.href = '/files/' + encodeURIComponent(htmlFile.split('/').pop());
     openHtmlBtn.target = '_blank';
     openHtmlBtn.className = 'file-link';
-    openHtmlBtn.innerHTML = '&#128202; Abrir reporte interactivo (con botones compartir)';
+    openHtmlBtn.innerHTML = '&#128202; Abrir último reporte interactivo';
     btnContainer.appendChild(openHtmlBtn);
   }
 
@@ -6334,7 +6334,7 @@ function appendQuickOpenButtons(files) {
     openShareBtn.href = '/files/' + encodeURIComponent(shareHtmlFile.split('/').pop());
     openShareBtn.target = '_blank';
     openShareBtn.className = 'file-link';
-    openShareBtn.innerHTML = '&#128279; Abrir ultimo Share HTML';
+    openShareBtn.innerHTML = '&#128279; Abrir último Share HTML';
     btnContainer.appendChild(openShareBtn);
   }
 
@@ -6343,7 +6343,7 @@ function appendQuickOpenButtons(files) {
     openJsonBtn.href = '/api/latest-report';
     openJsonBtn.target = '_blank';
     openJsonBtn.className = 'file-link';
-    openJsonBtn.innerHTML = '&#123;&#125; Abrir ultimo JSON';
+    openJsonBtn.innerHTML = '&#123;&#125; Abrir JSON técnico del último reporte';
     btnContainer.appendChild(openJsonBtn);
 
     const copyJsonBtn = document.createElement('button');
@@ -6351,7 +6351,7 @@ function appendQuickOpenButtons(files) {
     copyJsonBtn.className = 'file-link';
     copyJsonBtn.style.cursor = 'pointer';
     copyJsonBtn.style.fontFamily = 'inherit';
-    copyJsonBtn.innerHTML = '&#128203; Copiar URL del ultimo JSON';
+    copyJsonBtn.innerHTML = '&#128203; Copiar URL del JSON del último reporte';
     copyJsonBtn.addEventListener('click', () => copyLatestReportUrl(copyJsonBtn));
     btnContainer.appendChild(copyJsonBtn);
   }
