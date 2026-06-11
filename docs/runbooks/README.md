@@ -32,6 +32,7 @@
 | `wishlist-hygiene-multistore-contract.md` | Consultar contrato y uso local de señales multi-store/play_access/steam_access para `wishlist_hygiene` | `--wishlist-external-matches-json`, `--play-access-json`, `--steam-access-json`, shapes aceptadas, señales aceptables/rechazadas y guardrails advisory-only |
 | `multistore-price-comparison.md` | Planificar la comparativa de precios multi-tienda separada de `wishlist_hygiene` | Contrato `external_offers`, taxonomía de tiendas, ITAD/Fanatical, keyshops opt-in y no-checkout |
 | `behavioral-signals-contract.md` | Diseñar o auditar `behavioral_signals_v1`, `behavioral_explanations_v1`, consumidores visibles Plan F, `player_behavior_profile_v1`, `player_behavior_fit_v1` y `decision_support_v1` | Taxonomía `data/behavioral_taxonomy_v1.json`, contrato advisory-only, degraded states, perfil local/opt-in, fit y decision support JSON-only |
+| `decision-advisor-v0.md` | Usar campos existentes del reporte como asesor de compra/revisión sin recalcular score ni ranking | Capas oferta/compatibilidad/acceso/confianza, prompt externo recomendado y decisiones advisory-only |
 
 ## Selector rápido por wave/tipo
 
