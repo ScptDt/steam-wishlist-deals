@@ -2479,7 +2479,14 @@ details .details-body .field:last-child {
   font-size: 0.72rem;
   margin-bottom: 0.18rem;
 }
+.latest-personalized-behavioral-help {
+  display: block;
+  margin-bottom: 0.32rem;
+  color: var(--text2);
+  opacity: 0.88;
+}
 .latest-personalized-behavioral-headline {
+  display: block;
   color: var(--text2);
   margin-bottom: 0.25rem;
 }
@@ -2499,6 +2506,11 @@ details .details-body .field:last-child {
   border: 1px solid rgba(102, 192, 244, 0.18);
   background: rgba(12, 20, 30, 0.28);
   color: var(--text2);
+  cursor: help;
+}
+.latest-personalized-behavioral-cues span:focus-visible {
+  outline: 2px solid var(--accent);
+  outline-offset: 2px;
 }
 .latest-personalized-behavioral-note small {
   display: block;

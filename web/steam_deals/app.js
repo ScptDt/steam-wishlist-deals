@@ -4529,6 +4529,30 @@ function latestBehavioralExplanationsByAppid(report) {
   return byAppid;
 }
 
+function latestBehavioralCueKindLabel(kind) {
+  const normalizedKind = String(kind || '').trim().toLowerCase();
+  if (normalizedKind === 'family') return 'Patrón principal';
+  if (normalizedKind === 'behavioral_loop') return 'Loop de juego';
+  if (normalizedKind === 'descriptor') return 'Contexto de decisión';
+  return 'Señal behavioral';
+}
+
+function latestBehavioralCueKindHelp(kind) {
+  const normalizedKind = String(kind || '').trim().toLowerCase();
+  if (normalizedKind === 'family') return 'familia amplia del tipo de experiencia que ofrece el juego.';
+  if (normalizedKind === 'behavioral_loop') return 'forma recurrente de jugar o engancharse que la taxonomía detectó.';
+  if (normalizedKind === 'descriptor') return 'contexto práctico como duración, presión, online/social o fricción.';
+  return 'pista derivada de la taxonomía local del juego.';
+}
+
+function latestBehavioralCueTooltip(cue) {
+  const source = cue && typeof cue === 'object' ? cue : {};
+  const label = String(source.label || '').trim() || 'Señal behavioral';
+  const kindLabel = latestBehavioralCueKindLabel(source.kind);
+  const kindHelp = latestBehavioralCueKindHelp(source.kind);
+  return `${kindLabel}: ${label}. Es ${kindHelp} Sale de tags/géneros del juego y no cambia score ni ranking.`;
+}
+
 function renderLatestPersonalizedBehavioralExplanation(explanation) {
   const source = explanation && typeof explanation === 'object' ? explanation : null;
   if (!source) return '';
@@ -4541,7 +4565,11 @@ function renderLatestPersonalizedBehavioralExplanation(explanation) {
   const cues = Array.isArray(source.supporting_cues)
     ? source.supporting_cues
       .filter(cue => cue && typeof cue === 'object')
-      .map(cue => String(cue.label || '').trim())
+      .map(cue => ({
+        label: String(cue.label || '').trim(),
+        tooltip: latestBehavioralCueTooltip(cue),
+      }))
+      .filter(cue => cue.label)
       .filter(Boolean)
       .slice(0, 3)
     : [];
@@ -4549,9 +4577,10 @@ function renderLatestPersonalizedBehavioralExplanation(explanation) {
   return `
     <div class="latest-personalized-behavioral-note" data-latest-personalized-behavioral-explanation>
       <strong>${escapeHtml(title)}</strong>
+      <span class="latest-personalized-behavioral-help" data-latest-personalized-behavioral-help>¿Por qué está aquí? Son patrones de la taxonomía local activados por tags/géneros del juego; sirven para explicar estilo, no para predecir precio ni cambiar ranking.</span>
       ${headline ? `<span class="latest-personalized-behavioral-headline">${escapeHtml(headline)}</span>` : ''}
       ${reasons.length ? `<ul>${reasons.map(reason => `<li>${escapeHtml(reason)}</li>`).join('')}</ul>` : ''}
-      ${cues.length ? `<div class="latest-personalized-behavioral-cues">${cues.map(cue => `<span>${escapeHtml(cue)}</span>`).join('')}</div>` : ''}
+      ${cues.length ? `<div class="latest-personalized-behavioral-cues">${cues.map(cue => `<span tabindex="0" title="${escapeHtml(cue.tooltip)}" aria-label="${escapeHtml(cue.tooltip)}">${escapeHtml(cue.label)}</span>`).join('')}</div>` : ''}
       <small>Señal advisory: no cambia score ni ranking.</small>
     </div>
   `;
