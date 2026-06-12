@@ -219,11 +219,13 @@ except Exception:
 try:
     from steam_deals_free_weekend import (
         FREE_WEEKEND_CACHE_TTL_HOURS as _FREE_WEEKEND_CACHE_TTL_HOURS_IMPL,
+        build_free_weekend_candidates_from_external_records as _build_free_weekend_records_impl,
         enrich_free_weekend_cross_signals as _enrich_free_weekend_cross_signals_impl,
         resolve_free_weekend_now_payload as _resolve_free_weekend_now_payload_impl,
     )
 except Exception:
     _FREE_WEEKEND_CACHE_TTL_HOURS_IMPL = 12
+    _build_free_weekend_records_impl = None
     _enrich_free_weekend_cross_signals_impl = None
     _resolve_free_weekend_now_payload_impl = None
 
@@ -1121,12 +1123,21 @@ def enrich_free_weekend_cross_signals(payload, **kwargs):
 def resolve_free_weekend_now(
     *,
     live_enabled: bool = False,
+    records_json_file: Path | None = None,
     cache_file: Path | None = None,
+    load_json_file_fn=load_json_file,
     fetch_json=http_get_json,
     current_timestamp: int | float | None = None,
     now=None,
 ):
     """Resolve optional Free Weekend payload without coupling to the price cache."""
+    if records_json_file is not None:
+        return build_free_weekend_now_from_records_json(
+            records_json_file,
+            load_json_file_fn=load_json_file_fn,
+            current_timestamp=current_timestamp,
+            now=now,
+        )
     if _resolve_free_weekend_now_payload_impl is None:
         return None
     return _resolve_free_weekend_now_payload_impl(
@@ -1136,6 +1147,51 @@ def resolve_free_weekend_now(
         fetch_json=fetch_json,
         current_timestamp=current_timestamp,
         now=now,
+    )
+
+
+def load_free_weekend_records_payload(
+    json_path: Path | str | None,
+    *,
+    load_json_file_fn=load_json_file,
+) -> dict | list | None:
+    """Load a local Free Weekend records JSON payload for offline normalization."""
+    if json_path is None:
+        return None
+    path = Path(json_path).expanduser()
+    if not path.exists():
+        raise ValueError(f"Free Weekend records JSON no encontrado: {path}")
+    payload = load_json_file_fn(path, None)
+    if not isinstance(payload, (dict, list)):
+        raise ValueError(
+            f"JSON de Free Weekend records inválido ({path}): debe ser lista u objeto JSON"
+        )
+    return payload
+
+
+def build_free_weekend_now_from_records_json(
+    json_path: Path | str | None,
+    *,
+    load_json_file_fn=load_json_file,
+    observed_at=None,
+    current_timestamp: int | float | None = None,
+    now=None,
+) -> dict | None:
+    """Build `free_weekend_now` from a local records JSON without network access."""
+    if _build_free_weekend_records_impl is None:
+        return None
+    records_payload = load_free_weekend_records_payload(
+        json_path,
+        load_json_file_fn=load_json_file_fn,
+    )
+    if records_payload is None:
+        return None
+    observed = observed_at or now or datetime.now()
+    return _build_free_weekend_records_impl(
+        records_payload,
+        observed_at=observed,
+        current_timestamp=current_timestamp,
+        now=now or observed,
     )
 
 
@@ -5132,6 +5188,7 @@ def main():
     PLAY_ACCESS_JSON = FILTERS.get("play_access_json")
     STEAM_ACCESS_JSON = FILTERS.get("steam_access_json")
     PLAYER_PREFERENCES_JSON = FILTERS.get("player_preferences_json")
+    FREE_WEEKEND_RECORDS_JSON = FILTERS.get("free_weekend_records_json")
     emit = print
     warm_cache_log_handle = None
     if WARM_CACHE_ONLY:
@@ -5651,9 +5708,22 @@ def main():
         external_matches=wishlist_external_matches,
         play_access=play_access,
     )
-    free_weekend_now = resolve_free_weekend_now(
-        live_enabled=bool(FILTERS.get("free_weekend_live")),
-    )
+    try:
+        free_weekend_now = resolve_free_weekend_now(
+            live_enabled=bool(FILTERS.get("free_weekend_live")),
+            records_json_file=FREE_WEEKEND_RECORDS_JSON,
+        )
+    except ValueError as exc:
+        emit(f"{_err(str(exc))}")
+        return 1
+    if FREE_WEEKEND_RECORDS_JSON and isinstance(free_weekend_now, dict):
+        free_weekend_summary = free_weekend_now.get("summary")
+        free_weekend_count = (
+            int(free_weekend_summary.get("count", 0))
+            if isinstance(free_weekend_summary, dict)
+            else 0
+        )
+        emit(f"  {_dim(f'Free Weekend local: {free_weekend_count:,} candidato(s)')}")
 
     # Generar MD
     step("Generando Markdown...")

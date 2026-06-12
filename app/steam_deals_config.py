@@ -72,6 +72,10 @@ def build_parser() -> argparse.ArgumentParser:
         help="Opt-in: consultar Store JSON para Free Weekend con caché separado",
     )
     parser.add_argument(
+        "--free-weekend-records-json",
+        help="Ruta a JSON local de registros Free Weekend ya corroborados (sin red live)",
+    )
+    parser.add_argument(
         "--warm-cache",
         action="store_true",
         help="Precalienta caché de precios y sale sin generar reportes",
@@ -396,6 +400,9 @@ def _build_filters(args, cfg: dict, *, environ=None) -> dict:
         "warm_cache_full": bool(args.warm_cache_full),
         "warm_cache_full_max_passes": args.warm_cache_full_max_passes,
         "free_weekend_live": bool(args.free_weekend_live or cfg.get("free_weekend_live")),
+        "free_weekend_records_json": Path(args.free_weekend_records_json).expanduser()
+        if args.free_weekend_records_json
+        else None,
         "wishlist_external_matches_json": Path(args.wishlist_external_matches_json).expanduser()
         if args.wishlist_external_matches_json
         else None,
