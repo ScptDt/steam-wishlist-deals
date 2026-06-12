@@ -166,11 +166,19 @@ def _personalized_reason_for_appid(appid: str, personalized_recommendations: Any
         reasons = item.get("reasons") if isinstance(item.get("reasons"), list) else []
         for reason in reasons:
             text = _compact_text(reason, limit=120)
-            if text and text != "score base del reporte":
+            if text and text not in {
+                "score base del reporte",
+                "sin señal personal suficiente; aparece por score del reporte",
+            }:
                 return text
         affinity = item.get("affinity_score")
         if affinity not in (None, ""):
-            return f"afinidad positiva {affinity}"
+            try:
+                affinity_number = float(affinity)
+            except (TypeError, ValueError):
+                affinity_number = 0.0
+            if affinity_number > 0:
+                return f"afinidad positiva {affinity}"
     return ""
 
 

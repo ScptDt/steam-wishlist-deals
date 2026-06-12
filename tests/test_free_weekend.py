@@ -341,6 +341,38 @@ class FreeWeekendCandidateTests(unittest.TestCase):
         self.assertIn("disponible en biblioteca familiar", by_appid["20"]["cross_reasons"])
         self.assertIn("similar a tus gustos: coincide con tu biblioteca: Co-op", by_appid["20"]["cross_reasons"])
 
+    def test_enrich_free_weekend_cross_signals_ignores_fallback_personalized_reasons(self) -> None:
+        payload = {
+            "generated_at": "2026-05-19T12:00:00Z",
+            "source_policy": "fixture_or_cached_store_signals_v1",
+            "summary": {"count": 1, "confidence_counts": {"medium": 1}},
+            "items": [{"appid": "30", "title": "Fallback Only Candidate"}],
+        }
+
+        enriched = enrich_free_weekend_cross_signals(
+            payload,
+            personalized_recommendations={
+                "items": [
+                    {
+                        "appid": "30",
+                        "name": "Fallback Only Candidate",
+                        "affinity_score": 0,
+                        "reasons": [
+                            "score base del reporte",
+                            "sin señal personal suficiente; aparece por score del reporte",
+                        ],
+                    }
+                ]
+            },
+        )
+
+        item = enriched["items"][0]
+        self.assertEqual(
+            item["cross_signals"],
+            {"in_wishlist": False, "owned_or_family": None, "similar_to_profile": False},
+        )
+        self.assertEqual(item["cross_reasons"], [])
+
     def test_enrich_free_weekend_cross_signals_preserves_existing_payload_reasons(self) -> None:
         payload = {
             "generated_at": "2026-05-19T12:00:00Z",
