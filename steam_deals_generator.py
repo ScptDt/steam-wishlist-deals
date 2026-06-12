@@ -169,6 +169,14 @@ except Exception:
 
 
 try:
+    from steam_deals_decision_advisor import (
+        build_decision_advisor as _build_decision_advisor_impl,
+    )
+except Exception:
+    _build_decision_advisor_impl = None
+
+
+try:
     from steam_deals_hltb import (
         cross_hltb_with_deals as _cross_hltb_with_deals_impl,
         extract_numbers as _extract_numbers_impl,
@@ -1052,6 +1060,21 @@ def build_decision_support(player_behavior_profile, player_behavior_fit):
             "limitations": ["local_snapshot", "not_purchase_advice", "ranking_impact_none"],
         }
     return _build_decision_support_impl(player_behavior_profile, player_behavior_fit)
+
+
+def build_decision_advisor(deals, **kwargs):
+    """Build JSON-only Decision Advisor v0 from existing report signals."""
+    if _build_decision_advisor_impl is None:
+        return {
+            "schema": "decision_advisor_v0",
+            "status": "insufficient_signals",
+            "advisory_only": True,
+            "ranking_impact": "none",
+            "summary": {"items_count": 0, "advisory_only": True, "ranking_impact": "none"},
+            "items": [],
+            "limitations": ["advisory_only", "ranking_impact_none", "builder_unavailable"],
+        }
+    return _build_decision_advisor_impl(deals, **kwargs)
 
 
 def load_player_manual_preferences(json_path: Path | str | None) -> dict:
@@ -4503,6 +4526,7 @@ def generate_json(
     player_behavior_profile: dict | None = None,
     player_behavior_fit: dict | None = None,
     decision_support: dict | None = None,
+    decision_advisor: dict | None = None,
     player_manual_preferences: dict | None = None,
 ) -> str:
     if _generate_json_renderer is None:
@@ -4591,6 +4615,18 @@ def generate_json(
         player_behavior_fit = build_player_behavior_fit(player_behavior_profile, behavioral_signals)
     if decision_support is None:
         decision_support = build_decision_support(player_behavior_profile, player_behavior_fit)
+    if decision_advisor is None:
+        decision_advisor = build_decision_advisor(
+            deals,
+            top_picks=top_picks,
+            decision_support=decision_support,
+            taste_priority=taste_priority,
+            wishlist_hygiene=wishlist_hygiene,
+            play_access=play_access,
+            external_offers=external_offers,
+            recommendation_diagnostics=recommendation_diagnostics,
+            cache_coverage=cache_coverage,
+        )
     return _generate_json_renderer(
         deals,
         backlog_on_sale,
@@ -4643,6 +4679,7 @@ def generate_json(
         player_behavior_profile=player_behavior_profile,
         player_behavior_fit=player_behavior_fit,
         decision_support=decision_support,
+        decision_advisor=decision_advisor,
     )
 
 

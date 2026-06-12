@@ -58,6 +58,7 @@ from steam_deals_behavioral import (
     normalize_player_manual_preferences as module_normalize_player_manual_preferences,
     validate_behavioral_taxonomy as module_validate_behavioral_taxonomy,
 )
+from steam_deals_decision_advisor import build_decision_advisor as module_build_decision_advisor
 from steam_deals_recommendations import (
     build_recommendation_diagnostics as module_build_recommendation_diagnostics,
     build_taste_priority_contract as module_build_taste_priority_contract,
@@ -1086,6 +1087,93 @@ class PersonalizedRecommendationsTests(unittest.TestCase):
 
         self.assertEqual(contract["items"][0]["appid"], "10")
         self.assertEqual(contract["cluster_distribution"], [])
+
+
+class DecisionAdvisorTests(unittest.TestCase):
+    def test_build_decision_advisor_marks_strong_fit_offer_as_buy_now(self) -> None:
+        advisor = module_build_decision_advisor(
+            [{"appid": "10", "name": "The Pale Beyond", "score": 88, "discount": 75}],
+            top_picks=[{"appid": "10", "name": "The Pale Beyond", "score": 88}],
+            decision_support={
+                "schema": "decision_support_v1",
+                "items": [{"appid": "10", "decision_label": "good_fit", "confidence": "high"}],
+            },
+            taste_priority={"items": [{"appid": "10", "category": "compra_inmediata"}]},
+            recommendation_diagnostics={
+                "recommendation_mode": "behavioral",
+                "recommendation_confidence": {"level": "high"},
+            },
+        )
+
+        item = advisor["items"][0]
+
+        self.assertEqual(advisor["schema"], "decision_advisor_v0")
+        self.assertTrue(advisor["advisory_only"])
+        self.assertEqual(advisor["ranking_impact"], "none")
+        self.assertEqual(item["decision"], "comprar_ahora")
+        self.assertEqual(item["priority"], "alta")
+        self.assertEqual(item["purchase_type"], "comfort_pick")
+        self.assertEqual(item["confidence"], "high")
+        self.assertIn("strong_discount", item["positive_signals"])
+        self.assertIn("strong_personal_fit", item["positive_signals"])
+
+    def test_build_decision_advisor_flags_score_fallback_discount_as_impulse_risk(self) -> None:
+        advisor = module_build_decision_advisor(
+            [{"appid": "20", "name": "Green Hell", "score": 83, "discount": 90}],
+            recommendation_diagnostics={
+                "recommendation_mode": "score_fallback",
+                "recommendation_confidence": {"level": "low"},
+            },
+        )
+
+        item = advisor["items"][0]
+
+        self.assertEqual(item["decision"], "revisar")
+        self.assertEqual(item["purchase_type"], "impulse_risk")
+        self.assertEqual(item["confidence"], "low")
+        self.assertIn("score_fallback_personalization", item["risks"])
+        self.assertIn("personal_fit_unknown", item["risks"])
+
+    def test_build_decision_advisor_marks_owned_games_as_ignore_not_buy(self) -> None:
+        advisor = module_build_decision_advisor(
+            [{"appid": "30", "name": "Owned Hit", "score": 92, "discount": 80}],
+            decision_support={"schema": "decision_support_v1", "items": [{"appid": "30", "decision_label": "good_fit"}]},
+            wishlist_hygiene={
+                "items": [
+                    {
+                        "appid": "30",
+                        "name": "Owned Hit",
+                        "access_decision": {"code": "owned", "label": "Ya lo tienes"},
+                    }
+                ]
+            },
+            recommendation_diagnostics={"recommendation_mode": "behavioral", "recommendation_confidence": {"level": "high"}},
+        )
+
+        item = advisor["items"][0]
+
+        self.assertEqual(item["decision"], "ignorar")
+        self.assertEqual(item["priority"], "baja")
+        self.assertEqual(item["access_status"], "available")
+        self.assertIn("already_available", item["risks"])
+
+    def test_build_decision_advisor_marks_partial_cache_conclusions_tentative(self) -> None:
+        advisor = module_build_decision_advisor(
+            [{"appid": "40", "name": "Tentative Deal", "score": 85, "discount": 75}],
+            decision_support={
+                "schema": "decision_support_v1",
+                "items": [{"appid": "40", "decision_label": "good_fit", "confidence": "high"}],
+            },
+            recommendation_diagnostics={"recommendation_mode": "behavioral", "recommendation_confidence": {"level": "high"}},
+            cache_coverage={"status": "partial", "is_partial": True},
+        )
+
+        item = advisor["items"][0]
+
+        self.assertEqual(advisor["status"], "partial")
+        self.assertEqual(advisor["summary"]["cache_coverage_status"], "partial")
+        self.assertEqual(item["confidence"], "medium")
+        self.assertIn("partial_cache_coverage", item["risks"])
 
 
 class SelectionReviewTests(unittest.TestCase):
@@ -8440,6 +8528,115 @@ class StopApiContractTests(unittest.TestCase):
         self.assertNotIn("/home/example-user", dumped)
         self.assertNotIn("raw_playtime", dumped)
         self.assertNotIn("playtime_2weeks", dumped)
+
+    def test_generate_json_builds_decision_advisor_from_existing_signals(self) -> None:
+        deals = [{"appid": "10", "name": "The Pale Beyond", "score": 88, "discount": 75}]
+        payload = generate_json(
+            deals=deals,
+            backlog_on_sale=[],
+            have_on_sale=[],
+            vanity="gaben",
+            owned={},
+            wishlist_appids=["10"],
+            min_discount=50,
+            genres=[],
+            top_picks=[{"appid": "10", "name": "The Pale Beyond", "score": 88}],
+            decision_support={
+                "schema": "decision_support_v1",
+                "source_schemas": ["player_behavior_profile_v1", "player_behavior_fit_v1"],
+                "status": "available",
+                "items": [
+                    {
+                        "appid": "10",
+                        "decision_label": "good_fit",
+                        "confidence": "high",
+                        "matched_preferences": [
+                            {"kind": "family", "id": "management_simulation", "label": "Management", "strength": "strong"}
+                        ],
+                    }
+                ],
+            },
+            taste_priority={"items": [{"appid": "10", "category": "compra_inmediata"}]},
+            recommendation_diagnostics={
+                "recommendation_mode": "behavioral",
+                "recommendation_confidence": {"level": "high"},
+            },
+        )
+
+        data = json.loads(payload)
+        advisor = data["decision_advisor"]
+        item = advisor["items"][0]
+
+        self.assertEqual(data["summary"]["decision_advisor_count"], 1)
+        self.assertEqual(advisor["schema"], "decision_advisor_v0")
+        self.assertTrue(advisor["advisory_only"])
+        self.assertEqual(advisor["ranking_impact"], "none")
+        self.assertEqual(item["decision"], "comprar_ahora")
+        self.assertEqual(item["purchase_type"], "comfort_pick")
+        self.assertEqual(data["deals"], deals)
+
+    def test_generate_json_omits_invalid_decision_advisor_payload(self) -> None:
+        payload = generate_json(
+            deals=[],
+            backlog_on_sale=[],
+            have_on_sale=[],
+            vanity="gaben",
+            owned={},
+            wishlist_appids=[],
+            min_discount=0,
+            genres=[],
+            decision_advisor={"schema": "decision_advisor_v0", "status": "insufficient_signals", "items": []},
+        )
+
+        data = json.loads(payload)
+
+        self.assertEqual(data["summary"]["decision_advisor_count"], 0)
+        self.assertNotIn("decision_advisor", data)
+
+    def test_generate_json_sanitizes_decision_advisor_payload(self) -> None:
+        payload = generate_json(
+            deals=[],
+            backlog_on_sale=[],
+            have_on_sale=[],
+            vanity="gaben",
+            owned={},
+            wishlist_appids=[],
+            min_discount=0,
+            genres=[],
+            decision_advisor={
+                "schema": "decision_advisor_v0",
+                "status": "available",
+                "advisory_only": False,
+                "ranking_impact": "score",
+                "items": [
+                    {
+                        "appid": "10",
+                        "name": "Safe Name",
+                        "decision": "comprar_ahora",
+                        "priority": "alta",
+                        "purchase_type": "comfort_pick",
+                        "confidence": "high",
+                        "access_status": "requires_purchase",
+                        "reason": "strong_discount",
+                        "positive_signals": ["strong_discount", "/home/example-user/private"],
+                        "risks": ["partial_cache_coverage", "/home/example-user/risk"],
+                        "source_signals": ["deals", "debug"],
+                        "raw_payload": {"path": "/home/example-user/private.json"},
+                    },
+                    {"appid": "bad", "decision": "comprar_ahora", "purchase_type": "comfort_pick"},
+                ],
+                "limitations": ["advisory_only", "/home/example-user/private-limitation"],
+            },
+        )
+
+        advisor = json.loads(payload)["decision_advisor"]
+        dumped = json.dumps(advisor)
+
+        self.assertTrue(advisor["advisory_only"])
+        self.assertEqual(advisor["ranking_impact"], "none")
+        self.assertEqual(len(advisor["items"]), 1)
+        self.assertNotIn("raw_payload", dumped)
+        self.assertNotIn("/home/example-user", dumped)
 
     def test_generate_json_respects_explicit_empty_wishlist_hygiene(self) -> None:
         payload = generate_json(

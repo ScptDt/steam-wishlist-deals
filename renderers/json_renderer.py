@@ -626,6 +626,103 @@ def _decision_support_total(payload: dict | None) -> int:
     return len(normalized["items"]) if normalized else 0
 
 
+DECISION_ADVISOR_DECISIONS = {"comprar_ahora", "revisar", "esperar", "ignorar"}
+DECISION_ADVISOR_PURCHASE_TYPES = {"comfort_pick", "stretch_pick", "aspirational_pick", "impulse_risk"}
+DECISION_ADVISOR_PRIORITIES = {"alta", "media", "baja"}
+DECISION_ADVISOR_CONFIDENCE = {"high", "medium", "low"}
+DECISION_ADVISOR_ACCESS = {"requires_purchase", "available", "partially_available", "unknown"}
+
+
+def _compact_strings(value, *, limit: int = 8) -> list[str]:
+    if not isinstance(value, list):
+        return []
+    strings = []
+    for item in value:
+        text = str(item or "").strip()
+        if "/" in text or "\\" in text:
+            continue
+        if text and text not in strings:
+            strings.append(text[:120])
+    return strings[:limit]
+
+
+def _decision_advisor_items(value) -> list[dict]:
+    if not isinstance(value, list):
+        return []
+    items = []
+    for item in value:
+        if not isinstance(item, dict):
+            continue
+        appid = str(item.get("appid") or "").strip()
+        decision = str(item.get("decision") or "").strip()
+        purchase_type = str(item.get("purchase_type") or "").strip()
+        if not appid.isdigit() or decision not in DECISION_ADVISOR_DECISIONS:
+            continue
+        if purchase_type not in DECISION_ADVISOR_PURCHASE_TYPES:
+            continue
+        record = {
+            "appid": appid,
+            "decision": decision,
+            "priority": item.get("priority") if item.get("priority") in DECISION_ADVISOR_PRIORITIES else "media",
+            "purchase_type": purchase_type,
+            "confidence": item.get("confidence") if item.get("confidence") in DECISION_ADVISOR_CONFIDENCE else "low",
+            "access_status": item.get("access_status") if item.get("access_status") in DECISION_ADVISOR_ACCESS else "unknown",
+            "reason": str(item.get("reason") or "limited_signals").strip()[:120],
+            "positive_signals": _compact_strings(item.get("positive_signals")),
+            "risks": _compact_strings(item.get("risks")),
+            "source_signals": _compact_strings(item.get("source_signals")),
+        }
+        name = str(item.get("name") or "").strip()
+        if name:
+            record["name"] = name[:120]
+        items.append(record)
+    return items
+
+
+def _decision_advisor_summary(payload: dict, items: list[dict]) -> dict:
+    summary = dict(payload.get("summary") if isinstance(payload.get("summary"), dict) else {})
+    summary.update(
+        {
+            "items_count": len(items),
+            "buy_now_count": sum(1 for item in items if item.get("decision") == "comprar_ahora"),
+            "review_count": sum(1 for item in items if item.get("decision") == "revisar"),
+            "wait_count": sum(1 for item in items if item.get("decision") == "esperar"),
+            "ignore_count": sum(1 for item in items if item.get("decision") == "ignorar"),
+            "impulse_risk_count": sum(1 for item in items if item.get("purchase_type") == "impulse_risk"),
+            "advisory_only": True,
+            "ranking_impact": "none",
+        }
+    )
+    return summary
+
+
+def _decision_advisor_payload(payload: dict | None) -> dict | None:
+    if not isinstance(payload, dict):
+        return None
+    if payload.get("schema") != "decision_advisor_v0":
+        return None
+    if payload.get("status") not in {"available", "partial"}:
+        return None
+    items = _decision_advisor_items(payload.get("items"))
+    if not items:
+        return None
+    return {
+        "schema": "decision_advisor_v0",
+        "source_schemas": _compact_strings(payload.get("source_schemas"), limit=10),
+        "status": payload.get("status"),
+        "advisory_only": True,
+        "ranking_impact": "none",
+        "summary": _decision_advisor_summary(payload, items),
+        "items": items,
+        "limitations": _compact_strings(payload.get("limitations"), limit=8),
+    }
+
+
+def _decision_advisor_total(payload: dict | None) -> int:
+    normalized = _decision_advisor_payload(payload)
+    return len(normalized["items"]) if normalized else 0
+
+
 RECOMMENDATION_DIAGNOSTIC_MODES = {"behavioral", "mixed", "score_fallback"}
 
 
@@ -695,6 +792,7 @@ def generate_json(
     player_behavior_profile: dict | None = None,
     player_behavior_fit: dict | None = None,
     decision_support: dict | None = None,
+    decision_advisor: dict | None = None,
 ) -> str:
     previous_appids = previous_appids or set()
     family_appids = family_appids or set()
@@ -731,6 +829,7 @@ def generate_json(
     player_behavior_profile = _player_behavior_profile_payload(player_behavior_profile)
     player_behavior_fit = _player_behavior_fit_payload(player_behavior_fit)
     decision_support = _decision_support_payload(decision_support)
+    decision_advisor = _decision_advisor_payload(decision_advisor)
 
     payload = {
         "meta": {
@@ -770,6 +869,7 @@ def generate_json(
             "behavioral_explanations_count": _behavioral_explanations_total(behavioral_explanations),
             "player_behavior_fit_count": len(player_behavior_fit.get("items", [])) if player_behavior_fit else 0,
             "decision_support_count": _decision_support_total(decision_support),
+            "decision_advisor_count": _decision_advisor_total(decision_advisor),
         },
         "comparison": _json_safe(comparison),
         "top_picks": _json_safe(top_picks),
@@ -843,4 +943,6 @@ def generate_json(
         payload["player_behavior_fit"] = _json_safe(player_behavior_fit)
     if decision_support:
         payload["decision_support"] = _json_safe(decision_support)
+    if decision_advisor:
+        payload["decision_advisor"] = _json_safe(decision_advisor)
     return json.dumps(payload, ensure_ascii=False, indent=2)

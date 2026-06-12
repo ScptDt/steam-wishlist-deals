@@ -396,7 +396,7 @@ El JSON está pensado para scripting y automatización local. Incluye, entre otr
 - `meta` / `inputs` / `summary`
 - `top_picks` con `recommendation` y `score_reasons`
 - `deals`, `watchlist_alerts`, `wishlist_hygiene`, `budget_result`, `compare_data`
-- señales advisory opcionales como `behavioral_signals`, `behavioral_explanations`, `player_behavior_profile`, `player_behavior_fit` y `decision_support` cuando hay datos locales suficientes
+- señales advisory opcionales como `behavioral_signals`, `behavioral_explanations`, `player_behavior_profile`, `player_behavior_fit`, `decision_support` y `decision_advisor` cuando hay datos locales suficientes
 
 La Web UI también expone un endpoint local útil:
 

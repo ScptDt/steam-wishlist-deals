@@ -79,6 +79,57 @@ Estas etiquetas son prosa advisory para análisis humano o prompts externos. No 
 - Si faltan señales personales, diferenciar “recomendación por score fallback” de “recomendación por comportamiento”.
 - Los estados `partial`, `insufficient_signals` y `unavailable` deben aparecer como limitaciones, no como fallos.
 
+## Payload JSON vigente
+
+El primer slice implementado expone `decision_advisor` como payload top-level opcional en el JSON final cuando existen candidatos válidos. Es un agregador advisory-only, no un recalibrador:
+
+```json
+{
+  "decision_advisor": {
+    "schema": "decision_advisor_v0",
+    "status": "available",
+    "advisory_only": true,
+    "ranking_impact": "none",
+    "summary": {
+      "items_count": 1,
+      "buy_now_count": 1,
+      "review_count": 0,
+      "wait_count": 0,
+      "ignore_count": 0,
+      "impulse_risk_count": 0,
+      "confidence": "high",
+      "recommendation_mode": "behavioral",
+      "cache_coverage_status": "complete_or_not_provided",
+      "advisory_only": true,
+      "ranking_impact": "none"
+    },
+    "items": [
+      {
+        "appid": "123",
+        "name": "Example Game",
+        "decision": "comprar_ahora",
+        "priority": "alta",
+        "purchase_type": "comfort_pick",
+        "confidence": "high",
+        "access_status": "requires_purchase",
+        "reason": "strong_discount",
+        "positive_signals": ["strong_discount", "strong_personal_fit"],
+        "risks": [],
+        "source_signals": ["deals", "top_picks", "decision_support"]
+      }
+    ],
+    "limitations": ["advisory_only", "ranking_impact_none"]
+  }
+}
+```
+
+Reglas vigentes:
+
+- Se construye solo desde señales ya disponibles (`deals`, `top_picks`, `decision_support`, `taste_priority`, `wishlist_hygiene`, `external_offers`, `recommendation_diagnostics`, `cache_coverage`).
+- Se omite si queda vacío, inválido o sin candidatos seguros para serializar.
+- `status="partial"` marca conclusiones tentativas si `cache_coverage` es parcial.
+- No cambia `score`, `top_picks`, orden, filtros, defaults, cache ni fetching.
+
 ## Prompt recomendado para análisis externo
 
 ```text
@@ -319,9 +370,8 @@ Al final genera:
 
 ## Slices futuros posibles
 
-1. **JSON-only aggregator**: construir un payload `decision_advisor_v0` desde campos existentes, sin ranking impact.
-2. **Web/Markdown/HTML consumer**: mostrar una tarjeta compacta “Comprar / Revisar / Esperar / Ignorar” usando solo el payload ya aprobado.
-3. **Source-policy de accesibilidad de juego**: definir fuentes permitidas para accessibility options reales; no mezclar con compatibilidad técnica Deck/Proton.
-4. **Backlog/redundancy stronger fixtures**: mejorar clusters/redundancia solo con fixtures locales y sin ML pesado.
+1. **Web/Markdown/HTML consumer**: mostrar una tarjeta compacta “Comprar / Revisar / Esperar / Ignorar” usando solo el payload ya aprobado.
+2. **Source-policy de accesibilidad de juego**: definir fuentes permitidas para accessibility options reales; no mezclar con compatibilidad técnica Deck/Proton.
+3. **Backlog/redundancy stronger fixtures**: mejorar clusters/redundancia solo con fixtures locales y sin ML pesado.
 
 Cualquier slice futuro que toque score, ranking, filtros, defaults, cache, fetching o acciones sobre Steam requiere aprobación explícita separada.
