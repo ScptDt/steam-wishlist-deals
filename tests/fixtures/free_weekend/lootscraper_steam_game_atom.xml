@@ -1,0 +1,68 @@
+<?xml version="1.0" encoding="utf-8"?>
+<feed xmlns="http://www.w3.org/2005/Atom" xmlns:xhtml="http://www.w3.org/1999/xhtml">
+  <title>LootScraper Steam Game Offers</title>
+  <updated>2026-06-12T12:00:00Z</updated>
+
+  <entry>
+    <id>lootscraper:steam:1843840</id>
+    <title>Rogue Point</title>
+    <link href="https://store.steampowered.com/app/1843840/Rogue_Point/" />
+    <category term="steam" />
+    <category term="free_weekend" />
+    <published>2026-06-11T18:00:00Z</published>
+    <updated>2026-06-12T12:00:00Z</updated>
+    <content type="xhtml">
+      <xhtml:div>
+        <xhtml:p>Free Weekend from 2026-06-11T18:00:00Z until 2026-06-15T18:00:00Z.</xhtml:p>
+        <xhtml:p>Steam app: https://store.steampowered.com/app/1843840/Rogue_Point/</xhtml:p>
+      </xhtml:div>
+    </content>
+  </entry>
+
+  <entry>
+    <id>lootscraper:steam:777777</id>
+    <title>Free to Keep Giveaway</title>
+    <link href="https://store.steampowered.com/app/777777/Free_To_Keep/" />
+    <category term="steam" />
+    <content type="xhtml">
+      <xhtml:div>
+        <xhtml:p>Free to keep until 2030-01-01T00:00:00Z.</xhtml:p>
+      </xhtml:div>
+    </content>
+  </entry>
+
+  <entry>
+    <id>lootscraper:steam:888888</id>
+    <title>Action Demo</title>
+    <link href="https://store.steampowered.com/app/888888/Action_Demo/" />
+    <category term="steam" />
+    <content type="xhtml">
+      <xhtml:div>
+        <xhtml:p>Free Weekend from 2026-06-11T18:00:00Z until 2026-06-15T18:00:00Z.</xhtml:p>
+      </xhtml:div>
+    </content>
+  </entry>
+
+  <entry>
+    <id>lootscraper:steam:999999</id>
+    <title>Expired Weekend</title>
+    <link href="https://store.steampowered.com/app/999999/Expired_Weekend/" />
+    <category term="steam" />
+    <content type="xhtml">
+      <xhtml:div>
+        <xhtml:p>Free Weekend from 2020-01-01T00:00:00Z until 2020-01-05T18:00:00Z.</xhtml:p>
+      </xhtml:div>
+    </content>
+  </entry>
+
+  <entry>
+    <id>lootscraper:epic:missing-steam-appid</id>
+    <title>Non Steam Free Weekend</title>
+    <link href="https://example.invalid/free-weekend" />
+    <content type="xhtml">
+      <xhtml:div>
+        <xhtml:p>Free Weekend until 2030-01-01T00:00:00Z, but no Steam app link.</xhtml:p>
+      </xhtml:div>
+    </content>
+  </entry>
+</feed>

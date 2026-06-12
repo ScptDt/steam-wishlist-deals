@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import re
+import xml.etree.ElementTree as ET
 from datetime import datetime, timezone
 from pathlib import Path
 from typing import Any
@@ -15,6 +16,13 @@ FREE_TO_KEEP_TEXT_RE = re.compile(
     re.IGNORECASE,
 )
 DEMO_PLAYTEST_TEXT_RE = re.compile(r"\b(?:demo|playtest|prologue)\b", re.IGNORECASE)
+LOOTSCRAPER_STEAM_APP_URL_RE = re.compile(
+    r"https?://store\.steampowered\.com/app/(\d+)",
+    re.IGNORECASE,
+)
+LOOTSCRAPER_ISO_HINT_RE = re.compile(
+    r"\d{4}-\d{2}-\d{2}[T ]\d{2}:\d{2}(?::\d{2})?(?:Z|[+-]\d{2}:?\d{2})?"
+)
 CONFIDENCE_RANK = {"high": 0, "medium": 1, "low": 2}
 SOURCE_POLICY = "fixture_or_cached_store_signals_v1"
 FREE_WEEKEND_CACHE_PAYLOAD_KEY = "free_weekend_now"
@@ -433,6 +441,151 @@ def _external_record_confidence(record: dict[str, Any], matched_text: str | None
 def _compact_external_signal(value: Any, *, limit: int = 120) -> str | None:
     text = _compact_text(value, limit=limit)
     return text or None
+
+
+def _xml_local_name(tag: str) -> str:
+    return tag.rsplit("}", 1)[-1] if "}" in tag else tag
+
+
+def _xml_children(element: ET.Element, name: str) -> list[ET.Element]:
+    return [child for child in list(element) if _xml_local_name(child.tag) == name]
+
+
+def _xml_first_child_text(element: ET.Element, name: str) -> str:
+    for child in _xml_children(element, name):
+        text = _compact_text(" ".join(child.itertext()), limit=240)
+        if text:
+            return text
+    return ""
+
+
+def _lootscraper_entry_links(entry: ET.Element) -> list[str]:
+    links: list[str] = []
+    for link in _xml_children(entry, "link"):
+        href = str(link.attrib.get("href") or "").strip()
+        if href:
+            links.append(href)
+        text = _compact_text(" ".join(link.itertext()), limit=300)
+        if text:
+            links.append(text)
+    return links
+
+
+def _lootscraper_entry_categories(entry: ET.Element) -> list[str]:
+    categories: list[str] = []
+    for category in _xml_children(entry, "category"):
+        for value in (category.attrib.get("term"), category.attrib.get("label")):
+            text = _compact_text(value, limit=80)
+            if text and text not in categories:
+                categories.append(text)
+    return categories
+
+
+def _steam_appid_from_texts(texts: list[str]) -> str:
+    for text in texts:
+        match = LOOTSCRAPER_STEAM_APP_URL_RE.search(str(text or ""))
+        if match:
+            return _normalized_appid(match.group(1))
+    return ""
+
+
+def _lootscraper_date_hints(text: str) -> tuple[str | None, str | None]:
+    tokens = [match.group(0).replace(" ", "T") for match in LOOTSCRAPER_ISO_HINT_RE.finditer(text)]
+    if not tokens:
+        return None, None
+    starts_at = None
+    valid_until = None
+    start_match = re.search(
+        rf"\b(?:from|starts?|begins?)\b[^\d]{{0,30}}({LOOTSCRAPER_ISO_HINT_RE.pattern})",
+        text,
+        re.IGNORECASE,
+    )
+    end_match = re.search(
+        rf"\b(?:until|to|ends?|expires?|valid until|free until)\b[^\d]{{0,30}}({LOOTSCRAPER_ISO_HINT_RE.pattern})",
+        text,
+        re.IGNORECASE,
+    )
+    if start_match:
+        starts_at = start_match.group(1).replace(" ", "T")
+    elif len(tokens) > 1:
+        starts_at = tokens[0]
+    if end_match:
+        valid_until = end_match.group(1).replace(" ", "T")
+    else:
+        valid_until = tokens[-1]
+    return starts_at, valid_until
+
+
+def _lootscraper_atom_entry_record(entry: ET.Element) -> dict[str, Any] | None:
+    title = _xml_first_child_text(entry, "title")
+    content = _xml_first_child_text(entry, "content")
+    summary = _xml_first_child_text(entry, "summary")
+    links = _lootscraper_entry_links(entry)
+    categories = _lootscraper_entry_categories(entry)
+    texts = [title, content, summary, *links, *categories]
+    appid = _steam_appid_from_texts(texts)
+    combined_text = _compact_text(" ".join(text for text in texts if text), limit=500)
+    if not appid or not title or not FREE_WEEKEND_TEXT_RE.search(combined_text):
+        return None
+    starts_at, valid_until = _lootscraper_date_hints(combined_text)
+    record: dict[str, Any] = {
+        "appid": appid,
+        "title": title,
+        "source": "LootScraper",
+        "offer_type": "free_weekend",
+        "description": combined_text,
+    }
+    source_url = next((link for link in links if link.startswith("http")), "")
+    if source_url:
+        record["source_url"] = source_url
+    if starts_at:
+        record["starts_at"] = starts_at
+    if valid_until:
+        record["valid_until"] = valid_until
+    if categories:
+        record["category"] = ", ".join(categories[:3])
+    return record
+
+
+def lootscraper_atom_to_external_records(atom_xml: str | bytes | None) -> list[dict[str, Any]]:
+    """Parse LootScraper Atom XML into local external Free Weekend records."""
+    if not atom_xml:
+        return []
+    try:
+        root = ET.fromstring(atom_xml)
+    except (ET.ParseError, TypeError):
+        return []
+    entries = [element for element in root.iter() if _xml_local_name(element.tag) == "entry"]
+    records = [_lootscraper_atom_entry_record(entry) for entry in entries]
+    return [record for record in records if isinstance(record, dict)]
+
+
+def build_free_weekend_candidates_from_lootscraper_atom(
+    atom_xml: str | bytes | None,
+    *,
+    observed_at: Any,
+    current_timestamp: int | float | None = None,
+    now: Any = None,
+    wishlist_appids: Any = None,
+    owned: Any = None,
+    family_appids: Any = None,
+    personalized_recommendations: Any = None,
+    liked_appids: Any = None,
+    preference_relations: Any = None,
+) -> dict[str, Any]:
+    """Build `free_weekend_now` from a LootScraper Atom fixture without fetching."""
+    return build_free_weekend_candidates_from_external_records(
+        lootscraper_atom_to_external_records(atom_xml),
+        observed_at=observed_at,
+        current_timestamp=current_timestamp,
+        now=now,
+        wishlist_appids=wishlist_appids,
+        owned=owned,
+        family_appids=family_appids,
+        personalized_recommendations=personalized_recommendations,
+        liked_appids=liked_appids,
+        preference_relations=preference_relations,
+    )
 
 
 def classify_external_free_weekend_record(

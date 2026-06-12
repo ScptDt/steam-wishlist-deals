@@ -9,15 +9,18 @@ from tempfile import TemporaryDirectory
 from steam_deals_free_weekend import (
     build_free_weekend_candidates,
     build_free_weekend_candidates_from_external_records,
+    build_free_weekend_candidates_from_lootscraper_atom,
     enrich_free_weekend_cross_signals,
     filter_current_free_weekend_payload,
     fetch_free_weekend_store_payloads,
+    lootscraper_atom_to_external_records,
     resolve_free_weekend_now_payload,
     save_free_weekend_candidate_cache,
 )
 
 
 OBSERVED_AT = datetime(2026, 5, 19, 12, 0, tzinfo=timezone.utc)
+FIXTURE_DIR = Path(__file__).parent / "fixtures" / "free_weekend"
 FUTURE_EXPIRATION = 1_800_000_000
 PAST_EXPIRATION = 1_700_000_000
 
@@ -53,6 +56,46 @@ def appdetails_entry(appid: int, name: str, **overrides) -> tuple[str, dict]:
 
 
 class FreeWeekendCandidateTests(unittest.TestCase):
+    def test_lootscraper_atom_to_external_records_extracts_free_weekend_entries(self) -> None:
+        atom_xml = (FIXTURE_DIR / "lootscraper_steam_game_atom.xml").read_text(
+            encoding="utf-8"
+        )
+
+        records = lootscraper_atom_to_external_records(atom_xml)
+        by_appid = {record["appid"]: record for record in records}
+
+        self.assertEqual(set(by_appid), {"1843840", "888888", "999999"})
+        self.assertEqual(by_appid["1843840"]["source"], "LootScraper")
+        self.assertEqual(by_appid["1843840"]["offer_type"], "free_weekend")
+        self.assertEqual(by_appid["1843840"]["starts_at"], "2026-06-11T18:00:00Z")
+        self.assertEqual(by_appid["1843840"]["valid_until"], "2026-06-15T18:00:00Z")
+        self.assertIn("Free Weekend", by_appid["1843840"]["description"])
+        self.assertNotIn("777777", by_appid)
+
+    def test_build_free_weekend_candidates_from_lootscraper_atom_filters_false_positives(self) -> None:
+        atom_xml = (FIXTURE_DIR / "lootscraper_steam_game_atom.xml").read_text(
+            encoding="utf-8"
+        )
+
+        payload = build_free_weekend_candidates_from_lootscraper_atom(
+            atom_xml,
+            observed_at="2026-06-12T12:00:00Z",
+            now=datetime(2026, 6, 12, 12, 0, tzinfo=timezone.utc),
+            wishlist_appids=["1843840"],
+        )
+
+        self.assertEqual([item["appid"] for item in payload["items"]], ["1843840"])
+        item = payload["items"][0]
+        self.assertEqual(payload["summary"], {"count": 1, "confidence_counts": {"high": 1}})
+        self.assertEqual(item["sources"], ["LootScraper"])
+        self.assertEqual(item["signals"]["starts_at"], "2026-06-11T18:00:00Z")
+        self.assertEqual(item["signals"]["source_url"], "https://store.steampowered.com/app/1843840/Rogue_Point/")
+        self.assertIn("en tu wishlist", item["cross_reasons"])
+
+    def test_lootscraper_atom_parser_handles_malformed_or_empty_payloads(self) -> None:
+        self.assertEqual(lootscraper_atom_to_external_records(None), [])
+        self.assertEqual(lootscraper_atom_to_external_records("{not-xml"), [])
+
     def test_build_free_weekend_candidates_from_external_records_normalizes_local_sources(self) -> None:
         payload = build_free_weekend_candidates_from_external_records(
             {
