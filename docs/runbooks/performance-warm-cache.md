@@ -185,6 +185,15 @@ Corte benchmark real parcial 2026-06-10:
 - Resultado parcial esperado por presupuesto resumible: 2,953 candidatos, `processed=360`, `deferred=2,593`, `exhausted=true`, `next_resume_hint=477740`, 38 deals con la cobertura disponible, 21 batches HTTP 400 degradados y planner runtime `individual_planificado=300` / `fallback_reactivo=60`.
 - Interpretación: el planner proactivo se activó en caso grande real y redujo splits posteriores, pero no cierra cobertura completa ni justifica cambiar defaults. Si se continúa, debe ser con la misma caché y `--warm-cache` bajo aprobación explícita; no usar `--no-cache` como reacción.
 
+Corte benchmark real multipasada 2026-06-11:
+
+- Se completó `BG00G` con la misma caché aislada y `--warm-cache`, sin `--no-cache`, sin tuning de batch/workers y sin diagnostic samples. Evidencia larga: `BITACORA.md`; logs locales no versionados en `/tmp/opencode/steam-deals-benchmarks/proactive-bg00g-2026-06-10/cache/logs/` desde `warm-cache-2026-06-11_10-04-50.log` hasta `warm-cache-2026-06-11_13-36-02.log`.
+- La caché resumible funcionó: tras el primer log disponible con `Sin caché`, las pasadas siguientes detectaron `Caché válida`; la cola principal bajó de `deferred=2,593` a `deferred=0`, `exhausted=false`, `next_resume_hint=none`.
+- Los deals subieron de 53 a 365 al cerrar la cola principal, y a 372 tras dos reconciliaciones cortas de cooldown/fallos. Tiempo activo total registrado: ~90 min.
+- Patrón estable: las pasadas grandes mantuvieron 21 batches HTTP 400 degradados y alto uso de fallback individual; el planner separó `individual_planificado` de `fallback_reactivo`, pero el costo dominante siguió siendo fallback individual bajo degradación de Steam.
+- Interpretación: `deferred=0` significa cola resumible cerrada, no cobertura perfecta; todavía pueden quedar `failed/cooldown` y `no_price_data`. Las reconciliaciones inmediatas aportaron rendimiento marginal bajo (`365 -> 369 -> 372`), por lo que conviene pausar corridas y analizar logs offline antes de tocar umbral/circuit breaker/planner.
+- Decisión operativa: no crear una caché nueva, no usar `--no-cache` como reacción y no cambiar defaults por este benchmark. Reabrir solo con análisis offline, muestras/appids o benchmark aislado aprobado.
+
 No hacer: no bajar `STEAM_DEALS_PRICE_BATCH_SIZE` global, no forzar `--no-cache`, no invalidar cache por promo, no tratar `HTTP 400` como ausencia definitiva de oferta, no borrar protecciones de cooldown/fallback budget/stale-while-revalidate y no usar `BG00G` o red real para cerrar los primeros slices.
 
 ## Interpretación de `Warm-cache next actions`
