@@ -330,6 +330,182 @@ def _candidate_reason(confidence: str) -> str:
     return "Store signals show 100% discount/final price 0 with expiration on a paid-looking app."
 
 
+def _external_candidate_reason(confidence: str) -> str:
+    if confidence == "high":
+        return "Local external source marks this as a Free Weekend with a future validity window."
+    return "Local external/cache signal marks a future-valid Free Weekend candidate; verify on Steam before acting."
+
+
+def _iso_from_any_timestamp(value: Any) -> str | None:
+    timestamp = _timestamp_from_iso(value)
+    if timestamp is None or timestamp <= 0:
+        return None
+    return datetime.fromtimestamp(timestamp, timezone.utc).isoformat().replace("+00:00", "Z")
+
+
+def _first_field(record: dict[str, Any], keys: tuple[str, ...]) -> Any:
+    for key in keys:
+        value = record.get(key)
+        if value not in (None, ""):
+            return value
+    return None
+
+
+def _external_record_title(record: dict[str, Any]) -> str:
+    for key in ("title", "name", "game_title", "game_name"):
+        title = _compact_text(record.get(key), limit=120)
+        if title:
+            return title
+    return ""
+
+
+def _external_signal_text(value: Any) -> str:
+    if not isinstance(value, str):
+        return ""
+    return _compact_text(value.replace("_", " ").replace("-", " "))
+
+
+def _external_record_texts(record: dict[str, Any]) -> list[str]:
+    texts: list[str] = []
+    for key in (
+        "title",
+        "name",
+        "game_title",
+        "game_name",
+        "headline",
+        "description",
+        "summary",
+        "status",
+        "type",
+        "category",
+        "offer_type",
+        "source",
+        "provider",
+    ):
+        text = _external_signal_text(record.get(key))
+        if text:
+            texts.append(text)
+    for key in ("sources", "providers"):
+        raw_values = record.get(key)
+        if isinstance(raw_values, list):
+            for value in raw_values:
+                text = _external_signal_text(value)
+                if text:
+                    texts.append(text)
+    return texts
+
+
+def _external_record_sources(record: dict[str, Any]) -> list[str]:
+    sources: list[str] = []
+
+    def append_source(value: Any) -> None:
+        text = _compact_text(value, limit=80)
+        if text and text not in sources:
+            sources.append(text)
+
+    for key in ("source", "provider", "origin"):
+        append_source(record.get(key))
+    for key in ("sources", "providers"):
+        values = record.get(key)
+        if isinstance(values, list):
+            for value in values:
+                append_source(value)
+    return sources[:4]
+
+
+def _safe_external_url(record: dict[str, Any]) -> str | None:
+    value = _first_field(record, ("source_url", "url", "offer_url", "details_url"))
+    if not isinstance(value, str):
+        return None
+    url = value.strip()
+    if not re.match(r"^https?://", url, re.IGNORECASE):
+        return None
+    return url[:300]
+
+
+def _external_record_confidence(record: dict[str, Any], matched_text: str | None) -> str:
+    raw = str(record.get("confidence") or "").strip().lower()
+    if raw in CONFIDENCE_RANK:
+        return raw
+    return "high" if matched_text else "medium"
+
+
+def _compact_external_signal(value: Any, *, limit: int = 120) -> str | None:
+    text = _compact_text(value, limit=limit)
+    return text or None
+
+
+def classify_external_free_weekend_record(
+    record: dict[str, Any] | None,
+    *,
+    observed_at: Any,
+    current_timestamp: int | float | None = None,
+    now: Any = None,
+) -> dict[str, Any] | None:
+    """Normalize one local external/cache Free Weekend record into the shared contract."""
+    if not isinstance(record, dict):
+        return None
+
+    appid = _collection_appid(record)
+    title = _external_record_title(record)
+    sources = _external_record_sources(record)
+    if not appid or not title or not sources:
+        return None
+
+    texts = _external_record_texts(record)
+    matched_text = _first_matching_text(texts, FREE_WEEKEND_TEXT_RE)
+    if _first_matching_text(texts, FREE_TO_KEEP_TEXT_RE):
+        return None
+    if _first_matching_text(texts, DEMO_PLAYTEST_TEXT_RE):
+        return None
+    if record.get("is_free") is True and not matched_text:
+        return None
+
+    reference_timestamp = _reference_timestamp(
+        current_timestamp=current_timestamp,
+        now=now,
+    )
+    starts_at = _first_field(record, ("starts_at", "start_at", "start", "from", "begins_at"))
+    valid_until_raw = _first_field(
+        record,
+        ("valid_until", "ends_at", "end_at", "end", "until", "expires_at", "free_until"),
+    )
+    start_timestamp = _timestamp_from_iso(starts_at)
+    valid_until_timestamp = _timestamp_from_iso(valid_until_raw)
+    if start_timestamp is not None and start_timestamp > reference_timestamp:
+        return None
+    if valid_until_timestamp is None or valid_until_timestamp <= reference_timestamp:
+        return None
+
+    confidence = _external_record_confidence(record, matched_text)
+    source_url = _safe_external_url(record)
+    signals = {
+        "matched_text": matched_text,
+        "starts_at": _iso_from_any_timestamp(starts_at),
+        "source_url": source_url,
+        "external_status": _compact_external_signal(record.get("status")),
+        "external_offer_type": _compact_external_signal(record.get("offer_type") or record.get("type")),
+        "is_free": record.get("is_free") if isinstance(record.get("is_free"), bool) else None,
+        "package_ids": [],
+    }
+
+    return {
+        "appid": appid,
+        "title": title,
+        "observed_at": _iso_datetime(observed_at),
+        "valid_until": _iso_from_any_timestamp(valid_until_raw),
+        "store_url": f"https://store.steampowered.com/app/{appid}/",
+        "sources": sources,
+        "confidence": confidence,
+        "reason": _external_candidate_reason(confidence),
+        "signals": {
+            key: value
+            for key, value in signals.items()
+            if value not in (None, "")
+        },
+    }
+
+
 def _candidate_rank(candidate: dict[str, Any]) -> tuple[int, str]:
     return (
         CONFIDENCE_RANK.get(str(candidate.get("confidence") or "low"), 9),
@@ -343,6 +519,64 @@ def _summary(items: list[dict[str, Any]]) -> dict[str, Any]:
         confidence = str(item.get("confidence") or "unknown")
         confidence_counts[confidence] = confidence_counts.get(confidence, 0) + 1
     return {"count": len(items), "confidence_counts": confidence_counts}
+
+
+def build_free_weekend_candidates_from_external_records(
+    records_payload: dict[str, Any] | list[Any] | None,
+    *,
+    observed_at: Any,
+    current_timestamp: int | float | None = None,
+    now: Any = None,
+    wishlist_appids: Any = None,
+    owned: Any = None,
+    family_appids: Any = None,
+    personalized_recommendations: Any = None,
+    liked_appids: Any = None,
+    preference_relations: Any = None,
+) -> dict[str, Any]:
+    """Build `free_weekend_now` from local external records without network access."""
+    by_appid: dict[str, dict[str, Any]] = {}
+    for record in _payload_items(records_payload):
+        candidate = classify_external_free_weekend_record(
+            record,
+            observed_at=observed_at,
+            current_timestamp=current_timestamp,
+            now=now,
+        )
+        if not candidate:
+            continue
+        previous = by_appid.get(candidate["appid"])
+        if previous is None or _candidate_rank(candidate) < _candidate_rank(previous):
+            by_appid[candidate["appid"]] = candidate
+
+    items = list(by_appid.values())
+    payload = {
+        "generated_at": _iso_datetime(observed_at),
+        "source_policy": SOURCE_POLICY,
+        "items": items,
+        "summary": _summary(items),
+    }
+    if any(
+        context is not None
+        for context in (
+            wishlist_appids,
+            owned,
+            family_appids,
+            personalized_recommendations,
+            liked_appids,
+            preference_relations,
+        )
+    ):
+        return enrich_free_weekend_cross_signals(
+            payload,
+            wishlist_appids=wishlist_appids,
+            owned=owned,
+            family_appids=family_appids,
+            personalized_recommendations=personalized_recommendations,
+            liked_appids=liked_appids,
+            preference_relations=preference_relations,
+        )
+    return payload
 
 
 def _candidate_is_current(item: dict[str, Any], reference_timestamp: float) -> bool:

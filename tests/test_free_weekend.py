@@ -8,6 +8,7 @@ from tempfile import TemporaryDirectory
 
 from steam_deals_free_weekend import (
     build_free_weekend_candidates,
+    build_free_weekend_candidates_from_external_records,
     enrich_free_weekend_cross_signals,
     filter_current_free_weekend_payload,
     fetch_free_weekend_store_payloads,
@@ -52,6 +53,102 @@ def appdetails_entry(appid: int, name: str, **overrides) -> tuple[str, dict]:
 
 
 class FreeWeekendCandidateTests(unittest.TestCase):
+    def test_build_free_weekend_candidates_from_external_records_normalizes_local_sources(self) -> None:
+        payload = build_free_weekend_candidates_from_external_records(
+            {
+                "items": [
+                    {
+                        "appid": 1843840,
+                        "title": "Rogue Point",
+                        "starts_at": "2026-06-11T18:00:00Z",
+                        "ends_at": "2026-06-15T18:00:00Z",
+                        "sources": ["FreeToKeep", "LootScraper"],
+                        "category": "free_weekend",
+                        "source_url": "https://freetokeep.gg/free-weekends",
+                    },
+                    {
+                        "steam_appid": "394360",
+                        "name": "Hearts of Iron IV",
+                        "valid_until": "2026-06-15T18:00:00+00:00",
+                        "source": "FreeToKeep Free Weekend",
+                        "confidence": "high",
+                    },
+                ]
+            },
+            observed_at="2026-06-12T12:00:00Z",
+            now=datetime(2026, 6, 12, 12, 0, tzinfo=timezone.utc),
+            wishlist_appids=["1843840"],
+        )
+
+        by_appid = {item["appid"]: item for item in payload["items"]}
+        self.assertEqual(payload["source_policy"], "fixture_or_cached_store_signals_v1")
+        self.assertEqual(payload["summary"], {"count": 2, "confidence_counts": {"high": 2}})
+        self.assertEqual(set(by_appid), {"1843840", "394360"})
+        self.assertEqual(by_appid["1843840"]["sources"], ["FreeToKeep", "LootScraper"])
+        self.assertEqual(by_appid["1843840"]["signals"]["starts_at"], "2026-06-11T18:00:00Z")
+        self.assertEqual(
+            by_appid["1843840"]["signals"]["source_url"],
+            "https://freetokeep.gg/free-weekends",
+        )
+        self.assertEqual(by_appid["1843840"]["cross_reasons"], ["en tu wishlist"])
+        self.assertEqual(by_appid["394360"]["valid_until"], "2026-06-15T18:00:00Z")
+
+    def test_build_free_weekend_candidates_from_external_records_rejects_false_positives(self) -> None:
+        payload = build_free_weekend_candidates_from_external_records(
+            [
+                {
+                    "appid": 101,
+                    "title": "Expired External Weekend",
+                    "source": "FreeToKeep",
+                    "valid_until": "2020-01-01T00:00:00Z",
+                },
+                {
+                    "appid": 102,
+                    "title": "Missing Source Weekend",
+                    "valid_until": "2030-01-01T00:00:00Z",
+                },
+                {
+                    "appid": 103,
+                    "title": "Action Demo",
+                    "source": "LootScraper",
+                    "valid_until": "2030-01-01T00:00:00Z",
+                },
+                {
+                    "appid": 104,
+                    "title": "Free to Keep Giveaway",
+                    "source": "FreeToKeep",
+                    "offer_type": "free_to_keep",
+                    "valid_until": "2030-01-01T00:00:00Z",
+                },
+                {
+                    "appid": 105,
+                    "title": "Future Free Weekend",
+                    "source": "FreeToKeep",
+                    "starts_at": "2031-01-01T00:00:00Z",
+                    "valid_until": "2031-01-03T00:00:00Z",
+                },
+                {
+                    "appid": 106,
+                    "title": "Permanent F2P",
+                    "source": "External Cache",
+                    "is_free": True,
+                    "valid_until": "2030-01-01T00:00:00Z",
+                },
+                {
+                    "appid": 107,
+                    "title": "Valid External Weekend Candidate",
+                    "source": "LootScraper",
+                    "valid_until": "2030-01-01T00:00:00Z",
+                },
+            ],
+            observed_at=OBSERVED_AT,
+            now=OBSERVED_AT,
+        )
+
+        self.assertEqual([item["appid"] for item in payload["items"]], ["107"])
+        self.assertEqual(payload["items"][0]["confidence"], "medium")
+        self.assertEqual(payload["summary"], {"count": 1, "confidence_counts": {"medium": 1}})
+
     def test_build_free_weekend_candidates_marks_medium_from_free_price_with_expiration(self) -> None:
         featuredcategories = {"specials": {"items": [featured_item(10, "Paid Co-op")]}}
         appid, details = appdetails_entry(10, "Paid Co-op")
