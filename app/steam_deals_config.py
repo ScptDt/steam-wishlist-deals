@@ -76,6 +76,11 @@ def build_parser() -> argparse.ArgumentParser:
         help="Ruta a JSON local de registros Free Weekend ya corroborados (sin red live)",
     )
     parser.add_argument(
+        "--free-weekend-lootscraper-live",
+        action="store_true",
+        help="Opt-in experimental: consultar feed Atom LootScraper para Free Weekend con caché separado",
+    )
+    parser.add_argument(
         "--warm-cache",
         action="store_true",
         help="Precalienta caché de precios y sale sin generar reportes",
@@ -403,6 +408,9 @@ def _build_filters(args, cfg: dict, *, environ=None) -> dict:
         "free_weekend_records_json": Path(args.free_weekend_records_json).expanduser()
         if args.free_weekend_records_json
         else None,
+        "free_weekend_lootscraper_live": bool(
+            args.free_weekend_lootscraper_live or cfg.get("free_weekend_lootscraper_live")
+        ),
         "wishlist_external_matches_json": Path(args.wishlist_external_matches_json).expanduser()
         if args.wishlist_external_matches_json
         else None,

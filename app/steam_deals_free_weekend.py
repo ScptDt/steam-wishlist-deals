@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import re
+import urllib.request
 import xml.etree.ElementTree as ET
 from datetime import datetime, timezone
 from pathlib import Path
@@ -28,6 +29,7 @@ SOURCE_POLICY = "fixture_or_cached_store_signals_v1"
 FREE_WEEKEND_CACHE_PAYLOAD_KEY = "free_weekend_now"
 FREE_WEEKEND_CACHE_TTL_HOURS = 12
 FEATURED_CATEGORIES_URL = "https://store.steampowered.com/api/featuredcategories"
+LOOTSCRAPER_STEAM_ATOM_URL = "https://feed.eikowagenknecht.com/lootscraper_steam_game.xml"
 APPDETAILS_URL = (
     "https://store.steampowered.com/api/appdetails"
     "?appids={appids}&filters=basic,price_overview,packages,package_groups"
@@ -1083,6 +1085,21 @@ def _fetch_json(fetch_json, url: str) -> Any:
     return fetch_json(url, headers=STORE_JSON_HEADERS, timeout=15)
 
 
+def http_get_text(
+    url: str,
+    headers: dict[str, str] | None = None,
+    *,
+    timeout: int | float = 15,
+) -> str:
+    request = urllib.request.Request(url, headers=headers or {})
+    with urllib.request.urlopen(request, timeout=timeout) as response:
+        return response.read().decode("utf-8", errors="replace")
+
+
+def _fetch_text(fetch_text, url: str) -> str:
+    return fetch_text(url, headers=STORE_JSON_HEADERS, timeout=15)
+
+
 def _chunked(values: list[str], size: int) -> list[list[str]]:
     return [values[index : index + size] for index in range(0, len(values), size)]
 
@@ -1150,6 +1167,69 @@ def build_live_free_weekend_candidates(
         observed_at=observed,
         current_timestamp=reference_timestamp,
     )
+
+
+def build_live_lootscraper_free_weekend_candidates(
+    *,
+    fetch_text=http_get_text,
+    observed_at: Any = None,
+    current_timestamp: int | float | None = None,
+    now: Any = None,
+) -> dict[str, Any] | None:
+    """Build Free Weekend candidates from opt-in LootScraper Atom feed fetches."""
+    observed = observed_at or now or datetime.now(timezone.utc)
+    reference_timestamp = current_timestamp if current_timestamp is not None else _timestamp(observed)
+    atom_xml = _fetch_text(fetch_text, LOOTSCRAPER_STEAM_ATOM_URL)
+    records = lootscraper_atom_to_external_records(atom_xml)
+    if not records:
+        return None
+    return build_free_weekend_candidates_from_external_records(
+        records,
+        observed_at=observed,
+        current_timestamp=reference_timestamp,
+    )
+
+
+def resolve_lootscraper_free_weekend_now_payload(
+    cache_file: Path,
+    *,
+    live_enabled: bool = False,
+    ttl_hours: int | float = FREE_WEEKEND_CACHE_TTL_HOURS,
+    fetch_text=http_get_text,
+    current_timestamp: int | float | None = None,
+    now: Any = None,
+) -> dict[str, Any] | None:
+    """Resolve optional `free_weekend_now` from cache or opt-in LootScraper feed."""
+    cached_payload = load_free_weekend_candidate_cache(
+        cache_file,
+        ttl_hours=ttl_hours,
+        current_timestamp=current_timestamp,
+        now=now,
+    )
+    if cached_payload is not None:
+        return cached_payload
+    if not live_enabled:
+        return None
+
+    try:
+        live_payload = build_live_lootscraper_free_weekend_candidates(
+            fetch_text=fetch_text,
+            current_timestamp=current_timestamp,
+            now=now,
+        )
+    except Exception:
+        return None
+    if live_payload is None:
+        return None
+
+    current_payload = filter_current_free_weekend_payload(
+        live_payload,
+        current_timestamp=current_timestamp,
+        now=now,
+    )
+    if current_payload is not None:
+        save_free_weekend_candidate_cache(cache_file, current_payload)
+    return current_payload
 
 
 def resolve_free_weekend_now_payload(

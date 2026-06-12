@@ -7,6 +7,7 @@ from pathlib import Path
 from tempfile import TemporaryDirectory
 
 from steam_deals_free_weekend import (
+    LOOTSCRAPER_STEAM_ATOM_URL,
     build_free_weekend_candidates,
     build_free_weekend_candidates_from_external_records,
     build_free_weekend_candidates_from_lootscraper_atom,
@@ -14,6 +15,7 @@ from steam_deals_free_weekend import (
     filter_current_free_weekend_payload,
     fetch_free_weekend_store_payloads,
     lootscraper_atom_to_external_records,
+    resolve_lootscraper_free_weekend_now_payload,
     resolve_free_weekend_now_payload,
     save_free_weekend_candidate_cache,
 )
@@ -492,6 +494,71 @@ class FreeWeekendCandidateTests(unittest.TestCase):
         self.assertEqual(resolved["items"][0]["appid"], "100")
         self.assertIn("free_weekend_now", cached)
         self.assertNotIn("prices_cache", cached)
+
+    def test_resolve_lootscraper_free_weekend_now_payload_uses_fresh_cache_without_fetch(self) -> None:
+        now = datetime(2026, 6, 12, 12, 0, tzinfo=timezone.utc)
+        atom_xml = (FIXTURE_DIR / "lootscraper_steam_game_atom.xml").read_text(
+            encoding="utf-8"
+        )
+        payload = build_free_weekend_candidates_from_lootscraper_atom(
+            atom_xml,
+            observed_at=now,
+            now=now,
+        )
+
+        with TemporaryDirectory() as temp_dir:
+            cache_path = Path(temp_dir) / "free_weekend_candidates.json"
+            save_free_weekend_candidate_cache(cache_path, payload)
+            resolved = resolve_lootscraper_free_weekend_now_payload(
+                cache_path,
+                live_enabled=True,
+                now=now,
+                fetch_text=lambda *_args, **_kwargs: self.fail("fresh cache should not fetch"),
+            )
+
+        self.assertEqual(resolved["items"][0]["appid"], "1843840")
+
+    def test_resolve_lootscraper_free_weekend_now_payload_fetches_and_saves_cache_when_opted_in(self) -> None:
+        now = datetime(2026, 6, 12, 12, 0, tzinfo=timezone.utc)
+        atom_xml = (FIXTURE_DIR / "lootscraper_steam_game_atom.xml").read_text(
+            encoding="utf-8"
+        )
+        calls = []
+
+        def fake_fetch(url, **kwargs):
+            calls.append((url, kwargs))
+            return atom_xml
+
+        with TemporaryDirectory() as temp_dir:
+            cache_path = Path(temp_dir) / "free_weekend_candidates.json"
+            resolved = resolve_lootscraper_free_weekend_now_payload(
+                cache_path,
+                live_enabled=True,
+                now=now,
+                fetch_text=fake_fetch,
+            )
+            cached = json.loads(cache_path.read_text(encoding="utf-8"))
+
+        self.assertEqual(calls[0][0], LOOTSCRAPER_STEAM_ATOM_URL)
+        self.assertEqual(calls[0][1]["timeout"], 15)
+        self.assertEqual(resolved["items"][0]["appid"], "1843840")
+        self.assertIn("free_weekend_now", cached)
+        self.assertNotIn("prices_cache", cached)
+
+    def test_resolve_lootscraper_free_weekend_now_payload_degrades_on_malformed_atom(self) -> None:
+        now = datetime(2026, 6, 12, 12, 0, tzinfo=timezone.utc)
+
+        with TemporaryDirectory() as temp_dir:
+            cache_path = Path(temp_dir) / "free_weekend_candidates.json"
+            resolved = resolve_lootscraper_free_weekend_now_payload(
+                cache_path,
+                live_enabled=True,
+                now=now,
+                fetch_text=lambda *_args, **_kwargs: "{not-xml",
+            )
+
+        self.assertIsNone(resolved)
+        self.assertFalse(cache_path.exists())
 
     def test_fetch_free_weekend_store_payloads_fetches_appdetails_one_appid_at_a_time(self) -> None:
         details_by_appid = dict(
