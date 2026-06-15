@@ -65,6 +65,23 @@ python3 steam_deals_generator.py --help
 
 Para wishlists grandes, conserva la misma caché y usa `--warm-cache` / `--warm-cache-full`; no uses `--no-cache` como reacción automática. El procedimiento completo está en `docs/runbooks/performance-warm-cache.md`.
 
+## Free Weekend opt-in
+
+El reporte puede incluir `Free Weekend ahora` como señal advisory separada de descuentos, score/ranking, Top Picks y caché de precios. Por defecto no hace fetch live; solo reutiliza el caché dedicado si existe y sigue vigente.
+
+```bash
+# Consultar Store JSON con TTL/cache dedicado free_weekend_candidates.json
+python3 steam_deals_generator.py --vanity gaben --free-weekend-live
+
+# Usar registros locales ya corroborados, sin red live
+python3 steam_deals_generator.py --vanity gaben --free-weekend-records-json data/free_weekend_records.json
+
+# Señal experimental desde el feed Atom de LootScraper, opt-in y cacheada aparte de precios
+python3 steam_deals_generator.py --vanity gaben --free-weekend-lootscraper-live
+```
+
+`--free-weekend-records-json` tiene prioridad sobre fuentes live. LootScraper es una señal candidata de terceros: revisa confianza/vigencia antes de asumir disponibilidad. Detalles de fuentes, precedencia y validación: `docs/runbooks/free-weekend-source-strategy.md`.
+
 ## Desktop y builds
 
 ```bash
