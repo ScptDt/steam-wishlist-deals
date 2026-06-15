@@ -6368,6 +6368,70 @@ class PriceCacheTests(unittest.TestCase):
             any("individual_planificado" in line for line in emitted)
         )
 
+    def test_get_deals_from_wishlist_threshold_two_reduces_splits_vs_default(
+        self,
+    ) -> None:
+        appids = ["10", "20", "30", "40", "50", "60", "70", "80"]
+
+        def run_scenario(threshold: int) -> tuple[list[str], list[str], dict]:
+            requested_batches = []
+            single_calls = []
+            stats = {}
+
+            def fake_get_json(url, headers=None):
+                requested_batches.append(url.split("appids=", 1)[1].split("&", 1)[0])
+                raise urllib.error.HTTPError(url, 400, "Bad Request", hdrs=None, fp=None)
+
+            def fake_fetch_single(appid, _country, _delay):
+                single_calls.append(appid)
+                return None
+
+            deals, total = module_get_deals_from_wishlist(
+                appids,
+                {},
+                "steam-id",
+                min_discount=50,
+                get_json=fake_get_json,
+                sleep_fn=lambda _seconds: None,
+                monotonic_fn=lambda: 0.0,
+                current_time_fn=lambda: 200000.0,
+                save_price_cache_fn=lambda _steam_id, _cache: None,
+                fetch_single_fn=fake_fetch_single,
+                process_app_entry_fn=lambda appid, data: module_process_app_entry(
+                    appid, data, parse_release_year_fn=module_parse_release_year
+                ),
+                emit=lambda *_args, **_kwargs: None,
+                warn=lambda text: f"WARN:{text}",
+                dim=lambda text: f"DIM:{text}",
+                batch_size=2,
+                max_batch_halving=1,
+                http_400_circuit_breaker_threshold=threshold,
+                stats_out=stats,
+            )
+            self.assertEqual(total, len(appids))
+            self.assertEqual(deals, [])
+            return requested_batches, single_calls, stats
+
+        default_batches, default_single_calls, default_stats = run_scenario(3)
+        opt_in_batches, opt_in_single_calls, opt_in_stats = run_scenario(2)
+
+        self.assertEqual(default_single_calls, appids)
+        self.assertEqual(opt_in_single_calls, appids)
+        self.assertEqual(
+            default_batches,
+            ["10,20", "10", "20", "30,40", "30", "40", "50,60", "50", "60"],
+        )
+        self.assertEqual(
+            opt_in_batches,
+            ["10,20", "10", "20", "30,40", "30", "40"],
+        )
+        self.assertEqual(default_stats["degraded_batch_count"], 3)
+        self.assertEqual(opt_in_stats["degraded_batch_count"], 2)
+        self.assertEqual(default_stats["planned_individual_count"], 2)
+        self.assertEqual(opt_in_stats["planned_individual_count"], 4)
+        self.assertEqual(default_stats["reactive_fallback_count"], 6)
+        self.assertEqual(opt_in_stats["reactive_fallback_count"], 4)
+
     def test_get_deals_from_wishlist_opt_in_threshold_routes_direct_fallback_earlier(
         self,
     ) -> None:

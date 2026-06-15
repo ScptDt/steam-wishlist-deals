@@ -108,6 +108,31 @@ class ProactivePriceFetchPlannerTests(unittest.TestCase):
         self.assertEqual(plan["individual_planificado"], [])
         self.assertEqual(plan["signals"], {"repeated_http_400": False})
 
+    def test_http_400_streak_respects_opt_in_threshold(self) -> None:
+        candidates = ["10", "20"]
+
+        default_plan = build_proactive_price_fetch_plan(
+            candidates,
+            planner_context={
+                "http_400_degradation_streak": 2,
+                "http_400_circuit_breaker_threshold": 3,
+            },
+        )
+        opt_in_plan = build_proactive_price_fetch_plan(
+            candidates,
+            planner_context={
+                "http_400_degradation_streak": 2,
+                "http_400_circuit_breaker_threshold": 2,
+            },
+        )
+
+        self.assertEqual(default_plan["batch"], candidates)
+        self.assertEqual(default_plan["individual_planificado"], [])
+        self.assertEqual(default_plan["signals"], {"repeated_http_400": False})
+        self.assertEqual(opt_in_plan["batch"], [])
+        self.assertEqual(opt_in_plan["individual_planificado"], candidates)
+        self.assertEqual(opt_in_plan["signals"], {"repeated_http_400": True})
+
     def test_blank_candidates_are_ignored(self) -> None:
         plan = build_proactive_price_fetch_plan(["", None, {"appid": ""}, {"id": "30"}])
 
