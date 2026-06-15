@@ -80,6 +80,16 @@ python3 steam_deals_generator.py --vanity gaben --warm-cache
 
 Mantén el límite bajo: las muestras exponen appids de la wishlist en el log local y solo sirven para diseñar el siguiente ajuste offline. El default es `0`, por lo que no se imprimen appids si no activas explícitamente la variable.
 
+Umbral opt-in para hacer que el circuit breaker HTTP 400 entre antes a `individual_planificado` en fixtures o benchmarks aprobados:
+
+```bash
+STEAM_DEALS_HTTP_400_CIRCUIT_BREAKER_THRESHOLD=2 \
+STEAM_DEALS_CACHE_DIR="$HOME/.cache/steam_deals" \
+python3 steam_deals_generator.py --vanity gaben --warm-cache
+```
+
+El default sigue siendo `3`; `0` desactiva el circuit breaker HTTP 400. Úsalo solo para validar una hipótesis de umbral/circuit breaker con fixtures o un benchmark aislado aprobado: no cambia batch default, score/ranking, cache policy ni sustituye el fallback reactivo como safety net.
+
 Para comparar dos o más corridas en Markdown, pasa todos los logs en orden cronológico; el resumen agrega una tabla con deltas contra el log anterior y un bloque `Warm-cache next actions` con recomendaciones automáticas:
 
 ```bash
@@ -178,6 +188,12 @@ Corte runtime fixture-only 2026-06-10:
 - Cuando el circuit breaker por HTTP 400 repetido ya está activo, el runtime construye el plan proactivo para el batch pendiente y ejecuta esos appids como `individual_planificado` antes de seguir acumulando splits.
 - Los fallbacks que ocurren dentro del flujo batch/splits siguen contándose como `fallback_reactivo`; las métricas legacy (`individual_fallback_count`, `http_400_direct_fallback_count`) se preservan para compatibilidad.
 - `run_price_cache_stage(...)` y el resumen offline separan `individual_planificado` de `fallback_reactivo` en logs/resultados, sin cambiar batch default, cache policy, score/ranking, cooldown, fallback budget ni stale-while-revalidate.
+
+Corte umbral opt-in fixture-only 2026-06-15:
+
+- `STEAM_DEALS_HTTP_400_CIRCUIT_BREAKER_THRESHOLD` permite bajar el umbral del circuit breaker HTTP 400 para que los siguientes grupos entren antes a `individual_planificado` bajo validación controlada.
+- Default conservador preservado: `3`. Valor `0`: desactiva el circuit breaker. Valores negativos o inválidos vuelven al default.
+- La cobertura fixture-only confirma que un umbral menor reduce splits posteriores sin cambiar defaults, batch global, cache policy, score/ranking, cooldown, fallback budget, stale-while-revalidate ni la semántica legacy de métricas.
 
 Corte benchmark real parcial 2026-06-10:
 
