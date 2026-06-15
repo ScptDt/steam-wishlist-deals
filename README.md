@@ -25,7 +25,7 @@ python steam_tools_desktop.py
 - Detecta deals de tu wishlist con filtros por descuento, precio, Deck/ProtonDB, reviews y más.
 - Genera Top Picks, presupuesto ideal, watchlist de precios, comparativa entre runs y comparación con amigos.
 - Soporta imports locales advisory-only: wishlist externa, acceso jugable/Steam Family, preferencias del jugador y cachés ITAD/GG.deals.
-- Produce reportes `.md`, HTML interactivo, Share HTML, `.json` y `.csv`.
+- Produce reportes `.md`, HTML interactivo, Share HTML, JSON técnico, exports JSON separados de ofertas/wishlist y `.csv`.
 - Incluye warm-cache para wishlists grandes sin forzar `--no-cache`.
 - Tiene módulo standalone para PAYDAY 2 DLC Tracker.
 

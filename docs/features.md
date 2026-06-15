@@ -7,8 +7,8 @@ Catálogo compacto de capacidades implementadas. El README se mantiene breve; lo
 - **Web UI local**: wizard principal en `steam_deals_web.py` para configurar, ejecutar y revisar resultados desde `127.0.0.1`.
 - **CLI**: `steam_deals_generator.py` para automatización, scripting, filtros avanzados y warm-cache.
 - **Desktop wrapper**: `steam_tools_desktop.py` reutiliza la misma Web UI con `pywebview` y fallback a navegador.
-- **Reportes**: Markdown, HTML interactivo, Share HTML, JSON estructurado y CSV opcional.
-- **Top Picks y recomendaciones**: ranking, razones visibles, señales advisory y soporte para Decision Advisor JSON-only.
+- **Reportes**: Markdown, HTML interactivo, Share HTML, JSON técnico, exports JSON separados de ofertas/wishlist y CSV opcional.
+- **Top Picks y recomendaciones**: ranking/discovery, razones visibles, señales advisory y soporte para Decision Advisor JSON-only; score no se presenta como recomendación personalizada si faltan señales conductuales.
 - **Tu Presupuesto Ideal**: selección greedy por presupuesto con contexto de recomendación.
 - **Watchlist personal**: precio objetivo por juego y alertas de cambios relevantes.
 - **Comparar wishlists**: overlap, ideas de regalo y regalos grupales para múltiples perfiles.

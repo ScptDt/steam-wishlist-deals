@@ -1,15 +1,17 @@
 # Steam Deals JSON export contract
 
-Contrato docs-only para agregar exports JSON separados desde corridas normales de Steam Deals. El objetivo es permitir análisis externo o uso manual sin mezclar dos preguntas distintas:
+Contrato vigente para exports JSON separados desde corridas normales de Steam Deals. El objetivo es permitir análisis externo o uso manual sin mezclar dos preguntas distintas:
 
 1. **¿Qué ofertas detectó esta corrida?**
 2. **¿Cuál es el estado de toda la wishlist conocida?**
 
 Full warm-cache puede mejorar la cobertura, pero **no es requisito** para exportar. Si la corrida tiene cobertura parcial, los JSON deben decirlo explícitamente.
 
-## Readiness del slice
+Estado actual: implementado en builders puros, escritura de artefactos, serving allowlist y Web/Desktop UI. Commits de referencia: `ebe768d` para builders/artefactos/serving/docs y `c90d107` para descargas Web/Desktop separadas.
 
-- Objetivo: definir contrato, nombres, semántica de cobertura y fases de implementación para dos exports JSON separados.
+## Readiness original del contrato
+
+- Objetivo original: definir contrato, nombres, semántica de cobertura y fases de implementación para dos exports JSON separados.
 - Fuera de alcance: código runtime, renderers, Web UI, file serving, score, ranking, defaults, cache policy, fetching, endpoints, builds, reportes generados, red real, `BG00G` y `--no-cache`.
 - Archivos afectados en este slice: este runbook, índice de runbooks y `PENDIENTES.md`.
 - Validación mínima: revisión documental + `git diff --check`.
@@ -23,9 +25,9 @@ Full warm-cache puede mejorar la cobertura, pero **no es requisito** para export
 5. **Local-first y seguro.** No exponer rutas locales, API keys, webhooks, cookies, tokens, raw responses ni exports privados completos.
 6. **Advisory-only.** No borra wishlist, no auto-excluye, no compra, no abre carrito y no cambia score/ranking.
 
-## Artefactos propuestos
+## Artefactos vigentes
 
-Nombres orientativos, sujetos al formato final de `write_output_artifacts` y `/files` allowlist:
+Nombres finales generados junto al reporte normal:
 
 - `Steam Deals Offers YYYY-MM-DD.json`
 - `Steam Deals Wishlist YYYY-MM-DD.json`
@@ -224,27 +226,27 @@ Los exports pueden incluir AppIDs de wishlist y nombres de juegos, pero no deben
 
 Si una fuente local aporta ownership/acceso, exponer solo señales minimizadas (`owned`, `family_shared`, `external_access_possible`, `source_signal`) y no el archivo fuente ni evidencia cruda.
 
-## Fases futuras de implementación
+## Fases de implementación
 
-1. **Builder puro**
+1. **Builder puro** ✅ implementado
    - Crear helpers determinísticos para `offers_export` y `wishlist_export` desde datos ya disponibles del reporte/cache.
    - Tests con fixtures sin red: oferta confirmada, no oferta confirmada, stale usable, deferred, cooldown, failed/no-data y missing.
 
-2. **Artefactos y serving**
+2. **Artefactos y serving** ✅ implementado
    - Escribir los dos JSON junto al reporte normal.
    - Actualizar allowlist de `/files` para nombres exactos esperados.
    - No servir `prices_cache.json` ni archivos arbitrarios.
 
-3. **Web/Desktop UX**
+3. **Web/Desktop UX** ✅ implementado
    - Mostrar dos acciones separadas: `Descargar ofertas JSON` y `Descargar wishlist JSON`.
    - Desktop queda cubierto si reutiliza la Web UI.
    - Copy debe mencionar cobertura parcial cuando aplique.
 
-4. **Docs públicas**
+4. **Docs públicas** ✅ implementado en runbook/README/features/PENDIENTES
    - Actualizar `README.md`/`docs/features.md` solo cuando los artefactos existan realmente.
    - Mantener este runbook como contrato técnico y `PENDIENTES.md` como source-of-truth operativo.
 
-## Validación futura mínima
+## Validación mínima vigente
 
 - `py_compile` de builders/render/output touched.
 - Unit tests de builders puros con fixtures de cache state.
