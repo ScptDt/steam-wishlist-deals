@@ -23,10 +23,12 @@ from steam_deals_web import (
     generated_file_content_disposition,
     generated_file_content_type,
     generated_html_security_headers,
+    find_latest_primary_report_artifact,
     is_allowed_generated_file_path,
     is_expected_generated_artifact_name,
     is_safe_generated_file_name,
     list_allowed_generated_files,
+    load_latest_report_payload,
     open_output_folder,
     public_generated_file_name,
     resolve_output_dir,
@@ -1047,6 +1049,8 @@ class GeneratedFilesServingTests(unittest.TestCase):
         self.assertTrue(is_expected_generated_artifact_name("Steam Deals 2026-04-24.md"))
         self.assertTrue(is_expected_generated_artifact_name("Steam Deals 2026-04-24.json"))
         self.assertTrue(is_expected_generated_artifact_name("Steam Deals 2026-04-24.csv"))
+        self.assertTrue(is_expected_generated_artifact_name("Steam Deals Offers 2026-04-24.json"))
+        self.assertTrue(is_expected_generated_artifact_name("Steam Deals Wishlist 2026-04-24.json"))
         self.assertTrue(is_expected_generated_artifact_name("PAYDAY2_Plan_de_Compra.html"))
         self.assertTrue(is_expected_generated_artifact_name("PAYDAY2_Plan_de_Compra.md"))
         self.assertTrue(is_expected_generated_artifact_name("PAYDAY2_Plan_de_Compra.csv"))
@@ -1055,6 +1059,8 @@ class GeneratedFilesServingTests(unittest.TestCase):
         self.assertFalse(is_expected_generated_artifact_name("Steam Deals secrets 2026-04-24.json"))
         self.assertFalse(is_expected_generated_artifact_name("Steam Deals random.csv"))
         self.assertFalse(is_expected_generated_artifact_name("Steam Deals Share 2026-04-24.json"))
+        self.assertFalse(is_expected_generated_artifact_name("Steam Deals Offers 2026-04-24.md"))
+        self.assertFalse(is_expected_generated_artifact_name("Steam Deals Wishlist secrets 2026-04-24.json"))
         self.assertFalse(is_expected_generated_artifact_name("Steam Deals 2026-04-24.backup.html"))
         self.assertFalse(is_expected_generated_artifact_name("PAYDAY2_Plan_de_Compra.json"))
         self.assertFalse(is_expected_generated_artifact_name("Steam Deals 2026-04-24.exe"))
@@ -1072,6 +1078,12 @@ class GeneratedFilesServingTests(unittest.TestCase):
                 r"C:\Users\tester\output\Steam Deals 2026-04-24.json"
             ),
             "Steam Deals 2026-04-24.json",
+        )
+        self.assertEqual(
+            public_generated_file_name(
+                "/home/user/output/Steam Deals Offers 2026-04-24.json"
+            ),
+            "Steam Deals Offers 2026-04-24.json",
         )
 
     def test_public_generated_file_name_keeps_invalid_paths_redacted(self) -> None:
@@ -1101,14 +1113,17 @@ class GeneratedFilesServingTests(unittest.TestCase):
             valid = output_dir / "Steam Deals 2026-04-24.html"
             valid.with_suffix(".md").write_text("md", encoding="utf-8")
             valid.with_suffix(".json").write_text("{}", encoding="utf-8")
+            valid_export = output_dir / "Steam Deals Offers 2026-04-24.json"
             directory = output_dir / "Steam Deals Directory 2026-04-24.html"
             symlink = output_dir / "Steam Deals Link 2026-04-24.html"
             target = output_dir / "target.html"
             valid.write_text("ok", encoding="utf-8")
+            valid_export.write_text("{}", encoding="utf-8")
             directory.mkdir()
             target.write_text("secret", encoding="utf-8")
 
             self.assertTrue(is_allowed_generated_file_path(valid, output_dir))
+            self.assertTrue(is_allowed_generated_file_path(valid_export, output_dir))
             self.assertFalse(is_allowed_generated_file_path(directory, output_dir))
             try:
                 symlink.symlink_to(target)
@@ -1123,11 +1138,14 @@ class GeneratedFilesServingTests(unittest.TestCase):
             valid_md = output_dir / "Steam Deals 2026-04-24.md"
             valid_json = output_dir / "Steam Deals 2026-04-24.json"
             valid_share = output_dir / "Steam Deals Share 2026-04-24.html"
+            valid_offers_json = output_dir / "Steam Deals Offers 2026-04-24.json"
+            valid_wishlist_json = output_dir / "Steam Deals Wishlist 2026-04-24.json"
             valid_pd2 = output_dir / "PAYDAY2_Plan_de_Compra.csv"
             invalid_basename = output_dir / "secrets.json"
             invalid_extension = output_dir / "Steam Deals 2026-04-24.exe"
             invalid_generated_looking = output_dir / "Steam Deals secrets.json"
             invalid_share_json = output_dir / "Steam Deals Share 2026-04-24.json"
+            invalid_cache_json = output_dir / "prices_cache.json"
             invalid_backup = output_dir / "Steam Deals 2026-04-24.backup.html"
             invalid_directory = output_dir / "Steam Deals Directory 2026-04-24.html"
             for path in (
@@ -1135,11 +1153,14 @@ class GeneratedFilesServingTests(unittest.TestCase):
                 valid_md,
                 valid_json,
                 valid_share,
+                valid_offers_json,
+                valid_wishlist_json,
                 valid_pd2,
                 invalid_basename,
                 invalid_extension,
                 invalid_generated_looking,
                 invalid_share_json,
+                invalid_cache_json,
                 invalid_backup,
             ):
                 path.write_text(path.name, encoding="utf-8")
@@ -1154,9 +1175,35 @@ class GeneratedFilesServingTests(unittest.TestCase):
                 "Steam Deals 2026-04-24.md",
                 "Steam Deals 2026-04-24.json",
                 "Steam Deals Share 2026-04-24.html",
+                "Steam Deals Offers 2026-04-24.json",
+                "Steam Deals Wishlist 2026-04-24.json",
                 "PAYDAY2_Plan_de_Compra.csv",
             },
         )
+
+    def test_latest_report_ignores_json_export_artifacts(self) -> None:
+        with TemporaryDirectory() as temp_dir:
+            output_dir = Path(temp_dir)
+            report_html = output_dir / "Steam Deals 2026-04-24.html"
+            report_md = output_dir / "Steam Deals 2026-04-24.md"
+            report_json = output_dir / "Steam Deals 2026-04-24.json"
+            offers_json = output_dir / "Steam Deals Offers 2026-04-24.json"
+            wishlist_json = output_dir / "Steam Deals Wishlist 2026-04-24.json"
+            report_html.write_text("html", encoding="utf-8")
+            report_md.write_text("md", encoding="utf-8")
+            report_json.write_text('{"schema":"steam_deals_report_json"}', encoding="utf-8")
+            offers_json.write_text('{"schema":"steam_deals_offers_export_v1"}', encoding="utf-8")
+            wishlist_json.write_text('{"schema":"steam_deals_wishlist_export_v1"}', encoding="utf-8")
+            os.utime(report_json, (1_000_000, 1_000_000))
+            os.utime(offers_json, (1_000_100, 1_000_100))
+            os.utime(wishlist_json, (1_000_200, 1_000_200))
+
+            latest = find_latest_primary_report_artifact(output_dir)
+            payload_path, payload = load_latest_report_payload(output_dir)
+
+        self.assertEqual(latest, report_json)
+        self.assertEqual(payload_path, report_json)
+        self.assertEqual(payload, {"schema": "steam_deals_report_json"})
 
     def test_generated_file_error_page_is_clear_and_escapes_content(self) -> None:
         page = generated_file_error_page(404, "Archivo <faltante>", "No usar <path>")

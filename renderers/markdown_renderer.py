@@ -442,8 +442,10 @@ def _offer_highlight_label(
         return "Esperar mejor oferta", "señal conservadora"
     if "solo si" in recommendation_lower:
         return "Solo si ya estaba en tu radar", "señal conservadora"
-    if "comprar" in recommendation_lower or "muy buena" in recommendation_lower:
-        return "Muy buena oferta", recommendation or "señal del Top Pick"
+    if "comprar" in recommendation_lower or "oferta destacada" in recommendation_lower:
+        return "Oferta destacada", "score/oferta alta"
+    if "muy buena" in recommendation_lower or "muy buen deal" in recommendation_lower:
+        return "Muy buen deal", "score/oferta alta"
     if near_min or "mínimo" in reasons_lower or "minimo" in reasons_lower:
         return "Cerca de mínimo histórico", "precio cerca del mínimo conocido"
     if _offer_has_active_promo_signal(
@@ -453,9 +455,9 @@ def _offer_highlight_label(
     ):
         return "Promo destacada", "contexto de promo activa"
     if discount >= 85:
-        return "Muy buena oferta", "descuento fuerte"
-    if "vale la pena" in recommendation_lower or discount >= 70:
-        return "Buena para revisar hoy", recommendation or "descuento alto"
+        return "Muy buen deal", "descuento fuerte"
+    if "vale la pena" in recommendation_lower or "buena para revisar" in recommendation_lower or discount >= 70:
+        return "Buena para revisar hoy", "descuento alto"
     return None
 
 
@@ -1199,7 +1201,7 @@ def format_deal_row(game: dict, show_storefront: bool = False) -> str:
 
 def _format_budget_pick_label(pick: dict) -> str:
     label = _link(pick["name"], pick["appid"])
-    recommendation = pick.get("recommendation")
+    recommendation = _score_discovery_label(pick.get("recommendation"))
     reasons = " · ".join(_md_esc(reason) for reason in pick.get("score_reasons", []))
     if recommendation:
         label += f"<br>**{_md_esc(recommendation)}**"
@@ -1258,11 +1260,64 @@ def _build_budget_replacement_lines(selected: list[dict]) -> list[str]:
     ]
 
 
+SCORE_DISCOVERY_FALLBACK_REASON = "sin señal personal suficiente; aparece por score del reporte"
+PERSONALIZED_REASON_FALLBACK = "señal personal positiva del reporte"
+
+
+def _score_discovery_label(label) -> str:
+    raw = str(label or "").strip()
+    lowered = raw.casefold()
+    if "comprar" in lowered or "oferta destacada" in lowered:
+        return "Oferta destacada"
+    if "muy buena" in lowered or "muy buen deal" in lowered:
+        return "Muy buen deal"
+    if "vale la pena" in lowered or "buena para revisar" in lowered:
+        return "Buena para revisar"
+    if "solo si" in lowered:
+        return "Solo si ya estaba en tu radar"
+    return raw
+
+
+def _is_score_discovery_reason(reason: str) -> bool:
+    normalized = str(reason or "").strip().casefold()
+    return normalized in {
+        "score base del reporte",
+        SCORE_DISCOVERY_FALLBACK_REASON.casefold(),
+    }
+
+
+def _positive_affinity(item: dict) -> bool:
+    if isinstance(item.get("affinity_score"), bool):
+        return False
+    try:
+        return float(item.get("affinity_score")) > 0
+    except (TypeError, ValueError):
+        return False
+
+
+def _personalized_signal_reasons(item: dict) -> list[str]:
+    reasons = [str(reason).strip() for reason in item.get("reasons", []) if str(reason).strip()]
+    return [reason for reason in reasons if not _is_score_discovery_reason(reason)]
+
+
+def _has_personalized_signal(item: dict) -> bool:
+    return _positive_affinity(item) or bool(_personalized_signal_reasons(item))
+
+
+def _personalized_visible_items(payload: dict | None) -> list[dict]:
+    if not isinstance(payload, dict):
+        return []
+    return [
+        item for item in payload.get("items", [])
+        if isinstance(item, dict) and _has_personalized_signal(item)
+    ]
+
+
 def _recommended_collection_item_line(item: dict) -> str:
     appid = str(item.get("appid") or "").strip()
     name = str(item.get("name") or "Juego desconocido")
     title = _link(name, appid) if appid else _md_esc(name)
-    reason = str(item.get("reason") or "Recomendado por las señales del reporte.")
+    reason = str(item.get("reason") or "Destacado por señales del reporte.")
     meta = []
     if item.get("score") not in (None, ""):
         meta.append(f"Score {_md_esc(str(item.get('score')))}")
@@ -1299,9 +1354,9 @@ def _build_recommended_collection_lines(collections: list[dict]) -> list[str]:
     if not sections:
         return []
     return [
-        "## 🧠 Colecciones recomendadas",
+        "## 🧠 Colecciones destacadas",
         "",
-        "> Secciones curadas con datos ya calculados del reporte: score, descuento, compatibilidad, reviews y géneros/etiquetas disponibles.",
+        "> Secciones curadas con datos ya calculados del reporte: score, descuento, compatibilidad, reviews y géneros/etiquetas disponibles. Son discovery/oferta, no recomendación personalizada.",
         "",
         *sections,
         "---",
@@ -1379,8 +1434,8 @@ def _personalized_behavioral_explanation_lines(explanation: dict | None) -> list
 
 
 def _personalized_item_line(item: dict, index: int) -> str:
-    reasons = [str(reason) for reason in item.get("reasons", []) if str(reason).strip()]
-    reason_text = " · ".join(_md_esc(reason) for reason in reasons) or "score base del reporte"
+    reasons = _personalized_signal_reasons(item)
+    reason_text = " · ".join(_md_esc(reason) for reason in reasons) or PERSONALIZED_REASON_FALLBACK
     meta = []
     if item.get("personalized_score") not in (None, ""):
         meta.append(f"Personal {_md_esc(str(item.get('personalized_score')))}")
@@ -1473,7 +1528,7 @@ def _build_personalized_recommendation_lines(
 ) -> list[str]:
     if not isinstance(payload, dict):
         return []
-    items = [item for item in payload.get("items", []) if isinstance(item, dict)]
+    items = _personalized_visible_items(payload)
     if not items:
         return []
     explanations_by_appid = _behavioral_explanations_by_appid(behavioral_explanations)
@@ -1491,7 +1546,7 @@ def _build_personalized_recommendation_lines(
     return [
         "## 🎯 Recomendaciones personalizadas",
         "",
-        "> Ranking explicable construido con score del reporte y señales opcionales de actividad, biblioteca y preferencias. No cambia el score global.",
+        "> Ranking explicable construido solo con señales personales disponibles: actividad, biblioteca o preferencias. No cambia el score global.",
         "",
         *profile_lines,
         *item_lines,
@@ -1657,7 +1712,7 @@ def generate_md(
         lines += [
             "## 🏆 Top 10 Picks",
             "",
-            "> Score = recomendación compuesta para priorizar qué revisar primero. Combina reviews (26%) + descuento (22%) + prioridad (18%) + $/hora HLTB (14%) + Deck (10%) + Metacritic (5%) + antigüedad (5%).",
+            "> Score = señal de priorización/discovery para revisar ofertas primero. Combina reviews (26%) + descuento (22%) + prioridad (18%) + $/hora HLTB (14%) + Deck (10%) + Metacritic (5%) + antigüedad (5%); no equivale a recomendación personalizada.",
             "",
             "| # | Score | % | Precio | Año | Reseñas | Metacritic | Compatibilidad | Tipo de juego | Juego |",
             "|---|-------|---|--------|-----|---------|----|-----------|----|-------|",
@@ -1685,7 +1740,7 @@ def generate_md(
         if any(tp.get("recommendation") or tp.get("score_reasons") for tp in top_picks):
             lines += ["", "### ¿Por qué salió arriba?", ""]
             for idx, tp in enumerate(top_picks, 1):
-                recommendation = tp.get("recommendation")
+                recommendation = _score_discovery_label(tp.get("recommendation"))
                 reasons = " · ".join(
                     _md_esc(reason) for reason in tp.get("score_reasons", [])
                 )

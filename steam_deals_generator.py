@@ -95,6 +95,16 @@ except Exception:
 
 
 try:
+    from steam_deals_json_exports import (
+        build_offers_export as _build_offers_export_impl,
+        build_wishlist_export as _build_wishlist_export_impl,
+    )
+except Exception:
+    _build_offers_export_impl = None
+    _build_wishlist_export_impl = None
+
+
+try:
     from steam_deals_recommendations import (
         build_gift_ideas as _build_gift_ideas_impl,
         build_multi_profile_gift_contract as _build_multi_profile_gift_contract_impl,
@@ -2108,6 +2118,7 @@ FREE_WEEKEND_CACHE_FILE = CACHE_DIR / "free_weekend_candidates.json"
 FREE_WEEKEND_CACHE_TTL_HOURS = _FREE_WEEKEND_CACHE_TTL_HOURS_IMPL
 CACHE_MAX_HOURS = 24
 PRICE_BATCH_HALVING_LIMIT = 3
+PRICE_HTTP_400_CIRCUIT_BREAKER_THRESHOLD = 3
 PRICE_HTTP_400_DIAGNOSTIC_SAMPLE_LIMIT = 0
 PRICE_HTTP_400_DIAGNOSTIC_SAMPLE_LIMIT_MAX = 20
 REVIEWS_CACHE_FILE = CACHE_DIR / "reviews_cache.json"
@@ -2185,6 +2196,12 @@ def resolve_price_fetch_tuning(*, env=None) -> dict[str, int | float | bool | No
         env=env,
         minimum=0,
     )
+    http_400_circuit_breaker_threshold = _resolve_positive_int_env(
+        "STEAM_DEALS_HTTP_400_CIRCUIT_BREAKER_THRESHOLD",
+        PRICE_HTTP_400_CIRCUIT_BREAKER_THRESHOLD,
+        env=env,
+        minimum=0,
+    )
     individual_fallback_workers = _resolve_positive_int_env(
         "STEAM_DEALS_INDIVIDUAL_FALLBACK_WORKERS",
         PRICE_INDIVIDUAL_FALLBACK_WORKERS,
@@ -2214,12 +2231,14 @@ def resolve_price_fetch_tuning(*, env=None) -> dict[str, int | float | bool | No
     return {
         "batch_size": batch_size,
         "batch_halving_limit": batch_halving_limit,
+        "http_400_circuit_breaker_threshold": http_400_circuit_breaker_threshold,
         "individual_fallback_workers": individual_fallback_workers,
         "max_refresh_candidates_per_run": max_refresh_candidates_per_run,
         "refresh_time_budget_seconds": refresh_time_budget_seconds,
         "http_400_diagnostic_sample_limit": http_400_diagnostic_sample_limit,
         "is_custom": batch_size != BATCH_SIZE
         or batch_halving_limit != PRICE_BATCH_HALVING_LIMIT
+        or http_400_circuit_breaker_threshold != PRICE_HTTP_400_CIRCUIT_BREAKER_THRESHOLD
         or individual_fallback_workers != PRICE_INDIVIDUAL_FALLBACK_WORKERS
         or max_refresh_candidates_per_run != PRICE_MAX_REFRESH_CANDIDATES_PER_RUN
         or refresh_time_budget_seconds != PRICE_REFRESH_TIME_BUDGET_SECONDS
@@ -2376,6 +2395,32 @@ def build_cache_state_summary(
         stale_grace_hours=stale_grace_hours,
         ttl_jitter_hours=ttl_jitter_hours,
     )
+
+
+def build_cache_states_by_appid(
+    target_ids: list[str] | tuple[str, ...],
+    cached: dict,
+    *,
+    now_ts: float,
+    ttl_hours: float,
+    failure_retry_hours: float = 2.0,
+    stale_grace_hours: float = 0.0,
+    ttl_jitter_hours: int | float = 0,
+) -> dict[str, str]:
+    if _cache_policy_module is None:
+        raise RuntimeError("Cache policy module is not available")
+    return {
+        str(appid): _cache_policy_module.classify_cache_entry_state(
+            str(appid),
+            cached,
+            now_ts=now_ts,
+            ttl_hours=ttl_hours,
+            failure_retry_hours=failure_retry_hours,
+            stale_grace_hours=stale_grace_hours,
+            ttl_jitter_hours=ttl_jitter_hours,
+        )
+        for appid in target_ids
+    }
 
 
 def build_no_price_classification_summary(
@@ -2886,6 +2931,15 @@ def run_price_cache_stage(
             f"fallback_workers={price_tuning['individual_fallback_workers']}"
         )
         if (
+            price_tuning.get("http_400_circuit_breaker_threshold")
+            != PRICE_HTTP_400_CIRCUIT_BREAKER_THRESHOLD
+        ):
+            tuning_msg = (
+                f"{tuning_msg} · "
+                "http400_circuit_threshold="
+                f"{int(price_tuning['http_400_circuit_breaker_threshold'])}"
+            )
+        if (
             price_tuning.get("max_refresh_candidates_per_run")
             != PRICE_MAX_REFRESH_CANDIDATES_PER_RUN
             and max_refresh_candidates_per_run is not None
@@ -2968,6 +3022,9 @@ def run_price_cache_stage(
             current_time_fn=current_time_fn,
             batch_size=int(price_tuning["batch_size"]),
             max_batch_halving=int(price_tuning["batch_halving_limit"]),
+            http_400_circuit_breaker_threshold=int(
+                price_tuning["http_400_circuit_breaker_threshold"]
+            ),
             individual_fallback_workers=int(price_tuning["individual_fallback_workers"]),
             http_400_diagnostic_sample_limit=int(
                 price_tuning["http_400_diagnostic_sample_limit"]
@@ -3088,10 +3145,20 @@ def run_price_cache_stage(
             f"next_resume_hint={resume_hint}"
         )
         emit_fn(f"  {_dim(time_budget_msg)}")
+    cache_state_now = float(current_time_fn())
     cache_state_summary = build_cache_state_summary(
         wishlist_appids,
         fetched_cache,
-        now_ts=float(current_time_fn()),
+        now_ts=cache_state_now,
+        ttl_hours=ENTRY_REFRESH_TTL_HOURS,
+        failure_retry_hours=PRICE_FAILURE_RETRY_HOURS,
+        stale_grace_hours=PRICE_STALE_GRACE_HOURS,
+        ttl_jitter_hours=PRICE_TTL_JITTER_HOURS,
+    )
+    cache_states_by_appid = build_cache_states_by_appid(
+        wishlist_appids,
+        fetched_cache,
+        now_ts=cache_state_now,
         ttl_hours=ENTRY_REFRESH_TTL_HOURS,
         failure_retry_hours=PRICE_FAILURE_RETRY_HOURS,
         stale_grace_hours=PRICE_STALE_GRACE_HOURS,
@@ -3108,6 +3175,8 @@ def run_price_cache_stage(
         "cache_age": cache_age,
         "cache_status": price_cache_policy.status,
         "cache_path": CACHE_FILE,
+        "price_entries": dict(fetched_cache),
+        "cache_states_by_appid": cache_states_by_appid,
         "cache_state_counts": cache_state_summary["counts"],
         "cache_state_summary": cache_state_summary["states"],
         "no_price_classification_advisory_only": no_price_classification_summary[
@@ -3172,6 +3241,9 @@ def run_price_cache_stage(
         ],
         "batch_size": int(price_tuning["batch_size"]),
         "batch_halving_limit": int(price_tuning["batch_halving_limit"]),
+        "http_400_circuit_breaker_threshold": int(
+            price_tuning["http_400_circuit_breaker_threshold"]
+        ),
         "individual_fallback_workers": int(price_tuning["individual_fallback_workers"]),
         "max_refresh_candidates_per_run": max_refresh_candidates_per_run,
         "refresh_time_budget_seconds": refresh_time_budget_seconds,
@@ -3362,6 +3434,7 @@ def get_deals_from_wishlist(
     current_time_fn=time.time,
     batch_size: int = BATCH_SIZE,
     max_batch_halving: int = PRICE_BATCH_HALVING_LIMIT,
+    http_400_circuit_breaker_threshold: int = PRICE_HTTP_400_CIRCUIT_BREAKER_THRESHOLD,
     individual_fallback_workers: int = PRICE_INDIVIDUAL_FALLBACK_WORKERS,
     http_400_diagnostic_sample_limit: int = PRICE_HTTP_400_DIAGNOSTIC_SAMPLE_LIMIT,
     stats_out: dict | None = None,
@@ -3396,6 +3469,7 @@ def get_deals_from_wishlist(
         current_time_fn=current_time_fn,
         refresh_ids=refresh_ids,
         max_batch_halving=max_batch_halving,
+        http_400_circuit_breaker_threshold=http_400_circuit_breaker_threshold,
         individual_fallback_workers=individual_fallback_workers,
         http_400_diagnostic_sample_limit=http_400_diagnostic_sample_limit,
         failure_retry_hours=PRICE_FAILURE_RETRY_HOURS,
@@ -4758,6 +4832,55 @@ def generate_json(
     )
 
 
+def build_json_export_contents(
+    *,
+    deals,
+    wishlist_appids,
+    generated_at: str,
+    source_report: dict,
+    price_entries: dict | None = None,
+    cache_states: dict | None = None,
+    cache_coverage: dict | None = None,
+    top_picks: list[dict] | None = None,
+    external_offers: dict | None = None,
+    active_promo_context: dict | None = None,
+    priorities: dict | None = None,
+    owned=None,
+    family_appids=None,
+    wishlist_hygiene: dict | None = None,
+) -> dict[str, str]:
+    if _build_offers_export_impl is None or _build_wishlist_export_impl is None:
+        raise RuntimeError("JSON exports module is not available")
+    offers_export = _build_offers_export_impl(
+        deals,
+        generated_at=generated_at,
+        source_report=source_report,
+        wishlist_appids=wishlist_appids,
+        cache_states=cache_states,
+        cache_coverage=cache_coverage,
+        top_picks=top_picks,
+        external_offers=external_offers,
+        active_promo_context=active_promo_context,
+    )
+    wishlist_export = _build_wishlist_export_impl(
+        wishlist_appids,
+        generated_at=generated_at,
+        source_report=source_report,
+        deals=deals,
+        price_entries=price_entries,
+        cache_states=cache_states,
+        cache_coverage=cache_coverage,
+        priorities=priorities,
+        owned=owned,
+        family_appids=family_appids,
+        wishlist_hygiene=wishlist_hygiene,
+    )
+    return {
+        "offers_json_content": json.dumps(offers_export, ensure_ascii=False, indent=2),
+        "wishlist_json_content": json.dumps(wishlist_export, ensure_ascii=False, indent=2),
+    }
+
+
 def _safe_non_negative_int(value) -> int:
     try:
         parsed = int(value or 0)
@@ -5917,6 +6040,26 @@ def main():
         decision_support=decision_support,
         **family_renderer_kwargs,
     )
+    json_export_contents = build_json_export_contents(
+        deals=deals,
+        wishlist_appids=wishlist_appids,
+        generated_at=datetime.now().astimezone().isoformat(timespec="seconds"),
+        source_report={
+            "filename": output_artifacts.output_json.name,
+            "vanity": VANITY,
+            "sale_name": sale_name,
+        },
+        price_entries=price_stage.get("price_entries"),
+        cache_states=price_stage.get("cache_states_by_appid"),
+        cache_coverage=cache_coverage,
+        top_picks=top_picks,
+        external_offers=external_offers,
+        active_promo_context=active_promo_context,
+        priorities=priorities,
+        owned=access_owned,
+        family_appids=access_family_appids,
+        wishlist_hygiene=wishlist_hygiene,
+    )
 
     # Generar CSV (opcional)
     csv_content = None
@@ -5945,6 +6088,8 @@ def main():
             html=html,
             share_html=share_html,
             json_content=json_content,
+            offers_json_content=json_export_contents["offers_json_content"],
+            wishlist_json_content=json_export_contents["wishlist_json_content"],
             csv_content=csv_content,
         ),
     )
@@ -5952,6 +6097,8 @@ def main():
     print(f"  {_ok(str(written_artifacts['html']))}")
     print(f"  {_ok(str(written_artifacts['share_html']))}")
     print(f"  {_ok(str(written_artifacts['json']))}")
+    print(f"  {_ok(str(written_artifacts['offers_json']))}")
+    print(f"  {_ok(str(written_artifacts['wishlist_json']))}")
     if "csv" in written_artifacts:
         print(f"  {_ok(str(written_artifacts['csv']))}")
 

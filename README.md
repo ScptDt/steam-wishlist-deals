@@ -101,6 +101,7 @@ Web: `python3 payday2_web.py` (`http://127.0.0.1:8081`). CLI: `python3 payday2_d
 La documentación canónica vive en el repo para versionarse junto con el código. La Wiki de GitHub puede usarse como versión navegable/pulida para tutoriales largos, FAQ o capturas, enlazando de vuelta a estos archivos.
 
 - Índice de runbooks: `docs/runbooks/README.md`
+- Catálogo completo de features: `docs/features.md`
 - Guías principales: `steam_deals_guia.md`, `payday2_guia.md`
 - Performance/warm-cache: `docs/runbooks/performance-warm-cache.md`
 - Features, imports locales y multi-tienda: `docs/runbooks/features-validation.md`, `docs/runbooks/wishlist-hygiene-multistore-contract.md`, `docs/runbooks/multistore-price-comparison.md`

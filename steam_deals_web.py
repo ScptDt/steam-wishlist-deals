@@ -265,6 +265,9 @@ STEAM_DEALS_PRIMARY_ARTIFACT_RE = re.compile(
 STEAM_DEALS_SHARE_ARTIFACT_RE = re.compile(
     r"^Steam Deals Share \d{4}-\d{2}-\d{2}\.html$"
 )
+STEAM_DEALS_JSON_EXPORT_ARTIFACT_RE = re.compile(
+    r"^Steam Deals (?:Offers|Wishlist) (\d{4}-\d{2}-\d{2})\.json$"
+)
 
 
 def _safe_content_disposition_filename(name: str) -> str:
@@ -353,6 +356,8 @@ def is_expected_generated_artifact_name(name: str) -> bool:
     suffix = Path(name).suffix.lower()
     if suffix not in GENERATED_FILE_CONTENT_TYPES:
         return False
+    if name.startswith(("Steam Deals Offers ", "Steam Deals Wishlist ")):
+        return bool(STEAM_DEALS_JSON_EXPORT_ARTIFACT_RE.match(name))
     if name.startswith("Steam Deals Share "):
         return bool(STEAM_DEALS_SHARE_ARTIFACT_RE.match(name))
     if name.startswith("Steam Deals "):
@@ -514,9 +519,8 @@ def selection_review_context_from_report(report: dict) -> dict:
 
 
 def load_latest_report_payload(output_dir: str | Path) -> tuple[Path | None, dict | None]:
-    out_dir = Path(output_dir)
-    latest_report = find_latest_artifact(out_dir, "Steam Deals*.json")
-    if latest_report is None or not is_allowed_generated_file_path(latest_report, out_dir):
+    latest_report = find_latest_primary_report_artifact(output_dir)
+    if latest_report is None:
         return None, None
     try:
         payload = json.loads(latest_report.read_text(encoding="utf-8"))
@@ -528,7 +532,13 @@ def load_latest_report_payload(output_dir: str | Path) -> tuple[Path | None, dic
 def is_primary_steam_deals_artifact_name(name: str) -> bool:
     if STEAM_DEALS_SHARE_ARTIFACT_RE.match(name):
         return False
+    if STEAM_DEALS_JSON_EXPORT_ARTIFACT_RE.match(name):
+        return False
     return bool(STEAM_DEALS_PRIMARY_ARTIFACT_RE.match(name))
+
+
+def is_json_export_artifact_name(name: str) -> bool:
+    return bool(STEAM_DEALS_JSON_EXPORT_ARTIFACT_RE.match(name))
 
 
 def _has_complete_primary_artifact_group(path: Path, output_dir: Path) -> bool:
@@ -550,6 +560,26 @@ def _has_complete_primary_artifact_group(path: Path, output_dir: Path) -> bool:
     return True
 
 
+def _json_export_report_date(name: str) -> str:
+    match = STEAM_DEALS_JSON_EXPORT_ARTIFACT_RE.match(name)
+    return match.group(1) if match else ""
+
+
+def _has_primary_report_for_export(path: Path, output_dir: Path) -> bool:
+    report_date = _json_export_report_date(path.name)
+    if not report_date:
+        return False
+    try:
+        candidates = list(output_dir.glob(f"Steam Deals* {report_date}.json"))
+    except OSError:
+        return False
+    return any(
+        is_primary_steam_deals_artifact_name(candidate.name)
+        and _has_complete_primary_artifact_group(candidate, output_dir)
+        for candidate in candidates
+    )
+
+
 def is_allowed_generated_file_path(path: Path, output_dir: Path) -> bool:
     if not is_expected_generated_artifact_name(path.name):
         return False
@@ -562,7 +592,26 @@ def is_allowed_generated_file_path(path: Path, output_dir: Path) -> bool:
         return False
     if is_primary_steam_deals_artifact_name(path.name):
         return _has_complete_primary_artifact_group(path, output_dir)
+    if is_json_export_artifact_name(path.name):
+        return _has_primary_report_for_export(path, output_dir)
     return True
+
+
+def find_latest_primary_report_artifact(output_dir: str | Path) -> Path | None:
+    out_dir = Path(output_dir)
+    try:
+        candidates = [
+            path
+            for path in out_dir.iterdir()
+            if path.suffix.lower() == ".json"
+            if is_primary_steam_deals_artifact_name(path.name)
+            and is_allowed_generated_file_path(path, out_dir)
+        ]
+    except OSError:
+        return None
+    if not candidates:
+        return None
+    return max(candidates, key=lambda path: path.stat().st_mtime)
 
 
 def list_allowed_generated_files(output_dir: str | Path) -> list[Path]:
@@ -2080,7 +2129,7 @@ class Handler(BaseHTTPRequestHandler):
         self._send_json(files[:20])
 
     def _serve_latest_report(self):
-        latest_report = find_latest_artifact(Handler.output_dir, "Steam Deals*.json")
+        latest_report = find_latest_primary_report_artifact(Handler.output_dir)
         if latest_report is None:
             self._send_json(
                 {

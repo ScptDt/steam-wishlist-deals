@@ -19,7 +19,18 @@ Mover el producto hacia un sistema de **Discovery + Decision Support**:
 - No requiere perfil público, wishlist pública, playtime, juegos instalados ni red nueva.
 - No usa ML, embeddings, scraping, login ni endpoints nuevos.
 - Si faltan señales personales, los consumidores futuros deben degradar con `partial`, `unavailable` o `insufficient_signals`, no fallar ni inventar.
+- No usar score, descuento, reviews, Top Picks o `personalized_recommendations` score-only como fallback de recomendación: esas señales pueden explicar discovery/oferta, pero no “recomendado para ti”.
 - La taxonomía debe ser amplia para distintos tipos de jugador, no solo para el perfil actual del autor.
+
+## Política de consumidores: no fallback recommendations
+
+Para todas las superficies que muestren señales behavioral o decision support:
+
+- `behavioral_signals_v1` puede explicar **qué tipo de experiencia es** un juego: familias, loops, descriptors y cautions.
+- `player_behavior_fit_v1` y `decision_support_v1` pueden sostener copy de **fit/revisión** cuando existen y declaran `status=available` con señales suficientes.
+- `score`, descuento, reviews, `top_picks` y razones como `score base del reporte` no son fallback válido para copy de recomendación personalizada. Si un item solo tiene esas señales, debe mostrarse como discovery/oferta destacada o no mostrar bloque de recomendación.
+- Los fallbacks visibles deben ser de **omisión/degradación**, no de sustitución por score. “Fallback silencioso” significa no renderizar el bloque o usar copy de “sin señal suficiente”, nunca rellenar con “recomendado por score”.
+- Si el ranking general está en `score_fallback`, los behaviorals disponibles siguen siendo útiles para explicar loops, commitment y riesgos; lo que queda prohibido es afirmar afinidad personal fuerte sin fit/perfil suficiente.
 
 ## Relación con otras capas
 
@@ -30,7 +41,7 @@ Mover el producto hacia un sistema de **Discovery + Decision Support**:
 | `behavioral_explanations_v1` | JSON interno + consumidores Plan F | Consume `behavioral_signals_v1` para exponer headlines, razones y cues compactos reutilizables. |
 | `player_behavior_profile_v1` | JSON interno opcional | Perfila preferencias conductuales del usuario con señales locales/opt-in; se expone solo si hay preferencias útiles. |
 | `player_behavior_fit_v1` | JSON interno opcional | Cruza perfil del jugador con señales de juego por item, sin score numérico ni impacto en ranking. |
-| `decision_support_v1` | JSON interno opcional | Traduce fit cualitativo en etiquetas de revisión (`good_fit`, `maybe`, `weak_fit`) sin compra automática ni impacto en ranking. |
+| `decision_support_v1` | JSON interno opcional | Traduce fit cualitativo en etiquetas de revisión (`good_fit`, `maybe`, `weak_fit`) sin compra automática, impacto en ranking ni fallback por score. |
 
 ## Contrato JSON
 
@@ -160,6 +171,7 @@ Reglas:
 
 - no inventar afinidad personal ni perfil de jugador;
 - omitir payload si `behavioral_signals` no tiene items válidos;
+- no sustituir explicaciones ausentes con score/descuento/reviews;
 - conservar `advisory_only=true` y `ranking_impact=none`;
 - no cambiar score, ranking, defaults, cache ni fetching.
 
@@ -173,13 +185,14 @@ Plan F define consumidores visibles sin cambiar el contrato JSON. El objetivo no
 - **Título/copy base**: `Por qué podría gustarte` para confianza `medium`/`high`; usar `Señales de estilo del juego` si la confianza es `low` para no prometer afinidad personal.
 - **Fuente única**: `behavioral_explanations.items` existente. No leer red, no recalcular preferencias y no crear payloads nuevos.
 - **Campos permitidos**: `headline`, hasta 2 frases de `reasons`, y hasta 3 labels de `supporting_cues` si aportan claridad.
-- **Fallback**: si el payload falta, está inválido, no tiene appid numérico o no matchea la recomendación visible, omitir el bloque sin empty state.
+- **Fallback**: si el payload falta, está inválido, no tiene appid numérico o no matchea la recomendación visible, omitir el bloque sin empty state; no rellenar con score/descuento/reviews.
 - **Nota obligatoria**: indicar cerca del bloque que es advisory-only y que no cambia score/ranking.
 
 ### No objetivos de Plan F v1
 
 - No construir ni consumir `player_behavior_profile_v1` dentro de Plan F; ese perfil vive en un slice separado y no altera estas explicaciones visibles.
 - No inferir gustos personales sin señales explícitas.
+- No convertir items score-only o `affinity_score=0.0` en “recomendado para ti”; en esas condiciones el bloque behavioral debe omitirse o degradar a señal de estilo del juego cuando exista `behavioral_explanations`.
 - No cambiar Top Picks, score, ranking, defaults, cache, fetching ni orden de recomendaciones.
 - No mover la señal a otra superficie sin slice separado.
 - No mostrar behavioral signals crudos si no pasan por `behavioral_explanations_v1`.

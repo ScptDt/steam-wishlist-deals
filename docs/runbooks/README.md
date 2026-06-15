@@ -26,13 +26,14 @@
 | `smoke-test-catalog.md` | Copiar comandos mínimos de test/smoke por wave | Comando, propósito, prerequisito y cuándo no usarlo |
 | `stop-on-failure.md` | Cuando falla una validación, smoke o build | Detener, reportar, proponer, pedir aprobación y escalar |
 | `performance-warm-cache.md` | Preparar o medir corridas grandes/wishlists grandes | Warm-cache, logs, fallback individual, duración y artifacts |
+| `json-export-contract.md` | Diseñar exports JSON separados de ofertas detectadas y wishlist completa sin exigir full warm-cache | Contratos `steam_deals_offers_export_v1` y `steam_deals_wishlist_export_v1`, cobertura parcial y fases futuras |
 | `free-weekend-source-strategy.md` | Operar y auditar `Free Weekend ahora` global | Fuentes Store/records/LootScraper, precedencia, schema local, confianza/vigencia y no-go contra scraping frágil |
 | `features-validation.md` | Validar features específicas sin cargar el README | Frontmatter Obsidian/Notion, `Tu Presupuesto Ideal`, share E2E, contrato Scheduler Web/Desktop |
 | `wishlist-hygiene-windows-validation.md` | Validar en Windows que `wishlist_hygiene` se vea en Web UI/reportes y que el import local opcional funcione como revisión | JSON `wishlist_hygiene.items`, sección `Revisar wishlist`, `external_matches` advisory-only |
 | `wishlist-hygiene-multistore-contract.md` | Consultar contrato y uso local de señales multi-store/play_access/steam_access para `wishlist_hygiene` | `--wishlist-external-matches-json`, `--play-access-json`, `--steam-access-json`, shapes aceptadas, señales aceptables/rechazadas y guardrails advisory-only |
 | `multistore-price-comparison.md` | Planificar la comparativa de precios multi-tienda separada de `wishlist_hygiene` | Contrato `external_offers`, taxonomía de tiendas, ITAD/Fanatical, keyshops opt-in y no-checkout |
 | `behavioral-signals-contract.md` | Diseñar o auditar `behavioral_signals_v1`, `behavioral_explanations_v1`, consumidores visibles Plan F, `player_behavior_profile_v1`, `player_behavior_fit_v1` y `decision_support_v1` | Taxonomía `data/behavioral_taxonomy_v1.json`, contrato advisory-only, degraded states, perfil local/opt-in, fit y decision support JSON-only |
-| `decision-advisor-v0.md` | Usar campos existentes del reporte como asesor de compra/revisión sin recalcular score ni ranking | Capas oferta/compatibilidad/acceso/confianza, prompt externo recomendado y decisiones advisory-only |
+| `decision-advisor-v0.md` | Usar campos existentes del reporte como asesor de compra/revisión sin recalcular score ni ranking | Capas oferta/compatibilidad/acceso/confianza, política no-fallback recommendations, prompt externo recomendado y decisiones advisory-only |
 
 ## Selector rápido por wave/tipo
 

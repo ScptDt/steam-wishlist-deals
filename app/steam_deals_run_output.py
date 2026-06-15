@@ -12,6 +12,8 @@ class OutputArtifactPaths:
     output_html: Path
     output_share: Path
     output_json: Path
+    output_offers_json: Path
+    output_wishlist_json: Path
     output_csv: Path | None = None
 
 
@@ -21,6 +23,8 @@ class OutputArtifactPayloads:
     html: str
     share_html: str
     json_content: str
+    offers_json_content: str
+    wishlist_json_content: str
     csv_content: str | None = None
 
 
@@ -70,6 +74,20 @@ def build_share_output_path(
     return Path(output_dir) / f"Steam Deals Share {today.strftime('%Y-%m-%d')}.html"
 
 
+def build_offers_export_output_path(
+    output_dir: str | Path, *, today_obj: date | None = None
+) -> Path:
+    today = today_obj or date.today()
+    return Path(output_dir) / f"Steam Deals Offers {today.strftime('%Y-%m-%d')}.json"
+
+
+def build_wishlist_export_output_path(
+    output_dir: str | Path, *, today_obj: date | None = None
+) -> Path:
+    today = today_obj or date.today()
+    return Path(output_dir) / f"Steam Deals Wishlist {today.strftime('%Y-%m-%d')}.json"
+
+
 def build_output_artifact_paths(
     output_md: Path,
     *,
@@ -81,6 +99,14 @@ def build_output_artifact_paths(
         output_html=output_md.with_suffix(".html"),
         output_share=build_share_output_path(output_md.parent, today_obj=today_obj),
         output_json=output_md.with_suffix(".json"),
+        output_offers_json=build_offers_export_output_path(
+            output_md.parent,
+            today_obj=today_obj,
+        ),
+        output_wishlist_json=build_wishlist_export_output_path(
+            output_md.parent,
+            today_obj=today_obj,
+        ),
         output_csv=output_md.with_suffix(".csv") if include_csv else None,
     )
 
@@ -116,6 +142,14 @@ def write_output_artifacts(
         "html": write_artifact_fn(paths.output_html, payloads.html),
         "share_html": write_artifact_fn(paths.output_share, payloads.share_html),
         "json": write_artifact_fn(paths.output_json, payloads.json_content),
+        "offers_json": write_artifact_fn(
+            paths.output_offers_json,
+            payloads.offers_json_content,
+        ),
+        "wishlist_json": write_artifact_fn(
+            paths.output_wishlist_json,
+            payloads.wishlist_json_content,
+        ),
     }
     if payloads.csv_content is not None and paths.output_csv is not None:
         written["csv"] = write_artifact_fn(paths.output_csv, payloads.csv_content)

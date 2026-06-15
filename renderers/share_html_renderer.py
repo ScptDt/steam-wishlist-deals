@@ -21,8 +21,11 @@ CAPSULE_URL = "https://cdn.akamai.steamstatic.com/steam/apps/{appid}/capsule_231
 HEADER_URL = "https://cdn.akamai.steamstatic.com/steam/apps/{appid}/header.jpg"
 
 _SCORE_EXPLANATION = (
-    "Score = recomendación compuesta para priorizar qué revisar primero."
+    "Score = señal de priorización/discovery; no equivale a recomendación personalizada."
 )
+
+SCORE_DISCOVERY_FALLBACK_REASON = "sin señal personal suficiente; aparece por score del reporte"
+PERSONALIZED_REASON_FALLBACK = "señal personal positiva del reporte"
 
 _EXTERNAL_OFFER_CONFIDENCE_LABELS = {
     "high": "Alta",
@@ -104,6 +107,37 @@ def _safe_float(value: object) -> float | None:
         return float(value)
     except (TypeError, ValueError):
         return None
+
+
+def _is_score_discovery_reason(reason: str) -> bool:
+    normalized = str(reason or "").strip().casefold()
+    return normalized in {
+        "score base del reporte",
+        SCORE_DISCOVERY_FALLBACK_REASON.casefold(),
+    }
+
+
+def _positive_affinity(item: dict) -> bool:
+    affinity = _safe_float(item.get("affinity_score"))
+    return affinity is not None and affinity > 0
+
+
+def _personalized_signal_reasons(item: dict) -> list[str]:
+    reasons = [str(reason).strip() for reason in item.get("reasons", []) if str(reason).strip()]
+    return [reason for reason in reasons if not _is_score_discovery_reason(reason)]
+
+
+def _has_personalized_signal(item: dict) -> bool:
+    return _positive_affinity(item) or bool(_personalized_signal_reasons(item))
+
+
+def _personalized_visible_items(payload: dict | None) -> list[dict]:
+    if not isinstance(payload, dict):
+        return []
+    return [
+        item for item in payload.get("items", [])
+        if isinstance(item, dict) and _has_personalized_signal(item)
+    ]
 
 
 def _external_offer_confidence_label(confidence: str) -> str:
@@ -715,7 +749,7 @@ def _render_steam_capsule_thumb(appid: str, name: str, class_name: str) -> str:
 def _render_collection_item(item: dict) -> str:
     appid = str(item.get("appid") or item.get("steam_appid") or "").strip()
     name = str(item.get("name") or item.get("steam_name") or "Juego desconocido")
-    reason = str(item.get("reason") or "Recomendado por las señales del reporte.")
+    reason = str(item.get("reason") or "Destacado por señales del reporte.")
     score = item.get("score")
     discount = _safe_int(item.get("discount"))
     price_final = str(item.get("price_final") or item.get("price") or "")
@@ -792,8 +826,8 @@ def _render_recommended_collections(collections: list[dict]) -> str:
     if not collection_cards:
         return ""
     return f'''<section class="recommended-collections" data-recommended-collections-section>
-  <h2 style="margin:1rem 0 .35rem">Colecciones recomendadas</h2>
-  <p>Secciones curadas con datos ya calculados del reporte: score, descuento, compatibilidad, reviews y géneros/etiquetas disponibles.</p>
+  <h2 style="margin:1rem 0 .35rem">Colecciones destacadas</h2>
+  <p>Secciones curadas con datos ya calculados del reporte: score, descuento, compatibilidad, reviews y géneros/etiquetas disponibles. Son discovery/oferta, no recomendación personalizada.</p>
   <div class="recommended-collections-grid">{"".join(collection_cards)}</div>
 </section>'''
 
@@ -967,10 +1001,10 @@ def _render_personalized_item(
         if safe_appid
         else html_escape(name)
     )
-    reasons = [str(reason) for reason in item.get("reasons", []) if str(reason).strip()]
+    reasons = _personalized_signal_reasons(item)
     reasons_html = "".join(
         f"<li>{html_escape(reason)}</li>"
-        for reason in (reasons[:3] or ["score base del reporte"])
+        for reason in (reasons[:3] or [PERSONALIZED_REASON_FALLBACK])
     )
     share_html = ""
     if safe_appid:
@@ -1008,7 +1042,7 @@ def _render_personalized_recommendations(
 ) -> str:
     if not isinstance(payload, dict):
         return ""
-    items = [item for item in payload.get("items", []) if isinstance(item, dict)]
+    items = _personalized_visible_items(payload)
     if not items:
         return ""
     explanations_by_appid = _behavioral_explanations_by_appid(behavioral_explanations)
@@ -1022,7 +1056,7 @@ def _render_personalized_recommendations(
     )
     return f'''<section class="personalized-recommendations" data-personalized-recommendations-section>
   <h2 style="margin:1rem 0 .35rem">Recomendaciones personalizadas</h2>
-  <p>Ranking explicable con score del reporte y señales opcionales de actividad, biblioteca y preferencias. No cambia el score global.</p>
+  <p>Ranking explicable construido solo con señales personales disponibles: actividad, biblioteca o preferencias. No cambia el score global.</p>
   {_render_personalized_profile(payload.get("profile") or {})}
   <div class="personalized-recommendations-grid">{cards}</div>
 </section>'''

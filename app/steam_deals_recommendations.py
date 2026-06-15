@@ -16,6 +16,8 @@ SCORE_WEIGHTS = {
     "metacritic": 0.05,
 }
 
+SCORE_DISCOVERY_FALLBACK_REASON = "sin señal personal suficiente; aparece por score del reporte"
+
 
 BUDGET_VARIANTS = (
     {
@@ -42,9 +44,9 @@ BUDGET_VARIANTS = (
 RECOMMENDED_COLLECTION_DEFINITIONS = (
     {
         "id": "recommended_for_you",
-        "title": "Recomendado para ti",
-        "label": "Recomendado para ti",
-        "description": "Mezcla señales de score, wishlist y calidad para empezar por lo más prometedor.",
+        "title": "Destacados por score",
+        "label": "Destacados por score",
+        "description": "Mezcla score, wishlist y calidad como discovery; revisa señales personales antes de tratarlo como recomendación.",
         "source_signals": ["top_picks", "score_reasons", "score"],
     },
     {
@@ -1193,7 +1195,7 @@ def _personalized_candidate(candidate: dict, *, activity_terms, library_terms, l
         affinity += 20
         reasons.extend(relation_reasons[:2])
     if not reasons:
-        reasons.append("score base del reporte")
+        reasons.append(SCORE_DISCOVERY_FALLBACK_REASON)
     return {
         "appid": appid,
         "name": candidate.get("name") or candidate.get("steam_name") or "Juego desconocido",
@@ -1633,7 +1635,11 @@ def _taste_category(score: float, factors: dict[str, float]) -> str:
 
 def _taste_reasons(candidate: dict, category: str, factors: dict[str, float]) -> list[str]:
     reasons: list[str] = []
-    reasons.extend(str(reason) for reason in candidate.get("reasons") or [] if reason != "score base del reporte")
+    reasons.extend(
+        str(reason)
+        for reason in candidate.get("reasons") or []
+        if reason not in {"score base del reporte", SCORE_DISCOVERY_FALLBACK_REASON}
+    )
     if category == "compra_inmediata":
         if factors["personal_affinity"] >= 35:
             reasons.append("alta afinidad con tus gustos locales")
@@ -1852,7 +1858,11 @@ def _selection_reasons(
         reasons.append("ya está en tu biblioteca")
     if appid in family_appids:
         reasons.append("ya disponible en biblioteca familiar")
-    reasons.extend(str(reason) for reason in candidate.get("reasons") or [] if reason != "score base del reporte")
+    reasons.extend(
+        str(reason)
+        for reason in candidate.get("reasons") or []
+        if reason not in {"score base del reporte", SCORE_DISCOVERY_FALLBACK_REASON}
+    )
     base_score = _selection_base_score(candidate)
     affinity_score = _safe_number(candidate.get("affinity_score"))
     if candidate.get("personalized_score") is not None and _safe_number(candidate.get("personalized_score")) >= 80:
@@ -2166,12 +2176,26 @@ def _weighted_score(signals: dict[str, float]) -> float:
 
 def _recommendation_label(score: float) -> str:
     if score >= 85:
-        return "Comprar ahora"
+        return "Oferta destacada"
     if score >= 72:
-        return "Muy buena oferta"
+        return "Muy buen deal"
     if score >= 60:
-        return "Vale la pena"
-    return "Solo si ya lo traías en radar"
+        return "Buena para revisar"
+    return "Solo si ya estaba en tu radar"
+
+
+def _score_discovery_label(label) -> str:
+    raw = str(label or "").strip()
+    lowered = raw.casefold()
+    if "comprar" in lowered or "oferta destacada" in lowered:
+        return "Oferta destacada"
+    if "muy buena" in lowered or "muy buen deal" in lowered:
+        return "Muy buen deal"
+    if "vale la pena" in lowered or "buena para revisar" in lowered:
+        return "Buena para revisar"
+    if "solo si" in lowered:
+        return "Solo si ya estaba en tu radar"
+    return raw
 
 
 def _signal_reason_candidates(
@@ -2422,7 +2446,7 @@ def _budget_pick_payload(deal: dict, score: float, *, top_pick: dict | None = No
     payload = {
         **deal,
         "score": score,
-        "recommendation": (top_pick or {}).get("recommendation") or _recommendation_label(score),
+        "recommendation": _score_discovery_label((top_pick or {}).get("recommendation")) or _recommendation_label(score),
         "score_reasons": list((top_pick or {}).get("score_reasons") or []),
     }
     if efficiency is not None:

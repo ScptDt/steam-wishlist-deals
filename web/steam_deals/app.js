@@ -3077,18 +3077,17 @@ function latestOfferHighlight(item, report = null) {
 
   if (recommendationLower.includes('esper')) return { label: 'Esperar mejor oferta', reason: 'señal conservadora' };
   if (recommendationLower.includes('solo si')) return { label: 'Solo si ya estaba en tu radar', reason: 'señal conservadora' };
-  if (recommendationLower.includes('comprar') || recommendationLower.includes('muy buena')) {
-    return { label: 'Muy buena oferta', reason: recommendation || 'señal del Top Pick' };
-  }
+  if (recommendationLower.includes('comprar') || recommendationLower.includes('oferta destacada')) return { label: 'Oferta destacada', reason: 'score/oferta alta' };
+  if (recommendationLower.includes('muy buena') || recommendationLower.includes('muy buen deal')) return { label: 'Muy buen deal', reason: 'score/oferta alta' };
   if (nearMin || reasonsLower.includes('mínimo') || reasonsLower.includes('minimo')) {
     return { label: 'Cerca de mínimo histórico', reason: 'precio cerca del mínimo conocido' };
   }
   if (latestOfferHasActivePromoSignal(reasons, discount, activePromoContext)) {
     return { label: 'Promo destacada', reason: 'contexto de promo activa' };
   }
-  if (discount >= 85) return { label: 'Muy buena oferta', reason: 'descuento fuerte' };
-  if (recommendationLower.includes('vale la pena') || discount >= 70) {
-    return { label: 'Buena para revisar hoy', reason: recommendation || 'descuento alto' };
+  if (discount >= 85) return { label: 'Muy buen deal', reason: 'descuento fuerte' };
+  if (recommendationLower.includes('vale la pena') || recommendationLower.includes('buena para revisar') || discount >= 70) {
+    return { label: 'Buena para revisar hoy', reason: 'descuento alto' };
   }
   return null;
 }
@@ -4427,12 +4426,43 @@ function latestSteamCapsuleUrl(appid) {
   return `https://cdn.akamai.steamstatic.com/steam/apps/${escapeHtml(appid)}/capsule_231x87.jpg`;
 }
 
+const SCORE_DISCOVERY_FALLBACK_REASON = 'sin señal personal suficiente; aparece por score del reporte';
+const PERSONALIZED_REASON_FALLBACK = 'señal personal positiva del reporte';
+
+function latestIsScoreDiscoveryReason(reason) {
+  const normalized = String(reason || '').trim().toLowerCase();
+  return normalized === 'score base del reporte' || normalized === SCORE_DISCOVERY_FALLBACK_REASON;
+}
+
+function latestPersonalizedSignalReasons(item) {
+  const source = item && typeof item === 'object' ? item : {};
+  const reasons = Array.isArray(source.reasons) ? source.reasons : [];
+  return reasons
+    .map(reason => String(reason || '').trim())
+    .filter(reason => reason && !latestIsScoreDiscoveryReason(reason));
+}
+
+function latestHasPositiveAffinity(item) {
+  const source = item && typeof item === 'object' ? item : {};
+  const affinity = Number(source.affinity_score);
+  return Number.isFinite(affinity) && affinity > 0;
+}
+
+function latestHasPersonalizedSignal(item) {
+  return latestHasPositiveAffinity(item) || latestPersonalizedSignalReasons(item).length > 0;
+}
+
+function latestVisiblePersonalizedItems(items) {
+  return (Array.isArray(items) ? items : [])
+    .filter(item => item && typeof item === 'object' && latestHasPersonalizedSignal(item));
+}
+
 function renderLatestRecommendedCollectionItem(item) {
   const source = item && typeof item === 'object' ? item : {};
   const appid = String(source.appid || source.steam_appid || '').trim();
   const safeAppid = /^\d+$/.test(appid) ? appid : '';
   const name = source.name || source.steam_name || 'Juego desconocido';
-  const reason = source.reason || 'Recomendado por las señales del último reporte.';
+  const reason = source.reason || 'Destacado por señales del último reporte.';
   const score = source.score;
   const discount = Number(source.discount || 0) || 0;
   const price = source.price_final || source.price || '';
@@ -4495,8 +4525,8 @@ function renderLatestRecommendedCollections(report) {
   return `
     <div class="latest-collections-section" data-latest-recommended-collections>
       <div class="latest-collections-head">
-        <div class="latest-collections-title">Colecciones recomendadas</div>
-        <div class="latest-collections-subtitle">Atajos curados desde el último reporte: score, ahorro, Steam Deck, reviews y géneros disponibles.</div>
+        <div class="latest-collections-title">Colecciones destacadas</div>
+        <div class="latest-collections-subtitle">Atajos discovery/oferta desde el último reporte: score, ahorro, Steam Deck, reviews y géneros disponibles.</div>
       </div>
       <div class="latest-collections-grid">${cards}</div>
     </div>
@@ -4508,9 +4538,7 @@ function renderLatestPersonalizedRecommendationItem(item, index, report = null, 
   const appid = String(source.appid || source.steam_appid || '').trim();
   const safeAppid = /^\d+$/.test(appid) ? appid : '';
   const name = source.name || source.steam_name || 'Juego desconocido';
-  const reasons = Array.isArray(source.reasons)
-    ? source.reasons.filter(reason => String(reason || '').trim()).slice(0, 2)
-    : [];
+  const reasons = latestPersonalizedSignalReasons(source).slice(0, 2);
   const meta = [];
   if (Number.isFinite(Number(source.personalized_score))) meta.push(`Personal ${source.personalized_score}`);
   if (Number.isFinite(Number(source.affinity_score))) meta.push(`Afinidad +${source.affinity_score}`);
@@ -4531,7 +4559,7 @@ function renderLatestPersonalizedRecommendationItem(item, index, report = null, 
       <div class="latest-personalized-item-main">
         <strong>${nameHtml}</strong>
         ${meta.length ? `<span class="latest-personalized-item-meta">${escapeHtml(meta.join(' · '))}</span>` : ''}
-        <span class="latest-personalized-item-reasons">${escapeHtml((reasons.length ? reasons : ['score base del reporte']).join(' · '))}</span>
+        <span class="latest-personalized-item-reasons">${escapeHtml((reasons.length ? reasons : [PERSONALIZED_REASON_FALLBACK]).join(' · '))}</span>
         ${renderLatestOfferHighlight(source, report)}
         ${renderLatestPersonalizedBehavioralExplanation(behavioralExplanation)}
       </div>
@@ -4664,9 +4692,7 @@ function latestActivitySummaryChips(summary) {
 
 function renderLatestPersonalizedRecommendations(report, files = null) {
   const payload = report && typeof report === 'object' ? (report.personalized_recommendations || null) : null;
-  const items = Array.isArray(payload && payload.items)
-    ? payload.items.filter(item => item && typeof item === 'object')
-    : [];
+  const items = latestVisiblePersonalizedItems(payload && payload.items);
   if (!items.length) return '';
   const selectedItems = items.slice(0, 3);
   const explanationsByAppid = latestBehavioralExplanationsByAppid(report);
@@ -4679,7 +4705,7 @@ function renderLatestPersonalizedRecommendations(report, files = null) {
     <div class="latest-personalized-section" data-latest-personalized-recommendations>
       <div class="latest-personalized-head">
         <div class="latest-personalized-title">Recomendaciones personalizadas</div>
-        <div class="latest-personalized-subtitle">Hasta 3 juegos del ranking personalizado. Abre el HTML o JSON para revisar el detalle completo.</div>
+        <div class="latest-personalized-subtitle">Hasta 3 juegos con señales personales reales. Abre el HTML o JSON para revisar el detalle completo.</div>
       </div>
       ${renderLatestPersonalizedProfile(payload.profile || {})}
       <ol class="latest-personalized-list">
@@ -5035,7 +5061,7 @@ function buildLatestSelectionCandidates(report) {
     });
   };
   const personalized = report && report.personalized_recommendations;
-  addCandidates(personalized && personalized.items, 'Personalizado', 4);
+  addCandidates(latestVisiblePersonalizedItems(personalized && personalized.items), 'Personalizado', 4);
   addCandidates(report && report.top_picks, 'Top Picks', 6);
   addCandidates(latestSelectionCollectionItems(report), 'Colección', 6);
   addCandidates(report && report.deals, 'Oferta', 8);

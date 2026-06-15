@@ -540,8 +540,10 @@ def _offer_highlight_label(
         return "Esperar mejor oferta", "señal conservadora"
     if "solo si" in recommendation_lower:
         return "Solo si ya estaba en tu radar", "señal conservadora"
-    if "comprar" in recommendation_lower or "muy buena" in recommendation_lower:
-        return "Muy buena oferta", recommendation or "señal del Top Pick"
+    if "comprar" in recommendation_lower or "oferta destacada" in recommendation_lower:
+        return "Oferta destacada", "score/oferta alta"
+    if "muy buena" in recommendation_lower or "muy buen deal" in recommendation_lower:
+        return "Muy buen deal", "score/oferta alta"
     if near_min or "mínimo" in reasons_lower or "minimo" in reasons_lower:
         return "Cerca de mínimo histórico", "precio cerca del mínimo conocido"
     if _offer_has_active_promo_signal(
@@ -551,9 +553,9 @@ def _offer_highlight_label(
     ):
         return "Promo destacada", "contexto de promo activa"
     if discount >= 85:
-        return "Muy buena oferta", "descuento fuerte"
-    if "vale la pena" in recommendation_lower or discount >= 70:
-        return "Buena para revisar hoy", recommendation or "descuento alto"
+        return "Muy buen deal", "descuento fuerte"
+    if "vale la pena" in recommendation_lower or "buena para revisar" in recommendation_lower or discount >= 70:
+        return "Buena para revisar hoy", "descuento alto"
     return None
 
 
@@ -998,11 +1000,64 @@ def _html_taste_priority(payload: dict | None) -> str:
 </section>'''
 
 
+SCORE_DISCOVERY_FALLBACK_REASON = "sin señal personal suficiente; aparece por score del reporte"
+PERSONALIZED_REASON_FALLBACK = "señal personal positiva del reporte"
+
+
+def _score_discovery_label(label) -> str:
+    raw = str(label or "").strip()
+    lowered = raw.casefold()
+    if "comprar" in lowered or "oferta destacada" in lowered:
+        return "Oferta destacada"
+    if "muy buena" in lowered or "muy buen deal" in lowered:
+        return "Muy buen deal"
+    if "vale la pena" in lowered or "buena para revisar" in lowered:
+        return "Buena para revisar"
+    if "solo si" in lowered:
+        return "Solo si ya estaba en tu radar"
+    return raw
+
+
+def _is_score_discovery_reason(reason: str) -> bool:
+    normalized = str(reason or "").strip().casefold()
+    return normalized in {
+        "score base del reporte",
+        SCORE_DISCOVERY_FALLBACK_REASON.casefold(),
+    }
+
+
+def _positive_affinity(item: dict) -> bool:
+    if isinstance(item.get("affinity_score"), bool):
+        return False
+    try:
+        return float(item.get("affinity_score")) > 0
+    except (TypeError, ValueError):
+        return False
+
+
+def _personalized_signal_reasons(item: dict) -> list[str]:
+    reasons = [str(reason).strip() for reason in item.get("reasons", []) if str(reason).strip()]
+    return [reason for reason in reasons if not _is_score_discovery_reason(reason)]
+
+
+def _has_personalized_signal(item: dict) -> bool:
+    return _positive_affinity(item) or bool(_personalized_signal_reasons(item))
+
+
+def _personalized_visible_items(personalized_recommendations: dict | None) -> list[dict]:
+    if not isinstance(personalized_recommendations, dict):
+        return []
+    return [
+        item for item in personalized_recommendations.get("items", [])
+        if isinstance(item, dict) and _has_personalized_signal(item)
+    ]
+
+
 def _top_pick_recommendation_filter_labels(top_picks: list[dict]) -> list[str]:
     labels: list[str] = []
     seen: set[str] = set()
     for pick in top_picks:
-        label = str((pick or {}).get("recommendation") or "").strip() or "Sin recomendación"
+        label = _score_discovery_label((pick or {}).get("recommendation")) or "Sin señal"
         key = label.casefold()
         if key in seen:
             continue
@@ -1019,13 +1074,13 @@ def _html_top_pick_filter_controls(labels: list[str]) -> str:
         f'<button type="button" class="top-pick-filter-btn" data-top-pick-filter="{_html_esc(label)}" aria-pressed="false">{_html_esc(label)}</button>'
         for label in labels
     )
-    return f'''<div class="top-pick-filters" aria-label="Filtrar Top Picks por recomendación">
+    return f'''<div class="top-pick-filters" aria-label="Filtrar Top Picks por señal">
   <div class="top-pick-filter-head">
-    <strong>Filtrar recomendación</strong>
+    <strong>Filtrar señal</strong>
     <span data-top-pick-filter-count></span>
   </div>
   <div class="top-pick-filter-buttons">{"".join(buttons)}</div>
-  <div class="top-picks-empty" data-top-picks-empty>No hay Top Picks con esa recomendación.</div>
+  <div class="top-picks-empty" data-top-picks-empty>No hay Top Picks con esa señal.</div>
 </div>'''
 
 
@@ -1165,7 +1220,7 @@ def _shuffle_candidate_payload(game: dict, *, source_deal: dict | None = None) -
     score = game.get("personalized_score")
     if score is None:
         score = game.get("score") if game.get("score") is not None else game.get("base_score")
-    recommendation = str(game.get("recommendation") or "").strip()
+    recommendation = _score_discovery_label(game.get("recommendation"))
     reasons = [
         str(reason)
         for reason in (game.get("reasons") or game.get("score_reasons") or [])
@@ -1175,7 +1230,7 @@ def _shuffle_candidate_payload(game: dict, *, source_deal: dict | None = None) -
     score_label = "Personal" if game.get("personalized_score") is not None else "Score"
     score_text = f"{score_label} {score}" if score not in (None, "") else f"-{discount}% descuento"
     affinity = game.get("affinity_score")
-    if affinity not in (None, "") and reason == "score base del reporte":
+    if affinity not in (None, "") and _is_score_discovery_reason(reason):
         reason = f"Afinidad +{affinity}"
     return {
         "appid": appid,
@@ -1191,9 +1246,7 @@ def _shuffle_candidate_payload(game: dict, *, source_deal: dict | None = None) -
 
 
 def _shuffle_personalized_items(personalized_recommendations: dict | None) -> list[dict]:
-    if not isinstance(personalized_recommendations, dict):
-        return []
-    return [item for item in personalized_recommendations.get("items", []) if isinstance(item, dict)]
+    return _personalized_visible_items(personalized_recommendations)
 
 
 def _shuffle_game_appid(game: dict | None) -> str:
@@ -1328,7 +1381,7 @@ def _html_recommended_collection_item(item: dict, *, featured: bool = False) -> 
     if not appid:
         appid = str(item.get("steam_appid") or "").strip()
     name = str(item.get("name") or "Juego desconocido")
-    reason = str(item.get("reason") or "Recomendado por las señales del reporte.")
+    reason = str(item.get("reason") or "Destacado por señales del reporte.")
     score = item.get("score")
     try:
         discount = int(item.get("discount") or 0)
@@ -1411,8 +1464,8 @@ def _html_recommended_collections(collections: list[dict]) -> str:
     if not collection_cards:
         return ""
     return f'''<section class="recommended-collections" data-recommended-collections-section>
-  <h2>Colecciones recomendadas</h2>
-  <p class="section-desc">Secciones curadas con datos ya calculados del reporte: score, descuento, compatibilidad, reviews y géneros/etiquetas disponibles. Si un juego encaja en varias secciones, se muestra solo en la primera tarjeta para reducir repetición.</p>
+  <h2>Colecciones destacadas</h2>
+  <p class="section-desc">Secciones curadas con datos ya calculados del reporte: score, descuento, compatibilidad, reviews y géneros/etiquetas disponibles. Son discovery/oferta; revisa señales personales antes de tratarlas como recomendación.</p>
   <div class="recommended-collections-grid">{"".join(collection_cards)}</div>
 </section>'''
 
@@ -1540,9 +1593,9 @@ def _html_personalized_item(item: dict, index: int, behavioral_explanation: dict
     safe_appid = appid if appid.isdigit() else ""
     name = str(item.get("name") or "Juego desconocido")
     title_html = _html_link(name, safe_appid) if safe_appid else _html_esc(name)
-    reasons = [str(reason) for reason in item.get("reasons", []) if str(reason).strip()]
+    reasons = _personalized_signal_reasons(item)
     reasons_html = "".join(
-        f"<li>{_html_esc(reason)}</li>" for reason in (reasons or ["score base del reporte"])
+        f"<li>{_html_esc(reason)}</li>" for reason in (reasons or [PERSONALIZED_REASON_FALLBACK])
     )
     meta = []
     personalized_score = item.get("personalized_score")
@@ -1583,7 +1636,7 @@ def _html_personalized_item(item: dict, index: int, behavioral_explanation: dict
 def _html_personalized_recommendations(payload: dict | None, behavioral_explanations: dict | None = None) -> str:
     if not isinstance(payload, dict):
         return ""
-    items = [item for item in payload.get("items", []) if isinstance(item, dict)]
+    items = _personalized_visible_items(payload)
     if not items:
         return ""
     explanations_by_appid = _html_behavioral_explanations_by_appid(behavioral_explanations)
@@ -1597,7 +1650,7 @@ def _html_personalized_recommendations(payload: dict | None, behavioral_explanat
     )
     return f'''<section class="personalized-recommendations" data-personalized-recommendations-section>
   <h2>Recomendaciones personalizadas</h2>
-  <p class="section-desc">Ranking explicable construido con score del reporte y señales opcionales de actividad, biblioteca y preferencias. No cambia el score global.</p>
+  <p class="section-desc">Ranking explicable construido solo con señales personales disponibles: actividad, biblioteca o preferencias. No cambia el score global.</p>
   {_html_personalized_profile(payload.get("profile") or {})}
   <div class="personalized-recommendations-grid">{cards}</div>
 </section>'''
@@ -2210,7 +2263,7 @@ def _html_smart_alert_digest(payload: dict | None) -> str:
 
 
 def _html_budget_pick_context(pick: dict) -> str:
-    recommendation = _html_esc(pick.get("recommendation", ""))
+    recommendation = _html_esc(_score_discovery_label(pick.get("recommendation")))
     reasons = _html_esc(" · ".join(pick.get("score_reasons", [])))
     if not recommendation and not reasons:
         return ""
@@ -2236,7 +2289,7 @@ def _budget_option_payload(pick: dict, *, total_spent: float, remaining: float) 
         "price_final": str(pick.get("price_final", "—")),
         "discount": int(pick.get("discount") or 0),
         "score": pick.get("score", "—"),
-        "recommendation": str(pick.get("recommendation", "")),
+        "recommendation": _score_discovery_label(pick.get("recommendation")),
         "score_reasons": list(pick.get("score_reasons") or []),
         "swap_total_spent": round(float(total_spent or 0), 2),
         "swap_remaining": round(float(remaining or 0), 2),
@@ -2254,7 +2307,7 @@ def _budget_replacement_payload(replacement: dict) -> dict:
         "price_final": str(replacement.get("price_final", "—")),
         "discount": int(replacement.get("discount") or 0),
         "score": replacement.get("score", "—"),
-        "recommendation": str(replacement.get("recommendation", "")),
+        "recommendation": _score_discovery_label(replacement.get("recommendation")),
         "score_reasons": list(replacement.get("score_reasons") or []),
         "swap_total_spent": round(
             float(replacement.get("swap_total_spent", 0) or 0), 2
@@ -2435,22 +2488,22 @@ def _html_budget_variants_with_fallback_rows(budget_data: dict) -> list[dict]:
 
 def _html_recommendation_guide() -> str:
     return """<div class="recommendation-guide">
-  <div class="recommendation-guide-title">Cómo leer la recomendación rápida</div>
+  <div class="recommendation-guide-title">Cómo leer la señal rápida</div>
   <div class="recommendation-guide-grid">
     <div class="recommendation-guide-item">
-      <strong>Comprar ahora</strong>
-      <span>Muy buena combinación de descuento, señales de calidad y prioridad en tu wishlist.</span>
+      <strong>Oferta destacada</strong>
+      <span>Muy buena combinación de descuento, calidad y prioridad de wishlist para revisar primero.</span>
     </div>
     <div class="recommendation-guide-item">
-      <strong>Muy buena oferta</strong>
+      <strong>Muy buen deal</strong>
       <span>Buen balance para revisar pronto: alto valor, aunque no siempre sea prioridad absoluta.</span>
     </div>
     <div class="recommendation-guide-item">
-      <strong>Vale la pena</strong>
+      <strong>Buena para revisar</strong>
       <span>Se ve sólido para revisar pronto, aunque no necesariamente sea lo más urgente del run.</span>
     </div>
     <div class="recommendation-guide-item">
-      <strong>Solo si ya lo traías en radar</strong>
+      <strong>Solo si ya estaba en tu radar</strong>
       <span>Puede seguir siendo buen deal, pero hoy no sobresale tanto frente a otras opciones.</span>
     </div>
   </div>
@@ -3077,7 +3130,7 @@ function selectionReviewReasons(appid, item, decision, ownedSet, familySet) {
   if (ownedSet.has(appid)) reasons.push('ya está en tu biblioteca');
   if (familySet.has(appid)) reasons.push('ya disponible en biblioteca familiar');
   selectionReviewTexts(item && item.reasons).forEach((reason) => {
-    if (reason !== 'score base del reporte') reasons.push(reason);
+    if (reason !== 'score base del reporte' && reason !== 'sin señal personal suficiente; aparece por score del reporte') reasons.push(reason);
   });
   const affinityScore = selectionReviewNumber(item && item.affinity_score, 0);
   if (item && item.personalized_score != null && selectionReviewNumber(item.personalized_score, 0) >= 80) {
@@ -3988,8 +4041,9 @@ def generate_html(
             )
             display_discount = int(tp.get("discount") or source_deal.get("discount") or 0)
             display_price = str(tp.get("price_final") or source_deal.get("price_final") or "")
-            recommendation = _html_esc(tp.get("recommendation", ""))
-            recommendation_filter = _html_esc(tp.get("recommendation") or "Sin recomendación")
+            recommendation_label = _score_discovery_label(tp.get("recommendation"))
+            recommendation = _html_esc(recommendation_label)
+            recommendation_filter = _html_esc(recommendation_label or "Sin señal")
             why_text = _html_esc(" · ".join(tp.get("score_reasons", [])))
             highlight_html = _html_offer_highlight(
                 tp,
@@ -4016,7 +4070,7 @@ def generate_html(
     <img class="pick-img" src="{header_img}" alt="" loading="lazy" onerror="this.style.display='none'">
     <div class="pick-body">
       <div class="pick-rank">#{idx}</div>
-      <div class="pick-score" title="Score = recomendación compuesta para priorizar qué revisar primero.">Score {_html_esc(str(tp["score"]))}</div>
+      <div class="pick-score" title="Score = señal de priorización/discovery; no equivale a recomendación de compra.">Score {_html_esc(str(tp["score"]))}</div>
       <div class="pick-name">{_html_esc(tp["name"])}{prio_html}</div>
       <div class="pick-details"><span class="pick-discount">-{display_discount}%</span><span class="pick-price">{_html_esc(display_price)}</span></div>
       <div class="pick-meta">{rev_html} &middot; {mc_html} &middot; {dk_html} &middot; {mp_html}</div>
@@ -4029,7 +4083,7 @@ def generate_html(
 </div>''')
         parts.append(f"""<section class="top-picks" data-top-picks-section>
   <h2>&#127942; {len(top_picks)} juegos destacados</h2>
-  <p class="section-desc">Score = recomendación compuesta para priorizar qué revisar primero. Combina reviews (26%) + descuento (22%) + prioridad (18%) + $/hora HLTB (14%) + Deck (10%) + Metacritic (5%) + antigüedad (5%).</p>
+  <p class="section-desc">Score = señal de priorización/discovery para revisar ofertas primero. Combina reviews (26%) + descuento (22%) + prioridad (18%) + $/hora HLTB (14%) + Deck (10%) + Metacritic (5%) + antigüedad (5%); no equivale a recomendación personalizada.</p>
   {_html_top_pick_filter_controls(_top_pick_recommendation_filter_labels(top_picks))}
   {_html_recommendation_guide()}
   <div class="picks-grid">{"".join(cards)}</div>

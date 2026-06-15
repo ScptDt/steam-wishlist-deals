@@ -79,6 +79,11 @@ from steam_deals_openid import (
 )
 from steam_deals_external_offers import diagnose_external_offers_contract
 from steam_deals_external_offers import normalize_external_offers
+from steam_deals_json_exports import (
+    build_offers_export as module_build_offers_export,
+    build_wishlist_export as module_build_wishlist_export,
+    normalize_export_cache_state as module_normalize_export_cache_state,
+)
 from steam_deals_cache_policy import (
     build_cache_state_summary as module_build_cache_state_summary,
     clear_cache_files as module_clear_cache_files,
@@ -172,11 +177,13 @@ from steam_deals_presentation import (
 from steam_deals_run_output import (
     OutputArtifactPaths as ModuleOutputArtifactPaths,
     OutputArtifactPayloads as ModuleOutputArtifactPayloads,
+    build_offers_export_output_path as module_build_offers_export_output_path,
     build_output_artifact_paths as module_build_output_artifact_paths,
     emit_final_closeout as module_emit_final_closeout,
     build_final_summary as module_build_final_summary,
     build_output_md_path as module_build_output_md_path,
     build_share_output_path as module_build_share_output_path,
+    build_wishlist_export_output_path as module_build_wishlist_export_output_path,
     find_latest_artifact as module_find_latest_artifact,
     resolve_previous_context as module_resolve_previous_context,
     write_output_artifacts as module_write_output_artifacts,
@@ -211,6 +218,8 @@ from steam_deals_generator import (
     analyze_trends,
     build_warm_cache_emit,
     build_final_summary as generator_build_final_summary,
+    build_cache_states_by_appid,
+    build_json_export_contents,
     build_multi_profile_gift_contract,
     build_price_cache_completion_message,
     build_price_cache_coverage,
@@ -260,6 +269,150 @@ def _shuffle_candidates_from_html(html_text: str) -> list[dict]:
     start = html_text.index(marker) + len(marker)
     end = html_text.index('"', start)
     return json.loads(html_module.unescape(html_text[start:end]))
+
+
+class JsonExportBuilderTests(unittest.TestCase):
+    def test_offers_export_contains_only_detected_deals_with_contract_coverage(self) -> None:
+        export = module_build_offers_export(
+            [
+                {
+                    "appid": "10",
+                    "name": "Portal 2",
+                    "discount": 80,
+                    "price_final": "Mex$ 80.00",
+                    "price_original": "Mex$ 400.00",
+                    "price_raw": 8000,
+                }
+            ],
+            generated_at="2026-06-12T12:00:00Z",
+            source_report={
+                "filename": "/home/user/output/Steam Deals Example 2026-06-12.json",
+                "vanity": "example-user",
+                "sale_name": "Steam Sale",
+            },
+            wishlist_appids=["10", "20", "30"],
+            cache_states={"10": "fresh", "20": "pending_deferred", "30": "cooldown"},
+            top_picks={
+                "items": [
+                    {
+                        "appid": "10",
+                        "score": 88.4,
+                        "recommendation": "Oferta destacada",
+                        "score_reasons": ["reviews muy positivas", "descuento fuerte"],
+                    }
+                ]
+            },
+            external_offers={
+                "items": [
+                    {
+                        "appid": "10",
+                        "store_name": "Fanatical",
+                        "price": 75.0,
+                        "currency": "MXN",
+                        "url": "https://example.test/deal",
+                        "_index": 5,
+                    }
+                ]
+            },
+            active_promo_context={"primary": {"label": "Steam Sale"}},
+        )
+
+        self.assertEqual(export["schema"], "steam_deals_offers_export_v1")
+        self.assertTrue(export["advisory_only"])
+        self.assertEqual(export["ranking_impact"], "none")
+        self.assertEqual(export["source_report"]["filename"], "Steam Deals Example 2026-06-12.json")
+        self.assertNotIn("/home/user", json.dumps(export, ensure_ascii=False))
+        self.assertEqual(export["coverage"]["status"], "partial")
+        self.assertEqual(export["coverage"]["wishlist_total"], 3)
+        self.assertEqual(export["coverage"]["deals_count"], 1)
+        self.assertEqual(export["coverage"]["deferred_count"], 1)
+        self.assertEqual(export["coverage"]["failed_or_cooldown_count"], 1)
+        self.assertEqual(len(export["items"]), 1)
+        item = export["items"][0]
+        self.assertEqual(item["appid"], "10")
+        self.assertEqual(item["cache_state"], "fresh")
+        self.assertEqual(item["score"], 88.4)
+        self.assertEqual(item["score_label"], "Oferta destacada")
+        self.assertEqual(item["promo_context"], {"matched": True, "label": "Steam Sale"})
+        self.assertEqual(item["external_offers"][0]["store_name"], "Fanatical")
+        self.assertNotIn("_index", item["external_offers"][0])
+
+    def test_wishlist_export_preserves_all_appids_and_cache_state_statuses(self) -> None:
+        export = module_build_wishlist_export(
+            [
+                {"appid": "10", "name": "Deal Game", "priority": 4},
+                {"appid": "20", "name": "Full Price Game", "priority": 9},
+                {"appid": "30", "name": "Deferred Game"},
+                {"appid": "40", "name": "Cooldown Game"},
+                {"appid": "50", "name": "No Data Game"},
+                {"appid": "60", "name": "Missing Game"},
+            ],
+            generated_at="2026-06-12T12:00:00Z",
+            source_report={"filename": "Steam Deals Example 2026-06-12.json"},
+            deals=[
+                {
+                    "appid": "10",
+                    "name": "Deal Game",
+                    "discount": 75,
+                    "price_final": "Mex$ 50.00",
+                    "price_original": "Mex$ 200.00",
+                    "price_raw": 5000,
+                }
+            ],
+            price_entries={
+                "20": {
+                    "name": "Full Price Game",
+                    "discount_percent": 0,
+                    "price_final": "Mex$ 120.00",
+                    "price_original": "Mex$ 120.00",
+                    "price_final_raw": 12000,
+                    "_fetched_at": 1000.0,
+                    "cache_file": "/private/cache/prices_cache.json",
+                },
+                "50": {"_failed_at": 1000.0, "_failure_reason": "no_price_data"},
+            },
+            cache_states={
+                "10": "fresh",
+                "20": "stale_usable",
+                "30": "pending_deferred",
+                "40": "cooldown",
+                "50": "failed_no_data",
+                "60": "missing",
+            },
+            owned={"20": "Full Price Game"},
+            family_appids={"30"},
+            wishlist_hygiene={"items": [{"appid": "30", "signals": ["external_owned"]}]},
+        )
+
+        self.assertEqual(export["schema"], "steam_deals_wishlist_export_v1")
+        self.assertEqual(export["coverage"]["status"], "partial")
+        self.assertEqual(export["coverage"]["items_exported"], 6)
+        self.assertEqual(export["coverage"]["price_confirmed_count"], 2)
+        self.assertEqual(export["coverage"]["deal_count"], 1)
+        self.assertEqual(export["coverage"]["not_on_sale_confirmed_count"], 1)
+        self.assertEqual(export["coverage"]["pending_or_unknown_count"], 4)
+        by_appid = {item["appid"]: item for item in export["items"]}
+        self.assertEqual(by_appid["10"]["status"], "deal_detected")
+        self.assertTrue(by_appid["10"]["price"]["known"])
+        self.assertEqual(by_appid["20"]["status"], "not_on_sale_confirmed")
+        self.assertFalse(by_appid["20"]["price"]["on_sale"])
+        self.assertTrue(by_appid["20"]["signals"]["owned"])
+        self.assertIn("stale_price_data", by_appid["20"]["limitations"])
+        self.assertEqual(by_appid["30"]["status"], "pending_price_confirmation")
+        self.assertTrue(by_appid["30"]["signals"]["family_shared"])
+        self.assertTrue(by_appid["30"]["signals"]["external_access_possible"])
+        self.assertEqual(by_appid["40"]["status"], "temporary_failure")
+        self.assertEqual(by_appid["50"]["status"], "no_price_confirmed")
+        self.assertEqual(by_appid["60"]["status"], "pending_price_confirmation")
+        self.assertNotIn("/private/cache", json.dumps(export, ensure_ascii=False))
+        self.assertNotIn("_failed_at", json.dumps(export, ensure_ascii=False))
+        self.assertNotIn("cache_file", json.dumps(export, ensure_ascii=False))
+
+    def test_cache_state_mapping_uses_export_vocabulary(self) -> None:
+        self.assertEqual(module_normalize_export_cache_state("fresh"), "fresh")
+        self.assertEqual(module_normalize_export_cache_state("pending_deferred"), "deferred")
+        self.assertEqual(module_normalize_export_cache_state({"state": "cooldown"}), "cooldown")
+        self.assertEqual(module_normalize_export_cache_state("unexpected"), "unknown")
 
 
 class ComputeValueScoreTests(unittest.TestCase):
@@ -858,7 +1011,7 @@ class PersonalizedRecommendationsTests(unittest.TestCase):
             ["Action_RPG", "Single-player"],
         )
 
-    def test_build_personalized_recommendations_falls_back_to_base_score(self) -> None:
+    def test_build_personalized_recommendations_marks_score_only_as_discovery(self) -> None:
         recommendations = build_personalized_recommendations(
             [
                 {"appid": "a", "name": "Alpha", "score": 60},
@@ -868,7 +1021,10 @@ class PersonalizedRecommendationsTests(unittest.TestCase):
         )
 
         self.assertEqual([item["appid"] for item in recommendations["items"]], ["b"])
-        self.assertEqual(recommendations["items"][0]["reasons"], ["score base del reporte"])
+        self.assertEqual(
+            recommendations["items"][0]["reasons"],
+            ["sin señal personal suficiente; aparece por score del reporte"],
+        )
         self.assertEqual(recommendations["profile"]["activity_terms"], [])
         self.assertEqual(recommendations["profile"]["library_summary"]["owned_count"], 0)
         self.assertEqual(recommendations["profile"]["library_summary"]["genre_distribution"], [])
@@ -4030,6 +4186,9 @@ class WarmCacheTests(unittest.TestCase):
             stats["next_resume_hint"] = "20"
             received["batch_size"] = kwargs.get("batch_size")
             received["max_batch_halving"] = kwargs.get("max_batch_halving")
+            received["http_400_circuit_breaker_threshold"] = kwargs.get(
+                "http_400_circuit_breaker_threshold"
+            )
             received["individual_fallback_workers"] = kwargs.get("individual_fallback_workers")
             received["http_400_diagnostic_sample_limit"] = kwargs.get(
                 "http_400_diagnostic_sample_limit"
@@ -4058,6 +4217,7 @@ class WarmCacheTests(unittest.TestCase):
             env={
                 "STEAM_DEALS_PRICE_BATCH_SIZE": "8",
                 "STEAM_DEALS_PRICE_BATCH_HALVING_LIMIT": "5",
+                "STEAM_DEALS_HTTP_400_CIRCUIT_BREAKER_THRESHOLD": "2",
                 "STEAM_DEALS_INDIVIDUAL_FALLBACK_WORKERS": "4",
                 "STEAM_DEALS_MAX_REFRESH_CANDIDATES_PER_RUN": "1",
                 "STEAM_DEALS_PRICE_REFRESH_TIME_BUDGET_SECONDS": "2.5",
@@ -4067,6 +4227,7 @@ class WarmCacheTests(unittest.TestCase):
 
         self.assertEqual(received["batch_size"], 8)
         self.assertEqual(received["max_batch_halving"], 5)
+        self.assertEqual(received["http_400_circuit_breaker_threshold"], 2)
         self.assertEqual(received["individual_fallback_workers"], 4)
         self.assertEqual(received["http_400_diagnostic_sample_limit"], 2)
         self.assertEqual(received["max_refresh_candidates_per_run"], 1)
@@ -4093,6 +4254,7 @@ class WarmCacheTests(unittest.TestCase):
         self.assertEqual(result["next_resume_hint"], "20")
         self.assertEqual(result["batch_size"], 8)
         self.assertEqual(result["batch_halving_limit"], 5)
+        self.assertEqual(result["http_400_circuit_breaker_threshold"], 2)
         self.assertEqual(result["individual_fallback_workers"], 4)
         self.assertEqual(result["http_400_batch_samples"], [])
         self.assertEqual(result["max_refresh_candidates_per_run"], 1)
@@ -4102,7 +4264,7 @@ class WarmCacheTests(unittest.TestCase):
         )
         self.assertTrue(
             any(
-                "Tuning precios activo: batch_size=8 · halving_limit=5 · fallback_workers=4 · max_refresh_candidates=1 · time_budget_seconds=2.5 · http400_diagnostic_samples=2" in line
+                "Tuning precios activo: batch_size=8 · halving_limit=5 · fallback_workers=4 · http400_circuit_threshold=2 · max_refresh_candidates=1 · time_budget_seconds=2.5 · http400_diagnostic_samples=2" in line
                 for line in emitted
             )
         )
@@ -4950,6 +5112,7 @@ class PriceCacheTests(unittest.TestCase):
             {
                 "batch_size": 20,
                 "batch_halving_limit": 3,
+                "http_400_circuit_breaker_threshold": 3,
                 "individual_fallback_workers": 1,
                 "max_refresh_candidates_per_run": 400,
                 "refresh_time_budget_seconds": 600.0,
@@ -4962,6 +5125,7 @@ class PriceCacheTests(unittest.TestCase):
                 env={
                     "STEAM_DEALS_PRICE_BATCH_SIZE": "8",
                     "STEAM_DEALS_PRICE_BATCH_HALVING_LIMIT": "5",
+                    "STEAM_DEALS_HTTP_400_CIRCUIT_BREAKER_THRESHOLD": "2",
                     "STEAM_DEALS_INDIVIDUAL_FALLBACK_WORKERS": "4",
                     "STEAM_DEALS_MAX_REFRESH_CANDIDATES_PER_RUN": "100",
                     "STEAM_DEALS_PRICE_REFRESH_TIME_BUDGET_SECONDS": "2.5",
@@ -4971,6 +5135,7 @@ class PriceCacheTests(unittest.TestCase):
             {
                 "batch_size": 8,
                 "batch_halving_limit": 5,
+                "http_400_circuit_breaker_threshold": 2,
                 "individual_fallback_workers": 4,
                 "max_refresh_candidates_per_run": 100,
                 "refresh_time_budget_seconds": 2.5,
@@ -4993,6 +5158,7 @@ class PriceCacheTests(unittest.TestCase):
             {
                 "batch_size": 20,
                 "batch_halving_limit": 3,
+                "http_400_circuit_breaker_threshold": 3,
                 "individual_fallback_workers": 1,
                 "max_refresh_candidates_per_run": 400,
                 "refresh_time_budget_seconds": 600.0,
@@ -5013,6 +5179,32 @@ class PriceCacheTests(unittest.TestCase):
                 env={"STEAM_DEALS_HTTP_400_DIAGNOSTIC_SAMPLE_LIMIT": "-1"}
             )["http_400_diagnostic_sample_limit"],
             0,
+        )
+
+    def test_resolve_price_fetch_tuning_allows_opt_in_http_400_circuit_threshold(self) -> None:
+        self.assertEqual(
+            resolve_price_fetch_tuning(
+                env={"STEAM_DEALS_HTTP_400_CIRCUIT_BREAKER_THRESHOLD": "1"}
+            )["http_400_circuit_breaker_threshold"],
+            1,
+        )
+        self.assertEqual(
+            resolve_price_fetch_tuning(
+                env={"STEAM_DEALS_HTTP_400_CIRCUIT_BREAKER_THRESHOLD": "0"}
+            )["http_400_circuit_breaker_threshold"],
+            0,
+        )
+        self.assertEqual(
+            resolve_price_fetch_tuning(
+                env={"STEAM_DEALS_HTTP_400_CIRCUIT_BREAKER_THRESHOLD": "-1"}
+            )["http_400_circuit_breaker_threshold"],
+            3,
+        )
+        self.assertEqual(
+            resolve_price_fetch_tuning(
+                env={"STEAM_DEALS_HTTP_400_CIRCUIT_BREAKER_THRESHOLD": "abc"}
+            )["http_400_circuit_breaker_threshold"],
+            3,
         )
 
     def test_fetch_single_returns_failure_marker_for_http_errors(self) -> None:
@@ -5187,6 +5379,37 @@ class PriceCacheTests(unittest.TestCase):
                 ttl_jitter_hours=0,
             ),
             "missing",
+        )
+
+    def test_cache_states_by_appid_exposes_per_item_states_for_exports(self) -> None:
+        now_ts = 1_700_000_000.0
+        cached = {
+            "10": {"_fetched_at": now_ts - 3600},
+            "20": {
+                "_fetched_at": now_ts - (50 * 3600),
+                "_deferred_reason": "time_budget_deferred",
+            },
+            "30": {"_failed_at": now_ts - 1800, "_failure_reason": "no_price_data"},
+        }
+
+        states = build_cache_states_by_appid(
+            ["10", "20", "30", "40"],
+            cached,
+            now_ts=now_ts,
+            ttl_hours=24,
+            failure_retry_hours=2,
+            stale_grace_hours=72,
+            ttl_jitter_hours=0,
+        )
+
+        self.assertEqual(
+            states,
+            {
+                "10": "fresh",
+                "20": "pending_deferred",
+                "30": "cooldown",
+                "40": "missing",
+            },
         )
 
     def test_select_scoped_cache_reports_missing_ids_for_valid_cache(self) -> None:
@@ -6145,6 +6368,59 @@ class PriceCacheTests(unittest.TestCase):
             any("individual_planificado" in line for line in emitted)
         )
 
+    def test_get_deals_from_wishlist_opt_in_threshold_routes_direct_fallback_earlier(
+        self,
+    ) -> None:
+        fetched_cache = {}
+        emitted = []
+        requested_batches = []
+        single_calls = []
+        stats = {}
+
+        def fake_get_json(url, headers=None):
+            requested_batches.append(url.split("appids=", 1)[1].split("&", 1)[0])
+            raise urllib.error.HTTPError(url, 400, "Bad Request", hdrs=None, fp=None)
+
+        def fake_fetch_single(appid, _country, _delay):
+            single_calls.append(appid)
+            return None
+
+        appids = ["10", "20", "30", "40", "50", "60"]
+
+        deals, total = module_get_deals_from_wishlist(
+            appids,
+            fetched_cache,
+            "steam-id",
+            min_discount=50,
+            get_json=fake_get_json,
+            sleep_fn=lambda _seconds: None,
+            monotonic_fn=lambda: 0.0,
+            current_time_fn=lambda: 200000.0,
+            save_price_cache_fn=lambda _steam_id, _cache: None,
+            fetch_single_fn=fake_fetch_single,
+            process_app_entry_fn=lambda appid, data: module_process_app_entry(
+                appid, data, parse_release_year_fn=module_parse_release_year
+            ),
+            emit=emitted.append,
+            warn=lambda text: f"WARN:{text}",
+            dim=lambda text: f"DIM:{text}",
+            batch_size=2,
+            max_batch_halving=1,
+            http_400_circuit_breaker_threshold=1,
+            stats_out=stats,
+        )
+
+        self.assertEqual(total, 6)
+        self.assertEqual(deals, [])
+        self.assertEqual(requested_batches, ["10,20", "10", "20"])
+        self.assertEqual(single_calls, appids)
+        self.assertEqual(stats["http_400_direct_fallback_batches"], 2)
+        self.assertEqual(stats["http_400_direct_fallback_count"], 4)
+        self.assertEqual(stats["planned_individual_batches"], 2)
+        self.assertEqual(stats["planned_individual_count"], 4)
+        self.assertEqual(stats["reactive_fallback_count"], 2)
+        self.assertTrue(any("individual_planificado" in line for line in emitted))
+
     def test_get_deals_from_wishlist_direct_fallback_matches_large_http_400_pattern(
         self,
     ) -> None:
@@ -6896,7 +7172,31 @@ class RunOutputTests(unittest.TestCase):
             artifacts.output_json, Path("/tmp/out/Steam Deals 2026-04-14.json")
         )
         self.assertEqual(
+            artifacts.output_offers_json,
+            Path("/tmp/out/Steam Deals Offers 2026-04-14.json"),
+        )
+        self.assertEqual(
+            artifacts.output_wishlist_json,
+            Path("/tmp/out/Steam Deals Wishlist 2026-04-14.json"),
+        )
+        self.assertEqual(
             artifacts.output_csv, Path("/tmp/out/Steam Deals 2026-04-14.csv")
+        )
+
+    def test_build_json_export_output_paths_use_exact_artifact_names(self) -> None:
+        self.assertEqual(
+            module_build_offers_export_output_path(
+                "/tmp/out",
+                today_obj=date(2026, 4, 14),
+            ),
+            Path("/tmp/out/Steam Deals Offers 2026-04-14.json"),
+        )
+        self.assertEqual(
+            module_build_wishlist_export_output_path(
+                "/tmp/out",
+                today_obj=date(2026, 4, 14),
+            ),
+            Path("/tmp/out/Steam Deals Wishlist 2026-04-14.json"),
         )
 
     def test_resolve_previous_context_uses_markdown_fallback_only_without_previous_run(
@@ -6973,6 +7273,8 @@ class RunOutputTests(unittest.TestCase):
                 output_html=Path("/tmp/out/Steam Deals 2026-04-14.html"),
                 output_share=Path("/tmp/out/Steam Deals Share 2026-04-14.html"),
                 output_json=Path("/tmp/out/Steam Deals 2026-04-14.json"),
+                output_offers_json=Path("/tmp/out/Steam Deals Offers 2026-04-14.json"),
+                output_wishlist_json=Path("/tmp/out/Steam Deals Wishlist 2026-04-14.json"),
                 output_csv=Path("/tmp/out/Steam Deals 2026-04-14.csv"),
             ),
             ModuleOutputArtifactPayloads(
@@ -6980,6 +7282,8 @@ class RunOutputTests(unittest.TestCase):
                 html="html",
                 share_html="share",
                 json_content="json",
+                offers_json_content="offers-json",
+                wishlist_json_content="wishlist-json",
                 csv_content="csv",
             ),
             write_artifact_fn=fake_write_artifact,
@@ -6992,12 +7296,66 @@ class RunOutputTests(unittest.TestCase):
                 (Path("/tmp/out/Steam Deals 2026-04-14.html"), "html"),
                 (Path("/tmp/out/Steam Deals Share 2026-04-14.html"), "share"),
                 (Path("/tmp/out/Steam Deals 2026-04-14.json"), "json"),
+                (Path("/tmp/out/Steam Deals Offers 2026-04-14.json"), "offers-json"),
+                (Path("/tmp/out/Steam Deals Wishlist 2026-04-14.json"), "wishlist-json"),
                 (Path("/tmp/out/Steam Deals 2026-04-14.csv"), "csv"),
             ],
         )
         self.assertEqual(result["markdown"], Path("/tmp/out/Steam Deals 2026-04-14.md"))
         self.assertEqual(result["json"], Path("/tmp/out/Steam Deals 2026-04-14.json"))
+        self.assertEqual(
+            result["offers_json"],
+            Path("/tmp/out/Steam Deals Offers 2026-04-14.json"),
+        )
+        self.assertEqual(
+            result["wishlist_json"],
+            Path("/tmp/out/Steam Deals Wishlist 2026-04-14.json"),
+        )
         self.assertEqual(result["csv"], Path("/tmp/out/Steam Deals 2026-04-14.csv"))
+
+    def test_build_json_export_contents_serializes_additional_contracts(self) -> None:
+        contents = build_json_export_contents(
+            deals=[
+                {
+                    "appid": "10",
+                    "name": "Deal Game",
+                    "discount": 80,
+                    "price_final": "Mex$ 80.00",
+                    "price_original": "Mex$ 400.00",
+                    "price_raw": 8000,
+                }
+            ],
+            wishlist_appids=["10", "20"],
+            generated_at="2026-06-12T12:00:00Z",
+            source_report={
+                "filename": "/tmp/output/Steam Deals 2026-06-12.json",
+                "vanity": "example-user",
+                "sale_name": "Steam Sale",
+            },
+            price_entries={
+                "20": {
+                    "name": "Full Price Game",
+                    "discount_percent": 0,
+                    "price_final": "Mex$ 120.00",
+                    "price_original": "Mex$ 120.00",
+                    "price_final_raw": 12000,
+                }
+            },
+            cache_states={"10": "fresh", "20": "stale_usable"},
+            cache_coverage={"status": "complete", "is_partial": False},
+            top_picks=[{"appid": "10", "score": 91.2, "recommendation": "Oferta destacada"}],
+            priorities={"10": 1, "20": 2},
+        )
+
+        offers = json.loads(contents["offers_json_content"])
+        wishlist = json.loads(contents["wishlist_json_content"])
+
+        self.assertEqual(offers["schema"], "steam_deals_offers_export_v1")
+        self.assertEqual(wishlist["schema"], "steam_deals_wishlist_export_v1")
+        self.assertEqual(offers["source_report"]["filename"], "Steam Deals 2026-06-12.json")
+        self.assertEqual(offers["items"][0]["score"], 91.2)
+        self.assertEqual(wishlist["coverage"]["status"], "complete_or_not_required")
+        self.assertEqual(wishlist["items"][1]["status"], "not_on_sale_confirmed")
 
     def test_generate_json_serializes_free_weekend_now_contract(self) -> None:
         free_weekend_now = {
@@ -7553,6 +7911,8 @@ class StopApiContractTests(unittest.TestCase):
                 output_html=Path("/tmp/out/Steam Deals 2026-04-14.html"),
                 output_share=Path("/tmp/out/Steam Deals Share 2026-04-14.html"),
                 output_json=Path("/tmp/out/Steam Deals 2026-04-14.json"),
+                output_offers_json=Path("/tmp/out/Steam Deals Offers 2026-04-14.json"),
+                output_wishlist_json=Path("/tmp/out/Steam Deals Wishlist 2026-04-14.json"),
                 output_csv=Path("/tmp/out/Steam Deals 2026-04-14.csv"),
             ),
             ModuleOutputArtifactPayloads(
@@ -7560,6 +7920,8 @@ class StopApiContractTests(unittest.TestCase):
                 html="html",
                 share_html="share",
                 json_content="json",
+                offers_json_content="offers-json",
+                wishlist_json_content="wishlist-json",
                 csv_content="csv",
             ),
             write_artifact_fn=fake_write_artifact,
@@ -7567,6 +7929,8 @@ class StopApiContractTests(unittest.TestCase):
 
         self.assertTrue(any(path.suffix == ".md" for path in written))
         self.assertTrue(any(path.suffix == ".html" and "Share" not in path.name for path in written))
+        self.assertTrue(any(path.name.startswith("Steam Deals Offers ") for path in written))
+        self.assertTrue(any(path.name.startswith("Steam Deals Wishlist ") for path in written))
         self.assertTrue(any(path.suffix == ".csv" for path in written))
 
     def test_generate_json_serializes_summary_and_set_based_comparison(self) -> None:
@@ -11232,9 +11596,9 @@ class BudgetPickTests(unittest.TestCase):
         self.assertEqual(result["remaining"], 0.0)
         self.assertEqual(result["total_savings"], 15.0)
         self.assertEqual(
-            result["selected"][0]["recommendation"], "Solo si ya lo traías en radar"
+            result["selected"][0]["recommendation"], "Solo si ya estaba en tu radar"
         )
-        self.assertEqual(result["selected"][1]["recommendation"], "Comprar ahora")
+        self.assertEqual(result["selected"][1]["recommendation"], "Oferta destacada")
 
     def test_budget_payload_exposes_variants_and_replacement_actions(self) -> None:
         deals = [
@@ -11456,7 +11820,7 @@ class RankTopPicksTests(unittest.TestCase):
             n=1,
         )
 
-        self.assertEqual(ranked[0]["recommendation"], "Comprar ahora")
+        self.assertEqual(ranked[0]["recommendation"], "Oferta destacada")
         self.assertIn("reviews muy positivas", ranked[0]["score_reasons"])
 
     def test_top_pick_adds_conservative_promo_reason_without_changing_score(self) -> None:
@@ -11651,9 +12015,9 @@ class RankTopPicksTests(unittest.TestCase):
         )
 
         self.assertIn("¿Por qué salió arriba?", md)
-        self.assertIn("Comprar ahora", md)
+        self.assertIn("Oferta destacada", md)
         self.assertIn("reviews muy positivas", md)
-        self.assertIn("Score = recomendación compuesta para priorizar qué revisar primero.", md)
+        self.assertIn("Score = señal de priorización/discovery para revisar ofertas primero.", md)
 
     def test_generate_md_renders_advisory_offer_highlights(self) -> None:
         md = generate_md(
@@ -11697,7 +12061,7 @@ class RankTopPicksTests(unittest.TestCase):
             historical_lows={"b": {"price": 10.25, "date": "2026-05-19"}},
         )
 
-        self.assertIn("**Nota:** Muy buena oferta (Comprar ahora)", md)
+        self.assertIn("**Nota:** Oferta destacada (score/oferta alta)", md)
         self.assertIn("**Nota:** Cerca de mínimo histórico (precio cerca del mínimo conocido)", md)
         self.assertIn("Alpha \\| Beta", md)
         self.assertIn("|  | -82% | $10 | $50", md)
@@ -11728,8 +12092,8 @@ class RankTopPicksTests(unittest.TestCase):
             ],
         )
 
-        self.assertIn("## 🧠 Colecciones recomendadas", md)
-        self.assertIn("### Recomendado para ti", md)
+        self.assertIn("## 🧠 Colecciones destacadas", md)
+        self.assertIn("### Destacados por score", md)
         self.assertIn("reviews muy positivas", md)
         self.assertIn("Score 95.4", md)
         self.assertIn("-90%", md)
@@ -11761,7 +12125,7 @@ class RankTopPicksTests(unittest.TestCase):
             recommended_collections=[],
         )
 
-        self.assertNotIn("Colecciones recomendadas", md)
+        self.assertNotIn("Colecciones destacadas", md)
 
     def test_generate_md_renders_personalized_recommendations(self) -> None:
         md = generate_md(
@@ -11911,7 +12275,7 @@ class RankTopPicksTests(unittest.TestCase):
             },
         )
 
-        self.assertIn("Personal Pick", md)
+        self.assertNotIn("## 🎯 Recomendaciones personalizadas", md)
         self.assertNotIn("Por qué podría gustarte", md)
         self.assertNotIn("No debería mostrarse", md)
         self.assertNotIn("Señal advisory: no cambia score ni ranking", md)
@@ -11952,7 +12316,7 @@ class RankTopPicksTests(unittest.TestCase):
             },
         )
 
-        self.assertIn("Personal Pick", md)
+        self.assertNotIn("## 🎯 Recomendaciones personalizadas", md)
         self.assertNotIn("Señales de estilo del juego", md)
         self.assertNotIn("No debería mostrarse", md)
 
@@ -12558,19 +12922,19 @@ class RankTopPicksTests(unittest.TestCase):
         )
 
         self.assertIn("pick-recommendation", html)
-        self.assertIn("Comprar ahora", html)
+        self.assertIn("Oferta destacada", html)
         self.assertIn("reviews muy positivas", html)
         self.assertIn("Score 95.4", html)
         self.assertIn("Metacritic 90", html)
-        self.assertIn("Score = recomendación compuesta para priorizar qué revisar primero.", html)
+        self.assertIn("Score = señal de priorización/discovery", html)
         self.assertIn('data-top-picks-section', html)
         self.assertIn('data-top-pick-filter="all" aria-pressed="true"', html)
-        self.assertIn('data-top-pick-filter="Comprar ahora" aria-pressed="false"', html)
-        self.assertNotIn('data-top-pick-filter="Muy buena oferta" aria-pressed="false"', html)
-        self.assertIn('data-recommendation="Comprar ahora"', html)
+        self.assertIn('data-top-pick-filter="Oferta destacada" aria-pressed="false"', html)
+        self.assertNotIn('data-top-pick-filter="Muy buen deal" aria-pressed="false"', html)
+        self.assertIn('data-recommendation="Oferta destacada"', html)
         self.assertIn("applyTopPickRecommendationFilter", html)
         self.assertIn("data-top-pick-filter-count", html)
-        self.assertIn("No hay Top Picks con esa recomendación.", html)
+        self.assertIn("No hay Top Picks con esa señal.", html)
 
     def test_generated_reports_show_access_notes_for_matching_top_picks_only(self) -> None:
         top_picks = [
@@ -12712,13 +13076,13 @@ class RankTopPicksTests(unittest.TestCase):
         )
 
         self.assertIn('data-top-pick-filter="all" aria-pressed="true"', html)
-        self.assertIn('data-top-pick-filter="Comprar ahora" aria-pressed="false"', html)
+        self.assertIn('data-top-pick-filter="Oferta destacada" aria-pressed="false"', html)
         self.assertIn('data-top-pick-filter="Revisar cooperativo" aria-pressed="false"', html)
-        self.assertIn('data-top-pick-filter="Sin recomendación" aria-pressed="false"', html)
+        self.assertIn('data-top-pick-filter="Sin señal" aria-pressed="false"', html)
         self.assertIn('data-recommendation="Revisar cooperativo"', html)
-        self.assertIn('data-recommendation="Sin recomendación"', html)
-        self.assertNotIn('data-top-pick-filter="Muy buena oferta" aria-pressed="false"', html)
-        self.assertNotIn('data-top-pick-filter="Vale la pena" aria-pressed="false"', html)
+        self.assertIn('data-recommendation="Sin señal"', html)
+        self.assertNotIn('data-top-pick-filter="Muy buen deal" aria-pressed="false"', html)
+        self.assertNotIn('data-top-pick-filter="Buena para revisar" aria-pressed="false"', html)
 
     def test_generate_html_renders_advisory_offer_highlights(self) -> None:
         html = generate_html(
@@ -12771,7 +13135,7 @@ class RankTopPicksTests(unittest.TestCase):
         )
 
         self.assertIn('data-offer-highlight', html)
-        self.assertIn("Muy buena oferta", html)
+        self.assertIn("Oferta destacada", html)
         self.assertIn("Cerca de mínimo histórico", html)
         self.assertIn("Promo destacada", html)
         self.assertIn("contexto de promo activa", html)
@@ -12805,9 +13169,9 @@ class RankTopPicksTests(unittest.TestCase):
         )
 
         self.assertIn("data-recommended-collections-section", html)
-        self.assertIn("Colecciones recomendadas", html)
+        self.assertIn("Colecciones destacadas", html)
         self.assertIn('data-recommended-collection="recommended_for_you"', html)
-        self.assertIn("Recomendado para ti", html)
+        self.assertIn("Destacados por score", html)
         self.assertIn("reviews muy positivas", html)
         self.assertIn("Score 95.4", html)
         self.assertIn("-90%", html)
@@ -12898,7 +13262,7 @@ class RankTopPicksTests(unittest.TestCase):
         self.assertIn("steam/apps/10/capsule_231x87.jpg", html)
         self.assertIn("steam/apps/30/capsule_231x87.jpg", html)
         self.assertNotIn("steam/apps/20/capsule_231x87.jpg", html)
-        self.assertIn("se muestra solo en la primera tarjeta", html)
+        self.assertIn("Son discovery/oferta", html)
 
     def test_generate_html_omits_recommended_collections_when_empty(self) -> None:
         html = generate_html(
@@ -12921,7 +13285,7 @@ class RankTopPicksTests(unittest.TestCase):
         )
 
         self.assertNotIn("data-recommended-collections-section", html)
-        self.assertNotIn("Colecciones recomendadas", html)
+        self.assertNotIn("Colecciones destacadas", html)
 
     def test_generate_html_renders_personalized_recommendations(self) -> None:
         html = generate_html(
@@ -12996,7 +13360,8 @@ class RankTopPicksTests(unittest.TestCase):
                         "steam_appid": "20",
                         "name": "Steam AppID Pick",
                         "personalized_score": 91.0,
-                        "reasons": ["score base del reporte"],
+                        "affinity_score": 12.0,
+                        "reasons": ["marcado como me gusta"],
                     }
                 ],
                 "profile": {},
@@ -13103,7 +13468,7 @@ class RankTopPicksTests(unittest.TestCase):
             },
         )
 
-        self.assertIn("Personal Pick", html)
+        self.assertNotIn("data-personalized-recommendations-section", html)
         self.assertNotIn("Por qué podría gustarte", html)
         self.assertNotIn("No debería mostrarse", html)
         self.assertNotIn("Señal advisory: no cambia score ni ranking.", html)
@@ -13144,7 +13509,7 @@ class RankTopPicksTests(unittest.TestCase):
             },
         )
 
-        self.assertIn("Personal Pick", html)
+        self.assertNotIn("data-personalized-recommendations-section", html)
         self.assertNotIn("Señales de estilo del juego", html)
         self.assertNotIn("No debería mostrarse", html)
 
@@ -14456,7 +14821,7 @@ class RankTopPicksTests(unittest.TestCase):
 
         self.assertIn("Score 95.4", html)
         self.assertIn("Metacritic 90", html)
-        self.assertIn("Score = recomendación compuesta para priorizar qué revisar primero.", html)
+        self.assertIn("Score = señal de priorización/discovery", html)
         self.assertIn("Mínimo histórico en Steam", html)
         self.assertBlankTargetsUseNoopener(html)
 
@@ -14481,9 +14846,9 @@ class RankTopPicksTests(unittest.TestCase):
         )
 
         self.assertIn("data-recommended-collections-section", html)
-        self.assertIn("Colecciones recomendadas", html)
+        self.assertIn("Colecciones destacadas", html)
         self.assertIn('data-recommended-collection="recommended_for_you"', html)
-        self.assertIn("Recomendado para ti", html)
+        self.assertIn("Destacados por score", html)
         self.assertIn("reviews muy positivas", html)
         self.assertIn("Score 95.4", html)
         self.assertIn("-90%", html)
@@ -14511,7 +14876,7 @@ class RankTopPicksTests(unittest.TestCase):
         )
 
         self.assertNotIn("data-recommended-collections-section", html)
-        self.assertNotIn("Colecciones recomendadas", html)
+        self.assertNotIn("Colecciones destacadas", html)
 
     def test_generate_share_html_renders_personalized_recommendations(self) -> None:
         html = generate_share_html(
@@ -14657,7 +15022,7 @@ class RankTopPicksTests(unittest.TestCase):
             },
         )
 
-        self.assertIn("Personal Pick", html)
+        self.assertNotIn("Personal Pick", html)
         self.assertNotIn("Por qué podría gustarte", html)
         self.assertNotIn("No debería mostrarse", html)
         self.assertNotIn("Señal advisory: no cambia score ni ranking.", html)
@@ -14693,7 +15058,7 @@ class RankTopPicksTests(unittest.TestCase):
             },
         )
 
-        self.assertIn("Personal Pick", html)
+        self.assertNotIn("Personal Pick", html)
         self.assertNotIn("Señales de estilo del juego", html)
         self.assertNotIn("No debería mostrarse", html)
 
@@ -14729,7 +15094,8 @@ class RankTopPicksTests(unittest.TestCase):
                         "steam_appid": "50",
                         "name": "Steam AppID Personal Pick",
                         "personalized_score": 91.0,
-                        "reasons": ["score base del reporte"],
+                        "affinity_score": 12.0,
+                        "reasons": ["marcado como me gusta"],
                     },
                     {
                         "steam_appid": "bad-id",
@@ -15391,7 +15757,7 @@ class RankTopPicksTests(unittest.TestCase):
         )
 
         self.assertIn("Tu Presupuesto Ideal", md)
-        self.assertIn("Comprar ahora", md)
+        self.assertIn("Oferta destacada", md)
         self.assertIn("descuento muy raro de ver", md)
 
     def test_generate_html_includes_budget_recommendation_context(self) -> None:
@@ -15428,7 +15794,7 @@ class RankTopPicksTests(unittest.TestCase):
         )
 
         self.assertIn("Tu Presupuesto Ideal", html)
-        self.assertIn("Comprar ahora", html)
+        self.assertIn("Oferta destacada", html)
         self.assertIn("reviews muy positivas", html)
 
     def test_generate_md_includes_budget_variants_and_replacements(self) -> None:
@@ -16386,7 +16752,7 @@ class RankTopPicksTests(unittest.TestCase):
         self.assertIn("Alpha", html)
         self.assertIn("Bravo", html)
         self.assertIn("Score 95.0", html)
-        self.assertIn("Comprar ahora", html)
+        self.assertIn("Oferta destacada", html)
         self.assertIn("1/2", html)
 
     def test_generate_html_shuffle_updates_name_link_on_reroll(self) -> None:
@@ -16756,7 +17122,7 @@ class RankTopPicksTests(unittest.TestCase):
 
         self.assertIn("Top Pick", html)
         self.assertIn("Score 91.0", html)
-        self.assertIn("Muy buena oferta", html)
+        self.assertIn("Muy buen deal", html)
         self.assertIn("Único destacado disponible", html)
 
     def test_generate_html_fallback_adds_shuffle_one_game(self) -> None:

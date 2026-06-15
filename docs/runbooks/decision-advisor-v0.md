@@ -19,15 +19,26 @@ Contrato docs-only para usar los campos existentes del reporte Steam Deals como 
 3. **Advisory-only.** Toda salida es ayuda para revisión manual; no cambia ranking ni ejecuta acciones.
 4. **No inventar señales.** Si falta perfil, cache, propiedad externa o diagnóstico, la conclusión debe marcarse como tentativa o degradarse.
 5. **Precio no es ownership.** `external_offers` compara precios; solo imports explícitos (`external_matches`, `play_access`, `steam_access`) pueden alimentar acceso/propiedad advisory.
+6. **No fallback recommendations.** Score, descuento, reviews o Top Picks pueden explicar por qué un juego fue descubierto, pero no deben convertirse en “recomendado”, “para ti”, “buena compra” o “encaja contigo” si no hay señales conductuales/acceso/confianza suficientes.
+
+## Política global: no fallback recommendations
+
+Esta política aplica a Decision Advisor y a cualquier consumidor futuro que use su vocabulario:
+
+- **Score descubre; behaviorals recomiendan.** `score`, `discount`, `review`, `top_picks` y colecciones por score son señales de discovery/oferta, no prueba de afinidad ni de buena compra.
+- **Sin señal útil, no hay asesoría.** Si faltan `behavioral_signals`, `player_behavior_fit`, `decision_support`, acceso/ownership o confianza suficiente, la salida correcta es “oferta destacada sin señal suficiente para recomendar”, no un fallback de recomendación.
+- **`score_fallback` no es un tipo de recomendación.** `recommendation_mode=score_fallback`, `affinity_score=0.0`, `affinity_zero_rate` alto o razones como `score base del reporte` deben bloquear lenguaje personalizado y mover el item a discovery/revisión manual.
+- **Los behaviorals sí se usan aunque el ranking sea fallback.** Si existen `behavioral_signals`, `player_behavior_fit` o `decision_support`, deben usarse para clasificar el tipo de experiencia, postura y cautions; lo que se degrada es la afirmación de personalización fuerte, no la interpretación conductual disponible.
+- **Copy permitido para fallback de score:** “aparece por oferta/score/reviews”, “deal detectado”, “revisar si te interesa este loop”. Copy no permitido: “recomendado para ti”, “compra recomendada”, “encaja contigo” o equivalentes.
 
 ## Capas de decisión
 
 | Capa | Pregunta | Señales existentes | Lectura esperada | Degradación |
 |---|---|---|---|---|
-| Oferta | ¿Es buen momento de precio? | `deals`, `top_picks`, precio final/descuento, mínimos históricos/locales, `active_promo_context`, `smart_alert_digest`, `external_offers` | Distinguir precio atractivo, precio normal, promo simultánea y oferta externa segura/review | Si cache/precios son parciales, marcar “tentativo”; no usar oferta externa como propiedad |
-| Compatibilidad | ¿Encaja con el usuario? | `personalized_recommendations`, `recommendation_diagnostics`, `taste_priority`, `behavioral_signals`, `behavioral_explanations`, `player_behavior_profile`, `player_behavior_fit`, `decision_support`, tags/géneros, Deck/Proton/anti-cheat | Explicar por qué podría gustar, qué loop/commitment implica y si hay señales personales reales | Si `mode=score_fallback`, baja confianza o `affinity_zero_rate` alto, no sobreprometer afinidad |
+| Oferta | ¿Es buen momento de precio? | `deals`, `top_picks`, precio final/descuento, mínimos históricos/locales, `active_promo_context`, `smart_alert_digest`, `external_offers` | Distinguir precio atractivo, precio normal, promo simultánea y oferta externa segura/review | Si cache/precios son parciales, marcar “tentativo”; no usar oferta externa como propiedad ni como recomendación |
+| Compatibilidad | ¿Encaja con el usuario? | `behavioral_signals`, `behavioral_explanations`, `player_behavior_profile`, `player_behavior_fit`, `decision_support`, `taste_priority`, tags/géneros, Deck/Proton/anti-cheat, `recommendation_diagnostics` | Explicar qué tipo de experiencia/loop/commitment implica y si hay señales personales reales | Si `mode=score_fallback`, baja confianza o `affinity_zero_rate` alto, no generar recomendación personalizada; conservar solo discovery si faltan behaviorals útiles |
 | Accesibilidad/necesidad | ¿Hace falta comprarlo? | `wishlist_hygiene`, `access_decision`, `play_access`, `steam_access`, `external_matches`, owned/family/shared, backlog/HLTB cuando exista | Detectar ya owned, Family/shared, probable acceso local, otra tienda o redundancia con backlog | Si la fuente es import local parcial, pedir revisión; nunca afirmar completitud de Family/externos |
-| Confianza | ¿Qué tan fuerte es la conclusión? | `recommendation_diagnostics`, estados `available`/`partial`, `cache_coverage`, warm-cache summary, `ranking_impact`, `advisory_only`, source schemas | Separar recomendaciones conductuales de score fallback y conclusiones fuertes de tentativas | Si falta payload opcional, omitir esa base y explicitar limitación |
+| Confianza | ¿Qué tan fuerte es la conclusión? | `recommendation_diagnostics`, estados `available`/`partial`, `cache_coverage`, warm-cache summary, `ranking_impact`, `advisory_only`, source schemas | Separar discovery por score/oferta de recomendaciones conductuales reales | Si falta payload opcional, omitir esa base y explicitar limitación; no rellenar con score |
 
 ## Vocabulario de decisión
 
@@ -35,10 +46,10 @@ Estas etiquetas son una guía de producto para consumidores humanos o futuros re
 
 | Decisión | Usar cuando | Advertencias típicas |
 |---|---|---|
-| `comprar_ahora` / Compra inmediata | Oferta fuerte + compatibilidad alta + no parece accesible ya + confianza suficiente | Mantener copy manual/advisory; no enlazar checkout ni prometer “óptimo” |
-| `revisar` / Revisar antes de comprar | Buen candidato con señales mixtas, acceso posible, cache parcial, riesgo externo o compatibilidad no concluyente | Pedir mirar Steam page/reviews/backlog antes de decidir |
-| `esperar` / Compra futura | Compatibilidad buena pero precio flojo, descuento no urgente, backlog saturado o cobertura insuficiente | No presentarlo como predicción de precio salvo señal explícita de histórico/alerta |
-| `ignorar` / Limpiar wishlist | Compatibilidad débil, alta redundancia, riesgo de abandono o ya accesible por otro medio | No borrar ni ocultar automáticamente; solo sugerir revisión manual |
+| `comprar_ahora` / Compra inmediata | Oferta fuerte + compatibilidad conductual alta + no parece accesible ya + confianza suficiente | Mantener copy manual/advisory; no enlazar checkout ni prometer “óptimo”; no usar si solo hay score/descuento |
+| `revisar` / Revisar antes de comprar | Buen candidato con behaviorals/fit mixtos, acceso posible, cache parcial, riesgo externo o compatibilidad no concluyente | Pedir mirar Steam page/reviews/backlog antes de decidir; si solo hay score, etiquetar como discovery, no recomendación |
+| `esperar` / Compra futura | Compatibilidad conductual buena pero precio flojo, descuento no urgente, backlog saturado o cobertura insuficiente | No presentarlo como predicción de precio salvo señal explícita de histórico/alerta |
+| `ignorar` / Limpiar wishlist | Compatibilidad conductual débil, alta redundancia, riesgo de abandono o ya accesible por otro medio | No borrar ni ocultar automáticamente; solo sugerir revisión manual |
 
 ## Tipo de compra / postura
 
@@ -56,13 +67,13 @@ Estas etiquetas son prosa advisory para análisis humano o prompts externos. No 
 ### Oferta
 
 - Priorizar el contexto de valor sobre el porcentaje bruto: un `-90%` puede ser menos útil que un descuento menor en un juego que el usuario sí jugaría.
-- `top_picks` y score final sirven como señales de ranking existente, pero Decision Advisor no debe recalcularlos.
+- `top_picks` y score final sirven como señales de ranking/discovery existente, pero Decision Advisor no debe recalcularlos ni transformarlos en recomendación.
 - `external_offers` puede mejorar la lectura de precio/disponibilidad, pero debe conservar risk gates: tienda desconocida, keyshop/marketplace, DRM/región incierta o baja confianza pasan a revisión, no a compra inmediata.
 
 ### Compatibilidad
 
 - `decision_support_v1` y `player_behavior_fit_v1` son las señales más directas cuando existen, porque cruzan perfil local/opt-in con señales del juego.
-- `recommendation_diagnostics` debe modular el tono. Con `score_fallback` alto, afinidad `0.0` o baja fuerza conductual, explicar que la recomendación viene más del score/oferta que del comportamiento del usuario.
+- `recommendation_diagnostics` debe modular el tono. Con `score_fallback` alto, afinidad `0.0` o baja fuerza conductual, bloquear lenguaje de recomendación personalizada y explicar que el item aparece por score/oferta/reviews.
 - `taste_priority` aporta redundancia, clusters/core loop y riesgo de abandono, útil para detectar “me gusta la idea” versus “probablemente lo jugaré”.
 - Deck/Proton/anti-cheat son compatibilidad técnica, no gusto personal.
 
@@ -76,7 +87,7 @@ Estas etiquetas son prosa advisory para análisis humano o prompts externos. No 
 ### Confianza y cobertura
 
 - Si la cache de precios o warm-cache cubre solo parte de la wishlist, todas las conclusiones de oferta deben marcarse como tentativas.
-- Si faltan señales personales, diferenciar “recomendación por score fallback” de “recomendación por comportamiento”.
+- Si faltan señales personales o behaviorals útiles, no producir “recomendación por score fallback”; producir solo discovery/oferta destacada con limitación explícita.
 - Los estados `partial`, `insufficient_signals` y `unavailable` deben aparecer como limitaciones, no como fallos.
 
 ## Payload JSON vigente
@@ -163,9 +174,9 @@ Clasifica el análisis como:
 
 - Behavioral: alta personalización.
 - Mixed: personalización parcial.
-- Score Fallback: principalmente score/descuento.
+- Discovery-only: principalmente score/descuento, sin recomendación personalizada.
 
-Si la personalización, cache o cobertura de señales es débil, indica claramente que las conclusiones son tentativas.
+Si la personalización, cache o cobertura de señales es débil, indica claramente qué conclusiones son tentativas. Si solo hay score/descuento/reviews, no generes una recomendación: clasifica el item como discovery-only.
 
 ## Paso 2: Analizar cada juego relevante
 
@@ -206,7 +217,7 @@ Ejemplos:
 - riesgo externo de tienda/DRM/región
 - posible acceso ya cubierto por owned/family/external import
 
-### Recomendación
+### Recomendación o estado
 
 Clasifica como:
 
@@ -214,6 +225,7 @@ Clasifica como:
 - Revisar más a fondo
 - Esperar oferta mejor
 - Ignorar por ahora
+- Oferta destacada sin señal suficiente para recomendar
 
 ## Paso 3: Detectar redundancia
 
@@ -299,7 +311,7 @@ Genera:
 
 ### Top 5 compras recomendadas
 
-Ordenadas por prioridad.
+Ordenadas por prioridad, solo si tienen señales conductuales/fit/acceso suficientes. No rellenar con score fallback.
 
 ### Top 5 juegos para revisar
 
@@ -322,7 +334,8 @@ Responde:
 Justifica cada elección.
 
 Recordatorios:
-- Diferencia recomendaciones basadas en comportamiento de recomendaciones basadas en score fallback.
+- Diferencia discovery por score/oferta de recomendaciones basadas en comportamiento.
+- No generes recomendaciones basadas en score fallback; si solo hay score, marca “oferta destacada sin señal suficiente”.
 - No confundas buen descuento con buena compra.
 - No sugieras checkout/carrito/compra automática; todo es advisory-only.
 - Marca como tentativas las conclusiones basadas en señales parciales.
@@ -352,7 +365,8 @@ Ten en cuenta:
 
 Si la cobertura de caché o señales es parcial:
 - Indica explícitamente qué conclusiones son tentativas.
-- Diferencia recomendaciones basadas en comportamiento de recomendaciones basadas en score fallback.
+- Diferencia discovery por score/oferta de recomendaciones basadas en comportamiento.
+- No conviertas score fallback en recomendación; si solo hay score, di que no hay señal suficiente para recomendar.
 - No confundas buen descuento con buena compra.
 
 Para cada juego indica:
