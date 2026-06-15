@@ -1033,6 +1033,8 @@ def build_command(config: dict, filters: dict) -> list[str]:
         cmd.append("--no-cache")
     if filters.get("free_weekend_live"):
         cmd.append("--free-weekend-live")
+    if filters.get("free_weekend_lootscraper_live"):
+        cmd.append("--free-weekend-lootscraper-live")
     if filters.get("itad_refresh_external_offers_cache"):
         cmd.append("--itad-refresh-external-offers-cache")
     if filters.get("max_price"):

@@ -224,6 +224,17 @@ class GeneratedFilesServingTests(unittest.TestCase):
         self.assertIn("--free-weekend-live", opt_in_cmd)
         self.assertEqual(opt_in_cmd.count("--free-weekend-live"), 1)
 
+    def test_build_command_passes_lootscraper_free_weekend_live_only_when_requested(self) -> None:
+        default_cmd = build_command({"vanity": "gaben"}, {})
+        opt_in_cmd = build_command(
+            {"vanity": "gaben"},
+            {"free_weekend_lootscraper_live": True},
+        )
+
+        self.assertNotIn("--free-weekend-lootscraper-live", default_cmd)
+        self.assertIn("--free-weekend-lootscraper-live", opt_in_cmd)
+        self.assertEqual(opt_in_cmd.count("--free-weekend-lootscraper-live"), 1)
+
     def test_build_command_passes_md_frontmatter_only_when_requested(self) -> None:
         default_cmd = build_command({"vanity": "gaben"}, {})
         opt_in_cmd = build_command({"vanity": "gaben"}, {"md_frontmatter": True})

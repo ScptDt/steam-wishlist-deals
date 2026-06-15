@@ -1207,6 +1207,21 @@ class WebAssetsTests(unittest.TestCase):
         self.assertIn("consulta señales Store JSON y usa cache separado", index_html)
         self.assertIn("'free_weekend_live'", app_js)
 
+    def test_advanced_filters_include_lootscraper_free_weekend_live_opt_in(self) -> None:
+        index_html = (ROOT / "web" / "steam_deals" / "index.html").read_text(
+            encoding="utf-8"
+        )
+        app_js = (ROOT / "web" / "steam_deals" / "app.js").read_text(
+            encoding="utf-8"
+        )
+
+        self.assertIn('id="free_weekend_lootscraper_live"', index_html)
+        self.assertIn("LootScraper Atom", index_html)
+        self.assertIn("experimental", index_html)
+        self.assertIn("cache separado", index_html)
+        self.assertIn("no cambia score/ranking/precios", index_html)
+        self.assertIn("'free_weekend_lootscraper_live'", app_js)
+
     def test_advanced_filters_include_itad_external_offers_refresh_opt_in(self) -> None:
         index_html = (ROOT / "web" / "steam_deals" / "index.html").read_text(
             encoding="utf-8"
