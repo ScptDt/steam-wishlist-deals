@@ -574,6 +574,71 @@ class WarmCacheSummaryTests(unittest.TestCase):
         self.assertNotIn("http-400-diagnostic-samples", codes)
         self.assertNotIn("repeated-http-400", codes)
 
+    def test_analyze_warm_cache_recommends_planner_reactive_residual(self) -> None:
+        recommendations = analyze_warm_cache_recommendations(
+            [
+                WarmCacheLogSummary(refresh_candidates=500),
+                WarmCacheLogSummary(
+                    planned_individual_count=300,
+                    reactive_fallback_count=60,
+                    reactive_fallback_batches=3,
+                ),
+            ]
+        )
+
+        codes = {recommendation.code for recommendation in recommendations}
+        action = next(
+            recommendation.action
+            for recommendation in recommendations
+            if recommendation.code == "planner-reactive-residual"
+        )
+
+        self.assertIn("planner-reactive-residual", codes)
+        self.assertIn("300 individual_planificado", action)
+        self.assertIn("60 fallback_reactivo", action)
+        self.assertIn("fixture offline", action)
+        self.assertIn("umbral/circuit breaker", action)
+        self.assertIn("No uses BG00G/red real", action)
+        self.assertIn("ni cambies defaults", action)
+        self.assertNotIn("fallback-still-high", codes)
+
+    def test_analyze_warm_cache_ignores_low_planner_reactive_residual(self) -> None:
+        recommendations = analyze_warm_cache_recommendations(
+            [
+                WarmCacheLogSummary(refresh_candidates=100),
+                WarmCacheLogSummary(
+                    refresh_candidates=90,
+                    planned_individual_count=300,
+                    reactive_fallback_count=5,
+                    reactive_fallback_batches=1,
+                ),
+            ]
+        )
+
+        codes = {recommendation.code for recommendation in recommendations}
+
+        self.assertNotIn("planner-reactive-residual", codes)
+        self.assertIn("no-action", codes)
+
+    def test_analyze_warm_cache_keeps_direct_fallback_over_residual_noise(self) -> None:
+        recommendations = analyze_warm_cache_recommendations(
+            [
+                WarmCacheLogSummary(degraded_batch_count=21),
+                WarmCacheLogSummary(
+                    planned_individual_count=300,
+                    reactive_fallback_count=60,
+                    reactive_fallback_batches=3,
+                    http_400_direct_fallback_count=20,
+                    http_400_direct_fallback_batches=1,
+                ),
+            ]
+        )
+
+        codes = {recommendation.code for recommendation in recommendations}
+
+        self.assertIn("http-400-direct-fallback-active", codes)
+        self.assertNotIn("planner-reactive-residual", codes)
+
     def test_format_warm_cache_recommendations_mentions_rate_limit_waits(self) -> None:
         output = format_warm_cache_recommendations(
             [

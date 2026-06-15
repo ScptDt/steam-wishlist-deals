@@ -627,6 +627,28 @@ def _format_http_400_direct_fallback_action(summary: WarmCacheLogSummary) -> str
     )
 
 
+def _has_planner_reactive_residual(summary: WarmCacheLogSummary) -> bool:
+    return (
+        summary.planned_individual_count > 0
+        and summary.reactive_fallback_count >= HIGH_FALLBACK_THRESHOLD
+    )
+
+
+def _format_planner_reactive_residual_action(summary: WarmCacheLogSummary) -> str:
+    reactive_batches = summary.reactive_fallback_batches
+    reactive_batch_label = (
+        "1 tanda" if reactive_batches == 1 else f"{reactive_batches:,} tandas"
+    )
+    return (
+        "Planner con fallback reactivo residual: "
+        f"{summary.planned_individual_count:,} individual_planificado, pero "
+        f"{summary.reactive_fallback_count:,} fallback_reactivo en "
+        f"{reactive_batch_label}; convierte este patrón en fixture offline "
+        "o revisa umbral/circuit breaker con tests antes de otro benchmark. "
+        "No uses BG00G/red real ni cambies defaults como reacción."
+    )
+
+
 def _http_400_sample_appid_counts(summary: WarmCacheLogSummary) -> dict[str, int]:
     counts: dict[str, int] = {}
     for sample in summary.http_400_batch_samples:
@@ -851,6 +873,7 @@ def analyze_warm_cache_recommendations(
     )
     has_negative_lower_batch = _is_lower_batch_experiment_negative(latest, previous)
     has_http_400_direct_fallback = latest.http_400_direct_fallback_count > 0
+    has_planner_reactive_residual = _has_planner_reactive_residual(latest)
     has_fallback_no_data_cooldown = (
         latest.individual_fallback_count >= HIGH_FALLBACK_THRESHOLD
         and _fallback_failed_ratio(latest) >= HIGH_FAILED_FALLBACK_RATIO
@@ -908,6 +931,15 @@ def analyze_warm_cache_recommendations(
             )
         )
 
+    if has_planner_reactive_residual and not has_http_400_direct_fallback:
+        recommendations.append(
+            WarmCacheRecommendation(
+                "planner-reactive-residual",
+                "warn",
+                _format_planner_reactive_residual_action(latest),
+            )
+        )
+
     if has_final_failure_closeout:
         recommendations.append(
             WarmCacheRecommendation(
@@ -942,6 +974,7 @@ def analyze_warm_cache_recommendations(
         and latest.refresh_candidates <= previous.refresh_candidates
         and not has_repeated_http_400
         and not has_fallback_no_data_cooldown
+        and not has_planner_reactive_residual
     ):
         recommendations.append(
             WarmCacheRecommendation(
