@@ -985,6 +985,11 @@ details .details-body .field:last-child {
   cursor: pointer;
   font-family: inherit;
 }
+.generated-json-export-action {
+  border-color: rgba(240, 178, 50, 0.32);
+  background: rgba(240, 178, 50, 0.1);
+  color: #f5d28c;
+}
 .file-link:hover { background: var(--accent); color: #fff; text-decoration: none; border-color: var(--accent); }
 .latest-report-empty-state {
   margin-top: 0.75rem; padding: 0.85rem 1rem; border-radius: 8px;
@@ -1623,6 +1628,37 @@ details .details-body .field:last-child {
   color: var(--text2);
   font-size: 0.76rem;
   line-height: 1.45;
+}
+.latest-json-export-actions {
+  margin: 0.65rem 0;
+  padding: 0.65rem;
+  border-radius: 8px;
+  border: 1px solid rgba(240, 178, 50, 0.22);
+  background: rgba(240, 178, 50, 0.07);
+}
+.latest-json-export-copy {
+  display: flex;
+  flex-direction: column;
+  gap: 0.2rem;
+  margin-bottom: 0.55rem;
+}
+.latest-json-export-copy strong {
+  color: var(--text);
+  font-size: 0.8rem;
+}
+.latest-json-export-copy span,
+.latest-json-export-copy small {
+  color: var(--text2);
+  font-size: 0.74rem;
+  line-height: 1.45;
+}
+.latest-json-export-action-row {
+  margin-top: 0.2rem;
+}
+.latest-json-export-action {
+  border-color: rgba(240, 178, 50, 0.32);
+  background: rgba(240, 178, 50, 0.1);
+  color: #f5d28c;
 }
 .latest-report-action-row {
   display: flex;

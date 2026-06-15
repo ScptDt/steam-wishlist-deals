@@ -2696,7 +2696,9 @@ const GENERATED_FILE_ACTION_GROUPS = Object.freeze([
   {kind: 'report-html', label: 'HTML interactivo'},
   {kind: 'share-html', label: 'Share HTML'},
   {kind: 'markdown', label: 'Markdown'},
-  {kind: 'json', label: 'JSON'},
+  {kind: 'json-offers', label: 'Ofertas JSON'},
+  {kind: 'json-wishlist', label: 'Wishlist JSON'},
+  {kind: 'json', label: 'JSON técnico'},
   {kind: 'csv', label: 'CSV'},
   {kind: 'other', label: 'Otros archivos'},
 ]);
@@ -2747,6 +2749,30 @@ function buildGeneratedFileAction(filePath) {
       icon: '&#128196;',
       openInTab: false,
       title: 'Descarga el reporte en texto para abrirlo donde quieras',
+    };
+  }
+  if (isOffersJsonExportFile(name)) {
+    return {
+      name,
+      href,
+      kind: 'json-offers',
+      label: 'Descargar ofertas JSON',
+      icon: '&#123;&#125;',
+      openInTab: false,
+      isJsonExport: true,
+      title: 'Descarga solo las ofertas detectadas con la cobertura disponible',
+    };
+  }
+  if (isWishlistJsonExportFile(name)) {
+    return {
+      name,
+      href,
+      kind: 'json-wishlist',
+      label: 'Descargar wishlist JSON',
+      icon: '&#128221;',
+      openInTab: false,
+      isJsonExport: true,
+      title: 'Descarga la wishlist conocida; los precios pueden estar pendientes o parciales',
     };
   }
   if (ext === '.json') {
@@ -2801,6 +2827,9 @@ function createGeneratedFileActionButton(action) {
   } else {
     a.setAttribute('download', action.name);
   }
+  if (action.isJsonExport) {
+    a.classList.add('generated-json-export-action');
+  }
   a.innerHTML = action.icon + ' ' + action.label;
   return a;
 }
@@ -2837,7 +2866,7 @@ function showFiles(files) {
   if (actions.length) {
     const hint = document.createElement('div');
     hint.className = 'file-links-hint';
-    hint.textContent = 'Los artefactos se muestran por tipo: HTML interactivo y Share HTML se abren; Markdown, JSON y CSV se descargan para tu editor, Excel/Sheets o herramientas.';
+    hint.textContent = 'Los artefactos se muestran por tipo: HTML interactivo y Share HTML se abren; Markdown, ofertas/wishlist JSON, JSON técnico y CSV se descargan para tu editor, Excel/Sheets o herramientas.';
     fileLinks.appendChild(hint);
   }
   GENERATED_FILE_ACTION_GROUPS.forEach(group => appendGeneratedFileGroup(fileLinks, group, actions));
@@ -5374,10 +5403,68 @@ function findLatestShareHtmlReport(files) {
 function findLatestJsonReport(files) {
   return (Array.isArray(files) ? files : [])
     .map(getGeneratedFileName)
-    .find(name => getGeneratedFileExtension(name) === '.json');
+    .find(name => getGeneratedFileExtension(name) === '.json' && !isJsonExportFile(name));
 }
 
-function renderLatestReportActions(files = null) {
+function isOffersJsonExportFile(name) {
+  return /^Steam Deals Offers \d{4}-\d{2}-\d{2}\.json$/.test(String(name || ''));
+}
+
+function isWishlistJsonExportFile(name) {
+  return /^Steam Deals Wishlist \d{4}-\d{2}-\d{2}\.json$/.test(String(name || ''));
+}
+
+function isJsonExportFile(name) {
+  return isOffersJsonExportFile(name) || isWishlistJsonExportFile(name);
+}
+
+function findLatestOffersJsonExport(files) {
+  return (Array.isArray(files) ? files : [])
+    .map(getGeneratedFileName)
+    .find(name => isOffersJsonExportFile(name));
+}
+
+function findLatestWishlistJsonExport(files) {
+  return (Array.isArray(files) ? files : [])
+    .map(getGeneratedFileName)
+    .find(name => isWishlistJsonExportFile(name));
+}
+
+function jsonExportCoverageCopy(report) {
+  const coverage = report && typeof report === 'object' ? report.cache_coverage : null;
+  const isPartial = coverage && typeof coverage === 'object' && (coverage.status === 'partial' || coverage.is_partial === true);
+  if (isPartial) {
+    return 'Cobertura parcial: exporta con la información disponible. Warm-cache puede mejorar cobertura, pero no es requisito para descargar.';
+  }
+  return 'Exporta con la cobertura disponible en este reporte. Si luego completas warm-cache, genera otro reporte para refrescar estos JSON.';
+}
+
+function renderJsonExportDownloadActions(files = null, report = null) {
+  const offersName = findLatestOffersJsonExport(files);
+  const wishlistName = findLatestWishlistJsonExport(files);
+  if (!offersName && !wishlistName) return '';
+  const offersAction = offersName ? `
+    <a class="file-link latest-report-action latest-json-export-action" href="${generatedFileHref(offersName)}" download="${escapeHtml(offersName)}" title="Descarga solo las ofertas detectadas con la cobertura disponible">&#123;&#125; Descargar ofertas JSON</a>
+  ` : '';
+  const wishlistAction = wishlistName ? `
+    <a class="file-link latest-report-action latest-json-export-action" href="${generatedFileHref(wishlistName)}" download="${escapeHtml(wishlistName)}" title="Descarga la wishlist conocida con cache_state por juego">&#128221; Descargar wishlist JSON</a>
+  ` : '';
+  return `
+    <div class="latest-json-export-actions" data-latest-json-export-actions>
+      <div class="latest-json-export-copy">
+        <strong>Exports JSON separados</strong>
+        <span>Ofertas JSON incluye solo ofertas detectadas con la cobertura disponible. Wishlist JSON incluye la wishlist conocida, pero no promete precios completos.</span>
+        <small>${escapeHtml(jsonExportCoverageCopy(report))}</small>
+      </div>
+      <div class="latest-report-action-row latest-json-export-action-row" aria-label="Descargas JSON separadas">
+        ${offersAction}
+        ${wishlistAction}
+      </div>
+    </div>
+  `;
+}
+
+function renderLatestReportActions(files = null, report = null) {
   const htmlName = findLatestPrimaryHtmlReport(files);
   const shareName = findLatestShareHtmlReport(files);
   const jsonName = findLatestJsonReport(files);
@@ -5395,6 +5482,7 @@ function renderLatestReportActions(files = null) {
         <strong>Siguiente mejor paso</strong>
         <span>Acciones del último reporte: abre el HTML interactivo para revisar ofertas. Share sirve para compartir; JSON y carpeta quedan como opciones técnicas.</span>
       </div>
+      ${renderJsonExportDownloadActions(files, report)}
       <div class="latest-report-action-row">
         ${htmlAction}
         ${shareAction}
@@ -5408,14 +5496,14 @@ function renderLatestReportActions(files = null) {
   `;
 }
 
-function renderLatestReportActionsPanel(files = null) {
-  const body = renderLatestReportActions(files);
+function renderLatestReportActionsPanel(files = null, report = null) {
+  const body = renderLatestReportActions(files, report);
   if (!body) return '';
   return `
     <details class="latest-report-details latest-report-actions-panel">
       <summary>
         <span>Acciones del reporte</span>
-        <span class="latest-report-details-hint">HTML interactivo, Share, JSON técnico y carpeta</span>
+        <span class="latest-report-details-hint">HTML interactivo, Share, JSON técnico, exports separados y carpeta</span>
       </summary>
       <div class="latest-report-details-body">${body}</div>
     </details>
@@ -5468,7 +5556,7 @@ function renderLatestReportToolsPanel(report) {
 
 function renderLatestReportDetails(report, files = null) {
   const panels = [
-    renderLatestReportActionsPanel(files),
+    renderLatestReportActionsPanel(files, report),
     renderLatestRecommendationsPanel(report, files),
     renderLatestReportToolsPanel(report),
   ].filter(Boolean).join('');
@@ -5651,7 +5739,7 @@ function latestReportIntents(report, meta = {}, summary = {}, files = null) {
       copy: 'Empieza por el resumen rápido y abre el HTML interactivo; Share, JSON y carpeta quedan como acciones técnicas.',
       body: [
         renderLatestReportQuickSummary(meta, summary, files),
-        renderLatestReportActionsPanel(files),
+        renderLatestReportActionsPanel(files, report),
       ].filter(Boolean).join(''),
     },
     {

@@ -138,7 +138,7 @@ class WebAssetsTests(unittest.TestCase):
         self.assertIn("Ir al histórico", app_js)
         self.assertIn("Secciones del último reporte por intención", app_js)
         self.assertIn("renderLatestReportIntentWrapper(activeReport, meta, summary, files)", app_js)
-        self.assertIn("HTML interactivo, Share, JSON técnico y carpeta", app_js)
+        self.assertIn("HTML interactivo, Share, JSON técnico, exports separados y carpeta", app_js)
         self.assertIn("renderLatestSmartAlertDigest", app_js)
         self.assertIn("data-latest-smart-alert-digest", app_js)
         self.assertIn("No envía Telegram/Discord ni activa notificaciones por juego", app_js)
@@ -192,6 +192,59 @@ class WebAssetsTests(unittest.TestCase):
         self.assertIn(".latest-report-action-row-secondary", app_css)
         self.assertIn(".metrics-guide-summary-hint", app_css)
         self.assertNotIn("Ver último HTML", index_html)
+
+    def test_json_export_actions_are_separate_and_explain_partial_coverage(self) -> None:
+        app_css = (ROOT / "web" / "steam_deals" / "app.css").read_text(
+            encoding="utf-8"
+        )
+        app_js = (ROOT / "web" / "steam_deals" / "app.js").read_text(
+            encoding="utf-8"
+        )
+
+        self.assertIn("function isOffersJsonExportFile", app_js)
+        self.assertIn("function isWishlistJsonExportFile", app_js)
+        self.assertIn("function isJsonExportFile", app_js)
+        self.assertIn("function findLatestOffersJsonExport", app_js)
+        self.assertIn("function findLatestWishlistJsonExport", app_js)
+        self.assertIn(
+            r"^Steam Deals Offers \d{4}-\d{2}-\d{2}\.json$",
+            app_js,
+        )
+        self.assertIn(
+            r"^Steam Deals Wishlist \d{4}-\d{2}-\d{2}\.json$",
+            app_js,
+        )
+        self.assertIn(
+            ".find(name => getGeneratedFileExtension(name) === '.json' && !isJsonExportFile(name));",
+            app_js,
+        )
+        self.assertIn("kind: 'json-offers'", app_js)
+        self.assertIn("kind: 'json-wishlist'", app_js)
+        self.assertIn("Descargar ofertas JSON", app_js)
+        self.assertIn("Descargar wishlist JSON", app_js)
+        self.assertIn("data-latest-json-export-actions", app_js)
+        self.assertIn(
+            "Ofertas JSON incluye solo ofertas detectadas con la cobertura disponible",
+            app_js,
+        )
+        self.assertIn(
+            "Wishlist JSON incluye la wishlist conocida, pero no promete precios completos.",
+            app_js,
+        )
+        self.assertIn(
+            "Warm-cache puede mejorar cobertura, pero no es requisito para descargar.",
+            app_js,
+        )
+        self.assertIn(
+            "Descarga la wishlist conocida; los precios pueden estar pendientes o parciales",
+            app_js,
+        )
+        self.assertIn("ofertas/wishlist JSON, JSON técnico", app_js)
+        self.assertIn(".latest-json-export-actions", app_css)
+        self.assertIn(".latest-json-export-copy", app_css)
+        self.assertIn(".latest-json-export-action-row", app_css)
+        self.assertIn(".latest-json-export-action", app_css)
+        self.assertIn(".generated-json-export-action", app_css)
 
     def test_advanced_filters_are_compact_and_help_is_on_demand(self) -> None:
         index_html = (ROOT / "web" / "steam_deals" / "index.html").read_text(
