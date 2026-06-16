@@ -14,6 +14,8 @@ _LOCAL_PLAY_ACCESS_COLLECTION_KEYS = (
     "library",
 )
 _LOCAL_PLAY_ACCESS_DEFAULT_SOURCE = "local_play_access_import"
+_PLAYNITE_ACCESS_SCHEMA = "steamtools_playnite_access_v1"
+_PLAYNITE_ACCESS_SOURCE = "playnite_access"
 _STEAM_ACCESS_IMPORT_DEFAULT_SOURCE = "steam_access_import"
 _STEAM_ACCESS_COLLECTION_KEYS = ("owned_appids", "family_shared_appids", "wishlist_appids")
 _STEAM_ACCESS_WRAPPER_KEYS = ("steam_access_import", "steam_access", "access")
@@ -336,6 +338,89 @@ def _local_play_access_records(payload) -> tuple[list[dict], dict]:
     )
 
 
+def _playnite_access_items(payload: dict) -> list[dict]:
+    items = payload.get("items")
+    if items is None:
+        return []
+    if not isinstance(items, list):
+        raise ValueError("items debe ser una lista")
+    copied: list[dict] = []
+    for index, item in enumerate(items):
+        if not isinstance(item, dict):
+            raise ValueError(f"items[{index}] debe ser un objeto JSON")
+        copied.append(dict(item))
+    return copied
+
+
+def _playnite_access_platforms(item: dict, index: int) -> list[dict]:
+    platforms = item.get("platforms")
+    if platforms is None:
+        return []
+    if not isinstance(platforms, list):
+        raise ValueError(f"items[{index}].platforms debe ser una lista")
+    copied: list[dict] = []
+    for platform_index, platform in enumerate(platforms):
+        if not isinstance(platform, dict):
+            raise ValueError(
+                f"items[{index}].platforms[{platform_index}] debe ser un objeto JSON"
+            )
+        copied.append(dict(platform))
+    return copied
+
+
+def _playnite_access_play_state(platforms: list[dict]) -> str:
+    if any(platform.get("installed") is True for platform in platforms):
+        return "installed"
+    if any(
+        platform.get("playable_hint") is True or platform.get("playable") is True
+        for platform in platforms
+    ):
+        return "playable"
+    return ""
+
+
+def _playnite_access_record(item: dict, index: int, defaults: dict) -> dict | None:
+    platforms = _playnite_access_platforms(item, index)
+    appid = _numeric_appid(_record_appid(item))
+    if not appid:
+        return None
+    play_state = _playnite_access_play_state(platforms)
+    if not play_state:
+        return None
+    normalized = {
+        "appid": appid,
+        "source": _PLAYNITE_ACCESS_SOURCE,
+        "play_state": play_state,
+    }
+    if name := _record_name(item):
+        normalized["name"] = name
+    if observed_at := _clean_text(item.get("observed_at") or defaults.get("exported_at")):
+        normalized["observed_at"] = observed_at
+    return normalized
+
+
+def normalize_playnite_access_export(payload) -> list[dict]:
+    """Normalize a privacy-minimized Playnite access export into local play-access records."""
+    if not isinstance(payload, dict):
+        raise ValueError("export Playnite access debe ser un objeto JSON")
+    if payload.get("schema") != _PLAYNITE_ACCESS_SCHEMA:
+        schema = payload.get("schema") or "missing"
+        raise ValueError(f"schema Playnite access no soportado: {schema}")
+    normalized: list[dict] = []
+    seen: set[tuple[str, str, str]] = set()
+    defaults = {"exported_at": payload.get("exported_at")}
+    for index, item in enumerate(_playnite_access_items(payload)):
+        record = _playnite_access_record(item, index, defaults)
+        if not record:
+            continue
+        fingerprint = (record["appid"], record["source"], record["play_state"])
+        if fingerprint in seen:
+            continue
+        seen.add(fingerprint)
+        normalized.append(record)
+    return normalized
+
+
 def _local_play_state(record: dict, defaults: dict) -> str:
     if record.get("installed") is True:
         return "installed"
@@ -370,6 +455,8 @@ def _local_play_access_record(record: dict, defaults: dict) -> dict | None:
 
 def normalize_local_play_access_import(payload) -> list[dict]:
     """Normalize an explicit local installed/playable JSON payload into app records."""
+    if isinstance(payload, dict) and payload.get("schema") == _PLAYNITE_ACCESS_SCHEMA:
+        return normalize_playnite_access_export(payload)
     records, defaults = _local_play_access_records(payload)
     normalized: list[dict] = []
     seen: set[tuple[str, str, str]] = set()

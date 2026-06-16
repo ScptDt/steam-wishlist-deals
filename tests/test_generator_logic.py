@@ -50,6 +50,7 @@ from steam_deals_access import (
     load_local_play_access_import,
     load_steam_access_import,
     normalize_local_play_access_import,
+    normalize_playnite_access_export,
     normalize_steam_access_import,
 )
 from steam_deals_behavioral import (
@@ -2604,6 +2605,103 @@ class AccessLayerTests(unittest.TestCase):
                 self.assertEqual(records[0]["play_state"], expected_state)
                 if expected_name:
                     self.assertEqual(records[0]["name"], expected_name)
+
+    def test_normalize_playnite_access_export_accepts_installed_and_playable_hints(self) -> None:
+        records = normalize_playnite_access_export(
+            {
+                "schema": "steamtools_playnite_access_v1",
+                "source": "playnite",
+                "exported_at": "2026-06-16T12:00:00Z",
+                "items": [
+                    {
+                        "name": "Hades",
+                        "steam_appid": "1145360",
+                        "platforms": [
+                            {
+                                "store": "GOG",
+                                "installed": True,
+                                "playable_hint": True,
+                                "install_dir": "C:/Users/Jane/Games/Hades",
+                                "token": "secret-token",
+                            }
+                        ],
+                    },
+                    {
+                        "name": "Control Ultimate Edition",
+                        "steam_appid": "870780",
+                        "platforms": [
+                            {
+                                "store": "Steam",
+                                "playable_hint": True,
+                                "executable": "C:/Users/Jane/Games/Control/control.exe",
+                            }
+                        ],
+                    },
+                    {
+                        "name": "Not Installed",
+                        "steam_appid": "999",
+                        "platforms": [{"store": "Epic Games Store", "installed": False}],
+                    },
+                ],
+            }
+        )
+
+        serialized = json.dumps(records, sort_keys=True)
+
+        self.assertEqual([record["appid"] for record in records], ["1145360", "870780"])
+        self.assertEqual(records[0]["play_state"], "installed")
+        self.assertEqual(records[1]["play_state"], "playable")
+        self.assertEqual(records[0]["source"], "playnite_access")
+        self.assertEqual(records[0]["observed_at"], "2026-06-16T12:00:00Z")
+        self.assertNotIn("install_dir", serialized)
+        self.assertNotIn("executable", serialized)
+        self.assertNotIn("secret-token", serialized)
+        self.assertNotIn("C:/Users", serialized)
+
+    def test_load_local_play_access_import_accepts_playnite_access_export(self) -> None:
+        payload = {
+            "schema": "steamtools_playnite_access_v1",
+            "items": [
+                {
+                    "name": "Steam Local Candidate",
+                    "steam_appid": "42",
+                    "platforms": [{"store": "Steam", "installed": True}],
+                }
+            ],
+        }
+
+        with TemporaryDirectory() as temp_dir:
+            path = Path(temp_dir) / "steamtools-playnite-access.json"
+            path.write_text(json.dumps(payload), encoding="utf-8")
+            records = load_local_play_access_import(path)
+
+        access = build_play_access_contract(
+            [{"appid": "42", "name": "Steam Local Candidate"}],
+            installed_or_playable_appids=records,
+        )
+        item = access["items"][0]
+
+        self.assertEqual(records[0]["source"], "playnite_access")
+        self.assertEqual(item["access_type"], "probable_family_shared")
+        self.assertNotEqual(item["access_type"], "family_shared")
+        self.assertFalse(item["owned"])
+
+    def test_load_local_play_access_import_rejects_malformed_playnite_access_export(self) -> None:
+        cases = [
+            ({"schema": "steamtools_playnite_access_v1", "items": {}}, "items debe ser una lista"),
+            (
+                {"schema": "steamtools_playnite_access_v1", "items": [{"name": "Bad", "platforms": {}}]},
+                r"items\[0\].platforms debe ser una lista",
+            ),
+        ]
+
+        with TemporaryDirectory() as temp_dir:
+            for index, (payload, expected_error) in enumerate(cases):
+                path = Path(temp_dir) / f"bad_playnite_access_{index}.json"
+                path.write_text(json.dumps(payload), encoding="utf-8")
+
+                with self.assertRaisesRegex(ValueError, expected_error):
+                    load_local_play_access_import(path)
 
     def test_normalize_steam_access_import_accepts_appid_only_contract(self) -> None:
         access = normalize_steam_access_import(

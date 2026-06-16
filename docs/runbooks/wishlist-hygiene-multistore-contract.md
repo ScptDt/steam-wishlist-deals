@@ -390,6 +390,14 @@ Validación esperada antes de código:
 - Campos sensibles o privados del export (`install_dir`, paths, ejecutables, tokens, cookies o raw metadata) no se copian al contrato normalizado.
 - La salida sigue siendo advisory-only dentro de `wishlist_hygiene`: solo “revisar wishlist”, sin auto-quitar, auto-hide, score/ranking/defaults ni precios `external_offers`.
 
+### Corte parser access cerrado 2026-06-16
+
+- `steamtools_playnite_access_v1` ya puede entrar por el import existente `--play-access-json` sin flags/UI nuevos.
+- El parser toma solo juegos con `platforms[*].installed=true` o `platforms[*].playable_hint=true` y los normaliza a registros locales de `play_access` con `source=playnite_access`.
+- La señal resultante queda como acceso local/probable (`probable_family_shared` cuando no hay owned/family explícito), nunca como ownership ni Steam Family definitivo.
+- Campos privados del export (`install_dir`, paths, ejecutables, tokens, cookies o raw metadata) no se copian al contrato normalizado.
+- La salida sigue siendo advisory-only: ayuda a revisar antes de comprar, sin auto-quitar wishlist, score/ranking/defaults, precios `external_offers` ni Playnite add-on real.
+
 ## Plan 6A: contrato futuro del helper/browser extension Steam
 
 Este corte es **docs-only** para dejar listo el threat model antes de implementar un helper real. El objetivo del helper futuro es producir un archivo manual compatible con `steam_access_import_v1`; la app Python/Web nunca debe manejar sesión Steam, cookies, tokens ni respuestas crudas.
