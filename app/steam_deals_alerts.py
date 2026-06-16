@@ -86,6 +86,27 @@ def _section(section_id: str, label: str, count: int, items: list[dict], *, max_
     return payload
 
 
+def _digest_volume_level(total_count: int, hidden_count: int) -> str:
+    if total_count >= 12 or hidden_count >= 6:
+        return "high"
+    if total_count >= 4 or hidden_count > 0:
+        return "medium"
+    return "low"
+
+
+def _anti_spam_summary(sections: list[dict], *, total_count: int, max_items: int) -> dict:
+    total_hidden_count = sum(_safe_int(section.get("hidden_count"), 0) for section in sections)
+    visible_items_count = sum(len(section.get("items", [])) for section in sections)
+    return {
+        "grouped_digest": True,
+        "per_game_notifications": False,
+        "max_items_per_section": max_items,
+        "visible_items_count": visible_items_count,
+        "total_hidden_count": total_hidden_count,
+        "volume_level": _digest_volume_level(total_count, total_hidden_count),
+    }
+
+
 def _count_global_historical_lows(
     deals: list[dict],
     historical_lows: dict[str, dict],
@@ -417,11 +438,11 @@ def build_smart_alert_digest(
         "counts": counts,
         "total_count": total_count,
         "sections": sections,
-        "anti_spam": {
-            "grouped_digest": True,
-            "per_game_notifications": False,
-            "max_items_per_section": max_items,
-        },
+        "anti_spam": _anti_spam_summary(
+            sections,
+            total_count=total_count,
+            max_items=max_items,
+        ),
         "notification_policy": {
             "external_send_enabled": False,
             "requires_digest_review": True,

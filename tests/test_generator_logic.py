@@ -9936,6 +9936,65 @@ class SmartAlertsTests(unittest.TestCase):
         self.assertEqual(by_id["active_bundles"]["games_count"], 2)
         self.assertIn("Preview local", " ".join(digest["notes"]))
 
+    def test_smart_alert_digest_marks_high_volume_without_enabling_sends(self) -> None:
+        deals = [
+            {"appid": str(index), "name": f"Game {index}", "price_raw": 1000 + index}
+            for index in range(1, 13)
+        ]
+        digest = module_build_smart_alert_digest(
+            deals=deals,
+            historical_lows={},
+            active_bundles={},
+            comparison={
+                "price_changes": {
+                    str(index): {"direction": "up", "change_pct": 15.0}
+                    for index in range(1, 13)
+                }
+            },
+            local_trends={},
+            alert_rise_pct=10.0,
+            max_items_per_section=2,
+        )
+
+        anti_spam = digest["anti_spam"]
+
+        self.assertEqual(digest["total_count"], 12)
+        self.assertEqual(anti_spam["volume_level"], "high")
+        self.assertEqual(anti_spam["visible_items_count"], 2)
+        self.assertEqual(anti_spam["total_hidden_count"], 10)
+        self.assertEqual(anti_spam["max_items_per_section"], 2)
+        self.assertTrue(anti_spam["grouped_digest"])
+        self.assertFalse(anti_spam["per_game_notifications"])
+        self.assertFalse(digest["send_ready"])
+        self.assertFalse(digest["notification_policy"]["external_send_enabled"])
+        self.assertTrue(digest["notification_policy"]["requires_digest_review"])
+        self.assertEqual(digest["notification_policy"]["channels"], [])
+
+    def test_smart_alert_digest_marks_low_volume_without_channel_side_effects(self) -> None:
+        digest = module_build_smart_alert_digest(
+            deals=[{"appid": "10", "name": "Alpha", "price_raw": 1000}],
+            historical_lows={},
+            active_bundles={},
+            comparison={
+                "price_changes": {
+                    "10": {"direction": "up", "change_pct": 15.0},
+                }
+            },
+            local_trends={},
+            alert_rise_pct=10.0,
+            max_items_per_section=3,
+        )
+
+        anti_spam = digest["anti_spam"]
+
+        self.assertEqual(digest["total_count"], 1)
+        self.assertEqual(anti_spam["volume_level"], "low")
+        self.assertEqual(anti_spam["visible_items_count"], 1)
+        self.assertEqual(anti_spam["total_hidden_count"], 0)
+        self.assertFalse(digest["send_ready"])
+        self.assertFalse(digest["notification_policy"]["external_send_enabled"])
+        self.assertEqual(digest["notification_policy"]["channels"], [])
+
     def test_smart_alert_digest_respects_score_minimum_without_changing_defaults(self) -> None:
         digest = module_build_smart_alert_digest(
             deals=[
