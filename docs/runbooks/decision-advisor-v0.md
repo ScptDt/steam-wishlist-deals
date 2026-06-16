@@ -141,6 +141,13 @@ Reglas vigentes:
 - `status="partial"` marca conclusiones tentativas si `cache_coverage` es parcial.
 - No cambia `score`, `top_picks`, orden, filtros, defaults, cache ni fetching.
 
+## Consumidores visibles vigentes
+
+- Markdown principal, HTML interactivo generado y Web UI consumen `decision_advisor_v0` como sección compacta advisory-only.
+- Share HTML también puede mostrar el payload existente en una sección compacta para revisión manual, validando `schema`, `status`, `advisory_only=true`, `ranking_impact=none` e ítems mínimos.
+- Payloads ausentes, vacíos o inválidos se omiten sin fallback; ninguna superficie recalcula decisiones ni convierte score/descuento en recomendación personalizada.
+- Todos los renders mantienen el contrato: no checkout/carrito/pagos, no mutaciones Steam, no cambios de score/ranking/Top Picks/defaults/cache/fetching.
+
 ## Prompt recomendado para análisis externo
 
 ```text
@@ -384,8 +391,7 @@ Al final genera:
 
 ## Slices futuros posibles
 
-1. **Web/Markdown/HTML consumer**: mostrar una tarjeta compacta “Comprar / Revisar / Esperar / Ignorar” usando solo el payload ya aprobado.
-2. **Source-policy de accesibilidad de juego**: definir fuentes permitidas para accessibility options reales; no mezclar con compatibilidad técnica Deck/Proton.
-3. **Backlog/redundancy stronger fixtures**: mejorar clusters/redundancia solo con fixtures locales y sin ML pesado.
+1. **Source-policy de accesibilidad de juego**: definir fuentes permitidas para accessibility options reales; no mezclar con compatibilidad técnica Deck/Proton.
+2. **Backlog/redundancy stronger fixtures**: mejorar clusters/redundancia solo con fixtures locales y sin ML pesado.
 
 Cualquier slice futuro que toque score, ranking, filtros, defaults, cache, fetching o acciones sobre Steam requiere aprobación explícita separada.

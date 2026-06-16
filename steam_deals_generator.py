@@ -4504,6 +4504,7 @@ def generate_share_html(
     shared_gift_ideas: list[dict] | None = None,
     external_offers: dict | None = None,
     behavioral_explanations: dict | None = None,
+    decision_advisor: dict | None = None,
 ):
     """Generate a lightweight shareable HTML page with the deals list."""
     if recommended_collections is None:
@@ -4537,6 +4538,7 @@ def generate_share_html(
             shared_gift_ideas=shared_gift_ideas,
             external_offers=external_offers,
             behavioral_explanations=behavioral_explanations,
+            decision_advisor=decision_advisor,
         )
     if _generate_share_html_fallback_renderer is None:
         raise RuntimeError("Share HTML fallback renderer module is not available")
@@ -4559,6 +4561,7 @@ def generate_share_html(
         shared_gift_ideas=shared_gift_ideas,
         external_offers=external_offers,
         behavioral_explanations=behavioral_explanations,
+        decision_advisor=decision_advisor,
     )
 
 
@@ -6016,6 +6019,7 @@ def main():
         shared_gift_ideas=shared_gift_ideas,
         external_offers=external_offers,
         behavioral_explanations=behavioral_explanations,
+        decision_advisor=decision_advisor,
     )
 
     step("Generando JSON...")

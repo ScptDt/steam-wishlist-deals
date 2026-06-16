@@ -56,6 +56,45 @@ _EXTERNAL_OFFER_CHECKOUT_RE = re.compile(
 )
 _EXTERNAL_OFFER_CURRENCY_RE = re.compile(r"^[A-Z]{3}$")
 
+_DECISION_ADVISOR_DECISION_LABELS = {
+    "comprar_ahora": "Compra inmediata (revisión manual)",
+    "revisar": "Revisar antes de comprar",
+    "esperar": "Esperar mejor momento",
+    "ignorar": "Ignorar / limpiar wishlist",
+}
+_DECISION_ADVISOR_PURCHASE_TYPE_LABELS = {
+    "comfort_pick": "Comfort Pick",
+    "stretch_pick": "Stretch Pick",
+    "aspirational_pick": "Aspirational Pick",
+    "impulse_risk": "Impulse Risk",
+}
+_DECISION_ADVISOR_CONFIDENCE_LABELS = {
+    "high": "Alta",
+    "medium": "Media",
+    "low": "Baja",
+}
+_DECISION_ADVISOR_ACCESS_LABELS = {
+    "requires_purchase": "Requiere compra",
+    "available": "Ya accesible",
+    "partially_available": "Acceso posible",
+    "unknown": "Acceso desconocido",
+}
+_DECISION_ADVISOR_SIGNAL_LABELS = {
+    "strong_discount": "descuento fuerte",
+    "high_score": "score alto de discovery",
+    "strong_personal_fit": "fit personal fuerte",
+    "partial_personal_fit": "fit personal parcial",
+    "safe_external_offer": "oferta externa segura",
+    "already_available": "ya accesible",
+    "access_requires_review": "acceso requiere revisión",
+    "external_offer_requires_review": "oferta externa requiere revisión",
+    "score_fallback_personalization": "score fallback: no recomendación personalizada",
+    "partial_cache_coverage": "cobertura parcial de cache",
+    "weak_or_redundant_fit": "fit débil o redundante",
+    "personal_fit_unknown": "fit personal desconocido",
+    "limited_signals": "señales limitadas",
+}
+
 
 def _build_share_payload(
     *,
@@ -329,6 +368,127 @@ def _render_external_offers(payload: dict | None) -> str:
 </section>'''
 
 
+def _decision_advisor_visible_items(payload: dict | None, *, limit: int = 5) -> tuple[list[dict], int, int]:
+    if not isinstance(payload, dict):
+        return [], 0, 0
+    if payload.get("schema") != "decision_advisor_v0":
+        return [], 0, 0
+    if payload.get("status") not in {"available", "partial"}:
+        return [], 0, 0
+    if payload.get("advisory_only") is not True:
+        return [], 0, 0
+    if str(payload.get("ranking_impact") or "").strip() != "none":
+        return [], 0, 0
+    raw_items = payload.get("items")
+    if not isinstance(raw_items, list):
+        return [], 0, 0
+    items = [item for item in raw_items if _decision_advisor_item_is_visible(item)]
+    total = len(items)
+    return items[:limit], total, max(0, total - limit)
+
+
+def _decision_advisor_item_is_visible(item) -> bool:
+    if not isinstance(item, dict):
+        return False
+    appid = str(item.get("appid") or item.get("steam_appid") or "").strip()
+    decision = str(item.get("decision") or "").strip()
+    purchase_type = str(item.get("purchase_type") or "").strip()
+    return (
+        appid.isdigit()
+        and decision in _DECISION_ADVISOR_DECISION_LABELS
+        and purchase_type in _DECISION_ADVISOR_PURCHASE_TYPE_LABELS
+    )
+
+
+def _decision_advisor_label(value: str, labels: dict[str, str]) -> str:
+    key = str(value or "").strip()
+    return labels.get(key, key.replace("_", " ").strip() or "—")
+
+
+def _decision_advisor_code_labels(values, *, limit: int = 2) -> list[str]:
+    if not isinstance(values, list):
+        return []
+    labels: list[str] = []
+    for value in values:
+        key = str(value or "").strip()
+        if not key or "/" in key or "\\" in key:
+            continue
+        label = _DECISION_ADVISOR_SIGNAL_LABELS.get(key, key.replace("_", " "))
+        if label not in labels:
+            labels.append(label)
+        if len(labels) >= limit:
+            break
+    return labels
+
+
+def _decision_advisor_title(item: dict) -> str:
+    appid = str(item.get("appid") or item.get("steam_appid") or "").strip()
+    fallback = f"AppID {appid}" if appid else "Juego"
+    name = str(item.get("name") or item.get("steam_name") or fallback).strip()
+    if appid.isdigit():
+        return f'<a href="{STORE_URL.format(appid=appid)}" target="_blank" rel="noopener noreferrer">{html_escape(name)}</a>'
+    return html_escape(name)
+
+
+def _decision_advisor_signal_text(values) -> str:
+    labels = _decision_advisor_code_labels(values)
+    return html_escape(" · ".join(labels) if labels else "Señales limitadas")
+
+
+def _decision_advisor_mode_note(payload: dict) -> str:
+    summary = payload.get("summary") if isinstance(payload.get("summary"), dict) else {}
+    mode = str(summary.get("recommendation_mode") or "").strip()
+    if mode != "score_fallback":
+        return ""
+    return '<p class="decision-advisor-warning">Modo <code>score_fallback</code>: discovery/oferta para revisión manual, no recomendación personalizada.</p>'
+
+
+def _render_decision_advisor_item(item: dict) -> str:
+    appid = str(item.get("appid") or item.get("steam_appid") or "").strip()
+    decision = str(item.get("decision") or "").strip()
+    decision_label = _decision_advisor_label(decision, _DECISION_ADVISOR_DECISION_LABELS)
+    meta = " · ".join(part for part in [
+        _decision_advisor_label(item.get("purchase_type"), _DECISION_ADVISOR_PURCHASE_TYPE_LABELS),
+        f"Confianza {_decision_advisor_label(item.get('confidence'), _DECISION_ADVISOR_CONFIDENCE_LABELS)}",
+        _decision_advisor_label(item.get("access_status"), _DECISION_ADVISOR_ACCESS_LABELS),
+    ] if part and part != "—")
+    return f'''<li class="decision-advisor-item decision-advisor-item-{html_escape(decision)}" data-decision-advisor-appid="{html_escape(appid)}">
+  <div class="decision-advisor-main">
+    <div class="decision-advisor-heading">
+      <strong>{_decision_advisor_title(item)}</strong>
+      <span class="decision-advisor-badge">{html_escape(decision_label)}</span>
+    </div>
+    <div class="decision-advisor-meta">{html_escape(meta)}</div>
+    <div class="decision-advisor-signals"><strong>Señales:</strong> {_decision_advisor_signal_text(item.get("positive_signals"))}</div>
+    <div class="decision-advisor-risks"><strong>Riesgos:</strong> {_decision_advisor_signal_text(item.get("risks"))}</div>
+    <div class="decision-advisor-note">Advisory-only: revisión manual; no compra, no abre carrito/checkout ni modifica wishlist.</div>
+  </div>
+</li>'''
+
+
+def _render_decision_advisor(payload: dict | None) -> str:
+    items, total_items, hidden_count = _decision_advisor_visible_items(payload)
+    if not items or not isinstance(payload, dict):
+        return ""
+    more_html = (
+        f'<div class="decision-advisor-more">{hidden_count:,} más en el payload completo</div>'
+        if hidden_count
+        else ""
+    )
+    return f'''<section class="decision-advisor" data-decision-advisor-section>
+  <div class="decision-advisor-head">
+    <div>
+      <h2 style="margin:1rem 0 .35rem">Decision Advisor</h2>
+      <p><strong>{total_items:,} juego(s)</strong> desde <code>decision_advisor_v0</code> local. Advisory-only: ayuda para revisión manual; no cambia score, ranking, Top Picks, defaults, cache ni fetching. No compra, no abre carrito/checkout ni modifica wishlist.</p>
+    </div>
+    <span class="decision-advisor-head-badge">Sin impacto en ranking</span>
+  </div>
+  {_decision_advisor_mode_note(payload)}
+  <ol class="decision-advisor-list">{"".join(_render_decision_advisor_item(item) for item in items)}</ol>
+  {more_html}
+</section>'''
+
+
 _STYLE = """
 * { box-sizing: border-box; margin: 0; padding: 0; }
 body {
@@ -428,6 +588,20 @@ tr:hover { background: #1a3a5c; }
 .external-offer-link { border:1px solid #2a475e; border-radius:6px; color:#66c0f4; font-size:.72rem; font-weight:700; padding:.25rem .45rem; }
 .external-offer-link-disabled { color:#8f98a0; }
 .external-offers-more { margin-top:.45rem; }
+.decision-advisor { margin:1rem 0 .5rem; }
+.decision-advisor-head { display:flex; justify-content:space-between; gap:.75rem; align-items:flex-start; }
+.decision-advisor-head p { color:#8f98a0; font-size:.78rem; margin:0 0 .55rem; }
+.decision-advisor-head-badge { border:1px solid rgba(102,192,244,.45); border-radius:999px; color:#66c0f4; font-size:.68rem; font-weight:700; padding:.18rem .45rem; white-space:nowrap; }
+.decision-advisor-list { list-style:none; display:grid; grid-template-columns:repeat(auto-fill,minmax(260px,1fr)); gap:.5rem; }
+.decision-advisor-item { background:#16202d; border:1px solid rgba(240,178,50,.35); border-radius:8px; padding:.65rem; }
+.decision-advisor-heading { display:flex; gap:.45rem; align-items:flex-start; justify-content:space-between; }
+.decision-advisor-heading strong { color:#66c0f4; font-size:.92rem; }
+.decision-advisor-badge { background:rgba(240,178,50,.13); border:1px solid rgba(240,178,50,.35); border-radius:999px; color:#f0b232; font-size:.68rem; font-weight:700; padding:.14rem .38rem; text-align:right; }
+.decision-advisor-meta { color:#c7d5e0; font-size:.74rem; margin:.25rem 0 .1rem; }
+.decision-advisor-signals, .decision-advisor-risks, .decision-advisor-note, .decision-advisor-warning, .decision-advisor-more { color:#8f98a0; font-size:.72rem; line-height:1.35; }
+.decision-advisor-note { margin-top:.3rem; }
+.decision-advisor-warning { border:1px solid rgba(240,178,50,.35); border-left:3px solid #f0b232; border-radius:6px; padding:.45rem .55rem; background:rgba(240,178,50,.07); margin:.25rem 0 .55rem; }
+.decision-advisor-more { margin-top:.45rem; }
 .share-modal {
   display: none;
   position: fixed;
@@ -1276,6 +1450,7 @@ def generate_share_html(
     shared_gift_ideas: list[dict] | None = None,
     external_offers: dict | None = None,
     behavioral_explanations: dict | None = None,
+    decision_advisor: dict | None = None,
 ):
     """Generate a lightweight shareable HTML page with the deals list."""
     reviews = reviews or {}
@@ -1286,6 +1461,7 @@ def generate_share_html(
     personalized_recommendations = personalized_recommendations or {"items": []}
     gift_ideas = gift_ideas or []
     external_offers = external_offers if isinstance(external_offers, dict) else None
+    decision_advisor = decision_advisor if isinstance(decision_advisor, dict) else None
     behavioral_explanations = (
         behavioral_explanations if isinstance(behavioral_explanations, dict) else None
     )
@@ -1326,6 +1502,7 @@ def generate_share_html(
         shared_gift_ideas,
     )
     external_offers_html = _render_external_offers(external_offers)
+    decision_advisor_html = _render_decision_advisor(decision_advisor)
 
     sale_line = f" — {html_escape(sale_name)}" if sale_name else ""
     return f"""<!DOCTYPE html>
@@ -1336,6 +1513,7 @@ def generate_share_html(
 <h1>&#127918; {html_escape(title)}{sale_line}</h1>
 <div class="meta">{today} | {len(deals)} deals (&ge;{min_discount}%) | Precios en MXN</div>
 {picks_html}
+{decision_advisor_html}
 {personalized_html}
 {gift_html}
 {multi_profile_gifts_html}

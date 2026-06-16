@@ -15567,6 +15567,112 @@ class RankTopPicksTests(unittest.TestCase):
         self.assertNotIn("Diagnóstico de recomendaciones", html)
         self.assertNotIn("data-recommendation-diagnostics-section", html)
 
+    def test_generate_share_html_surfaces_decision_advisor_consumer(self) -> None:
+        html = generate_share_html(
+            deals=[],
+            vanity="gaben",
+            min_discount=50,
+            top_picks=[],
+            recommended_collections=[],
+            personalized_recommendations={"items": []},
+            decision_advisor={
+                "schema": "decision_advisor_v0",
+                "status": "partial",
+                "advisory_only": True,
+                "ranking_impact": "none",
+                "summary": {"items_count": 1, "recommendation_mode": "score_fallback"},
+                "items": [
+                    {
+                        "appid": "10",
+                        "name": "Advisor <Game>",
+                        "decision": "revisar",
+                        "priority": "media",
+                        "purchase_type": "impulse_risk",
+                        "confidence": "low",
+                        "access_status": "unknown",
+                        "positive_signals": ["high_score"],
+                        "risks": [
+                            "score_fallback_personalization",
+                            "/home/example-user/private-risk",
+                        ],
+                    }
+                ],
+            },
+        )
+
+        self.assertIn("data-decision-advisor-section", html)
+        self.assertIn("Decision Advisor", html)
+        self.assertIn("decision_advisor_v0", html)
+        self.assertIn("Sin impacto en ranking", html)
+        self.assertIn("no cambia score, ranking, Top Picks, defaults, cache ni fetching", html)
+        self.assertIn("no compra, no abre carrito/checkout ni modifica wishlist", html.lower())
+        self.assertIn("Advisor &lt;Game&gt;", html)
+        self.assertIn("Revisar antes de comprar", html)
+        self.assertIn("Impulse Risk · Confianza Baja · Acceso desconocido", html)
+        self.assertIn("score fallback: no recomendación personalizada", html)
+        self.assertIn("Modo <code>score_fallback</code>", html)
+        self.assertNotIn("Advisor <Game>", html)
+        self.assertNotIn("/home/example-user", html)
+
+    def test_generate_share_html_hides_invalid_decision_advisor_surface(self) -> None:
+        html = generate_share_html(
+            deals=[],
+            vanity="gaben",
+            min_discount=50,
+            top_picks=[],
+            recommended_collections=[],
+            personalized_recommendations={"items": []},
+            decision_advisor={
+                "schema": "decision_advisor_v0",
+                "status": "available",
+                "advisory_only": True,
+                "ranking_impact": "none",
+                "items": [],
+            },
+        )
+
+        self.assertNotIn("data-decision-advisor-section", html)
+        self.assertNotIn("decision_advisor_v0", html)
+
+    def test_generator_share_html_forwards_decision_advisor_payload(self) -> None:
+        captured_kwargs = {}
+        original_renderer = generator_module._generate_share_html_renderer
+        advisor = {
+            "schema": "decision_advisor_v0",
+            "status": "available",
+            "advisory_only": True,
+            "ranking_impact": "none",
+            "items": [
+                {
+                    "appid": "10",
+                    "name": "Advisor Game",
+                    "decision": "revisar",
+                    "purchase_type": "impulse_risk",
+                }
+            ],
+        }
+
+        def fake_renderer(*args, **kwargs):
+            captured_kwargs.update(kwargs)
+            return "<html>share</html>"
+
+        try:
+            generator_module._generate_share_html_renderer = fake_renderer
+            html = generator_module.generate_share_html(
+                deals=[],
+                vanity="gaben",
+                min_discount=50,
+                top_picks=[],
+                recommended_collections=[],
+                personalized_recommendations={"items": []},
+                decision_advisor=advisor,
+            )
+        finally:
+            generator_module._generate_share_html_renderer = original_renderer
+
+        self.assertEqual("<html>share</html>", html)
+        self.assertIs(captured_kwargs["decision_advisor"], advisor)
+
     def test_generator_share_html_does_not_build_or_pass_taste_priority(self) -> None:
         captured_kwargs = {}
         original_renderer = generator_module._generate_share_html_renderer
