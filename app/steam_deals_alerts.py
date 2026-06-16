@@ -431,6 +431,104 @@ def build_smart_alert_fake_delivery_plan(preview: dict | None) -> dict:
     return result
 
 
+def _safe_planned_deliveries(plan: dict) -> list[dict]:
+    deliveries = plan.get("planned_deliveries")
+    if not isinstance(deliveries, list):
+        return []
+    return [delivery for delivery in deliveries if isinstance(delivery, dict)]
+
+
+def execute_smart_alert_fake_delivery_plan(plan: dict | None, *, fake_send_fn=None) -> dict:
+    """Execute a fake Smart Alerts delivery plan through an injected fake sender only."""
+    result = {
+        "schema": "smart_alert_fake_delivery_result_v1",
+        "transport": "fake",
+        "preview_only": True,
+        "dry_run": True,
+        "fake_delivery": True,
+        "send_ready": False,
+        "external_send_enabled": False,
+        "channels": [],
+        "send_performed": False,
+        "fake_send_performed": False,
+        "status": "blocked",
+        "blockers": [],
+        "attempts": [],
+    }
+    if not isinstance(plan, dict):
+        result["blockers"] = ["invalid_fake_delivery_plan"]
+        return result
+
+    deliveries = _safe_planned_deliveries(plan)
+    blockers: list[str] = []
+    if plan.get("schema") != "smart_alert_fake_delivery_plan_v1":
+        blockers.append("invalid_fake_delivery_plan")
+    if plan.get("transport") != "fake" or plan.get("fake_delivery") is not True:
+        blockers.append("fake_transport_required")
+    if plan.get("preview_only") is not True or plan.get("dry_run") is not True:
+        blockers.append("dry_run_preview_required")
+    if plan.get("send_ready") is not False:
+        blockers.append("send_ready_must_remain_false")
+    if plan.get("external_send_enabled") is not False:
+        blockers.append("external_send_must_remain_disabled")
+    if plan.get("channels") not in ([], None):
+        blockers.append("plan_channels_must_stay_empty")
+    if plan.get("per_game_notifications") is True:
+        blockers.append("per_game_notifications_forbidden")
+    plan_blockers = plan.get("blockers") if isinstance(plan.get("blockers"), list) else []
+    blockers.extend(str(blocker) for blocker in plan_blockers if str(blocker or "").strip())
+    if plan.get("status") != "ready_for_fake_delivery":
+        blockers.append("fake_delivery_plan_not_ready")
+    if not deliveries:
+        blockers.append("no_planned_deliveries")
+    if not callable(fake_send_fn):
+        blockers.append("fake_sender_required")
+
+    unique_blockers = list(dict.fromkeys(blockers))
+    if unique_blockers:
+        result["blockers"] = unique_blockers
+        return result
+
+    message = str(plan.get("message") or "")
+    attempts: list[dict] = []
+    for delivery in deliveries:
+        channel = str(delivery.get("channel") or "").strip()
+        payload = {
+            "channel": channel,
+            "message": message,
+            "delivery": dict(delivery),
+            "transport": "fake",
+            "preview_only": True,
+            "dry_run": True,
+        }
+        try:
+            response = fake_send_fn(payload)
+            ok = bool(response.get("ok")) if isinstance(response, dict) and "ok" in response else bool(response)
+            attempts.append(
+                {
+                    "channel": channel,
+                    "ok": ok,
+                    "fake_send_performed": True,
+                    "send_performed": False,
+                }
+            )
+        except Exception as exc:
+            attempts.append(
+                {
+                    "channel": channel,
+                    "ok": False,
+                    "fake_send_performed": True,
+                    "send_performed": False,
+                    "error": str(exc),
+                }
+            )
+
+    result["attempts"] = attempts
+    result["fake_send_performed"] = bool(attempts)
+    result["status"] = "fake_delivery_completed" if attempts and all(attempt.get("ok") for attempt in attempts) else "fake_delivery_failed"
+    return result
+
+
 def _count_global_historical_lows(
     deals: list[dict],
     historical_lows: dict[str, dict],

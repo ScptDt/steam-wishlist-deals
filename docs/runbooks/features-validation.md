@@ -242,6 +242,14 @@ Definir el contrato mínimo antes de conectar Smart Alerts v2 a Telegram/Discord
 - `planned_deliveries[*]` describe qué canal soportado recibiría un digest agrupado en un test/fake, pero nunca llama Telegram/Discord ni usa tokens/webhooks.
 - Validación mínima vigente: `py_compile`, `tests.test_generator_logic.SmartAlertsTests` y `git diff --check`; no red real, `BG00G`, `--no-cache`, builds ni reportes generados.
 
+### Corte fake sender boundary cerrado 2026-06-16
+
+- `execute_smart_alert_fake_delivery_plan(...)` ejecuta solo planes `transport=fake` ya listos mediante un `fake_send_fn` inyectado; no tiene sender real por defecto.
+- El resultado conserva `preview_only=true`, `dry_run=true`, `send_ready=false`, `external_send_enabled=false`, `channels=[]` y `send_performed=false`; si el fake sender corre, se registra como `fake_send_performed`.
+- Planes bloqueados, malformados, con canales activos, sin fake sender o con `send_ready=true`/`external_send_enabled=true` no llaman al fake sender y devuelven blockers.
+- Errores del fake sender se capturan como fallo de entrega falsa, sin elevar excepción ni tocar transporte externo.
+- Validación mínima vigente: `py_compile`, `tests.test_generator_logic.SmartAlertsTests` y `git diff --check`; no Telegram/Discord real, tokens, webhooks, red real, `BG00G`, `--no-cache`, builds ni reportes generados.
+
 ## PAYDAY 2 data/cache y diagnóstico
 
 ### Objetivo
