@@ -2,7 +2,7 @@
 
 Track priorizado para ampliar la comparativa multi-tienda hacia Fanatical y más stores sin mezclarla con `wishlist_hygiene` ni con flujos de compra.
 
-Estado actual: Fase 0/docs, Fase 1 normalizador fixture-only, Fase 1B JSON interno opcional, Fase 1C diagnóstico JSON-consumer, primer render visible mínimo risk-gated, Share HTML, adaptador ITAD fixture-only, lectura de caché ITAD local por flag, configuración Web de esa caché, refresh live opt-in/acotado, trigger Web explícito, pulido UX no-checkout, diagnóstico offline de caché ITAD, helper GG.deals fixture-only, lectura de caché GG.deals local por flag y configuración Web de esa caché cerrados entre 2026-05-21 y 2026-06-09. El siguiente paso requiere elegir explícitamente si hacer un live smoke acotado/aprobado con key oficial, diseñar live GG.deals/API/refresh en plan separado o ampliar otra superficie local bajo los mismos gates.
+Estado actual: Fase 0/docs, Fase 1 normalizador fixture-only, Fase 1B JSON interno opcional, Fase 1C diagnóstico JSON-consumer, primer render visible mínimo risk-gated, Share HTML, adaptador ITAD fixture-only, lectura de caché ITAD local por flag, configuración Web de esa caché, refresh live opt-in/acotado, trigger Web explícito, pulido UX no-checkout, diagnóstico offline de caché ITAD, helper GG.deals fixture-only, lectura de caché GG.deals local por flag y configuración Web de esa caché cerrados entre 2026-05-21 y 2026-06-09. Readiness offline de selección cerrado 2026-06-15: sin key/export concreto ni aprobación de red, el siguiente paso no es live; primero elegir entre diagnóstico de caché/import local existente, parser para export redactado, diseño docs-first de refresh live o live smoke ITAD acotado con key oficial. El siguiente paso requiere elegir explícitamente si hacer un live smoke acotado/aprobado con key oficial, diseñar live GG.deals/API/refresh en plan separado o ampliar otra superficie local bajo los mismos gates.
 
 Enfoque de ejecución: **feature-sliced + risk-gated**. La feature avanza por cortes pequeños, pero cada corte debe pasar gates de riesgo antes de exponerse al usuario, tocar ranking o usar fuentes live.
 
@@ -36,6 +36,19 @@ Regla: un precio externo nunca equivale a “ya lo tienes”. Para ownership ext
 - Usa `external_matches` cuando el usuario aporta una biblioteca, orden, compra o bundle propio para que `wishlist_hygiene` sugiera revisión manual.
 - Usa `play_access` cuando el usuario aporta juegos instalados/jugables localmente para revisar acceso práctico sin compra nueva.
 - Trabajar los tres frentes es válido, pero deben avanzar como slices separados: primero UX/contrato claro, luego parsers locales con exports concretos, y solo después live smoke ITAD si hay key oficial y aprobación explícita.
+
+## Readiness offline para elegir el próximo slice
+
+Usar esta mini-ficha cuando se quiera retomar multi-store sin depender de red, credenciales o host externo:
+
+- Objetivo: convertir una intención amplia (“más stores”, Fanatical, GG.deals, ITAD) en un slice verificable con fuente concreta.
+- Fuente requerida: caché local ITAD/GG.deals ya existente, export/import local redactado, o aprobación explícita de live smoke con key oficial.
+- Si no hay fuente concreta: no implementar parser/live refresh nuevo; dejar el siguiente paso como docs/readiness y pedir muestra o decisión de fuente.
+- Si hay caché local: usar/fortalecer diagnóstico offline antes de tocar renderers, score, ranking o defaults.
+- Si hay export redactado: implementar parser local fixture-only separado de `external_offers` vs `external_matches` según corresponda.
+- Si hay key oficial y aprobación: acotar live smoke ITAD a cache/log objetivo y detenerse ante `401/403`, rate-limit o evidencia contradictoria.
+- Validación mínima: docs-only → `git diff --check`; parser local → `py_compile` + tests puros; Web/render → tests renderer/assets; live → ExternalScout/docs actuales + fixtures fake y smoke aprobado.
+- No hacer: red real implícita, scraping/login, checkout/carrito/pagos, credenciales de tiendas externas, ownership por precio público, `BG00G`, `--no-cache`, builds, reportes generados, score/ranking/defaults.
 
 ## Enfoque: feature-sliced + risk-gated
 
