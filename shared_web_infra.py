@@ -119,7 +119,24 @@ PUBLIC_REDACTION_MARKER = "[redactado]"
 PATH_REDACTION_MARKER = "[ruta]"
 TRACEBACK_REDACTION_MARKER = "[traceback]"
 SENSITIVE_ASSIGNMENT_PARTS = frozenset(
-    {"key", "token", "webhook", "secret", "password", "authorization", "bearer"}
+    {
+        "authorization",
+        "bearer",
+        "cookie",
+        "cookies",
+        "key",
+        "password",
+        "secret",
+        "session",
+        "sessionid",
+        "token",
+        "webhook",
+    }
+)
+SENSITIVE_ASSIGNMENT_NAMES = frozenset(
+    {
+        "steamloginsecure",
+    }
 )
 SENSITIVE_ASSIGNMENT_RE = re.compile(
     r"(?i)\b([A-Za-z][A-Za-z0-9_-]*)(\s*[=:]\s*)([^\s&;,]+)"
@@ -781,7 +798,11 @@ def _redact_posix_absolute_path_match(match: re.Match[str]) -> str:
 def _is_sensitive_assignment_key(value: str) -> bool:
     normalized = str(value or "").strip().lower().replace("-", "_")
     parts = {part for part in normalized.split("_") if part}
-    return bool(parts & SENSITIVE_ASSIGNMENT_PARTS) or normalized.endswith("apikey")
+    return (
+        bool(parts & SENSITIVE_ASSIGNMENT_PARTS)
+        or normalized in SENSITIVE_ASSIGNMENT_NAMES
+        or normalized.endswith("apikey")
+    )
 
 
 def _redact_sensitive_assignment_match(match: re.Match[str]) -> str:

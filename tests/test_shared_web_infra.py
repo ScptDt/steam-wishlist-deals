@@ -310,6 +310,31 @@ class PublicErrorRedactionTests(unittest.TestCase):
         self.assertIn("hotkey=ctrl+k", redacted)
         self.assertIn("monkey=banana", redacted)
 
+    def test_redact_sensitive_text_handles_cookie_and_session_assignments(self) -> None:
+        raw = (
+            "Cookie: sessionid=SESSION-SECRET; steamLoginSecure=LOGIN-SECRET\n"
+            "Set-Cookie: session_id=SET-SECRET; Path=/\n"
+            "cookies=COOKIE-JAR sessionid=RAW-SESSION hotkey=ctrl+k monkey=banana"
+        )
+
+        redacted = redact_sensitive_text(raw)
+
+        for secret in (
+            "SESSION-SECRET",
+            "LOGIN-SECRET",
+            "SET-SECRET",
+            "COOKIE-JAR",
+            "RAW-SESSION",
+        ):
+            self.assertNotIn(secret, redacted)
+        self.assertIn("Cookie: [redactado]", redacted)
+        self.assertIn("steamLoginSecure=[redactado]", redacted)
+        self.assertIn("Set-Cookie: [redactado]", redacted)
+        self.assertIn("cookies=[redactado]", redacted)
+        self.assertIn("sessionid=[redactado]", redacted)
+        self.assertIn("hotkey=ctrl+k", redacted)
+        self.assertIn("monkey=banana", redacted)
+
     def test_redact_sensitive_text_tolerates_unavailable_cwd(self) -> None:
         with patch(
             "shared_web_infra.Path.cwd",
