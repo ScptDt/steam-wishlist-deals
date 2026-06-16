@@ -9066,6 +9066,122 @@ class StopApiContractTests(unittest.TestCase):
         self.assertNotIn("raw_payload", dumped)
         self.assertNotIn("/home/example-user", dumped)
 
+    def test_generate_md_surfaces_decision_advisor_visible_consumer(self) -> None:
+        md = generate_md(
+            deals=[],
+            backlog_on_sale=[],
+            have_on_sale=[],
+            vanity="gaben",
+            owned={},
+            wishlist_appids=["10"],
+            min_discount=50,
+            genres=[],
+            decision_advisor={
+                "schema": "decision_advisor_v0",
+                "status": "available",
+                "advisory_only": True,
+                "ranking_impact": "none",
+                "summary": {"items_count": 1, "recommendation_mode": "behavioral"},
+                "items": [
+                    {
+                        "appid": "10",
+                        "name": "The Pale Beyond",
+                        "decision": "comprar_ahora",
+                        "priority": "alta",
+                        "purchase_type": "comfort_pick",
+                        "confidence": "high",
+                        "access_status": "requires_purchase",
+                        "positive_signals": ["strong_discount", "strong_personal_fit"],
+                        "risks": ["partial_cache_coverage"],
+                    }
+                ],
+            },
+        )
+
+        self.assertIn("## 🧩 Decision Advisor", md)
+        self.assertIn("desde `decision_advisor_v0` local", md)
+        self.assertIn("no cambia score, ranking, Top Picks, defaults, cache ni fetching", md)
+        self.assertIn("No compra, no abre carrito/checkout ni modifica la wishlist", md)
+        self.assertIn("[The Pale Beyond](https://store.steampowered.com/app/10/)", md)
+        self.assertIn("Compra inmediata (revisión manual)", md)
+        self.assertIn("Comfort Pick · Confianza Alta · Requiere compra", md)
+        self.assertIn("Señales: descuento fuerte · fit personal fuerte; Riesgos: cobertura parcial de cache", md)
+
+    def test_generate_reports_hide_invalid_decision_advisor_surface(self) -> None:
+        invalid_advisor = {"schema": "decision_advisor_v0", "status": "available", "items": []}
+        md = generate_md(
+            deals=[],
+            backlog_on_sale=[],
+            have_on_sale=[],
+            vanity="gaben",
+            owned={},
+            wishlist_appids=[],
+            min_discount=50,
+            genres=[],
+            decision_advisor=invalid_advisor,
+        )
+        html = generate_html(
+            deals=[],
+            backlog_on_sale=[],
+            have_on_sale=[],
+            vanity="gaben",
+            owned={},
+            wishlist_appids=[],
+            min_discount=50,
+            genres=[],
+            decision_advisor=invalid_advisor,
+        )
+
+        self.assertNotIn("Decision Advisor", md)
+        self.assertNotIn("data-decision-advisor-section", html)
+
+    def test_generate_html_surfaces_decision_advisor_visible_consumer(self) -> None:
+        html = generate_html(
+            deals=[],
+            backlog_on_sale=[],
+            have_on_sale=[],
+            vanity="gaben",
+            owned={},
+            wishlist_appids=["10"],
+            min_discount=50,
+            genres=[],
+            decision_advisor={
+                "schema": "decision_advisor_v0",
+                "status": "partial",
+                "advisory_only": True,
+                "ranking_impact": "none",
+                "summary": {"items_count": 1, "recommendation_mode": "score_fallback"},
+                "items": [
+                    {
+                        "appid": "10",
+                        "name": "Advisor <Game>",
+                        "decision": "revisar",
+                        "priority": "media",
+                        "purchase_type": "impulse_risk",
+                        "confidence": "low",
+                        "access_status": "unknown",
+                        "positive_signals": ["high_score"],
+                        "risks": ["score_fallback_personalization", "/home/example-user/private-risk"],
+                    }
+                ],
+            },
+        )
+
+        self.assertIn("data-decision-advisor-section", html)
+        self.assertIn("Decision Advisor", html)
+        self.assertIn("decision_advisor_v0", html)
+        self.assertIn("Sin impacto en ranking", html)
+        self.assertIn("Advisory-only", html)
+        self.assertIn("no cambia score, ranking, Top Picks, defaults, cache ni fetching", html)
+        self.assertIn("no compra, no abre carrito/checkout ni modifica wishlist", html.lower())
+        self.assertIn("Advisor &lt;Game&gt;", html)
+        self.assertIn("Revisar antes de comprar", html)
+        self.assertIn("Impulse Risk · Confianza Baja · Acceso desconocido", html)
+        self.assertIn("score fallback: no recomendación personalizada", html)
+        self.assertIn("Modo <code>score_fallback</code>", html)
+        self.assertNotIn("Advisor <Game>", html)
+        self.assertNotIn("/home/example-user", html)
+
     def test_generate_json_respects_explicit_empty_wishlist_hygiene(self) -> None:
         payload = generate_json(
             deals=[{"appid": "10", "name": "Portal 2", "score": 95.4}],

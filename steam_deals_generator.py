@@ -4141,6 +4141,7 @@ def generate_md(
     external_offers: dict | None = None,
     taste_priority: dict | None = None,
     recommendation_diagnostics: dict | None = None,
+    decision_advisor: dict | None = None,
     behavioral_explanations: dict | None = None,
 ) -> str:
     if _generate_md_renderer is None:
@@ -4248,6 +4249,7 @@ def generate_md(
         external_offers=external_offers,
         taste_priority=taste_priority,
         recommendation_diagnostics=recommendation_diagnostics,
+        decision_advisor=decision_advisor,
         behavioral_explanations=behavioral_explanations,
         group_by_tier=group_by_tier,
         filter_by_genres=filter_by_genres,
@@ -4312,6 +4314,7 @@ def generate_html(
     external_offers: dict | None = None,
     taste_priority: dict | None = None,
     recommendation_diagnostics: dict | None = None,
+    decision_advisor: dict | None = None,
     behavioral_explanations: dict | None = None,
     recommended_collections: list[dict] | None = None,
     personalized_recommendations: dict | None = None,
@@ -4426,6 +4429,7 @@ def generate_html(
             external_offers=external_offers,
             taste_priority=taste_priority,
             recommendation_diagnostics=recommendation_diagnostics,
+            decision_advisor=decision_advisor,
             behavioral_explanations=behavioral_explanations,
             group_by_tier=group_by_tier,
             group_deals_by_tag=group_deals_by_tag,
@@ -4474,6 +4478,7 @@ def generate_html(
         external_offers=external_offers,
         taste_priority=taste_priority,
         recommendation_diagnostics=recommendation_diagnostics,
+        decision_advisor=decision_advisor,
         behavioral_explanations=behavioral_explanations,
         group_by_tier=group_by_tier,
         group_deals_by_tag=group_deals_by_tag,
@@ -5819,6 +5824,17 @@ def main():
         library_games=have_on_sale,
         owned=owned,
     )
+    taste_priority = build_taste_priority_contract(
+        deals,
+        top_picks=top_picks,
+        personalized_recommendations=personalized_recommendations,
+        activity_games=owned_game_records,
+        library_games=have_on_sale,
+        owned=owned,
+        family_appids=family_renderer_kwargs.get("family_appids"),
+        recommended_collections=recommended_collections,
+        hltb_hours=hltb_hours,
+    )
     behavioral_signals = build_behavioral_signals(_behavioral_signal_records(deals, tags_data))
     behavioral_explanations = build_behavioral_explanations(behavioral_signals)
     player_behavior_profile = build_player_behavior_profile(
@@ -5850,6 +5866,17 @@ def main():
         hltb_records=hltb_hours,
         external_matches=wishlist_external_matches,
         play_access=play_access,
+    )
+    decision_advisor = build_decision_advisor(
+        deals,
+        top_picks=top_picks,
+        decision_support=decision_support,
+        taste_priority=taste_priority,
+        wishlist_hygiene=wishlist_hygiene,
+        play_access=play_access,
+        external_offers=external_offers,
+        recommendation_diagnostics=recommendation_diagnostics,
+        cache_coverage=cache_coverage,
     )
     try:
         free_weekend_now = resolve_free_weekend_now(
@@ -5915,7 +5942,9 @@ def main():
         smart_alert_digest=smart_alert_digest,
         free_weekend_now=free_weekend_now,
         external_offers=external_offers,
+        taste_priority=taste_priority,
         recommendation_diagnostics=recommendation_diagnostics,
+        decision_advisor=decision_advisor,
         behavioral_explanations=behavioral_explanations,
     )
 
@@ -5959,7 +5988,9 @@ def main():
         smart_alert_digest=smart_alert_digest,
         free_weekend_now=free_weekend_now,
         external_offers=external_offers,
+        taste_priority=taste_priority,
         recommendation_diagnostics=recommendation_diagnostics,
+        decision_advisor=decision_advisor,
         behavioral_explanations=behavioral_explanations,
         play_access=play_access,
         **family_renderer_kwargs,
@@ -6032,12 +6063,14 @@ def main():
         smart_alert_digest=smart_alert_digest,
         free_weekend_now=free_weekend_now,
         external_offers=external_offers,
+        taste_priority=taste_priority,
         recommendation_diagnostics=recommendation_diagnostics,
         behavioral_signals=behavioral_signals,
         behavioral_explanations=behavioral_explanations,
         player_behavior_profile=player_behavior_profile,
         player_behavior_fit=player_behavior_fit,
         decision_support=decision_support,
+        decision_advisor=decision_advisor,
         **family_renderer_kwargs,
     )
     json_export_contents = build_json_export_contents(

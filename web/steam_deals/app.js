@@ -3206,6 +3206,49 @@ const LATEST_DECISION_SUPPORT_FIT_LEVEL_LABELS = Object.freeze({
   weak: 'Fit débil',
 });
 
+const LATEST_DECISION_ADVISOR_DECISION_LABELS = Object.freeze({
+  comprar_ahora: 'Compra inmediata (revisión manual)',
+  revisar: 'Revisar antes de comprar',
+  esperar: 'Esperar mejor momento',
+  ignorar: 'Ignorar / limpiar wishlist',
+});
+
+const LATEST_DECISION_ADVISOR_PURCHASE_TYPE_LABELS = Object.freeze({
+  comfort_pick: 'Comfort Pick',
+  stretch_pick: 'Stretch Pick',
+  aspirational_pick: 'Aspirational Pick',
+  impulse_risk: 'Impulse Risk',
+});
+
+const LATEST_DECISION_ADVISOR_CONFIDENCE_LABELS = Object.freeze({
+  high: 'Alta',
+  medium: 'Media',
+  low: 'Baja',
+});
+
+const LATEST_DECISION_ADVISOR_ACCESS_LABELS = Object.freeze({
+  requires_purchase: 'Requiere compra',
+  available: 'Ya accesible',
+  partially_available: 'Acceso posible',
+  unknown: 'Acceso desconocido',
+});
+
+const LATEST_DECISION_ADVISOR_SIGNAL_LABELS = Object.freeze({
+  strong_discount: 'descuento fuerte',
+  high_score: 'score alto de discovery',
+  strong_personal_fit: 'fit personal fuerte',
+  partial_personal_fit: 'fit personal parcial',
+  safe_external_offer: 'oferta externa segura',
+  already_available: 'ya accesible',
+  access_requires_review: 'acceso requiere revisión',
+  external_offer_requires_review: 'oferta externa requiere revisión',
+  score_fallback_personalization: 'score fallback: no recomendación personalizada',
+  partial_cache_coverage: 'cobertura parcial de cache',
+  weak_or_redundant_fit: 'fit débil o redundante',
+  personal_fit_unknown: 'fit personal desconocido',
+  limited_signals: 'señales limitadas',
+});
+
 const LATEST_RECOMMENDATION_DIAGNOSTIC_MODE_LABELS = Object.freeze({
   behavioral: 'Behavioral',
   mixed: 'Mixto',
@@ -3965,6 +4008,112 @@ function renderLatestDecisionSupport(report) {
       </div>
       <ol class="latest-decision-support-list">${selectedItems.map(renderLatestDecisionSupportItem).join('')}</ol>
       ${hiddenCount ? `<div class="latest-decision-support-more">${escapeHtml(formatLatestCoverageCount(hiddenCount))} más en el JSON completo</div>` : ''}
+    </div>
+  `;
+}
+
+function latestDecisionAdvisorPayload(report) {
+  const payload = report && typeof report === 'object' ? report.decision_advisor : null;
+  if (!payload || typeof payload !== 'object' || Array.isArray(payload)) return null;
+  if (payload.schema !== 'decision_advisor_v0') return null;
+  if (!['available', 'partial'].includes(String(payload.status || '').trim())) return null;
+  if (payload.advisory_only !== true || String(payload.ranking_impact || '').trim() !== 'none') return null;
+  return payload;
+}
+
+function latestDecisionAdvisorAppid(item) {
+  const source = item && typeof item === 'object' ? item : {};
+  const appid = String(source.appid || source.steam_appid || '').trim();
+  return /^\d+$/.test(appid) ? appid : '';
+}
+
+function latestDecisionAdvisorLabel(code, labels) {
+  const key = String(code || '').trim();
+  return labels[key] || '';
+}
+
+function latestDecisionAdvisorItems(payload) {
+  return Array.isArray(payload && payload.items)
+    ? payload.items.filter(item => item && typeof item === 'object')
+      .filter(item => latestDecisionAdvisorAppid(item)
+        && latestDecisionAdvisorLabel(item.decision, LATEST_DECISION_ADVISOR_DECISION_LABELS)
+        && latestDecisionAdvisorLabel(item.purchase_type, LATEST_DECISION_ADVISOR_PURCHASE_TYPE_LABELS))
+    : [];
+}
+
+function latestDecisionAdvisorCodeLabels(values) {
+  if (!Array.isArray(values)) return [];
+  const labels = [];
+  values.forEach(value => {
+    const key = String(value || '').trim();
+    if (!key || key.includes('/') || key.includes('\\')) return;
+    const label = LATEST_DECISION_ADVISOR_SIGNAL_LABELS[key] || key.replace(/_/g, ' ');
+    if (label && !labels.includes(label)) labels.push(label);
+  });
+  return labels.slice(0, 2);
+}
+
+function latestDecisionAdvisorSignalText(values) {
+  const labels = latestDecisionAdvisorCodeLabels(values);
+  return labels.length ? labels.join(' · ') : 'Señales limitadas';
+}
+
+function latestDecisionAdvisorModeNote(payload) {
+  const summary = payload && payload.summary && typeof payload.summary === 'object' ? payload.summary : {};
+  const mode = String(summary.recommendation_mode || '').trim();
+  return mode === 'score_fallback'
+    ? '<div class="latest-decision-advisor-warning">Modo <code>score_fallback</code>: tratar como discovery/oferta para revisión manual, no como recomendación personalizada.</div>'
+    : '';
+}
+
+function renderLatestDecisionAdvisorItem(item) {
+  const source = item && typeof item === 'object' ? item : {};
+  const appid = latestDecisionAdvisorAppid(source);
+  const decision = String(source.decision || '').trim();
+  const decisionLabel = latestDecisionAdvisorLabel(decision, LATEST_DECISION_ADVISOR_DECISION_LABELS);
+  const name = String(source.name || source.steam_name || (appid ? `AppID ${appid}` : 'Juego')).trim();
+  const nameHtml = appid
+    ? `<a href="${latestSteamStoreUrl(appid)}" target="_blank" rel="noopener noreferrer">${escapeHtml(name)}</a>`
+    : `<span>${escapeHtml(name)}</span>`;
+  const meta = [
+    latestDecisionAdvisorLabel(source.purchase_type, LATEST_DECISION_ADVISOR_PURCHASE_TYPE_LABELS),
+    `Confianza ${latestDecisionAdvisorLabel(source.confidence, LATEST_DECISION_ADVISOR_CONFIDENCE_LABELS) || 'Sin dato'}`,
+    latestDecisionAdvisorLabel(source.access_status, LATEST_DECISION_ADVISOR_ACCESS_LABELS),
+  ].filter(Boolean).join(' · ');
+  return `
+    <li class="latest-decision-advisor-item latest-decision-advisor-item-${escapeHtml(decision)}" data-latest-decision-advisor-item="${escapeHtml(appid)}">
+      <div class="latest-decision-advisor-main">
+        <div class="latest-decision-advisor-heading">
+          <strong>${nameHtml}</strong>
+          <span class="latest-decision-advisor-badge">${escapeHtml(decisionLabel)}</span>
+        </div>
+        <span class="latest-decision-advisor-meta">${escapeHtml(meta)}</span>
+        <span class="latest-decision-advisor-signals"><strong>Señales:</strong> ${escapeHtml(latestDecisionAdvisorSignalText(source.positive_signals))}</span>
+        <span class="latest-decision-advisor-risks"><strong>Riesgos:</strong> ${escapeHtml(latestDecisionAdvisorSignalText(source.risks))}</span>
+        <span class="latest-decision-advisor-note">Advisory-only: revisión manual; no compra, no abre carrito/checkout ni modifica wishlist.</span>
+      </div>
+    </li>
+  `;
+}
+
+function renderLatestDecisionAdvisor(report) {
+  const payload = latestDecisionAdvisorPayload(report);
+  const items = latestDecisionAdvisorItems(payload);
+  if (!items.length) return '';
+  const selectedItems = items.slice(0, 3);
+  const hiddenCount = Math.max(0, items.length - selectedItems.length);
+  return `
+    <div class="latest-decision-advisor-section" data-latest-decision-advisor>
+      <div class="latest-decision-advisor-head">
+        <div>
+          <div class="latest-decision-advisor-title">Decision Advisor</div>
+          <div class="latest-decision-advisor-subtitle">${escapeHtml(formatLatestCoverageCount(items.length))} juego(s) desde decision_advisor_v0 del JSON local. Advisory-only: ayuda para revisión manual; no cambia score, ranking, Top Picks, defaults, cache ni fetching. No compra, no abre carrito/checkout ni modifica wishlist.</div>
+        </div>
+        <span class="latest-decision-advisor-head-badge">Sin impacto en ranking</span>
+      </div>
+      ${latestDecisionAdvisorModeNote(payload)}
+      <ol class="latest-decision-advisor-list">${selectedItems.map(renderLatestDecisionAdvisorItem).join('')}</ol>
+      ${hiddenCount ? `<div class="latest-decision-advisor-more">${escapeHtml(formatLatestCoverageCount(hiddenCount))} más en el JSON completo</div>` : ''}
     </div>
   `;
 }
@@ -5546,6 +5695,7 @@ function renderLatestRecommendationsPanel(report, files = null) {
     renderLatestRecommendedCollections(report),
     renderLatestPersonalizedRecommendations(report, files),
     renderLatestDecisionSupport(report),
+    renderLatestDecisionAdvisor(report),
     renderLatestRecommendationDiagnostics(report),
     renderLatestTastePriority(report),
     renderLatestGiftIdeas(report),

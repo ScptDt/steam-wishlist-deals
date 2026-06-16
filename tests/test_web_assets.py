@@ -893,6 +893,43 @@ class WebAssetsTests(unittest.TestCase):
         self.assertIn(".latest-decision-support-reasons", app_css)
         self.assertIn(".latest-decision-support-more", app_css)
 
+    def test_latest_report_renders_decision_advisor_inside_details(self) -> None:
+        app_js = (ROOT / "web" / "steam_deals" / "app.js").read_text(
+            encoding="utf-8"
+        )
+        app_css = (ROOT / "web" / "steam_deals" / "app.css").read_text(
+            encoding="utf-8"
+        )
+
+        self.assertIn("function renderLatestDecisionAdvisor", app_js)
+        self.assertIn("function latestDecisionAdvisorPayload", app_js)
+        self.assertIn("function latestDecisionAdvisorItems", app_js)
+        self.assertIn("report.decision_advisor", app_js)
+        self.assertIn("decision_advisor_v0", app_js)
+        self.assertIn("payload.advisory_only !== true", app_js)
+        self.assertIn("String(payload.ranking_impact || '').trim() !== 'none'", app_js)
+        self.assertIn("data-latest-decision-advisor", app_js)
+        self.assertIn("data-latest-decision-advisor-item", app_js)
+        self.assertIn("LATEST_DECISION_ADVISOR_DECISION_LABELS", app_js)
+        self.assertIn("Compra inmediata (revisión manual)", app_js)
+        self.assertIn("score fallback: no recomendación personalizada", app_js)
+        self.assertIn("items.slice(0, 3)", app_js)
+        self.assertIn("Decision Advisor", app_js)
+        self.assertIn("Advisory-only", app_js)
+        self.assertIn("Sin impacto en ranking", app_js)
+        self.assertIn("no cambia score, ranking, Top Picks, defaults, cache ni fetching", app_js)
+        self.assertIn("no compra, no abre carrito/checkout ni modifica wishlist", app_js)
+        self.assertIn("renderLatestDecisionAdvisor(report)", app_js)
+        self.assertIn("renderLatestReportIntentWrapper(activeReport, meta, summary, files)", app_js)
+        self.assertNotIn("data-share-decision-advisor", app_js)
+        self.assertNotIn("renderLatestShareDecisionAdvisor", app_js)
+        self.assertIn(".latest-decision-advisor-section", app_css)
+        self.assertIn(".latest-decision-advisor-list", app_css)
+        self.assertIn(".latest-decision-advisor-item", app_css)
+        self.assertIn(".latest-decision-advisor-badge", app_css)
+        self.assertIn(".latest-decision-advisor-warning", app_css)
+        self.assertIn(".latest-decision-advisor-more", app_css)
+
     def test_latest_report_renders_advisory_offer_highlights(self) -> None:
         app_js = (ROOT / "web" / "steam_deals" / "app.js").read_text(
             encoding="utf-8"

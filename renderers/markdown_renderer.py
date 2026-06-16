@@ -265,6 +265,45 @@ _RECOMMENDATION_DIAGNOSTIC_CONFIDENCE_LABELS = {
     "low": "Baja",
 }
 
+_DECISION_ADVISOR_DECISION_LABELS = {
+    "comprar_ahora": "Compra inmediata (revisión manual)",
+    "revisar": "Revisar antes de comprar",
+    "esperar": "Esperar mejor momento",
+    "ignorar": "Ignorar / limpiar wishlist",
+}
+_DECISION_ADVISOR_PURCHASE_TYPE_LABELS = {
+    "comfort_pick": "Comfort Pick",
+    "stretch_pick": "Stretch Pick",
+    "aspirational_pick": "Aspirational Pick",
+    "impulse_risk": "Impulse Risk",
+}
+_DECISION_ADVISOR_CONFIDENCE_LABELS = {
+    "high": "Alta",
+    "medium": "Media",
+    "low": "Baja",
+}
+_DECISION_ADVISOR_ACCESS_LABELS = {
+    "requires_purchase": "Requiere compra",
+    "available": "Ya accesible",
+    "partially_available": "Acceso posible",
+    "unknown": "Acceso desconocido",
+}
+_DECISION_ADVISOR_SIGNAL_LABELS = {
+    "strong_discount": "descuento fuerte",
+    "high_score": "score alto de discovery",
+    "strong_personal_fit": "fit personal fuerte",
+    "partial_personal_fit": "fit personal parcial",
+    "safe_external_offer": "oferta externa segura",
+    "already_available": "ya accesible",
+    "access_requires_review": "acceso requiere revisión",
+    "external_offer_requires_review": "oferta externa requiere revisión",
+    "score_fallback_personalization": "score fallback: no recomendación personalizada",
+    "partial_cache_coverage": "cobertura parcial de cache",
+    "weak_or_redundant_fit": "fit débil o redundante",
+    "personal_fit_unknown": "fit personal desconocido",
+    "limited_signals": "señales limitadas",
+}
+
 _TASTE_PRIORITY_CATEGORY_LABELS = {
     "compra_inmediata": "Prioridad alta para revisar",
     "espera_oferta": "Prioridad baja por gusto",
@@ -1139,6 +1178,120 @@ def _build_recommendation_diagnostics_lines(payload: dict | None) -> list[str]:
     return lines
 
 
+def _decision_advisor_items(payload: dict | None, *, limit: int = 6) -> tuple[list[dict], int, int]:
+    if not isinstance(payload, dict):
+        return [], 0, 0
+    if payload.get("schema") != "decision_advisor_v0":
+        return [], 0, 0
+    if payload.get("status") not in {"available", "partial"}:
+        return [], 0, 0
+    if payload.get("advisory_only") is not True:
+        return [], 0, 0
+    if str(payload.get("ranking_impact") or "").strip() != "none":
+        return [], 0, 0
+    raw_items = payload.get("items")
+    if not isinstance(raw_items, list):
+        return [], 0, 0
+    items = [item for item in raw_items if _decision_advisor_item_is_visible(item)]
+    total = len(items)
+    return items[:limit], total, max(0, total - limit)
+
+
+def _decision_advisor_item_is_visible(item) -> bool:
+    if not isinstance(item, dict):
+        return False
+    appid = str(item.get("appid") or item.get("steam_appid") or "").strip()
+    decision = str(item.get("decision") or "").strip()
+    purchase_type = str(item.get("purchase_type") or "").strip()
+    return (
+        appid.isdigit()
+        and decision in _DECISION_ADVISOR_DECISION_LABELS
+        and purchase_type in _DECISION_ADVISOR_PURCHASE_TYPE_LABELS
+    )
+
+
+def _decision_advisor_title(item: dict) -> str:
+    appid = str(item.get("appid") or item.get("steam_appid") or "").strip()
+    fallback = f"AppID {appid}" if appid else "Juego"
+    name = str(item.get("name") or item.get("steam_name") or fallback).strip()
+    return _optional_link(name, appid)
+
+
+def _decision_advisor_label(value: str, labels: dict[str, str]) -> str:
+    key = str(value or "").strip()
+    return labels.get(key, key.replace("_", " ").strip() or "—")
+
+
+def _decision_advisor_code_labels(values, *, limit: int = 2) -> list[str]:
+    if not isinstance(values, list):
+        return []
+    labels: list[str] = []
+    for value in values:
+        key = str(value or "").strip()
+        if not key or "/" in key or "\\" in key:
+            continue
+        label = _DECISION_ADVISOR_SIGNAL_LABELS.get(key, key.replace("_", " "))
+        if label not in labels:
+            labels.append(label)
+        if len(labels) >= limit:
+            break
+    return labels
+
+
+def _decision_advisor_meta_text(item: dict) -> str:
+    parts = [
+        _decision_advisor_label(item.get("purchase_type"), _DECISION_ADVISOR_PURCHASE_TYPE_LABELS),
+        f"Confianza {_decision_advisor_label(item.get('confidence'), _DECISION_ADVISOR_CONFIDENCE_LABELS)}",
+        _decision_advisor_label(item.get("access_status"), _DECISION_ADVISOR_ACCESS_LABELS),
+    ]
+    return _md_esc(" · ".join(part for part in parts if part and part != "—"))
+
+
+def _decision_advisor_signals_text(item: dict) -> str:
+    positives = _decision_advisor_code_labels(item.get("positive_signals"))
+    risks = _decision_advisor_code_labels(item.get("risks"))
+    parts = []
+    if positives:
+        parts.append(f"Señales: {' · '.join(positives)}")
+    if risks:
+        parts.append(f"Riesgos: {' · '.join(risks)}")
+    return _md_esc("; ".join(parts) if parts else "Señales limitadas")
+
+
+def _decision_advisor_mode_note(payload: dict) -> list[str]:
+    summary = payload.get("summary") if isinstance(payload.get("summary"), dict) else {}
+    mode = str(summary.get("recommendation_mode") or "").strip()
+    if mode != "score_fallback":
+        return []
+    return [
+        "",
+        "> Modo `score_fallback`: tratar como discovery/oferta para revisión manual, no como recomendación personalizada.",
+    ]
+
+
+def _build_decision_advisor_lines(payload: dict | None) -> list[str]:
+    items, total_items, hidden_count = _decision_advisor_items(payload)
+    if not items or not isinstance(payload, dict):
+        return []
+    lines = [
+        "## 🧩 Decision Advisor",
+        "",
+        f"> **{total_items:,} juego(s)** desde `decision_advisor_v0` local. Advisory-only: ayuda para revisión manual; no cambia score, ranking, Top Picks, defaults, cache ni fetching. No compra, no abre carrito/checkout ni modifica la wishlist.",
+        *_decision_advisor_mode_note(payload),
+        "",
+        "| Juego | Decisión advisory | Tipo / confianza / acceso | Señales y riesgos |",
+        "|-------|-------------------|---------------------------|-------------------|",
+    ]
+    for item in items:
+        lines.append(
+            f"| {_decision_advisor_title(item)} | {_md_esc(_decision_advisor_label(item.get('decision'), _DECISION_ADVISOR_DECISION_LABELS))} | {_decision_advisor_meta_text(item)} | {_decision_advisor_signals_text(item)} |"
+        )
+    if hidden_count:
+        lines += ["", f"> {hidden_count:,} más en el payload completo."]
+    lines += ["", "---", ""]
+    return lines
+
+
 def _build_frontmatter(
     *,
     vanity: str,
@@ -1600,6 +1753,7 @@ def generate_md(
     external_offers: dict | None = None,
     taste_priority: dict | None = None,
     recommendation_diagnostics: dict | None = None,
+    decision_advisor: dict | None = None,
     behavioral_explanations: dict | None = None,
     *,
     group_by_tier,
@@ -1637,6 +1791,7 @@ def generate_md(
     recommendation_diagnostics = (
         recommendation_diagnostics if isinstance(recommendation_diagnostics, dict) else None
     )
+    decision_advisor = decision_advisor if isinstance(decision_advisor, dict) else None
     behavioral_explanations = (
         behavioral_explanations if isinstance(behavioral_explanations, dict) else None
     )
@@ -1759,6 +1914,7 @@ def generate_md(
     )
     lines += _build_recommendation_diagnostics_lines(recommendation_diagnostics)
     lines += _build_taste_priority_lines(taste_priority)
+    lines += _build_decision_advisor_lines(decision_advisor)
     lines += _build_external_offers_lines(external_offers)
     lines += _build_free_weekend_now_lines(free_weekend_now)
     lines += _build_wishlist_hygiene_lines(wishlist_hygiene)
