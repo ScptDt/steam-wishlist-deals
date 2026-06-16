@@ -37,6 +37,7 @@ from share_payload import (
     normalize_share_payload,
 )
 from steam_deals_alerts import (
+    build_smart_alert_channel_opt_in_preview as module_build_smart_alert_channel_opt_in_preview,
     build_smart_alert_channel_preview as module_build_smart_alert_channel_preview,
     build_smart_alert_counts as module_build_smart_alert_counts,
     build_smart_alert_digest as module_build_smart_alert_digest,
@@ -10650,6 +10651,131 @@ class SmartAlertsTests(unittest.TestCase):
         self.assertFalse(malformed["send_ready"])
         self.assertFalse(malformed["external_send_enabled"])
         self.assertEqual(malformed["channels"], [])
+
+    def test_smart_alert_channel_opt_in_preview_tracks_reviewed_channels_without_sending(self) -> None:
+        digest = module_build_smart_alert_digest(
+            deals=[{"appid": "10", "name": "Alpha", "price_raw": 1000}],
+            historical_lows={},
+            active_bundles={},
+            comparison={"price_changes": {"10": {"direction": "up", "change_pct": 15.0}}},
+            local_trends={},
+            alert_rise_pct=10.0,
+        )
+
+        opt_in = module_build_smart_alert_channel_opt_in_preview(
+            digest,
+            requested_channels=["telegram", "discord", "email", "telegram"],
+            user_opt_in=True,
+            digest_reviewed=True,
+        )
+
+        self.assertEqual(opt_in["schema"], "smart_alert_channel_opt_in_preview_v1")
+        self.assertTrue(opt_in["preview_only"])
+        self.assertTrue(opt_in["dry_run"])
+        self.assertTrue(opt_in["channel_ready"])
+        self.assertEqual(opt_in["status"], "ready_for_reviewed_preview")
+        self.assertFalse(opt_in["send_ready"])
+        self.assertFalse(opt_in["external_send_enabled"])
+        self.assertEqual(opt_in["channels"], [])
+        self.assertEqual(opt_in["requested_channels"], ["telegram", "discord"])
+        self.assertEqual(opt_in["unsupported_channels_count"], 1)
+        self.assertEqual(
+            opt_in["unsupported_channel_requests"],
+            [{"channel": "email", "supported": False, "status": "unsupported"}],
+        )
+        self.assertEqual(opt_in["blockers"], [])
+        self.assertEqual(
+            opt_in["review_state"],
+            {
+                "user_opt_in": True,
+                "digest_reviewed": True,
+                "allow_high_volume": False,
+                "requires_channel_opt_in": False,
+                "requires_digest_review": False,
+                "requires_high_volume_review": False,
+            },
+        )
+        self.assertEqual(
+            [(channel["channel"], channel["status"]) for channel in opt_in["channel_requests"]],
+            [("telegram", "ready_for_reviewed_preview"), ("discord", "ready_for_reviewed_preview")],
+        )
+        self.assertEqual(opt_in["channel_preview"]["schema"], "smart_alert_channel_preview_v1")
+        self.assertIn("Alpha", opt_in["channel_preview"]["message"])
+        self.assertIn("No activa Telegram/Discord", opt_in["message"])
+
+    def test_smart_alert_channel_opt_in_preview_blocks_unreviewed_opt_in(self) -> None:
+        digest = module_build_smart_alert_digest(
+            deals=[{"appid": "10", "name": "Alpha", "price_raw": 1000}],
+            historical_lows={},
+            active_bundles={},
+            comparison={"price_changes": {"10": {"direction": "up", "change_pct": 15.0}}},
+            local_trends={},
+            alert_rise_pct=10.0,
+        )
+
+        opt_in = module_build_smart_alert_channel_opt_in_preview(
+            digest,
+            requested_channels=["telegram"],
+            user_opt_in=False,
+            digest_reviewed=False,
+        )
+
+        self.assertFalse(opt_in["channel_ready"])
+        self.assertEqual(opt_in["status"], "blocked")
+        self.assertIn("user_channel_opt_in_required", opt_in["blockers"])
+        self.assertIn("digest_review_required", opt_in["blockers"])
+        self.assertTrue(opt_in["review_state"]["requires_channel_opt_in"])
+        self.assertTrue(opt_in["review_state"]["requires_digest_review"])
+        self.assertFalse(opt_in["channel_requests"][0]["ready_for_preview"])
+        self.assertEqual(opt_in["channel_requests"][0]["status"], "blocked")
+        self.assertFalse(opt_in["send_ready"])
+        self.assertFalse(opt_in["external_send_enabled"])
+        self.assertEqual(opt_in["channels"], [])
+
+    def test_smart_alert_channel_opt_in_preview_requires_high_volume_approval(self) -> None:
+        digest = module_build_smart_alert_digest(
+            deals=[
+                {"appid": str(index), "name": f"Game {index}", "price_raw": 1000}
+                for index in range(1, 13)
+            ],
+            historical_lows={},
+            active_bundles={},
+            comparison={
+                "price_changes": {
+                    str(index): {"direction": "up", "change_pct": 15.0}
+                    for index in range(1, 13)
+                }
+            },
+            local_trends={},
+            alert_rise_pct=10.0,
+            max_items_per_section=2,
+        )
+
+        blocked = module_build_smart_alert_channel_opt_in_preview(
+            digest,
+            requested_channels=["discord"],
+            user_opt_in=True,
+            digest_reviewed=True,
+        )
+        approved = module_build_smart_alert_channel_opt_in_preview(
+            digest,
+            requested_channels=["discord"],
+            user_opt_in=True,
+            digest_reviewed=True,
+            allow_high_volume=True,
+        )
+
+        self.assertFalse(blocked["channel_ready"])
+        self.assertEqual(blocked["status"], "needs_high_volume_review")
+        self.assertIn("high_volume_requires_explicit_approval", blocked["blockers"])
+        self.assertTrue(blocked["review_state"]["requires_high_volume_review"])
+        self.assertFalse(blocked["channel_requests"][0]["ready_for_preview"])
+        self.assertTrue(approved["channel_ready"])
+        self.assertEqual(approved["status"], "ready_for_reviewed_preview")
+        self.assertFalse(approved["review_state"]["requires_high_volume_review"])
+        self.assertFalse(approved["send_ready"])
+        self.assertFalse(approved["external_send_enabled"])
+        self.assertEqual(approved["channels"], [])
 
     def test_smart_alert_fake_delivery_plan_keeps_ready_preview_dry_run(self) -> None:
         digest = module_build_smart_alert_digest(

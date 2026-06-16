@@ -111,20 +111,33 @@ def _anti_spam_summary(sections: list[dict], *, total_count: int, max_items: int
     }
 
 
-def _normalized_channel_names(channels) -> tuple[list[str], int]:
+def _channel_request_names(channels) -> tuple[list[str], list[str]]:
     if not isinstance(channels, (list, tuple, set)):
-        return [], 0
+        return [], []
     normalized: list[str] = []
-    unsupported_count = 0
+    unsupported: list[str] = []
     for channel in channels:
         name = str(channel or "").strip().lower()
         if not name:
             continue
         if name not in _SUPPORTED_SMART_ALERT_CHANNELS:
-            unsupported_count += 1
+            if name not in unsupported:
+                unsupported.append(name)
             continue
         if name not in normalized:
             normalized.append(name)
+    return normalized, unsupported
+
+
+def _normalized_channel_names(channels) -> tuple[list[str], int]:
+    if not isinstance(channels, (list, tuple, set)):
+        return [], 0
+    normalized, unsupported = _channel_request_names(channels)
+    unsupported_count = sum(
+        1
+        for channel in channels
+        if str(channel or "").strip().lower() in unsupported
+    )
     return normalized, unsupported_count
 
 
@@ -329,6 +342,115 @@ def build_smart_alert_channel_preview(
         "title": "Alertas inteligentes — preview de digest",
         "lines": lines,
         "message": "\n".join(lines),
+    }
+
+
+def _channel_opt_in_rows(
+    channels: list[str],
+    *,
+    user_opt_in: bool,
+    digest_reviewed: bool,
+    channel_ready: bool,
+) -> list[dict]:
+    status = "ready_for_reviewed_preview" if channel_ready else "blocked"
+    return [
+        {
+            "channel": channel,
+            "label": _SMART_ALERT_CHANNEL_LABELS.get(channel, channel),
+            "supported": True,
+            "user_opt_in": user_opt_in is True,
+            "digest_reviewed": digest_reviewed is True,
+            "ready_for_preview": channel_ready,
+            "status": status,
+            "send_ready": False,
+            "external_send_enabled": False,
+        }
+        for channel in channels
+    ]
+
+
+def _unsupported_channel_rows(channels: list[str]) -> list[dict]:
+    return [
+        {"channel": channel, "supported": False, "status": "unsupported"}
+        for channel in channels
+    ]
+
+
+def _opt_in_review_state(
+    *,
+    user_opt_in: bool,
+    digest_reviewed: bool,
+    allow_high_volume: bool,
+    blockers: list[str],
+) -> dict:
+    return {
+        "user_opt_in": user_opt_in is True,
+        "digest_reviewed": digest_reviewed is True,
+        "allow_high_volume": allow_high_volume is True,
+        "requires_channel_opt_in": user_opt_in is not True,
+        "requires_digest_review": digest_reviewed is not True,
+        "requires_high_volume_review": "high_volume_requires_explicit_approval" in blockers,
+    }
+
+
+def build_smart_alert_channel_opt_in_preview(
+    digest: dict | None,
+    *,
+    requested_channels=None,
+    user_opt_in: bool = False,
+    digest_reviewed: bool = False,
+    allow_high_volume: bool = False,
+) -> dict:
+    """Describe channel opt-in/review state without enabling a real sender."""
+    requested, unsupported = _channel_request_names(requested_channels)
+    channel_preview = build_smart_alert_channel_preview(
+        digest,
+        requested_channels=requested_channels,
+        user_opt_in=user_opt_in,
+        digest_reviewed=digest_reviewed,
+        allow_high_volume=allow_high_volume,
+    )
+    readiness = (
+        channel_preview.get("readiness")
+        if isinstance(channel_preview.get("readiness"), dict)
+        else {}
+    )
+    blockers = readiness.get("blockers") if isinstance(readiness.get("blockers"), list) else []
+    channel_ready = channel_preview.get("channel_ready") is True
+    status = "ready_for_reviewed_preview" if channel_ready else channel_preview.get("status", "blocked")
+    return {
+        "schema": "smart_alert_channel_opt_in_preview_v1",
+        "preview_only": True,
+        "dry_run": True,
+        "send_ready": False,
+        "external_send_enabled": False,
+        "channels": [],
+        "requested_channels": requested,
+        "unsupported_channel_requests": _unsupported_channel_rows(unsupported),
+        "unsupported_channels_count": readiness.get("unsupported_channels_count", 0),
+        "status": status,
+        "channel_ready": channel_ready,
+        "blockers": blockers,
+        "review_state": _opt_in_review_state(
+            user_opt_in=user_opt_in,
+            digest_reviewed=digest_reviewed,
+            allow_high_volume=allow_high_volume,
+            blockers=blockers,
+        ),
+        "channel_requests": _channel_opt_in_rows(
+            requested,
+            user_opt_in=user_opt_in,
+            digest_reviewed=digest_reviewed,
+            channel_ready=channel_ready,
+        ),
+        "channel_preview": channel_preview,
+        "message": "\n".join(
+            [
+                "Smart Alerts — opt-in preview fixture-only",
+                f"Estado: {status}",
+                "No activa Telegram/Discord, canales reales, send_ready ni external_send_enabled.",
+            ]
+        ),
     }
 
 
