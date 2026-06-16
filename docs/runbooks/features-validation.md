@@ -218,6 +218,14 @@ Definir el contrato mínimo antes de conectar Smart Alerts v2 a Telegram/Discord
 - No cambiar score, ranking, Top Picks, defaults, cache, fetching ni thresholds por reacción a una corrida parcial.
 - No red real, `BG00G`, `--no-cache`, builds ni reportes generados como validación automática.
 
+### Corte policy helper cerrado 2026-06-16
+
+- `decide_smart_alert_channel_readiness(...)` clasifica si un `smart_alert_digest` preview sería apto para un slice futuro de canales, sin enviar nada ni cambiar `send_ready=false`.
+- Requiere canal soportado solicitado, opt-in del usuario, digest revisado, payload preview válido, digest agrupado y `per_game_notifications=false`.
+- Volumen alto queda bloqueado hasta aprobación explícita (`allow_high_volume=True` en fixtures/policy), y los ítems ocultos deben comunicarse en el futuro mensaje.
+- Payloads vacíos/malformados, ausencia de canales soportados, falta de review/opt-in, `external_send_enabled=true`, canales ya presentes o notificaciones por juego bloquean la readiness; canales no soportados se ignoran y se cuentan para diagnóstico.
+- Sigue siendo fixture-only/policy-only: no conecta Telegram/Discord, no crea UI de opt-in y no cambia runtime de notificaciones.
+
 ## PAYDAY 2 data/cache y diagnóstico
 
 ### Objetivo

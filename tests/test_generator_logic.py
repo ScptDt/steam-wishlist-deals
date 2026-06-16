@@ -39,6 +39,7 @@ from share_payload import (
 from steam_deals_alerts import (
     build_smart_alert_counts as module_build_smart_alert_counts,
     build_smart_alert_digest as module_build_smart_alert_digest,
+    decide_smart_alert_channel_readiness as module_decide_smart_alert_channel_readiness,
 )
 from steam_deals_access import (
     build_play_access_contract,
@@ -10296,6 +10297,160 @@ class SmartAlertsTests(unittest.TestCase):
         self.assertIn("High Score", rendered_names)
         self.assertNotIn("Low Score", rendered_names)
         self.assertEqual(digest["notification_policy"]["channels"], [])
+
+    def test_smart_alert_channel_readiness_allows_low_volume_opt_in_without_sending(self) -> None:
+        digest = module_build_smart_alert_digest(
+            deals=[{"appid": "10", "name": "Alpha", "price_raw": 1000}],
+            historical_lows={},
+            active_bundles={},
+            comparison={"price_changes": {"10": {"direction": "up", "change_pct": 15.0}}},
+            local_trends={},
+            alert_rise_pct=10.0,
+        )
+
+        readiness = module_decide_smart_alert_channel_readiness(
+            digest,
+            requested_channels=["telegram"],
+            user_opt_in=True,
+            digest_reviewed=True,
+        )
+
+        self.assertTrue(readiness["channel_ready"])
+        self.assertEqual(readiness["status"], "ready_for_future_channel_slice")
+        self.assertEqual(readiness["requested_channels"], ["telegram"])
+        self.assertEqual(readiness["channels"], [])
+        self.assertFalse(readiness["send_ready"])
+        self.assertFalse(readiness["external_send_enabled"])
+        self.assertEqual(readiness["blockers"], [])
+        self.assertIn("preview_only_no_external_send", readiness["reason_codes"])
+        self.assertIn("low_volume_digest", readiness["reason_codes"])
+
+    def test_smart_alert_channel_readiness_handles_medium_volume_hidden_items(self) -> None:
+        digest = module_build_smart_alert_digest(
+            deals=[
+                {"appid": str(index), "name": f"Game {index}", "price_raw": 1000}
+                for index in range(1, 5)
+            ],
+            historical_lows={},
+            active_bundles={},
+            comparison={
+                "price_changes": {
+                    str(index): {"direction": "up", "change_pct": 15.0}
+                    for index in range(1, 5)
+                }
+            },
+            local_trends={},
+            alert_rise_pct=10.0,
+            max_items_per_section=3,
+        )
+
+        readiness = module_decide_smart_alert_channel_readiness(
+            digest,
+            requested_channels=["discord", "discord", "email"],
+            user_opt_in=True,
+            digest_reviewed=True,
+        )
+
+        self.assertTrue(readiness["channel_ready"])
+        self.assertEqual(readiness["requested_channels"], ["discord"])
+        self.assertEqual(readiness["unsupported_channels_count"], 1)
+        self.assertEqual(readiness["anti_spam"]["volume_level"], "medium")
+        self.assertEqual(readiness["anti_spam"]["total_hidden_count"], 1)
+        self.assertIn("medium_volume_digest", readiness["reason_codes"])
+        self.assertIn("hidden_items_must_be_disclosed", readiness["reason_codes"])
+
+    def test_smart_alert_channel_readiness_requires_high_volume_approval(self) -> None:
+        digest = module_build_smart_alert_digest(
+            deals=[
+                {"appid": str(index), "name": f"Game {index}", "price_raw": 1000}
+                for index in range(1, 13)
+            ],
+            historical_lows={},
+            active_bundles={},
+            comparison={
+                "price_changes": {
+                    str(index): {"direction": "up", "change_pct": 15.0}
+                    for index in range(1, 13)
+                }
+            },
+            local_trends={},
+            alert_rise_pct=10.0,
+            max_items_per_section=2,
+        )
+
+        readiness = module_decide_smart_alert_channel_readiness(
+            digest,
+            requested_channels=["telegram"],
+            user_opt_in=True,
+            digest_reviewed=True,
+        )
+        approved = module_decide_smart_alert_channel_readiness(
+            digest,
+            requested_channels=["telegram"],
+            user_opt_in=True,
+            digest_reviewed=True,
+            allow_high_volume=True,
+        )
+
+        self.assertFalse(readiness["channel_ready"])
+        self.assertIn("high_volume_requires_explicit_approval", readiness["blockers"])
+        self.assertTrue(approved["channel_ready"])
+        self.assertIn("high_volume_digest", approved["reason_codes"])
+        self.assertIn("hidden_items_must_be_disclosed", approved["reason_codes"])
+        self.assertFalse(approved["send_ready"])
+
+    def test_smart_alert_channel_readiness_blocks_empty_malformed_or_unreviewed(self) -> None:
+        invalid = module_decide_smart_alert_channel_readiness(
+            None,
+            requested_channels=["telegram"],
+            user_opt_in=True,
+            digest_reviewed=True,
+        )
+        empty_digest = module_build_smart_alert_digest(
+            deals=[],
+            historical_lows=None,
+            active_bundles=None,
+            comparison=None,
+            local_trends=None,
+        )
+        unreviewed = module_decide_smart_alert_channel_readiness(
+            empty_digest,
+            requested_channels=[],
+            user_opt_in=False,
+            digest_reviewed=False,
+        )
+
+        self.assertFalse(invalid["channel_ready"])
+        self.assertIn("invalid_digest", invalid["blockers"])
+        self.assertFalse(unreviewed["channel_ready"])
+        self.assertIn("no_alerts_to_send", unreviewed["blockers"])
+        self.assertIn("channel_opt_in_required", unreviewed["blockers"])
+        self.assertIn("user_channel_opt_in_required", unreviewed["blockers"])
+        self.assertIn("digest_review_required", unreviewed["blockers"])
+
+    def test_smart_alert_channel_readiness_forbids_per_game_notifications(self) -> None:
+        digest = module_build_smart_alert_digest(
+            deals=[{"appid": "10", "name": "Alpha", "price_raw": 1000}],
+            historical_lows={},
+            active_bundles={},
+            comparison={"price_changes": {"10": {"direction": "up", "change_pct": 15.0}}},
+            local_trends={},
+            alert_rise_pct=10.0,
+        )
+        digest = {
+            **digest,
+            "anti_spam": {**digest["anti_spam"], "per_game_notifications": True},
+        }
+
+        readiness = module_decide_smart_alert_channel_readiness(
+            digest,
+            requested_channels=["telegram"],
+            user_opt_in=True,
+            digest_reviewed=True,
+        )
+
+        self.assertFalse(readiness["channel_ready"])
+        self.assertIn("per_game_notifications_forbidden", readiness["blockers"])
 
     def test_generator_smart_alerts_wrapper_accepts_empty_sources(self) -> None:
         result = generator_build_smart_alert_counts(

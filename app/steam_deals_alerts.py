@@ -1,6 +1,9 @@
 from __future__ import annotations
 
 
+_SUPPORTED_SMART_ALERT_CHANNELS = {"discord", "telegram"}
+
+
 def _safe_float(value) -> float | None:
     if isinstance(value, bool):
         return None
@@ -105,6 +108,119 @@ def _anti_spam_summary(sections: list[dict], *, total_count: int, max_items: int
         "total_hidden_count": total_hidden_count,
         "volume_level": _digest_volume_level(total_count, total_hidden_count),
     }
+
+
+def _normalized_channel_names(channels) -> tuple[list[str], int]:
+    if not isinstance(channels, (list, tuple, set)):
+        return [], 0
+    normalized: list[str] = []
+    unsupported_count = 0
+    for channel in channels:
+        name = str(channel or "").strip().lower()
+        if not name:
+            continue
+        if name not in _SUPPORTED_SMART_ALERT_CHANNELS:
+            unsupported_count += 1
+            continue
+        if name not in normalized:
+            normalized.append(name)
+    return normalized, unsupported_count
+
+
+def decide_smart_alert_channel_readiness(
+    digest: dict | None,
+    *,
+    requested_channels=None,
+    user_opt_in: bool = False,
+    digest_reviewed: bool = False,
+    allow_high_volume: bool = False,
+) -> dict:
+    """Classify future channel readiness without enabling external sends."""
+    channels, unsupported_count = _normalized_channel_names(requested_channels)
+    result = {
+        "schema": "smart_alert_channel_readiness_v1",
+        "channel_ready": False,
+        "send_ready": False,
+        "external_send_enabled": False,
+        "channels": [],
+        "requested_channels": channels,
+        "unsupported_channels_count": unsupported_count,
+        "status": "blocked",
+        "reason_codes": [],
+        "blockers": [],
+        "anti_spam": {
+            "volume_level": "unknown",
+            "visible_items_count": 0,
+            "total_hidden_count": 0,
+            "max_items_per_section": 0,
+            "per_game_notifications": False,
+            "grouped_digest": False,
+        },
+    }
+    if not isinstance(digest, dict):
+        result["blockers"].append("invalid_digest")
+        return result
+
+    anti_spam = digest.get("anti_spam") if isinstance(digest.get("anti_spam"), dict) else {}
+    notification_policy = (
+        digest.get("notification_policy")
+        if isinstance(digest.get("notification_policy"), dict)
+        else {}
+    )
+    sections = digest.get("sections") if isinstance(digest.get("sections"), list) else []
+    total_count = max(0, _safe_int(digest.get("total_count"), 0))
+    volume_level = str(anti_spam.get("volume_level") or "unknown").strip() or "unknown"
+    result["anti_spam"] = {
+        "volume_level": volume_level,
+        "visible_items_count": max(0, _safe_int(anti_spam.get("visible_items_count"), 0)),
+        "total_hidden_count": max(0, _safe_int(anti_spam.get("total_hidden_count"), 0)),
+        "max_items_per_section": max(0, _safe_int(anti_spam.get("max_items_per_section"), 0)),
+        "per_game_notifications": anti_spam.get("per_game_notifications") is True,
+        "grouped_digest": anti_spam.get("grouped_digest") is True,
+    }
+    result["total_count"] = total_count
+
+    blockers: list[str] = []
+    reasons: list[str] = ["preview_only_no_external_send"]
+    if digest.get("mode") != "preview" or digest.get("dry_run") is not True:
+        blockers.append("preview_digest_required")
+    if digest.get("send_ready") is not False:
+        blockers.append("send_ready_must_remain_false")
+    if notification_policy.get("external_send_enabled") is not False:
+        blockers.append("external_send_must_remain_disabled")
+    if notification_policy.get("channels") not in ([], None):
+        blockers.append("digest_channels_must_stay_empty")
+    if not result["anti_spam"]["grouped_digest"]:
+        blockers.append("grouped_digest_required")
+    if result["anti_spam"]["per_game_notifications"]:
+        blockers.append("per_game_notifications_forbidden")
+    if total_count <= 0 or not sections:
+        blockers.append("no_alerts_to_send")
+    if not channels:
+        blockers.append("channel_opt_in_required")
+    if unsupported_count:
+        reasons.append("unsupported_channels_ignored")
+    if not user_opt_in:
+        blockers.append("user_channel_opt_in_required")
+    if not digest_reviewed:
+        blockers.append("digest_review_required")
+    if volume_level == "high" and not allow_high_volume:
+        blockers.append("high_volume_requires_explicit_approval")
+    elif volume_level in {"low", "medium", "high"}:
+        reasons.append(f"{volume_level}_volume_digest")
+    if result["anti_spam"]["total_hidden_count"] > 0:
+        reasons.append("hidden_items_must_be_disclosed")
+
+    result["blockers"] = blockers
+    result["reason_codes"] = reasons
+    result["channel_ready"] = not blockers
+    if result["channel_ready"]:
+        result["status"] = "ready_for_future_channel_slice"
+    elif blockers == ["high_volume_requires_explicit_approval"]:
+        result["status"] = "needs_high_volume_review"
+    else:
+        result["status"] = "blocked"
+    return result
 
 
 def _count_global_historical_lows(
