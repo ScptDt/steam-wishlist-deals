@@ -9970,6 +9970,80 @@ class SmartAlertsTests(unittest.TestCase):
         self.assertTrue(digest["notification_policy"]["requires_digest_review"])
         self.assertEqual(digest["notification_policy"]["channels"], [])
 
+    def test_smart_alert_digest_classifies_natural_reference_as_high_volume_preview(self) -> None:
+        natural_best_local = [
+            ("3159330", "Assassin’s Creed Shadows"),
+            ("602960", "Barotrauma"),
+            ("2292800", "Blacksmith Master"),
+            ("1552550", "Castlevania Advance Collection"),
+            ("1422440", "Cataclismo"),
+            ("323470", "DRAGON BALL XENOVERSE"),
+            ("344462", "DRAGON BALL XENOVERSE GT PACK 2 (+ Mira and Towa)"),
+            ("344461", "DRAGON BALL XENOVERSE GT Pack 1"),
+            ("344463", "DRAGON BALL Z: Resurrection ‘F’ pack"),
+            ("815370", "Green Hell"),
+            ("2306740", "METAL GEAR SOLID: MASTER COLLECTION Vol.1 BONUS CONTENT"),
+            ("2644610", "Menace from the Deep"),
+            ("1337760", "Potion Permit"),
+            ("1858630", "SWORD ART ONLINE Fractured Daydream"),
+            ("2303350", "Sticky Business"),
+            ("784150", "Workers & Resources: Soviet Republic"),
+        ]
+        natural_price_up = [
+            ("633230", "NARUTO TO BORUTO: SHINOBI STRIKER", 100.35),
+            ("1020790", "NARUTO X BORUTO Ultimate Ninja STORM CONNECTIONS", 41.51),
+            ("1566880", "SWORD ART ONLINE Last Recollection", 41.43),
+        ]
+        deals = [
+            {"appid": appid, "name": name, "price_raw": 1000}
+            for appid, name in natural_best_local
+        ] + [
+            {"appid": appid, "name": name, "price_raw": 1000}
+            for appid, name, _change_pct in natural_price_up
+        ]
+        digest = module_build_smart_alert_digest(
+            deals=deals,
+            historical_lows={},
+            active_bundles={},
+            comparison={
+                "price_changes": {
+                    appid: {"direction": "up", "change_pct": change_pct}
+                    for appid, _name, change_pct in natural_price_up
+                }
+            },
+            local_trends={
+                appid: {"is_best_local": True, "is_first_time": False}
+                for appid, _name in natural_best_local
+            },
+            alert_rise_pct=10.0,
+            max_items_per_section=3,
+        )
+
+        by_id = {section["id"]: section for section in digest["sections"]}
+        anti_spam = digest["anti_spam"]
+
+        self.assertEqual(digest["total_count"], 19)
+        self.assertEqual(digest["counts"]["best_local_count"], 16)
+        self.assertEqual(digest["counts"]["price_up_count"], 3)
+        self.assertEqual(by_id["best_local"]["hidden_count"], 13)
+        self.assertEqual(by_id["price_up"]["hidden_count"], 0)
+        self.assertEqual(
+            [item["appid"] for item in by_id["best_local"]["items"]],
+            ["3159330", "602960", "2292800"],
+        )
+        self.assertEqual(
+            [item["appid"] for item in by_id["price_up"]["items"]],
+            ["633230", "1020790", "1566880"],
+        )
+        self.assertEqual(anti_spam["volume_level"], "high")
+        self.assertEqual(anti_spam["visible_items_count"], 6)
+        self.assertEqual(anti_spam["total_hidden_count"], 13)
+        self.assertTrue(anti_spam["grouped_digest"])
+        self.assertFalse(anti_spam["per_game_notifications"])
+        self.assertFalse(digest["send_ready"])
+        self.assertFalse(digest["notification_policy"]["external_send_enabled"])
+        self.assertEqual(digest["notification_policy"]["channels"], [])
+
     def test_smart_alert_digest_marks_low_volume_without_channel_side_effects(self) -> None:
         digest = module_build_smart_alert_digest(
             deals=[{"appid": "10", "name": "Alpha", "price_raw": 1000}],
