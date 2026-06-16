@@ -250,13 +250,14 @@ Definir el contrato mínimo antes de conectar Smart Alerts v2 a Telegram/Discord
 - Errores del fake sender se capturan como fallo de entrega falsa, sin elevar excepción ni tocar transporte externo.
 - Validación mínima vigente: `py_compile`, `tests.test_generator_logic.SmartAlertsTests` y `git diff --check`; no Telegram/Discord real, tokens, webhooks, red real, `BG00G`, `--no-cache`, builds ni reportes generados.
 
-### Corte opt-in preview cerrado 2026-06-16
+### Corte opt-in preview surface cerrado 2026-06-16
 
 - `build_smart_alert_channel_opt_in_preview(...)` modela el estado local de opt-in/revisión por canal soportado y expone solicitudes no soportadas sin activar transporte externo.
-- La salida conserva `preview_only=true`, `dry_run=true`, `send_ready=false`, `external_send_enabled=false` y `channels=[]`; se apoya en el preview existente y nunca convierte opt-in en envío real.
+- CLI y Web exponen la preview solo con opt-in explícito (`--smart-alert-opt-in-preview` / checkbox default-off), canales solicitados, revisión manual y aprobación fixture-only de alto volumen.
+- JSON, Markdown, HTML generado y `Último reporte` Web renderizan `smart_alert_channel_opt_in_preview` únicamente si el payload conserva `preview_only=true`, `dry_run=true`, `send_ready=false`, `external_send_enabled=false` y `channels=[]`; payloads inseguros o con credenciales se omiten.
 - Canales duplicados se deduplican para la solicitud soportada, canales no soportados quedan diagnosticados, y alto volumen sigue bloqueado salvo aprobación explícita fixture-only (`allow_high_volume=True`).
-- Falta todavía un slice separado para UI/CLI opt-in real o Telegram/Discord real; este corte solo fija el contrato local revisable con tests.
-- Validación mínima vigente: `py_compile`, `tests.test_generator_logic.SmartAlertsTests` y `git diff --check`; no Telegram/Discord real, tokens, webhooks, red real, `BG00G`, `--no-cache`, builds ni reportes generados.
+- Telegram/Discord real y cualquier integración de canales siguen en un slice separado aprobado, con fakes/mocks, límites anti-spam y evidencia adicional antes de cambiar `send_ready` o `channels`.
+- Validación mínima vigente: `py_compile`, `node --check`, suites dirigidas Config/SmartAlerts/StopApiContract/command-builder/WebAssets y `git diff --check`; no Telegram/Discord real, tokens, webhooks, red real, `BG00G`, `--no-cache`, builds ni reportes generados.
 
 ## PAYDAY 2 data/cache y diagnóstico
 
