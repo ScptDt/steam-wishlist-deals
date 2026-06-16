@@ -1393,6 +1393,32 @@ class DecisionAdvisorTests(unittest.TestCase):
         self.assertIn("wishlist_hygiene", item["source_signals"])
         self.assertIn("access_requires_review", item["risks"])
 
+    def test_build_decision_advisor_marks_replacement_category_as_redundancy_risk(self) -> None:
+        advisor = module_build_decision_advisor(
+            [{"appid": "38", "name": "Redundant Colony Sim", "score": 88, "discount": 80}],
+            taste_priority={
+                "items": [
+                    {
+                        "appid": "38",
+                        "name": "Redundant Colony Sim",
+                        "category": "reemplaza_varios",
+                        "factors": {"redundancy": 78, "cluster_redundancy": 74},
+                    }
+                ]
+            },
+            recommendation_diagnostics={"recommendation_mode": "behavioral", "recommendation_confidence": {"level": "medium"}},
+        )
+
+        item = advisor["items"][0]
+
+        self.assertEqual(item["decision"], "revisar")
+        self.assertEqual(item["priority"], "media")
+        self.assertEqual(item["purchase_type"], "impulse_risk")
+        self.assertIn("taste_priority", item["source_signals"])
+        self.assertIn("weak_or_redundant_fit", item["risks"])
+        self.assertNotIn("personal_fit_unknown", item["risks"])
+        self.assertEqual(item["reason"], "weak_or_redundant_fit")
+
     def test_build_decision_advisor_marks_partial_cache_conclusions_tentative(self) -> None:
         advisor = module_build_decision_advisor(
             [{"appid": "40", "name": "Tentative Deal", "score": 85, "discount": 75}],

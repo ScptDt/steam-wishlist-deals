@@ -15,7 +15,7 @@ _CONFIDENCE_RANK = {"low": 1, "medium": 2, "high": 3}
 _BUYABLE_ACCESS = {"requires_purchase", "unknown"}
 _PARTIAL_ACCESS_CODES = {"family", "probable_family_shared"}
 _AVAILABLE_ACCESS_CODES = {"owned", "playable_without_buying"}
-_WEAK_TASTE_CATEGORIES = {"espera_oferta", "riesgo_abandono", "no_comprar_aun"}
+_WEAK_TASTE_CATEGORIES = {"espera_oferta", "riesgo_abandono", "reemplaza_varios", "no_comprar_aun"}
 
 
 def _records(value: Any) -> list[dict]:
@@ -194,6 +194,16 @@ def _decision(access_status: str, fit_level: str, strong_offer: bool, confidence
     return "esperar"
 
 
+def _primary_reason(positive_signals: list[str], risks: list[str]) -> str:
+    if "weak_or_redundant_fit" in risks:
+        return "weak_or_redundant_fit"
+    if positive_signals:
+        return positive_signals[0]
+    if risks:
+        return risks[0]
+    return "limited_signals"
+
+
 def _priority(decision: str) -> str:
     if decision == "comprar_ahora":
         return "alta"
@@ -229,7 +239,7 @@ def _advisor_item(
     decision = _decision(access_status, fit_level, strong_offer, confidence)
     purchase_type = _purchase_type(fit_level, strong_offer, risks)
     positive_signals = [*positives, *fit_positives, *ext_positives]
-    reason = positive_signals[0] if positive_signals else risks[0] if risks else "limited_signals"
+    reason = _primary_reason(positive_signals, risks)
     return {
         "appid": appid,
         "name": candidate.get("name") or _name(deals_by_appid.get(appid, {})) or _name(top_picks_by_appid.get(appid, {})),
