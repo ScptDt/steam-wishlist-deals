@@ -6,15 +6,26 @@ from pathlib import Path
 
 
 _STORE_NAMES = {
+    "amazon_games": "Amazon Games",
+    "battle_net": "Battle.net",
+    "ea": "EA app",
     "epic": "Epic",
     "fanatical": "Fanatical",
     "gog": "GOG",
     "humble": "Humble Store",
+    "itch": "itch.io",
     "itad": "ITAD",
     "steam": "Steam",
+    "ubisoft": "Ubisoft Connect",
     "unknown": "Unknown",
+    "xbox": "Xbox app",
 }
 _STORE_ID_ALIASES = {
+    "amazon": "amazon_games",
+    "amazon_games_app": "amazon_games",
+    "battle_net": "battle_net",
+    "battlenet": "battle_net",
+    "ea_app": "ea",
     "epic_games": "epic",
     "epic_games_store": "epic",
     "fanatical_com": "fanatical",
@@ -24,11 +35,19 @@ _STORE_ID_ALIASES = {
     "humble_store": "humble",
     "isthereanydeal": "itad",
     "is_there_any_deal": "itad",
+    "itch_io": "itch",
+    "microsoft_store": "xbox",
+    "origin": "ea",
     "steam_store": "steam",
+    "ubisoft_connect": "ubisoft",
+    "uplay": "ubisoft",
+    "xbox_app": "xbox",
 }
 _STORE_TYPES = {"library", "order_export", "bundle_export", "price_index", "catalog", "manual"}
 _MATCH_METHODS = {"steam_appid", "external_id", "normalized_title", "manual"}
 _CONFIDENCES = {"high", "medium", "low"}
+_PLAYNITE_LIBRARY_SCHEMA = "steamtools_playnite_library_v1"
+_PLAYNITE_SOURCE_TYPES = {"official_launcher", "playnite_addon", "manual", "unknown"}
 _OWNERSHIP_EVIDENCE = {"owned_in_user_export", "owned_in_library_export", "in_user_library", "owned"}
 _BUNDLE_EVIDENCE = {"owned_in_bundle_export", "owned_in_order_export", "bundle_owned", "in_user_order"}
 _CONTEXT_ONLY_EVIDENCE = {"price_only", "catalog_match", "public_bundle", "public_catalog", "discount_only", "promo_only"}
@@ -256,6 +275,112 @@ def normalize_manual_external_library_export(payload) -> list[dict]:
     return normalized
 
 
+def _playnite_items(payload: dict) -> list[dict]:
+    items = payload.get("items")
+    if items is None:
+        return []
+    if not isinstance(items, list):
+        raise ValueError("items debe ser una lista")
+    copied: list[dict] = []
+    for index, item in enumerate(items):
+        if not isinstance(item, dict):
+            raise ValueError(f"items[{index}] debe ser un objeto JSON")
+        copied.append(dict(item))
+    return copied
+
+
+def _playnite_platforms(item: dict, index: int) -> list[dict]:
+    platforms = item.get("platforms")
+    if platforms is None:
+        return []
+    if not isinstance(platforms, list):
+        raise ValueError(f"items[{index}].platforms debe ser una lista")
+    copied: list[dict] = []
+    for platform_index, platform in enumerate(platforms):
+        if not isinstance(platform, dict):
+            raise ValueError(
+                f"items[{index}].platforms[{platform_index}] debe ser un objeto JSON"
+            )
+        copied.append(dict(platform))
+    return copied
+
+
+def _safe_playnite_provider_id(value) -> str:
+    text = _clean_text(value)
+    if not text:
+        return ""
+    if "://" in text or "/" in text or "\\" in text or re.match(r"^[a-zA-Z]:", text):
+        return ""
+    return text
+
+
+def _playnite_confidence(platform: dict, store_id: str, source_type: str, evidence: str) -> str:
+    if confidence := _clean_text(platform.get("confidence")):
+        return _enum(confidence, _CONFIDENCES, "low")
+    if _slug(evidence) in _CONTEXT_ONLY_EVIDENCE:
+        return "low"
+    if store_id != "unknown" and source_type in {"official_launcher", "playnite_addon"}:
+        return "high"
+    return "medium"
+
+
+def _playnite_platform_match(item: dict, platform: dict, defaults: dict) -> dict | None:
+    appid = _external_target_appid(item)
+    if not appid.isdigit():
+        return None
+    store_raw = platform.get("store") or platform.get("source") or platform.get("name")
+    store_id = _store_id(store_raw)
+    if store_id == "steam" or not _clean_text(store_raw):
+        return None
+    source_type = _enum(platform.get("source_type"), _PLAYNITE_SOURCE_TYPES, "unknown")
+    evidence = _clean_text(platform.get("evidence")) or "playnite_library"
+    store_name = _store_name(store_id, store_raw)
+    match = {
+        "store_id": store_id,
+        "store_name": store_name,
+        "store_type": "library",
+        "source": "playnite_library",
+        "external_name": _external_name(item),
+        "wishlist_appid": appid,
+        "match_method": "steam_appid",
+        "confidence": _playnite_confidence(platform, store_id, source_type, evidence),
+        "evidence": _slug(evidence),
+        "reason": f"aparece en Playnite: {store_name}",
+    }
+    if external_id := _safe_playnite_provider_id(platform.get("provider_game_id")):
+        match["external_id"] = external_id
+    if observed_at := _clean_text(platform.get("observed_at") or item.get("observed_at") or defaults.get("exported_at")):
+        match["observed_at"] = observed_at
+    return match
+
+
+def normalize_playnite_library_export(payload) -> list[dict]:
+    """Normalize a privacy-minimized Playnite library export into external_matches."""
+    if not isinstance(payload, dict):
+        raise ValueError("export Playnite debe ser un objeto JSON")
+    if payload.get("schema") != _PLAYNITE_LIBRARY_SCHEMA:
+        raise ValueError(f"schema Playnite no soportado: {payload.get('schema') or 'missing'}")
+    normalized: list[dict] = []
+    seen: set[tuple[str, ...]] = set()
+    defaults = {"exported_at": payload.get("exported_at")}
+    for index, item in enumerate(_playnite_items(payload)):
+        for platform in _playnite_platforms(item, index):
+            match = _playnite_platform_match(item, platform, defaults)
+            if not match:
+                continue
+            fingerprint = (
+                match["store_id"],
+                _clean_text(match.get("external_id")),
+                _clean_text(match.get("wishlist_appid")),
+                _name_key(match["external_name"]),
+            )
+            if fingerprint in seen:
+                continue
+            seen.add(fingerprint)
+            normalized.append(match)
+    return normalized
+
+
 def _external_matches_from_payload(payload) -> list[dict]:
     if payload is None:
         return []
@@ -264,6 +389,8 @@ def _external_matches_from_payload(payload) -> list[dict]:
     if isinstance(payload, dict):
         if not payload:
             return []
+        if payload.get("schema") == _PLAYNITE_LIBRARY_SCHEMA:
+            return normalize_playnite_library_export(payload)
         for key in ("external_matches", "matches"):
             if key in payload:
                 return _copy_external_match_records(payload[key], context=key)

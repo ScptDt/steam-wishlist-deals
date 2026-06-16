@@ -212,6 +212,7 @@ from steam_deals_watchlist import (
 )
 from steam_deals_wishlist_hygiene import diagnose_wishlist_external_matches
 from steam_deals_wishlist_hygiene import normalize_manual_external_library_export
+from steam_deals_wishlist_hygiene import normalize_playnite_library_export
 from steam_deals_generator import (
     _format_cli_user_error,
     _handle_cli_value_error,
@@ -3251,6 +3252,121 @@ class WishlistHygieneTests(unittest.TestCase):
         self.assertEqual(by_appid["20"]["signals"], ["external_owned"])
         self.assertEqual(by_appid["30"]["signals"], ["external_bundle_owned"])
         self.assertEqual(by_appid["40"]["signals"], ["external_bundle_owned"])
+
+    def test_load_wishlist_external_matches_accepts_playnite_library_export(self) -> None:
+        payload = {
+            "schema": "steamtools_playnite_library_v1",
+            "source": "playnite",
+            "exported_at": "2026-06-16T12:00:00Z",
+            "items": [
+                {
+                    "name": "Control Ultimate Edition",
+                    "steam_appid": "870780",
+                    "platforms": [
+                        {
+                            "store": "Epic Games Store",
+                            "source_type": "official_launcher",
+                            "provider_game_id": "epic-control",
+                            "install_dir": "C:/Users/Jane/Games/Control",
+                        },
+                        {
+                            "store": "GOG",
+                            "source_type": "official_launcher",
+                            "provider_game_id": "gog-control",
+                            "token": "secret-token",
+                        },
+                        {
+                            "store": "Steam",
+                            "source_type": "official_launcher",
+                            "provider_game_id": "870780",
+                        },
+                    ],
+                },
+                {
+                    "name": "Ubisoft Game",
+                    "steam_appid": "123",
+                    "platforms": [
+                        {
+                            "store": "Ubisoft Connect",
+                            "source_type": "official_launcher",
+                            "provider_game_id": "C:/Users/Jane/Games/UbisoftGame",
+                        }
+                    ],
+                },
+                {"name": "Missing AppID", "platforms": [{"store": "GOG"}]},
+            ],
+        }
+
+        with TemporaryDirectory() as temp_dir:
+            path = Path(temp_dir) / "steamtools-playnite-library.json"
+            path.write_text(json.dumps(payload), encoding="utf-8")
+            external_matches = load_wishlist_external_matches(path)
+
+        hygiene = build_wishlist_hygiene_signals(
+            [
+                {"appid": "870780", "name": "Control Ultimate Edition"},
+                {"appid": "123", "name": "Ubisoft Game"},
+            ],
+            external_matches=external_matches,
+        )
+        by_appid = {item["appid"]: item for item in hygiene["items"]}
+
+        self.assertEqual([match["store_id"] for match in external_matches], ["epic", "gog", "ubisoft"])
+        self.assertTrue(all(match["source"] == "playnite_library" for match in external_matches))
+        self.assertTrue(all("install_dir" not in match for match in external_matches))
+        self.assertTrue(all("token" not in match for match in external_matches))
+        self.assertNotIn("C:/Users", json.dumps(external_matches))
+        self.assertEqual(by_appid["870780"]["signals"], ["external_owned"])
+        self.assertEqual(
+            [match["store_name"] for match in by_appid["870780"]["external_matches"]],
+            ["Epic Games Store", "GOG"],
+        )
+        self.assertEqual(by_appid["123"]["external_matches"][0]["store_name"], "Ubisoft Connect")
+
+    def test_normalize_playnite_library_export_does_not_infer_steam_family(self) -> None:
+        external_matches = normalize_playnite_library_export(
+            {
+                "schema": "steamtools_playnite_library_v1",
+                "items": [
+                    {
+                        "name": "Steam Family Candidate",
+                        "steam_appid": "42",
+                        "platforms": [
+                            {
+                                "store": "Steam",
+                                "source_type": "official_launcher",
+                                "provider_game_id": "42",
+                            }
+                        ],
+                    }
+                ],
+            }
+        )
+
+        hygiene = build_wishlist_hygiene_signals(
+            [{"appid": "42", "name": "Steam Family Candidate"}],
+            external_matches=external_matches,
+        )
+
+        self.assertEqual(external_matches, [])
+        self.assertEqual(hygiene["items"], [])
+
+    def test_load_wishlist_external_matches_rejects_malformed_playnite_library_export(self) -> None:
+        cases = [
+            ({"schema": "steamtools_playnite_library_v1", "items": {}}, "items debe ser una lista"),
+            (
+                {"schema": "steamtools_playnite_library_v1", "items": [{"name": "Bad", "platforms": {}}]},
+                r"items\[0\].platforms debe ser una lista",
+            ),
+        ]
+
+        with TemporaryDirectory() as temp_dir:
+            for index, (payload, expected_error) in enumerate(cases):
+                path = Path(temp_dir) / f"bad_playnite_{index}.json"
+                path.write_text(json.dumps(payload), encoding="utf-8")
+
+                with self.assertRaisesRegex(ValueError, expected_error):
+                    load_wishlist_external_matches(path)
 
     def test_manual_external_import_templates_reject_public_context_as_ownership(self) -> None:
         external_matches = normalize_manual_external_library_export(

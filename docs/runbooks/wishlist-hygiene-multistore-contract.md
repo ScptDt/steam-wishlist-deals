@@ -382,6 +382,14 @@ Validación esperada antes de código:
 3. Tests de denylist para campos prohibidos (`install_dir`, `path`, `executable`, `token`, `cookie`, `raw`).
 4. Verificar que Steam desde Playnite no se convierte automáticamente en `family_shared`.
 
+### Corte parser library cerrado 2026-06-16
+
+- `steamtools_playnite_library_v1` ya puede entrar por el import existente `--wishlist-external-matches-json` sin flags/UI nuevos.
+- El parser normaliza plataformas no-Steam a `external_matches` con `source=playnite_library`, `store_type=library`, `match_method=steam_appid` y evidencia local de Playnite.
+- Entradas `store=Steam` se omiten para no inferir ownership ni Steam Family desde Playnite; Family sigue reservado para `steam_access` o el contrato futuro de perfiles con revisión manual.
+- Campos sensibles o privados del export (`install_dir`, paths, ejecutables, tokens, cookies o raw metadata) no se copian al contrato normalizado.
+- La salida sigue siendo advisory-only dentro de `wishlist_hygiene`: solo “revisar wishlist”, sin auto-quitar, auto-hide, score/ranking/defaults ni precios `external_offers`.
+
 ## Plan 6A: contrato futuro del helper/browser extension Steam
 
 Este corte es **docs-only** para dejar listo el threat model antes de implementar un helper real. El objetivo del helper futuro es producir un archivo manual compatible con `steam_access_import_v1`; la app Python/Web nunca debe manejar sesión Steam, cookies, tokens ni respuestas crudas.
