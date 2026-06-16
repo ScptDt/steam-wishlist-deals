@@ -282,6 +282,34 @@ class PublicErrorRedactionTests(unittest.TestCase):
         self.assertIn("[redactado]", redacted)
         self.assertIn("[ruta]", redacted)
 
+    def test_redact_sensitive_text_handles_named_config_and_auth_assignments(self) -> None:
+        raw = (
+            "itad_key=ITAD-SECRET telegram_token=TELEGRAM-SECRET "
+            "discord_webhook=DISCORD-SECRET steam-api-key=STEAM-SECRET "
+            "Authorization: Bearer AUTH-SECRET password=PASSWORD-SECRET "
+            "hotkey=ctrl+k monkey=banana"
+        )
+
+        redacted = redact_sensitive_text(raw)
+
+        for secret in (
+            "ITAD-SECRET",
+            "TELEGRAM-SECRET",
+            "DISCORD-SECRET",
+            "STEAM-SECRET",
+            "AUTH-SECRET",
+            "PASSWORD-SECRET",
+        ):
+            self.assertNotIn(secret, redacted)
+        self.assertIn("itad_key=[redactado]", redacted)
+        self.assertIn("telegram_token=[redactado]", redacted)
+        self.assertIn("discord_webhook=[redactado]", redacted)
+        self.assertIn("steam-api-key=[redactado]", redacted)
+        self.assertIn("Authorization: Bearer [redactado]", redacted)
+        self.assertIn("password=[redactado]", redacted)
+        self.assertIn("hotkey=ctrl+k", redacted)
+        self.assertIn("monkey=banana", redacted)
+
     def test_redact_sensitive_text_tolerates_unavailable_cwd(self) -> None:
         with patch(
             "shared_web_infra.Path.cwd",

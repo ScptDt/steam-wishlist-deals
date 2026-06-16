@@ -118,8 +118,14 @@ REDACTED_SECRET_MARKERS = frozenset(
 PUBLIC_REDACTION_MARKER = "[redactado]"
 PATH_REDACTION_MARKER = "[ruta]"
 TRACEBACK_REDACTION_MARKER = "[traceback]"
-TOKEN_ASSIGNMENT_RE = re.compile(
-    r"(?i)\b(key|token|webhook|secret)(\s*[=:]\s*)([^\s&;,]+)"
+SENSITIVE_ASSIGNMENT_PARTS = frozenset(
+    {"key", "token", "webhook", "secret", "password", "authorization", "bearer"}
+)
+SENSITIVE_ASSIGNMENT_RE = re.compile(
+    r"(?i)\b([A-Za-z][A-Za-z0-9_-]*)(\s*[=:]\s*)([^\s&;,]+)"
+)
+AUTHORIZATION_VALUE_RE = re.compile(
+    r"(?i)\b(authorization\s*[=:]\s*(?:(?:bearer|basic|digest|token)\s+)?)([^\s&;,]+)"
 )
 DISCORD_WEBHOOK_RE = re.compile(
     r"https://(?:discord(?:app)?\.com)/api/webhooks/[^\s)\]}\"']+",
@@ -772,6 +778,25 @@ def _redact_posix_absolute_path_match(match: re.Match[str]) -> str:
     return PATH_REDACTION_MARKER
 
 
+def _is_sensitive_assignment_key(value: str) -> bool:
+    normalized = str(value or "").strip().lower().replace("-", "_")
+    parts = {part for part in normalized.split("_") if part}
+    return bool(parts & SENSITIVE_ASSIGNMENT_PARTS) or normalized.endswith("apikey")
+
+
+def _redact_sensitive_assignment_match(match: re.Match[str]) -> str:
+    if str(match.group(1)).strip().lower() == "authorization" and str(match.group(3)).strip().lower() in {
+        "basic",
+        "bearer",
+        "digest",
+        "token",
+    }:
+        return match.group(0)
+    if not _is_sensitive_assignment_key(match.group(1)):
+        return match.group(0)
+    return f"{match.group(1)}{match.group(2)}{PUBLIC_REDACTION_MARKER}"
+
+
 def redact_sensitive_text(text: Any, *, extra_values: Iterable[Any] = ()) -> str:
     redacted = str(text or "")
     for value in _known_sensitive_values(extra_values):
@@ -780,8 +805,12 @@ def redact_sensitive_text(text: Any, *, extra_values: Iterable[Any] = ()) -> str
             redacted = redacted.replace(value, marker)
     redacted = DISCORD_WEBHOOK_RE.sub(PUBLIC_REDACTION_MARKER, redacted)
     redacted = TELEGRAM_TOKEN_RE.sub(PUBLIC_REDACTION_MARKER, redacted)
-    redacted = TOKEN_ASSIGNMENT_RE.sub(
-        lambda match: f"{match.group(1)}{match.group(2)}{PUBLIC_REDACTION_MARKER}",
+    redacted = AUTHORIZATION_VALUE_RE.sub(
+        lambda match: f"{match.group(1)}{PUBLIC_REDACTION_MARKER}",
+        redacted,
+    )
+    redacted = SENSITIVE_ASSIGNMENT_RE.sub(
+        _redact_sensitive_assignment_match,
         redacted,
     )
     redacted = WINDOWS_ABSOLUTE_PATH_RE.sub(PATH_REDACTION_MARKER, redacted)
