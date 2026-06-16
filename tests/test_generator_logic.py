@@ -1313,6 +1313,84 @@ class DecisionAdvisorTests(unittest.TestCase):
         self.assertEqual(item["access_status"], "available")
         self.assertIn("already_available", item["risks"])
 
+    def test_build_decision_advisor_keeps_external_offers_as_price_context_only(self) -> None:
+        advisor = module_build_decision_advisor(
+            [{"appid": "35", "name": "External Deal", "score": 90, "discount": 80}],
+            decision_support={
+                "schema": "decision_support_v1",
+                "items": [{"appid": "35", "decision_label": "good_fit", "confidence": "high"}],
+            },
+            external_offers={
+                "items": [
+                    {
+                        "appid": "35",
+                        "store_name": "Example Store",
+                        "eligible_for_best_external_price": True,
+                        "risk_flags": [],
+                    }
+                ]
+            },
+            recommendation_diagnostics={"recommendation_mode": "behavioral", "recommendation_confidence": {"level": "high"}},
+        )
+
+        item = advisor["items"][0]
+
+        self.assertEqual(item["access_status"], "requires_purchase")
+        self.assertEqual(item["decision"], "comprar_ahora")
+        self.assertIn("external_offers", item["source_signals"])
+        self.assertIn("safe_external_offer", item["positive_signals"])
+        self.assertNotIn("already_available", item["risks"])
+        self.assertNotIn("access_requires_review", item["risks"])
+
+    def test_build_decision_advisor_ignores_direct_play_access_without_hygiene_decision(self) -> None:
+        advisor = module_build_decision_advisor(
+            [{"appid": "36", "name": "Playable Import", "score": 91, "discount": 80}],
+            decision_support={
+                "schema": "decision_support_v1",
+                "items": [{"appid": "36", "decision_label": "good_fit", "confidence": "high"}],
+            },
+            play_access={
+                "schema": "play_access_v1",
+                "items": [{"appid": "36", "play_state": "playable", "source": "local_import"}],
+            },
+            recommendation_diagnostics={"recommendation_mode": "behavioral", "recommendation_confidence": {"level": "high"}},
+        )
+
+        item = advisor["items"][0]
+
+        self.assertEqual(item["access_status"], "requires_purchase")
+        self.assertEqual(item["decision"], "comprar_ahora")
+        self.assertNotIn("wishlist_hygiene", item["source_signals"])
+        self.assertNotIn("already_available", item["risks"])
+        self.assertNotIn("access_requires_review", item["risks"])
+
+    def test_build_decision_advisor_uses_hygiene_family_access_as_partial_review(self) -> None:
+        advisor = module_build_decision_advisor(
+            [{"appid": "37", "name": "Family Shared Candidate", "score": 91, "discount": 80}],
+            decision_support={
+                "schema": "decision_support_v1",
+                "items": [{"appid": "37", "decision_label": "good_fit", "confidence": "high"}],
+            },
+            wishlist_hygiene={
+                "items": [
+                    {
+                        "appid": "37",
+                        "name": "Family Shared Candidate",
+                        "access_decision": {"code": "family", "label": "Disponible por Steam Family"},
+                    }
+                ]
+            },
+            recommendation_diagnostics={"recommendation_mode": "behavioral", "recommendation_confidence": {"level": "high"}},
+        )
+
+        item = advisor["items"][0]
+
+        self.assertEqual(item["access_status"], "partially_available")
+        self.assertEqual(item["decision"], "revisar")
+        self.assertEqual(item["priority"], "media")
+        self.assertIn("wishlist_hygiene", item["source_signals"])
+        self.assertIn("access_requires_review", item["risks"])
+
     def test_build_decision_advisor_marks_partial_cache_conclusions_tentative(self) -> None:
         advisor = module_build_decision_advisor(
             [{"appid": "40", "name": "Tentative Deal", "score": 85, "discount": 75}],
