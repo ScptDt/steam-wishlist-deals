@@ -39,7 +39,7 @@ def build_parser() -> argparse.ArgumentParser:
             "  Comparativa externa: --itad-external-offers-cache, --gg-deals-external-offers-cache, --itad-refresh-external-offers-cache\n"
             "  Exports: --csv, --md-frontmatter\n"
             "  Automatización local: --warm-cache, --warm-cache-full, --schedule\n"
-            "  Alertas inteligentes: --alert-rise-pct, --alert-global-margin-pct, --alert-score-min"
+            "  Alertas inteligentes: --alert-rise-pct, --alert-global-margin-pct, --alert-score-min, --smart-alert-opt-in-preview"
         ),
     )
     parser.add_argument("--web-run", action="store_true", help=argparse.SUPPRESS)
@@ -233,6 +233,27 @@ def build_parser() -> argparse.ArgumentParser:
         metavar="SCORE",
         help="Score mínimo para priorizar alertas inteligentes (ej: 75)",
     )
+    parser.add_argument(
+        "--smart-alert-opt-in-preview",
+        action="store_true",
+        help="Opt-in preview local/dry-run de canales Smart Alerts; no envía Telegram/Discord ni usa tokens/webhooks",
+    )
+    parser.add_argument(
+        "--smart-alert-preview-channel",
+        action="append",
+        metavar="CHANNEL",
+        help="Canal solicitado para preview Smart Alerts (telegram/discord; otros se diagnostican sin envío)",
+    )
+    parser.add_argument(
+        "--smart-alert-preview-reviewed",
+        action="store_true",
+        help="Marca el digest como revisado para preview local; no activa envíos",
+    )
+    parser.add_argument(
+        "--smart-alert-preview-allow-high-volume",
+        action="store_true",
+        help="Permite evaluar alto volumen en preview fixture-only; no activa envíos",
+    )
     return parser
 
 
@@ -365,6 +386,18 @@ def _resolve_family_json(args, cfg: dict):
     return None
 
 
+def _normalize_smart_alert_preview_channels(channels) -> list[str]:
+    if not channels:
+        return []
+    normalized: list[str] = []
+    for value in channels:
+        for channel in str(value or "").split(","):
+            channel = channel.strip().lower()
+            if channel:
+                normalized.append(channel)
+    return normalized
+
+
 def _build_filters(args, cfg: dict, *, environ=None) -> dict:
     max_workers = (
         args.max_workers if args.max_workers is not None else cfg.get("max_workers")
@@ -451,6 +484,14 @@ def _build_filters(args, cfg: dict, *, environ=None) -> dict:
         "alert_rise_pct": alert_rise_pct,
         "alert_global_margin_pct": alert_global_margin_pct,
         "alert_score_min": alert_score_min,
+        "smart_alert_opt_in_preview": bool(args.smart_alert_opt_in_preview),
+        "smart_alert_preview_channels": _normalize_smart_alert_preview_channels(
+            args.smart_alert_preview_channel
+        ),
+        "smart_alert_preview_reviewed": bool(args.smart_alert_preview_reviewed),
+        "smart_alert_preview_allow_high_volume": bool(
+            args.smart_alert_preview_allow_high_volume
+        ),
     }
 
 

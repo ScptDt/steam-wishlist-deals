@@ -32,6 +32,22 @@ def _smart_alert_digest_total(digest: dict | None) -> int:
         return 0
 
 
+def _smart_alert_opt_in_preview_payload(payload: dict | None) -> dict | None:
+    if not isinstance(payload, dict):
+        return None
+    if payload.get("schema") != "smart_alert_channel_opt_in_preview_v1":
+        return None
+    if payload.get("preview_only") is not True or payload.get("dry_run") is not True:
+        return None
+    if payload.get("send_ready") is not False:
+        return None
+    if payload.get("external_send_enabled") is not False:
+        return None
+    if payload.get("channels") not in ([], None):
+        return None
+    return payload
+
+
 def _free_weekend_now_total(payload: dict | None) -> int:
     if not isinstance(payload, dict):
         return 0
@@ -781,6 +797,7 @@ def generate_json(
     profile_display_name: str | None = None,
     active_promo_context: dict | None = None,
     smart_alert_digest: dict | None = None,
+    smart_alert_channel_opt_in_preview: dict | None = None,
     free_weekend_now: dict | None = None,
     external_offers: dict | None = None,
     taste_priority: dict | None = None,
@@ -818,6 +835,9 @@ def generate_json(
     personalized_recommendations = personalized_recommendations or {"items": []}
     wishlist_hygiene = wishlist_hygiene or {"items": [], "summary": {}}
     smart_alert_digest = smart_alert_digest if isinstance(smart_alert_digest, dict) else None
+    smart_alert_channel_opt_in_preview = _smart_alert_opt_in_preview_payload(
+        smart_alert_channel_opt_in_preview
+    )
     free_weekend_now = free_weekend_now if isinstance(free_weekend_now, dict) else None
     external_offers = external_offers if isinstance(external_offers, dict) else None
     taste_priority = _taste_priority_payload(taste_priority)
@@ -915,6 +935,8 @@ def generate_json(
         payload["meta"]["active_promo_context"] = _json_safe(active_promo_context)
     if smart_alert_digest:
         payload["smart_alert_digest"] = _json_safe(smart_alert_digest)
+    if smart_alert_channel_opt_in_preview:
+        payload["smart_alert_channel_opt_in_preview"] = _json_safe(smart_alert_channel_opt_in_preview)
     if free_weekend_now:
         payload["free_weekend_now"] = _json_safe(free_weekend_now)
     if external_offers:

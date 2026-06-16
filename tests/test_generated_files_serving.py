@@ -314,6 +314,31 @@ class GeneratedFilesServingTests(unittest.TestCase):
         self.assertEqual(zero_cmd[zero_cmd.index("--alert-global-margin-pct") + 1], "0")
         self.assertEqual(zero_cmd[zero_cmd.index("--alert-score-min") + 1], "0")
 
+    def test_build_command_passes_smart_alert_opt_in_preview_only_when_requested(self) -> None:
+        default_cmd = build_command({"vanity": "gaben"}, {})
+        opt_in_cmd = build_command(
+            {"vanity": "gaben", "telegram_token": "secret", "discord_webhook": "secret"},
+            {
+                "smart_alert_opt_in_preview": True,
+                "smart_alert_preview_channels": ["telegram", "email"],
+                "smart_alert_preview_reviewed": True,
+                "smart_alert_preview_allow_high_volume": True,
+            },
+        )
+
+        self.assertNotIn("--smart-alert-opt-in-preview", default_cmd)
+        self.assertNotIn("--smart-alert-preview-channel", default_cmd)
+        self.assertIn("--smart-alert-opt-in-preview", opt_in_cmd)
+        self.assertEqual(opt_in_cmd.count("--smart-alert-preview-channel"), 2)
+        first_channel = opt_in_cmd.index("--smart-alert-preview-channel") + 1
+        self.assertEqual(opt_in_cmd[first_channel], "telegram")
+        self.assertIn("email", opt_in_cmd)
+        self.assertIn("--smart-alert-preview-reviewed", opt_in_cmd)
+        self.assertIn("--smart-alert-preview-allow-high-volume", opt_in_cmd)
+        self.assertNotIn("--telegram-token", opt_in_cmd)
+        self.assertNotIn("--discord-webhook", opt_in_cmd)
+        self.assertNotIn("--schedule", opt_in_cmd)
+
     def test_build_command_passes_itad_refresh_external_offers_only_when_requested(self) -> None:
         config = {
             "vanity": "gaben",

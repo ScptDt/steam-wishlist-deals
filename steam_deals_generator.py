@@ -218,10 +218,12 @@ except Exception:
 
 try:
     from steam_deals_alerts import (
+        build_smart_alert_channel_opt_in_preview as _build_smart_alert_channel_opt_in_preview_impl,
         build_smart_alert_counts as _build_smart_alert_counts_impl,
         build_smart_alert_digest as _build_smart_alert_digest_impl,
     )
 except Exception:
+    _build_smart_alert_channel_opt_in_preview_impl = None
     _build_smart_alert_counts_impl = None
     _build_smart_alert_digest_impl = None
 
@@ -2072,6 +2074,27 @@ def build_smart_alert_digest(**kwargs) -> dict:
     if _build_smart_alert_digest_impl is None:
         raise RuntimeError("Alerts module is not available")
     return _build_smart_alert_digest_impl(**kwargs)
+
+
+def build_smart_alert_channel_opt_in_preview(**kwargs) -> dict:
+    if _build_smart_alert_channel_opt_in_preview_impl is None:
+        raise RuntimeError("Alerts module is not available")
+    return _build_smart_alert_channel_opt_in_preview_impl(**kwargs)
+
+
+def build_smart_alert_opt_in_preview_from_filters(
+    digest: dict | None,
+    filters: dict | None,
+) -> dict | None:
+    if not isinstance(filters, dict) or filters.get("smart_alert_opt_in_preview") is not True:
+        return None
+    return build_smart_alert_channel_opt_in_preview(
+        digest=digest,
+        requested_channels=filters.get("smart_alert_preview_channels") or [],
+        user_opt_in=True,
+        digest_reviewed=filters.get("smart_alert_preview_reviewed") is True,
+        allow_high_volume=filters.get("smart_alert_preview_allow_high_volume") is True,
+    )
 
 
 def emit_final_closeout(
@@ -4137,6 +4160,7 @@ def generate_md(
     include_frontmatter: bool = False,
     active_promo_context: dict | None = None,
     smart_alert_digest: dict | None = None,
+    smart_alert_channel_opt_in_preview: dict | None = None,
     free_weekend_now: dict | None = None,
     external_offers: dict | None = None,
     taste_priority: dict | None = None,
@@ -4245,6 +4269,7 @@ def generate_md(
         include_frontmatter=include_frontmatter,
         active_promo_context=active_promo_context,
         smart_alert_digest=smart_alert_digest,
+        smart_alert_channel_opt_in_preview=smart_alert_channel_opt_in_preview,
         free_weekend_now=free_weekend_now,
         external_offers=external_offers,
         taste_priority=taste_priority,
@@ -4310,6 +4335,7 @@ def generate_html(
     profile_display_name: str | None = None,
     active_promo_context: dict | None = None,
     smart_alert_digest: dict | None = None,
+    smart_alert_channel_opt_in_preview: dict | None = None,
     free_weekend_now: dict | None = None,
     external_offers: dict | None = None,
     taste_priority: dict | None = None,
@@ -4425,6 +4451,7 @@ def generate_html(
             profile_display_name=profile_display_name,
             active_promo_context=active_promo_context,
             smart_alert_digest=smart_alert_digest,
+            smart_alert_channel_opt_in_preview=smart_alert_channel_opt_in_preview,
             free_weekend_now=free_weekend_now,
             external_offers=external_offers,
             taste_priority=taste_priority,
@@ -4474,6 +4501,7 @@ def generate_html(
         profile_display_name=profile_display_name,
         active_promo_context=active_promo_context,
         smart_alert_digest=smart_alert_digest,
+        smart_alert_channel_opt_in_preview=smart_alert_channel_opt_in_preview,
         free_weekend_now=free_weekend_now,
         external_offers=external_offers,
         taste_priority=taste_priority,
@@ -4678,6 +4706,7 @@ def generate_json(
     recommendation_diagnostics: dict | None = None,
     promo_highlights: dict | None = None,
     play_access: dict | None = None,
+    smart_alert_channel_opt_in_preview: dict | None = None,
     behavioral_signals: dict | None = None,
     behavioral_explanations: dict | None = None,
     player_behavior_profile: dict | None = None,
@@ -4825,6 +4854,7 @@ def generate_json(
         profile_display_name=profile_display_name,
         active_promo_context=active_promo_context,
         smart_alert_digest=smart_alert_digest,
+        smart_alert_channel_opt_in_preview=smart_alert_channel_opt_in_preview,
         free_weekend_now=free_weekend_now,
         external_offers=external_offers,
         taste_priority=taste_priority,
@@ -5748,6 +5778,10 @@ def main():
         alert_score_min=alert_score_min,
     )
     smart_alerts = smart_alert_digest.get("counts", {})
+    smart_alert_channel_opt_in_preview = build_smart_alert_opt_in_preview_from_filters(
+        smart_alert_digest,
+        FILTERS,
+    )
 
     engagement_outputs = run_engagement_post_run(
         deals,
@@ -5989,6 +6023,7 @@ def main():
         profile_display_name=profile_display_name,
         active_promo_context=active_promo_context,
         smart_alert_digest=smart_alert_digest,
+        smart_alert_channel_opt_in_preview=smart_alert_channel_opt_in_preview,
         free_weekend_now=free_weekend_now,
         external_offers=external_offers,
         taste_priority=taste_priority,
@@ -6065,6 +6100,7 @@ def main():
         profile_display_name=profile_display_name,
         active_promo_context=active_promo_context,
         smart_alert_digest=smart_alert_digest,
+        smart_alert_channel_opt_in_preview=smart_alert_channel_opt_in_preview,
         free_weekend_now=free_weekend_now,
         external_offers=external_offers,
         taste_priority=taste_priority,

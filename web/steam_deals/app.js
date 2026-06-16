@@ -365,7 +365,7 @@ function validatePd2FormBeforeRun() {
 // ── Config fields (saveable) ──
 const CONFIG_FIELDS = ['vanity','key','hltb','output','discount','genres','family_json','wishlist_external_matches_json','play_access_json','steam_access_json','player_preferences_json','itad_external_offers_cache','gg_deals_external_offers_cache','itad_key','compare','telegram_token','telegram_chat','discord_webhook'];
 const FILTER_FIELDS = ['max_price','min_reviews','min_review_count','max_hours','top','sort','budget','max_workers','alert_rise_pct','alert_global_margin_pct','alert_score_min'];
-const CHECK_FIELDS  = ['deck_only','deck_verified','new_only','csv','md_frontmatter','no_cache','free_weekend_live','free_weekend_lootscraper_live','itad_refresh_external_offers_cache'];
+const CHECK_FIELDS  = ['deck_only','deck_verified','new_only','csv','md_frontmatter','no_cache','free_weekend_live','free_weekend_lootscraper_live','itad_refresh_external_offers_cache','smart_alert_opt_in_preview','smart_alert_preview_reviewed','smart_alert_preview_allow_high_volume'];
 const GENRE_SUGGESTIONS = [
   'action', 'adventure', 'indie', 'rpg', 'strategy', 'simulation', 'casual', 'sports',
   'racing', 'puzzle', 'platformer', 'metroidvania', 'roguelike', 'roguelite', 'soulslike',
@@ -435,6 +435,14 @@ function getFilters() {
     const el = $(k);
     if (el) f[k] = el.checked;
   });
+  const smartAlertPreviewChannels = $('smart_alert_preview_channels');
+  if (smartAlertPreviewChannels) {
+    const channels = smartAlertPreviewChannels.value
+      .split(',')
+      .map(channel => channel.trim().toLowerCase())
+      .filter(Boolean);
+    if (channels.length) f.smart_alert_preview_channels = channels;
+  }
   Object.assign(f, getSchedulerFilters());
   return f;
 }
@@ -4278,6 +4286,83 @@ function renderLatestSmartAlertDigest(report) {
   `;
 }
 
+function latestSmartAlertOptInPreviewPayload(report) {
+  const payload = report && typeof report === 'object' ? report.smart_alert_channel_opt_in_preview : null;
+  if (!payload || typeof payload !== 'object' || Array.isArray(payload)) return null;
+  if (payload.schema !== 'smart_alert_channel_opt_in_preview_v1') return null;
+  if (payload.preview_only !== true || payload.dry_run !== true) return null;
+  if (payload.send_ready !== false || payload.external_send_enabled !== false) return null;
+  if (payload.channels != null && (!Array.isArray(payload.channels) || payload.channels.length > 0)) return null;
+  return payload;
+}
+
+function latestSmartAlertStringList(values) {
+  return Array.isArray(values)
+    ? values.map(value => String(value || '').trim()).filter(Boolean)
+    : [];
+}
+
+function latestSmartAlertUnsupportedChannels(payload) {
+  return Array.isArray(payload && payload.unsupported_channel_requests)
+    ? payload.unsupported_channel_requests
+      .filter(item => item && typeof item === 'object')
+      .map(item => String(item.channel || '').trim())
+      .filter(Boolean)
+    : [];
+}
+
+function renderLatestSmartAlertOptInChannelRequest(request) {
+  const source = request && typeof request === 'object' ? request : {};
+  const channel = String(source.channel || '').trim() || 'canal';
+  const status = String(source.status || 'blocked').trim() || 'blocked';
+  return `
+    <li class="latest-smart-alert-item">
+      <strong><span>${escapeHtml(channel)}</span></strong>
+      <small>${escapeHtml(status)}</small>
+    </li>
+  `;
+}
+
+function renderLatestSmartAlertOptInPreview(report) {
+  const payload = latestSmartAlertOptInPreviewPayload(report);
+  if (!payload) return '';
+  const status = String(payload.status || 'blocked').trim() || 'blocked';
+  const requested = latestSmartAlertStringList(payload.requested_channels);
+  const unsupported = latestSmartAlertUnsupportedChannels(payload);
+  const blockers = latestSmartAlertStringList(payload.blockers);
+  const reviewState = payload.review_state && typeof payload.review_state === 'object' ? payload.review_state : {};
+  const channelRequests = Array.isArray(payload.channel_requests)
+    ? payload.channel_requests.filter(item => item && typeof item === 'object')
+    : [];
+  return `
+    <div class="latest-smart-alert-digest latest-smart-alert-opt-in-preview" data-latest-smart-alert-opt-in-preview>
+      <div class="latest-smart-alert-head">
+        <div>
+          <div class="latest-smart-alert-title">Smart Alerts — preview de opt-in de canales</div>
+          <div class="latest-smart-alert-subtitle">Preview-only/dry-run: no envía Telegram/Discord real, no usa tokens/webhooks, no activa notificaciones por juego y conserva send_ready=false, external_send_enabled=false, channels=[].</div>
+        </div>
+        <span class="latest-smart-alert-badge">${escapeHtml(status)}</span>
+      </div>
+      <div class="latest-smart-alert-grid">
+        <article class="latest-smart-alert-section">
+          <div class="latest-smart-alert-section-head"><strong>Canales solicitados</strong><span>${escapeHtml(String(requested.length))}</span></div>
+          <div class="latest-smart-alert-empty">${escapeHtml(requested.length ? requested.join(', ') : 'ninguno')}</div>
+        </article>
+        <article class="latest-smart-alert-section">
+          <div class="latest-smart-alert-section-head"><strong>Estado por canal</strong><span>${escapeHtml(status)}</span></div>
+          ${channelRequests.length ? `<ol class="latest-smart-alert-list">${channelRequests.map(renderLatestSmartAlertOptInChannelRequest).join('')}</ol>` : '<div class="latest-smart-alert-empty">Sin canales soportados listos</div>'}
+          ${blockers.length ? `<div class="latest-smart-alert-more">Blockers: ${escapeHtml(blockers.join(', '))}</div>` : ''}
+        </article>
+        <article class="latest-smart-alert-section">
+          <div class="latest-smart-alert-section-head"><strong>Diagnóstico</strong><span>Dry-run</span></div>
+          <div class="latest-smart-alert-empty">No soportados: ${escapeHtml(unsupported.length ? unsupported.join(', ') : 'ninguno')}</div>
+          <div class="latest-smart-alert-more">Opt-in=${escapeHtml(String(reviewState.user_opt_in === true))} · digest revisado=${escapeHtml(String(reviewState.digest_reviewed === true))} · alto volumen=${escapeHtml(String(reviewState.allow_high_volume === true))}</div>
+        </article>
+      </div>
+    </div>
+  `;
+}
+
 function toBudgetNumber(value) {
   const num = Number(value);
   return Number.isFinite(num) ? num : 0;
@@ -5692,6 +5777,7 @@ function renderLatestRecommendationsPanel(report, files = null) {
     renderLatestExternalOffers(report),
     renderLatestFreeWeekendNow(report),
     renderLatestSmartAlertDigest(report),
+    renderLatestSmartAlertOptInPreview(report),
     renderLatestRecommendedCollections(report),
     renderLatestPersonalizedRecommendations(report, files),
     renderLatestDecisionSupport(report),

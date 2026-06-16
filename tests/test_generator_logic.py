@@ -233,6 +233,7 @@ from steam_deals_generator import (
     build_personalized_recommendations,
     build_recommended_collections,
     build_selection_review,
+    build_smart_alert_opt_in_preview_from_filters as generator_build_smart_alert_opt_in_preview_from_filters,
     build_smart_alert_counts as generator_build_smart_alert_counts,
     build_smart_alert_digest as generator_build_smart_alert_digest,
     build_gift_ideas,
@@ -3748,6 +3749,75 @@ class ConfigTests(unittest.TestCase):
         self.assertEqual(result[11]["alert_global_margin_pct"], 3.0)
         self.assertEqual(result[11]["alert_score_min"], 80.0)
 
+    def test_get_config_parses_smart_alert_opt_in_preview_flags(self) -> None:
+        class FakeStdin:
+            def isatty(self):
+                return False
+
+        result = module_get_config(
+            script_path=Path("/tmp/fake_script.py"),
+            load_user_config_fn=lambda: {},
+            save_user_config_fn=lambda _cfg: None,
+            handle_watchlist_command_fn=lambda _args: None,
+            input_fn=lambda _prompt: "",
+            stdin=FakeStdin(),
+            exit_fn=lambda _code: None,
+            argv=[
+                "--vanity",
+                "gaben",
+                "--smart-alert-opt-in-preview",
+                "--smart-alert-preview-channel",
+                "telegram,email",
+                "--smart-alert-preview-channel",
+                "discord",
+                "--smart-alert-preview-reviewed",
+                "--smart-alert-preview-allow-high-volume",
+            ],
+        )
+
+        filters = result[11]
+        self.assertTrue(filters["smart_alert_opt_in_preview"])
+        self.assertEqual(
+            filters["smart_alert_preview_channels"],
+            ["telegram", "email", "discord"],
+        )
+        self.assertTrue(filters["smart_alert_preview_reviewed"])
+        self.assertTrue(filters["smart_alert_preview_allow_high_volume"])
+        self.assertIsNone(filters["schedule"])
+        self.assertIsNone(filters["telegram_token"])
+        self.assertIsNone(filters["discord_webhook"])
+
+    def test_get_config_keeps_smart_alert_opt_in_preview_default_off(self) -> None:
+        class FakeStdin:
+            def isatty(self):
+                return False
+
+        result = module_get_config(
+            script_path=Path("/tmp/fake_script.py"),
+            load_user_config_fn=lambda: {
+                "telegram_token": "configured",
+                "telegram_chat": "configured",
+                "discord_webhook": "configured",
+                "smart_alert_opt_in_preview": True,
+                "smart_alert_preview_channels": ["telegram"],
+                "smart_alert_preview_reviewed": True,
+            },
+            save_user_config_fn=lambda _cfg: None,
+            handle_watchlist_command_fn=lambda _args: None,
+            input_fn=lambda _prompt: "",
+            stdin=FakeStdin(),
+            exit_fn=lambda _code: None,
+            argv=["--vanity", "gaben"],
+            environ={},
+        )
+
+        filters = result[11]
+        self.assertFalse(filters["smart_alert_opt_in_preview"])
+        self.assertEqual(filters["smart_alert_preview_channels"], [])
+        self.assertFalse(filters["smart_alert_preview_reviewed"])
+        self.assertFalse(filters["smart_alert_preview_allow_high_volume"])
+        self.assertIsNone(filters["schedule"])
+
     def test_get_config_defaults_source_output_to_project_output_dir(self) -> None:
         class FakeStdin:
             def isatty(self):
@@ -3880,6 +3950,8 @@ class ConfigTests(unittest.TestCase):
         self.assertIn("--schedule", help_text)
         self.assertIn("Alertas inteligentes", help_text)
         self.assertIn("--alert-score-min", help_text)
+        self.assertIn("--smart-alert-opt-in-preview", help_text)
+        self.assertIn("preview local/dry-run", help_text)
 
     def test_build_parser_documents_multi_profile_compare_input(self) -> None:
         parser = module_build_parser()
@@ -8455,6 +8527,71 @@ class StopApiContractTests(unittest.TestCase):
             data["smart_alert_digest"]["notification_policy"]["external_send_enabled"]
         )
 
+    def test_generate_json_serializes_smart_alert_opt_in_preview_when_valid(self) -> None:
+        opt_in_preview = module_build_smart_alert_channel_opt_in_preview(
+            module_build_smart_alert_digest(
+                deals=[{"appid": "10", "name": "Portal 2", "price_raw": 1000}],
+                historical_lows={},
+                active_bundles={},
+                comparison={"price_changes": {"10": {"direction": "up", "change_pct": 15.0}}},
+                local_trends={},
+                alert_rise_pct=10.0,
+            ),
+            requested_channels=["telegram", "email"],
+            user_opt_in=True,
+            digest_reviewed=True,
+        )
+
+        payload = generate_json(
+            deals=[{"appid": "10", "name": "Portal 2", "discount": 80}],
+            backlog_on_sale=[],
+            have_on_sale=[],
+            vanity="gaben",
+            owned={},
+            wishlist_appids=["10"],
+            min_discount=50,
+            genres=[],
+            smart_alert_channel_opt_in_preview=opt_in_preview,
+        )
+
+        data = json.loads(payload)
+        preview = data["smart_alert_channel_opt_in_preview"]
+
+        self.assertEqual(preview["schema"], "smart_alert_channel_opt_in_preview_v1")
+        self.assertTrue(preview["preview_only"])
+        self.assertTrue(preview["dry_run"])
+        self.assertFalse(preview["send_ready"])
+        self.assertFalse(preview["external_send_enabled"])
+        self.assertEqual(preview["channels"], [])
+        self.assertEqual(preview["requested_channels"], ["telegram"])
+        self.assertEqual(preview["unsupported_channels_count"], 1)
+        self.assertNotIn("telegram_token", json.dumps(data))
+        self.assertNotIn("discord_webhook", json.dumps(data))
+
+    def test_generate_json_omits_non_preview_smart_alert_opt_in_payload(self) -> None:
+        payload = generate_json(
+            deals=[],
+            backlog_on_sale=[],
+            have_on_sale=[],
+            vanity="gaben",
+            owned={},
+            wishlist_appids=[],
+            min_discount=50,
+            genres=[],
+            smart_alert_channel_opt_in_preview={
+                "schema": "smart_alert_channel_opt_in_preview_v1",
+                "preview_only": False,
+                "dry_run": False,
+                "send_ready": True,
+                "external_send_enabled": True,
+                "channels": ["telegram"],
+            },
+        )
+
+        data = json.loads(payload)
+
+        self.assertNotIn("smart_alert_channel_opt_in_preview", data)
+
     def test_build_price_cache_coverage_marks_partial_deferred_candidates(self) -> None:
         coverage = build_price_cache_coverage(
             {
@@ -9692,6 +9829,147 @@ class StopApiContractTests(unittest.TestCase):
         self.assertIn("Zero Change", html)
         self.assertIn("0%", html)
         self.assertIn("Dry-run", html)
+
+    def test_generated_reports_render_smart_alert_opt_in_preview(self) -> None:
+        digest = module_build_smart_alert_digest(
+            deals=[{"appid": "10", "name": "Portal 2", "price_raw": 1000}],
+            historical_lows={},
+            active_bundles={},
+            comparison={"price_changes": {"10": {"direction": "up", "change_pct": 15.0}}},
+            local_trends={},
+            alert_rise_pct=10.0,
+        )
+        opt_in_preview = module_build_smart_alert_channel_opt_in_preview(
+            digest,
+            requested_channels=["telegram", "email"],
+            user_opt_in=True,
+            digest_reviewed=True,
+        )
+
+        md = generate_md(
+            deals=[],
+            backlog_on_sale=[],
+            have_on_sale=[],
+            vanity="gaben",
+            owned={},
+            wishlist_appids=["10"],
+            min_discount=50,
+            genres=[],
+            smart_alert_channel_opt_in_preview=opt_in_preview,
+        )
+        html = generate_html(
+            deals=[],
+            backlog_on_sale=[],
+            have_on_sale=[],
+            vanity="gaben",
+            owned={},
+            wishlist_appids=["10"],
+            min_discount=50,
+            genres=[],
+            smart_alert_channel_opt_in_preview=opt_in_preview,
+        )
+
+        self.assertIn("Smart Alerts — preview de opt-in de canales", md)
+        self.assertIn("Preview-only/dry-run", md)
+        self.assertIn("no envía Telegram/Discord real", md)
+        self.assertIn("no usa tokens/webhooks", md)
+        self.assertIn("no habilita notificaciones por juego", md)
+        self.assertIn("`send_ready=false`", md)
+        self.assertIn("telegram", md)
+        self.assertIn("email", md)
+        self.assertIn("Canales no soportados diagnosticados: email", md)
+        self.assertIn('data-smart-alert-opt-in-preview', html)
+        self.assertIn("Smart Alerts — preview de opt-in de canales", html)
+        self.assertIn("Preview-only/dry-run", html)
+        self.assertIn("no envía Telegram/Discord real", html)
+        self.assertIn("no usa tokens/webhooks", html)
+        self.assertIn("telegram", html)
+        self.assertIn("email", html)
+        self.assertNotIn("telegram_token", html)
+        self.assertNotIn("discord_webhook", html)
+
+    def test_generated_reports_render_blocked_smart_alert_opt_in_preview(self) -> None:
+        digest = module_build_smart_alert_digest(
+            deals=[{"appid": "10", "name": "Portal 2", "price_raw": 1000}],
+            historical_lows={},
+            active_bundles={},
+            comparison={"price_changes": {"10": {"direction": "up", "change_pct": 15.0}}},
+            local_trends={},
+            alert_rise_pct=10.0,
+        )
+        blocked_preview = module_build_smart_alert_channel_opt_in_preview(
+            digest,
+            requested_channels=["discord"],
+            user_opt_in=True,
+            digest_reviewed=False,
+        )
+
+        md = generate_md(
+            deals=[],
+            backlog_on_sale=[],
+            have_on_sale=[],
+            vanity="gaben",
+            owned={},
+            wishlist_appids=["10"],
+            min_discount=50,
+            genres=[],
+            smart_alert_channel_opt_in_preview=blocked_preview,
+        )
+        html = generate_html(
+            deals=[],
+            backlog_on_sale=[],
+            have_on_sale=[],
+            vanity="gaben",
+            owned={},
+            wishlist_appids=["10"],
+            min_discount=50,
+            genres=[],
+            smart_alert_channel_opt_in_preview=blocked_preview,
+        )
+
+        self.assertIn("Smart Alerts — preview de opt-in de canales", md)
+        self.assertIn("blocked", md)
+        self.assertIn("digest_review_required", md)
+        self.assertIn("discord", md)
+        self.assertIn('data-smart-alert-opt-in-preview', html)
+        self.assertIn("blocked", html)
+        self.assertIn("digest_review_required", html)
+
+    def test_generated_reports_hide_unsafe_smart_alert_opt_in_preview(self) -> None:
+        unsafe_preview = {
+            "schema": "smart_alert_channel_opt_in_preview_v1",
+            "preview_only": False,
+            "dry_run": False,
+            "send_ready": True,
+            "external_send_enabled": True,
+            "channels": ["telegram"],
+            "status": "ready_for_reviewed_preview",
+        }
+        md = generate_md(
+            deals=[],
+            backlog_on_sale=[],
+            have_on_sale=[],
+            vanity="gaben",
+            owned={},
+            wishlist_appids=[],
+            min_discount=50,
+            genres=[],
+            smart_alert_channel_opt_in_preview=unsafe_preview,
+        )
+        html = generate_html(
+            deals=[],
+            backlog_on_sale=[],
+            have_on_sale=[],
+            vanity="gaben",
+            owned={},
+            wishlist_appids=[],
+            min_discount=50,
+            genres=[],
+            smart_alert_channel_opt_in_preview=unsafe_preview,
+        )
+
+        self.assertNotIn("Smart Alerts — preview de opt-in de canales", md)
+        self.assertNotIn('data-smart-alert-opt-in-preview', html)
 
     def test_generate_reports_explain_appid_only_wishlist_hygiene_items(self) -> None:
         hygiene = {
@@ -10990,6 +11268,41 @@ class SmartAlertsTests(unittest.TestCase):
         self.assertFalse(approved["send_ready"])
         self.assertFalse(approved["external_send_enabled"])
         self.assertEqual(approved["channels"], [])
+
+    def test_generator_builds_smart_alert_opt_in_preview_only_from_explicit_filters(self) -> None:
+        digest = module_build_smart_alert_digest(
+            deals=[{"appid": "10", "name": "Alpha", "price_raw": 1000}],
+            historical_lows={},
+            active_bundles={},
+            comparison={"price_changes": {"10": {"direction": "up", "change_pct": 15.0}}},
+            local_trends={},
+            alert_rise_pct=10.0,
+        )
+
+        default_preview = generator_build_smart_alert_opt_in_preview_from_filters(
+            digest,
+            {},
+        )
+        opt_in_preview = generator_build_smart_alert_opt_in_preview_from_filters(
+            digest,
+            {
+                "smart_alert_opt_in_preview": True,
+                "smart_alert_preview_channels": ["telegram", "email"],
+                "smart_alert_preview_reviewed": True,
+            },
+        )
+
+        self.assertIsNone(default_preview)
+        self.assertEqual(opt_in_preview["schema"], "smart_alert_channel_opt_in_preview_v1")
+        self.assertTrue(opt_in_preview["preview_only"])
+        self.assertTrue(opt_in_preview["dry_run"])
+        self.assertFalse(opt_in_preview["send_ready"])
+        self.assertFalse(opt_in_preview["external_send_enabled"])
+        self.assertEqual(opt_in_preview["channels"], [])
+        self.assertEqual(opt_in_preview["requested_channels"], ["telegram"])
+        self.assertEqual(opt_in_preview["unsupported_channels_count"], 1)
+        self.assertEqual(opt_in_preview["review_state"]["user_opt_in"], True)
+        self.assertEqual(opt_in_preview["review_state"]["digest_reviewed"], True)
 
     def test_smart_alert_fake_delivery_plan_keeps_ready_preview_dry_run(self) -> None:
         digest = module_build_smart_alert_digest(

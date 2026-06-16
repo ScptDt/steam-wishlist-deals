@@ -693,6 +693,81 @@ def _build_smart_alert_digest_lines(payload: dict | None) -> list[str]:
     return lines
 
 
+def _smart_alert_opt_in_preview_payload(payload: dict | None) -> dict | None:
+    if not isinstance(payload, dict):
+        return None
+    if payload.get("schema") != "smart_alert_channel_opt_in_preview_v1":
+        return None
+    if payload.get("preview_only") is not True or payload.get("dry_run") is not True:
+        return None
+    if payload.get("send_ready") is not False:
+        return None
+    if payload.get("external_send_enabled") is not False:
+        return None
+    if payload.get("channels") not in ([], None):
+        return None
+    return payload
+
+
+def _smart_alert_channel_names(values) -> list[str]:
+    if not isinstance(values, list):
+        return []
+    return [str(value or "").strip() for value in values if str(value or "").strip()]
+
+
+def _smart_alert_opt_in_channel_summary(payload: dict) -> str:
+    channel_requests = payload.get("channel_requests")
+    if not isinstance(channel_requests, list):
+        return "Sin canales soportados listos"
+    parts = []
+    for request in channel_requests:
+        if not isinstance(request, dict):
+            continue
+        channel = str(request.get("channel") or "").strip()
+        if not channel:
+            continue
+        status = str(request.get("status") or "blocked").strip() or "blocked"
+        parts.append(f"{_md_esc(channel)} (`{_md_esc(status)}`)")
+    return ", ".join(parts) if parts else "Sin canales soportados listos"
+
+
+def _smart_alert_unsupported_channel_summary(payload: dict) -> str:
+    unsupported = payload.get("unsupported_channel_requests")
+    if not isinstance(unsupported, list):
+        return "Ninguno"
+    channels = [
+        str(item.get("channel") or "").strip()
+        for item in unsupported
+        if isinstance(item, dict) and str(item.get("channel") or "").strip()
+    ]
+    return ", ".join(_md_esc(channel) for channel in channels) if channels else "Ninguno"
+
+
+def _build_smart_alert_opt_in_preview_lines(payload: dict | None) -> list[str]:
+    preview = _smart_alert_opt_in_preview_payload(payload)
+    if not preview:
+        return []
+    blockers = _smart_alert_channel_names(preview.get("blockers"))
+    review_state = preview.get("review_state") if isinstance(preview.get("review_state"), dict) else {}
+    requested = _smart_alert_channel_names(preview.get("requested_channels"))
+    status = str(preview.get("status") or "blocked").strip() or "blocked"
+    lines = [
+        "## 🔔 Smart Alerts — preview de opt-in de canales",
+        "",
+        "> Preview-only/dry-run: no envía Telegram/Discord real, no usa tokens/webhooks, no habilita notificaciones por juego y conserva `send_ready=false`, `external_send_enabled=false`, `channels=[]`.",
+        "",
+        f"- Estado: `{_md_esc(status)}`",
+        f"- Canales solicitados soportados: {_md_esc(', '.join(requested) if requested else 'ninguno')}",
+        f"- Canales listos/bloqueados: {_smart_alert_opt_in_channel_summary(preview)}",
+        f"- Canales no soportados diagnosticados: {_smart_alert_unsupported_channel_summary(preview)}",
+        f"- Revisión: opt-in={str(review_state.get('user_opt_in') is True).lower()} · digest revisado={str(review_state.get('digest_reviewed') is True).lower()} · alto volumen permitido={str(review_state.get('allow_high_volume') is True).lower()}",
+    ]
+    if blockers:
+        lines.append(f"- Blockers: {_md_esc(', '.join(blockers))}")
+    lines += ["", "---", ""]
+    return lines
+
+
 def _is_useful_local_trend(trend: dict | None) -> bool:
     if not trend or trend.get("is_first_time"):
         return False
@@ -1749,6 +1824,7 @@ def generate_md(
     include_frontmatter: bool = False,
     active_promo_context: dict | None = None,
     smart_alert_digest: dict | None = None,
+    smart_alert_channel_opt_in_preview: dict | None = None,
     free_weekend_now: dict | None = None,
     external_offers: dict | None = None,
     taste_priority: dict | None = None,
@@ -1786,6 +1862,9 @@ def generate_md(
     personalized_recommendations = personalized_recommendations or {"items": []}
     wishlist_hygiene = wishlist_hygiene or {"items": []}
     smart_alert_digest = smart_alert_digest if isinstance(smart_alert_digest, dict) else None
+    smart_alert_channel_opt_in_preview = _smart_alert_opt_in_preview_payload(
+        smart_alert_channel_opt_in_preview
+    )
     external_offers = external_offers if isinstance(external_offers, dict) else None
     taste_priority = taste_priority if isinstance(taste_priority, dict) else None
     recommendation_diagnostics = (
@@ -1919,6 +1998,7 @@ def generate_md(
     lines += _build_free_weekend_now_lines(free_weekend_now)
     lines += _build_wishlist_hygiene_lines(wishlist_hygiene)
     lines += _build_smart_alert_digest_lines(smart_alert_digest)
+    lines += _build_smart_alert_opt_in_preview_lines(smart_alert_channel_opt_in_preview)
 
     if watchlist_alerts:
         lines += [

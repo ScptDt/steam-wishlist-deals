@@ -409,6 +409,16 @@
             <div class="hint hint-compact">Vacío = sin override.</div>
           </div>
         </div>
+        <div class="field">
+          <label>Preview de opt-in de canales Smart Alerts <span class="optional">(fixture-only)</span></label>
+          <div class="checks checks-tight">
+            <label><input type="checkbox" id="smart_alert_opt_in_preview"> Mostrar revisión local de canales en el próximo JSON</label>
+            <label><input type="checkbox" id="smart_alert_preview_reviewed"> Marcar digest como revisado para preview</label>
+            <label><input type="checkbox" id="smart_alert_preview_allow_high_volume"> Permitir evaluar alto volumen solo en preview</label>
+          </div>
+          <input type="text" id="smart_alert_preview_channels" placeholder="telegram, discord">
+          <div class="hint hint-compact">Default off y solo dry-run: no envía Telegram/Discord real, no usa tokens/webhooks, no activa scheduler, no cambia ranking/defaults y conserva send_ready=false.</div>
+        </div>
         <div class="field" aria-labelledby="scheduler-local-title">
           <label id="scheduler-local-title">Programación local <span class="optional">(opt-in, desactivada por defecto)</span></label>
           <div class="checks checks-tight">

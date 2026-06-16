@@ -2422,6 +2422,99 @@ def _html_smart_alert_digest(payload: dict | None) -> str:
 </section>'''
 
 
+def _smart_alert_opt_in_preview_payload(payload: dict | None) -> dict | None:
+    if not isinstance(payload, dict):
+        return None
+    if payload.get("schema") != "smart_alert_channel_opt_in_preview_v1":
+        return None
+    if payload.get("preview_only") is not True or payload.get("dry_run") is not True:
+        return None
+    if payload.get("send_ready") is not False:
+        return None
+    if payload.get("external_send_enabled") is not False:
+        return None
+    if payload.get("channels") not in ([], None):
+        return None
+    return payload
+
+
+def _html_smart_alert_channel_names(values) -> list[str]:
+    if not isinstance(values, list):
+        return []
+    return [str(value or "").strip() for value in values if str(value or "").strip()]
+
+
+def _html_smart_alert_opt_in_channels(payload: dict) -> str:
+    channel_requests = payload.get("channel_requests")
+    if not isinstance(channel_requests, list):
+        return '<div class="smart-alert-empty">Sin canales soportados listos</div>'
+    rows = []
+    for request in channel_requests:
+        if not isinstance(request, dict):
+            continue
+        channel = str(request.get("channel") or "").strip()
+        if not channel:
+            continue
+        status = str(request.get("status") or "blocked").strip() or "blocked"
+        rows.append(f'''<li class="smart-alert-item">
+  <strong>{_html_esc(channel)}</strong>
+  <span>{_html_esc(status)}</span>
+</li>''')
+    return f'<ol class="smart-alert-items">{"".join(rows)}</ol>' if rows else '<div class="smart-alert-empty">Sin canales soportados listos</div>'
+
+
+def _html_smart_alert_unsupported_channels(payload: dict) -> str:
+    unsupported = payload.get("unsupported_channel_requests")
+    if not isinstance(unsupported, list):
+        return "Ninguno"
+    channels = [
+        str(item.get("channel") or "").strip()
+        for item in unsupported
+        if isinstance(item, dict) and str(item.get("channel") or "").strip()
+    ]
+    return ", ".join(_html_esc(channel) for channel in channels) if channels else "Ninguno"
+
+
+def _html_smart_alert_opt_in_preview(payload: dict | None) -> str:
+    preview = _smart_alert_opt_in_preview_payload(payload)
+    if not preview:
+        return ""
+    blockers = _html_smart_alert_channel_names(preview.get("blockers"))
+    requested = _html_smart_alert_channel_names(preview.get("requested_channels"))
+    review_state = preview.get("review_state") if isinstance(preview.get("review_state"), dict) else {}
+    status = str(preview.get("status") or "blocked").strip() or "blocked"
+    blockers_html = (
+        f'<div class="smart-alert-more">Blockers: {_html_esc(", ".join(blockers))}</div>'
+        if blockers
+        else ""
+    )
+    return f'''<section class="smart-alert-digest smart-alert-opt-in-preview" data-smart-alert-opt-in-preview>
+  <div class="smart-alert-digest-head">
+    <div>
+      <h2>Smart Alerts — preview de opt-in de canales</h2>
+      <p class="section-desc">Preview-only/dry-run: no envía Telegram/Discord real, no usa tokens/webhooks, no habilita notificaciones por juego y conserva <code>send_ready=false</code>, <code>external_send_enabled=false</code>, <code>channels=[]</code>.</p>
+    </div>
+    <span class="smart-alert-digest-badge">{_html_esc(status)}</span>
+  </div>
+  <div class="smart-alert-sections">
+    <article class="smart-alert-section">
+      <div class="smart-alert-section-head"><strong>Canales solicitados soportados</strong><span>{_html_esc(str(len(requested)))}</span></div>
+      <div class="smart-alert-empty">{_html_esc(", ".join(requested) if requested else "ninguno")}</div>
+    </article>
+    <article class="smart-alert-section">
+      <div class="smart-alert-section-head"><strong>Estado por canal</strong><span>{_html_esc(status)}</span></div>
+      {_html_smart_alert_opt_in_channels(preview)}
+      {blockers_html}
+    </article>
+    <article class="smart-alert-section">
+      <div class="smart-alert-section-head"><strong>Diagnóstico</strong><span>Dry-run</span></div>
+      <div class="smart-alert-empty">No soportados: {_html_smart_alert_unsupported_channels(preview)}</div>
+      <div class="smart-alert-more">Opt-in={str(review_state.get('user_opt_in') is True).lower()} · digest revisado={str(review_state.get('digest_reviewed') is True).lower()} · alto volumen permitido={str(review_state.get('allow_high_volume') is True).lower()}</div>
+    </article>
+  </div>
+</section>'''
+
+
 def _html_budget_pick_context(pick: dict) -> str:
     recommendation = _html_esc(_score_discovery_label(pick.get("recommendation")))
     reasons = _html_esc(" · ".join(pick.get("score_reasons", [])))
@@ -4075,6 +4168,7 @@ def generate_html(
     profile_display_name: str | None = None,
     active_promo_context: dict | None = None,
     smart_alert_digest: dict | None = None,
+    smart_alert_channel_opt_in_preview: dict | None = None,
     free_weekend_now: dict | None = None,
     external_offers: dict | None = None,
     taste_priority: dict | None = None,
@@ -4107,6 +4201,9 @@ def generate_html(
     personalized_recommendations = personalized_recommendations or {"items": []}
     wishlist_hygiene = wishlist_hygiene or {"items": []}
     smart_alert_digest = smart_alert_digest if isinstance(smart_alert_digest, dict) else None
+    smart_alert_channel_opt_in_preview = _smart_alert_opt_in_preview_payload(
+        smart_alert_channel_opt_in_preview
+    )
     external_offers = external_offers if isinstance(external_offers, dict) else None
     taste_priority = taste_priority if isinstance(taste_priority, dict) else None
     recommendation_diagnostics = (
@@ -4286,6 +4383,7 @@ def generate_html(
     parts.append(_html_external_offers(external_offers))
     parts.append(_html_wishlist_hygiene(wishlist_hygiene))
     parts.append(_html_smart_alert_digest(smart_alert_digest))
+    parts.append(_html_smart_alert_opt_in_preview(smart_alert_channel_opt_in_preview))
 
     if watchlist_alerts:
         wl_rows = []

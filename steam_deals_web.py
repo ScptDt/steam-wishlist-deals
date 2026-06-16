@@ -1023,6 +1023,23 @@ def _is_truthy_filter_flag(value: object) -> bool:
     return str(value or "").strip().lower() in {"1", "true", "yes", "on"}
 
 
+def web_smart_alert_preview_channels_from_filters(filters: dict) -> list[str]:
+    raw_channels = filters.get("smart_alert_preview_channels")
+    if isinstance(raw_channels, str):
+        values = [raw_channels]
+    elif isinstance(raw_channels, (list, tuple, set)):
+        values = list(raw_channels)
+    else:
+        values = []
+    channels: list[str] = []
+    for value in values:
+        for channel in str(value or "").split(","):
+            channel = channel.strip().lower()
+            if channel:
+                channels.append(channel)
+    return channels
+
+
 def build_command(config: dict, filters: dict) -> list[str]:
     if getattr(sys, "frozen", False):
         cmd = [sys.executable, "--run-script", "steam_deals_generator.py", "--web-run"]
@@ -1119,6 +1136,14 @@ def build_command(config: dict, filters: dict) -> list[str]:
         cmd += ["--alert-global-margin-pct", str(filters["alert_global_margin_pct"])]
     if "alert_score_min" in filters and filters["alert_score_min"] is not None:
         cmd += ["--alert-score-min", str(filters["alert_score_min"])]
+    if _is_truthy_filter_flag(filters.get("smart_alert_opt_in_preview")):
+        cmd.append("--smart-alert-opt-in-preview")
+        for channel in web_smart_alert_preview_channels_from_filters(filters):
+            cmd += ["--smart-alert-preview-channel", channel]
+        if _is_truthy_filter_flag(filters.get("smart_alert_preview_reviewed")):
+            cmd.append("--smart-alert-preview-reviewed")
+        if _is_truthy_filter_flag(filters.get("smart_alert_preview_allow_high_volume")):
+            cmd.append("--smart-alert-preview-allow-high-volume")
     schedule_hours = web_schedule_hours_from_filters(filters)
     if schedule_hours:
         cmd += ["--schedule", schedule_hours]
