@@ -2,6 +2,7 @@ from __future__ import annotations
 
 
 _SUPPORTED_SMART_ALERT_CHANNELS = {"discord", "telegram"}
+_SMART_ALERT_CHANNEL_LABELS = {"discord": "Discord", "telegram": "Telegram"}
 
 
 def _safe_float(value) -> float | None:
@@ -221,6 +222,114 @@ def decide_smart_alert_channel_readiness(
     else:
         result["status"] = "blocked"
     return result
+
+
+def _preview_text(value, fallback: str = "") -> str:
+    text = " ".join(str(value or "").split())
+    return text or fallback
+
+
+def _channel_preview_label(channels: list[str]) -> str:
+    labels = [_SMART_ALERT_CHANNEL_LABELS.get(channel, channel) for channel in channels]
+    return ", ".join(labels) if labels else "Sin canales soportados"
+
+
+def _preview_item_line(item: dict) -> str:
+    if item.get("title"):
+        name = _preview_text(item.get("title"), "Bundle")
+        games_count = _safe_int(item.get("games_count"), 0)
+        suffix = f" · {games_count} juego(s)" if games_count else ""
+        return f"  - {name}{suffix}"
+    appid = _preview_text(item.get("appid") or item.get("steam_appid"))
+    name = _preview_text(
+        item.get("name") or item.get("steam_name"),
+        f"AppID {appid}" if appid else "Juego",
+    )
+    reason = _preview_text(item.get("reason"))
+    change_pct = _safe_float(item.get("change_pct"))
+    suffix = f" · {change_pct:+.2f}%" if change_pct is not None else ""
+    if reason:
+        suffix += f" · {reason}"
+    return f"  - {name}{suffix}"
+
+
+def _preview_section_lines(section: dict) -> list[str]:
+    label = _preview_text(section.get("label") or section.get("id"), "Sección")
+    count = max(0, _safe_int(section.get("count"), 0))
+    hidden_count = max(0, _safe_int(section.get("hidden_count"), 0))
+    items = _safe_records(section.get("items"))
+    lines = [f"{label}: {count} alerta(s)"]
+    lines.extend(_preview_item_line(item) for item in items)
+    if hidden_count:
+        lines.append(f"  … {hidden_count} más ocultas por cap")
+    return lines
+
+
+def build_smart_alert_channel_preview(
+    digest: dict | None,
+    *,
+    requested_channels=None,
+    user_opt_in: bool = False,
+    digest_reviewed: bool = False,
+    allow_high_volume: bool = False,
+) -> dict:
+    """Build a reviewable channel message preview without sending it."""
+    readiness = decide_smart_alert_channel_readiness(
+        digest,
+        requested_channels=requested_channels,
+        user_opt_in=user_opt_in,
+        digest_reviewed=digest_reviewed,
+        allow_high_volume=allow_high_volume,
+    )
+    anti_spam = (
+        readiness.get("anti_spam", {})
+        if isinstance(readiness.get("anti_spam"), dict)
+        else {}
+    )
+    sections = (
+        digest.get("sections")
+        if isinstance(digest, dict) and isinstance(digest.get("sections"), list)
+        else []
+    )
+    hidden_count = max(0, _safe_int(anti_spam.get("total_hidden_count"), 0))
+    lines = [
+        "Alertas inteligentes — preview de digest",
+        f"Canales solicitados: {_channel_preview_label(readiness.get('requested_channels', []))}",
+        (
+            f"Volumen: {_preview_text(anti_spam.get('volume_level'), 'unknown')} · "
+            f"visibles {max(0, _safe_int(anti_spam.get('visible_items_count'), 0))} · "
+            f"ocultas {hidden_count}"
+        ),
+        "Preview only: no envía Telegram/Discord, no notifica por juego y no cambia score/ranking/defaults.",
+    ]
+    if readiness.get("channel_ready"):
+        lines.append("Estado: listo para revisión de un slice futuro; send_ready permanece false.")
+    else:
+        blockers = readiness.get("blockers") if isinstance(readiness.get("blockers"), list) else []
+        lines.append(f"Estado: bloqueado ({', '.join(blockers) if blockers else 'sin alertas aptas'}).")
+    if sections:
+        for section in sections:
+            if isinstance(section, dict):
+                lines.extend(_preview_section_lines(section))
+    else:
+        lines.append("Sin secciones de alertas para previsualizar.")
+    return {
+        "schema": "smart_alert_channel_preview_v1",
+        "preview_only": True,
+        "send_ready": False,
+        "external_send_enabled": False,
+        "channels": [],
+        "requested_channels": readiness.get("requested_channels", []),
+        "channel_ready": readiness.get("channel_ready") is True,
+        "status": readiness.get("status", "blocked"),
+        "readiness": readiness,
+        "anti_spam": anti_spam,
+        "total_count": readiness.get("total_count", 0),
+        "hidden_count": hidden_count,
+        "title": "Alertas inteligentes — preview de digest",
+        "lines": lines,
+        "message": "\n".join(lines),
+    }
 
 
 def _count_global_historical_lows(

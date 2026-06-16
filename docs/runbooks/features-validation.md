@@ -226,6 +226,14 @@ Definir el contrato mínimo antes de conectar Smart Alerts v2 a Telegram/Discord
 - Payloads vacíos/malformados, ausencia de canales soportados, falta de review/opt-in, `external_send_enabled=true`, canales ya presentes o notificaciones por juego bloquean la readiness; canales no soportados se ignoran y se cuentan para diagnóstico.
 - Sigue siendo fixture-only/policy-only: no conecta Telegram/Discord, no crea UI de opt-in y no cambia runtime de notificaciones.
 
+### Corte preview builder cerrado 2026-06-16
+
+- `build_smart_alert_channel_preview(...)` construye un mensaje fixture-only a partir de `smart_alert_digest` y reutiliza `decide_smart_alert_channel_readiness(...)` para exponer readiness, blockers y canales solicitados.
+- La salida conserva `preview_only=true`, `send_ready=false`, `external_send_enabled=false` y `channels=[]`; sirve para revisión local/futura, no para envío real.
+- El mensaje agrupa por secciones del digest, muestra canal soportado solicitado, `volume_level`, visibles/ocultas, caps por sección y copy advisory-only sin compras, score, ranking ni defaults.
+- Payloads vacíos/malformados o readiness bloqueada devuelven preview bloqueado y estado vacío claro, sin fallback ni activación de Telegram/Discord.
+- Validación mínima vigente: `py_compile`, `tests.test_generator_logic.SmartAlertsTests` y `git diff --check`; no red real, `BG00G`, `--no-cache`, builds ni reportes generados.
+
 ## PAYDAY 2 data/cache y diagnóstico
 
 ### Objetivo
