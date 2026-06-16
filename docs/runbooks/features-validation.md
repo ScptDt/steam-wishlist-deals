@@ -173,6 +173,51 @@ Definir y validar el contrato para exponer `--schedule` en Web/Desktop. El sopor
 - Al cerrar Desktop, el wrapper pide `/api/stop` con token local antes de terminar el servidor lanzado para evitar dejar un run programado huérfano.
 - No se usó red real, `BG00G`, `--no-cache`, builds ni reportes generados para cerrar el slice.
 
+## Smart Alerts v2 — readiness de canales
+
+### Objetivo
+
+Definir el contrato mínimo antes de conectar Smart Alerts v2 a Telegram/Discord u otros canales externos. La base vigente sigue siendo preview/dry-run local: `smart_alert_digest` agrupa alertas, limita ítems visibles y mantiene `send_ready=false`, `external_send_enabled=false`, `channels=[]` y `per_game_notifications=false`.
+
+### Prerrequisitos para abrir integración real
+
+1. Contar con una decisión explícita de producto para activar canales como **digest agrupado**, no alertas por juego.
+2. Tener evidencia de volumen suficiente:
+   - una corrida natural futura con `price_changes`, o
+   - fixtures representativas revisadas que cubran bajo/medio/alto volumen.
+3. Mantener preview visible antes del envío: el usuario debe poder revisar qué se enviaría y cuántos ítems quedan ocultos por cap.
+4. Exigir opt-in por canal en un slice separado; no habilitar canales por defecto ni por el solo hecho de tener token/webhook configurado.
+
+### Contrato de integración futura
+
+- Enviar como un único resumen agrupado por run, reutilizando `smart_alert_digest.sections` y `anti_spam`.
+- Respetar caps visibles y `total_hidden_count`; si hay alto volumen, el mensaje debe decir que hay ítems ocultos y remitir al reporte completo.
+- Incluir `volume_level`, `visible_items_count`, `total_hidden_count` y `max_items_per_section` en la decisión de envío.
+- Preservar canales vacíos y `send_ready=false` hasta que el slice de integración cambie explícitamente esos campos con tests.
+- Si no hay secciones o el payload está malformado, no enviar nada y mostrar estado vacío/preview local.
+- El texto del canal debe conservar el tono advisory: no compra, no abre carrito/checkout, no modifica wishlist y no cambia score/ranking/defaults.
+
+### Validación mínima si se implementan canales
+
+- Tests puros del builder/policy que cubran:
+  - volumen bajo/medio/alto;
+  - caps y ocultos;
+  - payload vacío/malformado;
+  - opt-in de canal;
+  - no envío por juego;
+  - no envío cuando `send_ready=false` o falta revisión explícita.
+- Tests de Web assets/command-builder si se agrega UI de opt-in o preview.
+- Tests de notificaciones con fakes/mocks; no usar Telegram/Discord real para cerrar el slice.
+- `git diff --check` y evidencia compacta en `BITACORA.md`.
+
+### No-go
+
+- No conectar Telegram/Discord real en readiness docs-only.
+- No notificaciones por juego.
+- No default-on, daemon, scheduler nuevo, auto-send oculto ni envío solo por tener credenciales.
+- No cambiar score, ranking, Top Picks, defaults, cache, fetching ni thresholds por reacción a una corrida parcial.
+- No red real, `BG00G`, `--no-cache`, builds ni reportes generados como validación automática.
+
 ## PAYDAY 2 data/cache y diagnóstico
 
 ### Objetivo
