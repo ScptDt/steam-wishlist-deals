@@ -3,6 +3,16 @@ from __future__ import annotations
 
 _SUPPORTED_SMART_ALERT_CHANNELS = {"discord", "telegram"}
 _SMART_ALERT_CHANNEL_LABELS = {"discord": "Discord", "telegram": "Telegram"}
+_SMART_ALERT_CREDENTIAL_KEY_PARTS = (
+    "token",
+    "secret",
+    "webhook",
+    "credential",
+    "api_key",
+    "apikey",
+    "authorization",
+    "bearer",
+)
 
 
 def _safe_float(value) -> float | None:
@@ -560,6 +570,19 @@ def _safe_planned_deliveries(plan: dict) -> list[dict]:
     return [delivery for delivery in deliveries if isinstance(delivery, dict)]
 
 
+def _has_sensitive_channel_credential_key(value) -> bool:
+    if isinstance(value, dict):
+        for key, nested in value.items():
+            key_text = str(key or "").strip().lower().replace("-", "_")
+            if any(part in key_text for part in _SMART_ALERT_CREDENTIAL_KEY_PARTS):
+                return True
+            if _has_sensitive_channel_credential_key(nested):
+                return True
+    if isinstance(value, (list, tuple)):
+        return any(_has_sensitive_channel_credential_key(item) for item in value)
+    return False
+
+
 def execute_smart_alert_fake_delivery_plan(plan: dict | None, *, fake_send_fn=None) -> dict:
     """Execute a fake Smart Alerts delivery plan through an injected fake sender only."""
     result = {
@@ -597,6 +620,8 @@ def execute_smart_alert_fake_delivery_plan(plan: dict | None, *, fake_send_fn=No
         blockers.append("plan_channels_must_stay_empty")
     if plan.get("per_game_notifications") is True:
         blockers.append("per_game_notifications_forbidden")
+    if _has_sensitive_channel_credential_key(plan):
+        blockers.append("sensitive_channel_credentials_forbidden")
     plan_blockers = plan.get("blockers") if isinstance(plan.get("blockers"), list) else []
     blockers.extend(str(blocker) for blocker in plan_blockers if str(blocker or "").strip())
     if plan.get("status") != "ready_for_fake_delivery":

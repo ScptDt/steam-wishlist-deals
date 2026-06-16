@@ -10948,6 +10948,49 @@ class SmartAlertsTests(unittest.TestCase):
             ],
         )
 
+    def test_smart_alert_fake_delivery_execution_blocks_credential_fields(self) -> None:
+        digest = module_build_smart_alert_digest(
+            deals=[{"appid": "10", "name": "Alpha", "price_raw": 1000}],
+            historical_lows={},
+            active_bundles={},
+            comparison={"price_changes": {"10": {"direction": "up", "change_pct": 15.0}}},
+            local_trends={},
+            alert_rise_pct=10.0,
+        )
+        preview = module_build_smart_alert_channel_preview(
+            digest,
+            requested_channels=["telegram"],
+            user_opt_in=True,
+            digest_reviewed=True,
+        )
+        plan = module_build_smart_alert_fake_delivery_plan(preview)
+        plan["telegram_token"] = "blocked-value"
+        plan["webhook_url"] = "blocked-value"
+        plan["planned_deliveries"][0]["secret"] = "blocked-value"
+        calls: list[dict] = []
+
+        def fake_sender(payload: dict) -> dict:
+            calls.append(payload)
+            return {"ok": True}
+
+        result = module_execute_smart_alert_fake_delivery_plan(
+            plan,
+            fake_send_fn=fake_sender,
+        )
+
+        self.assertEqual(result["status"], "blocked")
+        self.assertIn("sensitive_channel_credentials_forbidden", result["blockers"])
+        self.assertEqual(result["attempts"], [])
+        self.assertEqual(calls, [])
+        self.assertEqual(result["transport"], "fake")
+        self.assertTrue(result["preview_only"])
+        self.assertTrue(result["dry_run"])
+        self.assertFalse(result["fake_send_performed"])
+        self.assertFalse(result["send_performed"])
+        self.assertFalse(result["send_ready"])
+        self.assertFalse(result["external_send_enabled"])
+        self.assertEqual(result["channels"], [])
+
     def test_smart_alert_fake_delivery_execution_blocks_without_calling_sender(self) -> None:
         digest = module_build_smart_alert_digest(
             deals=[
