@@ -40,6 +40,7 @@ from steam_deals_alerts import (
     build_smart_alert_channel_preview as module_build_smart_alert_channel_preview,
     build_smart_alert_counts as module_build_smart_alert_counts,
     build_smart_alert_digest as module_build_smart_alert_digest,
+    build_smart_alert_fake_delivery_plan as module_build_smart_alert_fake_delivery_plan,
     decide_smart_alert_channel_readiness as module_decide_smart_alert_channel_readiness,
 )
 from steam_deals_access import (
@@ -10645,6 +10646,120 @@ class SmartAlertsTests(unittest.TestCase):
         self.assertIn("send_ready_must_remain_false", malformed["readiness"]["blockers"])
         self.assertIn("external_send_must_remain_disabled", malformed["readiness"]["blockers"])
         self.assertIn("per_game_notifications_forbidden", malformed["readiness"]["blockers"])
+        self.assertFalse(malformed["send_ready"])
+        self.assertFalse(malformed["external_send_enabled"])
+        self.assertEqual(malformed["channels"], [])
+
+    def test_smart_alert_fake_delivery_plan_keeps_ready_preview_dry_run(self) -> None:
+        digest = module_build_smart_alert_digest(
+            deals=[{"appid": "10", "name": "Alpha", "price_raw": 1000}],
+            historical_lows={},
+            active_bundles={},
+            comparison={"price_changes": {"10": {"direction": "up", "change_pct": 15.0}}},
+            local_trends={},
+            alert_rise_pct=10.0,
+        )
+        preview = module_build_smart_alert_channel_preview(
+            digest,
+            requested_channels=["telegram"],
+            user_opt_in=True,
+            digest_reviewed=True,
+        )
+
+        plan = module_build_smart_alert_fake_delivery_plan(preview)
+
+        self.assertEqual(plan["schema"], "smart_alert_fake_delivery_plan_v1")
+        self.assertEqual(plan["status"], "ready_for_fake_delivery")
+        self.assertEqual(plan["transport"], "fake")
+        self.assertTrue(plan["preview_only"])
+        self.assertTrue(plan["dry_run"])
+        self.assertTrue(plan["fake_delivery"])
+        self.assertFalse(plan["send_ready"])
+        self.assertFalse(plan["external_send_enabled"])
+        self.assertEqual(plan["channels"], [])
+        self.assertEqual(plan["requested_channels"], ["telegram"])
+        self.assertEqual(plan["blockers"], [])
+        self.assertEqual(
+            plan["planned_deliveries"],
+            [
+                {
+                    "channel": "telegram",
+                    "transport": "fake",
+                    "delivery_mode": "grouped_digest",
+                    "would_send_digest": True,
+                    "send_performed": False,
+                    "per_game_notifications": False,
+                    "message_preview_available": True,
+                }
+            ],
+        )
+        self.assertIn("Alpha", plan["message"])
+        self.assertIn("Preview only", plan["message"])
+
+    def test_smart_alert_fake_delivery_plan_preserves_blockers_without_message(self) -> None:
+        digest = module_build_smart_alert_digest(
+            deals=[
+                {"appid": str(index), "name": f"Game {index}", "price_raw": 1000}
+                for index in range(1, 13)
+            ],
+            historical_lows={},
+            active_bundles={},
+            comparison={
+                "price_changes": {
+                    str(index): {"direction": "up", "change_pct": 15.0}
+                    for index in range(1, 13)
+                }
+            },
+            local_trends={},
+            alert_rise_pct=10.0,
+            max_items_per_section=2,
+        )
+        preview = module_build_smart_alert_channel_preview(
+            digest,
+            requested_channels=["discord"],
+            user_opt_in=True,
+            digest_reviewed=True,
+        )
+
+        plan = module_build_smart_alert_fake_delivery_plan(preview)
+
+        self.assertEqual(plan["status"], "blocked")
+        self.assertIn("high_volume_requires_explicit_approval", plan["blockers"])
+        self.assertEqual(plan["message"], "")
+        self.assertEqual(plan["requested_channels"], ["discord"])
+        self.assertEqual(plan["anti_spam"]["volume_level"], "high")
+        self.assertEqual(plan["anti_spam"]["total_hidden_count"], 10)
+        self.assertFalse(plan["planned_deliveries"][0]["would_send_digest"])
+        self.assertFalse(plan["planned_deliveries"][0]["send_performed"])
+        self.assertFalse(plan["external_send_enabled"])
+        self.assertEqual(plan["channels"], [])
+
+    def test_smart_alert_fake_delivery_plan_blocks_malformed_preview(self) -> None:
+        invalid = module_build_smart_alert_fake_delivery_plan(None)
+        malformed = module_build_smart_alert_fake_delivery_plan(
+            {
+                "schema": "smart_alert_channel_preview_v1",
+                "preview_only": False,
+                "send_ready": True,
+                "external_send_enabled": True,
+                "channels": ["telegram"],
+                "requested_channels": [],
+                "channel_ready": True,
+                "anti_spam": {"per_game_notifications": True},
+                "message": "should not be exposed",
+            }
+        )
+
+        self.assertEqual(invalid["blockers"], ["invalid_preview"])
+        self.assertEqual(invalid["message"], "")
+        self.assertIn("preview_only_required", malformed["blockers"])
+        self.assertIn("send_ready_must_remain_false", malformed["blockers"])
+        self.assertIn("external_send_must_remain_disabled", malformed["blockers"])
+        self.assertIn("preview_channels_must_stay_empty", malformed["blockers"])
+        self.assertIn("channel_opt_in_required", malformed["blockers"])
+        self.assertIn("per_game_notifications_forbidden", malformed["blockers"])
+        self.assertEqual(malformed["message"], "")
+        self.assertEqual(malformed["planned_deliveries"], [])
         self.assertFalse(malformed["send_ready"])
         self.assertFalse(malformed["external_send_enabled"])
         self.assertEqual(malformed["channels"], [])

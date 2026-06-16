@@ -332,6 +332,105 @@ def build_smart_alert_channel_preview(
     }
 
 
+def _valid_preview_channels(preview: dict) -> list[str]:
+    channels = preview.get("requested_channels")
+    if not isinstance(channels, list):
+        return []
+    return [str(channel).strip() for channel in channels if str(channel or "").strip()]
+
+
+def build_smart_alert_fake_delivery_plan(preview: dict | None) -> dict:
+    """Plan a fake channel delivery without touching external transports."""
+    result = {
+        "schema": "smart_alert_fake_delivery_plan_v1",
+        "transport": "fake",
+        "preview_only": True,
+        "dry_run": True,
+        "fake_delivery": True,
+        "send_ready": False,
+        "external_send_enabled": False,
+        "channels": [],
+        "requested_channels": [],
+        "delivery_mode": "grouped_digest",
+        "per_game_notifications": False,
+        "send_performed": False,
+        "status": "blocked",
+        "blockers": [],
+        "planned_deliveries": [],
+        "anti_spam": {
+            "volume_level": "unknown",
+            "visible_items_count": 0,
+            "total_hidden_count": 0,
+            "max_items_per_section": 0,
+            "per_game_notifications": False,
+            "grouped_digest": False,
+        },
+        "message": "",
+    }
+    if not isinstance(preview, dict):
+        result["blockers"] = ["invalid_preview"]
+        return result
+
+    readiness = preview.get("readiness") if isinstance(preview.get("readiness"), dict) else {}
+    anti_spam = preview.get("anti_spam") if isinstance(preview.get("anti_spam"), dict) else {}
+    requested_channels = _valid_preview_channels(preview)
+    blockers: list[str] = []
+
+    if preview.get("schema") != "smart_alert_channel_preview_v1":
+        blockers.append("invalid_preview")
+    if preview.get("preview_only") is not True:
+        blockers.append("preview_only_required")
+    if preview.get("send_ready") is not False:
+        blockers.append("send_ready_must_remain_false")
+    if preview.get("external_send_enabled") is not False:
+        blockers.append("external_send_must_remain_disabled")
+    if preview.get("channels") not in ([], None):
+        blockers.append("preview_channels_must_stay_empty")
+    if not requested_channels:
+        blockers.append("channel_opt_in_required")
+    if preview.get("channel_ready") is not True:
+        readiness_blockers = readiness.get("blockers") if isinstance(readiness.get("blockers"), list) else []
+        blockers.extend(str(blocker) for blocker in readiness_blockers if str(blocker or "").strip())
+        if not readiness_blockers:
+            blockers.append("channel_readiness_blocked")
+    if anti_spam.get("per_game_notifications") is True:
+        blockers.append("per_game_notifications_forbidden")
+
+    unique_blockers = list(dict.fromkeys(blockers))
+    ready = not unique_blockers
+    planned_deliveries = [
+        {
+            "channel": channel,
+            "transport": "fake",
+            "delivery_mode": "grouped_digest",
+            "would_send_digest": ready,
+            "send_performed": False,
+            "per_game_notifications": False,
+            "message_preview_available": bool(preview.get("message")),
+        }
+        for channel in requested_channels
+    ]
+
+    result.update(
+        {
+            "requested_channels": requested_channels,
+            "status": "ready_for_fake_delivery" if ready else "blocked",
+            "blockers": unique_blockers,
+            "planned_deliveries": planned_deliveries,
+            "anti_spam": {
+                "volume_level": str(anti_spam.get("volume_level") or "unknown"),
+                "visible_items_count": max(0, _safe_int(anti_spam.get("visible_items_count"), 0)),
+                "total_hidden_count": max(0, _safe_int(anti_spam.get("total_hidden_count"), 0)),
+                "max_items_per_section": max(0, _safe_int(anti_spam.get("max_items_per_section"), 0)),
+                "per_game_notifications": anti_spam.get("per_game_notifications") is True,
+                "grouped_digest": anti_spam.get("grouped_digest") is True,
+            },
+            "message": str(preview.get("message") or "") if ready else "",
+        }
+    )
+    return result
+
+
 def _count_global_historical_lows(
     deals: list[dict],
     historical_lows: dict[str, dict],

@@ -234,6 +234,14 @@ Definir el contrato mínimo antes de conectar Smart Alerts v2 a Telegram/Discord
 - Payloads vacíos/malformados o readiness bloqueada devuelven preview bloqueado y estado vacío claro, sin fallback ni activación de Telegram/Discord.
 - Validación mínima vigente: `py_compile`, `tests.test_generator_logic.SmartAlertsTests` y `git diff --check`; no red real, `BG00G`, `--no-cache`, builds ni reportes generados.
 
+### Corte fake delivery plan cerrado 2026-06-16
+
+- `build_smart_alert_fake_delivery_plan(...)` toma un `smart_alert_channel_preview_v1` ya revisable y produce un plan local de entrega falsa para probar el límite entre preview y transporte externo.
+- La salida conserva `transport=fake`, `preview_only=true`, `dry_run=true`, `send_ready=false`, `external_send_enabled=false`, `channels=[]`, `send_performed=false` y `per_game_notifications=false`.
+- Solo marca `ready_for_fake_delivery` cuando el preview ya está `channel_ready`; previews bloqueados, alto volumen sin aprobación, payloads inválidos, canales activos o `external_send_enabled=true` quedan bloqueados y no exponen mensaje de envío.
+- `planned_deliveries[*]` describe qué canal soportado recibiría un digest agrupado en un test/fake, pero nunca llama Telegram/Discord ni usa tokens/webhooks.
+- Validación mínima vigente: `py_compile`, `tests.test_generator_logic.SmartAlertsTests` y `git diff --check`; no red real, `BG00G`, `--no-cache`, builds ni reportes generados.
+
 ## PAYDAY 2 data/cache y diagnóstico
 
 ### Objetivo
