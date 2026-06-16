@@ -29,6 +29,7 @@ Contrato de decisión y uso para ampliar `wishlist_hygiene` con señales externa
 - Usa `external_matches` cuando el archivo viene de una biblioteca, orden, compra o bundle propio y quieres revisar si algo de la wishlist quizá ya está cubierto.
 - Usa `play_access` cuando el archivo lista juegos instalados o jugables localmente y quieres revisar acceso práctico sin compra nueva.
 - Usa `steam_access` cuando el archivo lista AppIDs propios o disponibles por Steam Family desde una fuente local explícita/helper futuro; no implica login ni cookies en la app.
+- Usa exports futuros de Playnite como collector local de **plataformas/launchers**, no como fuente de precios: biblioteca externa → `external_matches`; acceso instalado/jugable → `play_access`; juegos sin AppID claro → diagnóstico manual.
 - Usa `external_offers`/ITAD solo para comparar precios externos; ese contrato vive en `docs/runbooks/multistore-price-comparison.md` y no alimenta ownership.
 - Un precio, catálogo público o bundle público puede ser contexto, pero debe quedar fuera de `external_owned`/`external_bundle_owned` salvo que exista evidencia local explícita del usuario.
 
@@ -222,6 +223,164 @@ Reglas de interpretación:
 - Campos sensibles o sobredimensionados (`cookies`, tokens, raw responses, nombres de familiares) no forman parte del contrato público.
 - AppIDs inválidos se ignoran; duplicados se deduplican preservando orden.
 - `owned_appids` y `family_shared_appids` alimentan `play_access`/`wishlist_hygiene` como señales advisory-only; no cambian score, ranking, filtros, defaults, wishlist deletion ni auto-exclusión.
+
+## Contrato futuro: export Playnite privacy-minimized
+
+Este contrato queda como **docs-only/readiness** antes de implementar parser o add-on. Playnite puede funcionar como collector local de biblioteca multi-launcher, pero Steam Tools solo debe importar señales mínimas para revisar wishlist sin invadir privacidad.
+
+Objetivo:
+
+- decir “este juego ya aparece en GOG/Epic/Ubisoft/etc.”;
+- distinguir plataformas/launchers de rutas locales;
+- permitir revisión manual de duplicados de wishlist;
+- evitar inferir precios, ownership por catálogo público o Steam Family con certeza.
+
+### Export 1: biblioteca por plataforma
+
+Archivo sugerido: `steamtools-playnite-library.json`.
+
+Uso esperado: normalizar a `external_matches` cuando el juego aparece en una biblioteca/plataforma externa explícita.
+
+```json
+{
+  "schema": "steamtools_playnite_library_v1",
+  "source": "playnite",
+  "exported_at": "2026-06-16T12:00:00Z",
+  "items": [
+    {
+      "name": "Control Ultimate Edition",
+      "steam_appid": "870780",
+      "platforms": [
+        {
+          "store": "Epic Games Store",
+          "source_type": "official_launcher",
+          "provider_game_id": "epic-control",
+          "evidence": "playnite_library"
+        },
+        {
+          "store": "GOG",
+          "source_type": "official_launcher",
+          "provider_game_id": "gog-control",
+          "evidence": "playnite_library"
+        }
+      ]
+    }
+  ]
+}
+```
+
+Reglas:
+
+- `platforms[*].store` es el launcher/plataforma visible, no una ubicación del disco.
+- `source_type` puede ser `official_launcher`, `playnite_addon`, `manual` o `unknown`.
+- `provider_game_id` es opcional y debe quedarse en un identificador de proveedor, no rutas ni IDs de cuenta personales.
+- Si `store="Steam"`, no asumir `owned` vs `family_shared`; la señal Steam desde Playnite debe quedar como `ownership_status="unknown"` o revisión manual salvo evidencia más fuerte de `steam_access`.
+
+### Export 2: acceso local sin rutas
+
+Archivo sugerido: `steamtools-playnite-access.json`.
+
+Uso esperado: normalizar a `play_access` para señalar que Playnite considera el juego instalado o jugable, sin revelar dónde está instalado.
+
+```json
+{
+  "schema": "steamtools_playnite_access_v1",
+  "source": "playnite",
+  "exported_at": "2026-06-16T12:00:00Z",
+  "items": [
+    {
+      "name": "Hades",
+      "steam_appid": "1145360",
+      "platforms": [
+        {
+          "store": "GOG",
+          "installed": true,
+          "playable_hint": true,
+          "evidence": "playnite_access"
+        }
+      ]
+    }
+  ]
+}
+```
+
+Reglas:
+
+- `installed`/`playable_hint` son booleanos de alto nivel; no incluir `install_dir`, ejecutables, argumentos, saves, screenshots ni paths.
+- `playtime_minutes` o `last_played` quedan como campos futuros opt-in; no son necesarios para el primer parser.
+- Si solo hay acceso local pero no ownership externo claro, mostrar copy tipo “revisa antes de comprar”, no “ya es tuyo”.
+
+### Export 3: diagnóstico de no vinculados
+
+Archivo sugerido: `steamtools-playnite-unmatched.json`.
+
+Uso esperado: revisión manual de juegos de Playnite sin AppID Steam confiable; no debe alimentar ownership automático.
+
+```json
+{
+  "schema": "steamtools_playnite_unmatched_v1",
+  "source": "playnite",
+  "exported_at": "2026-06-16T12:00:00Z",
+  "items": [
+    {
+      "name": "Some GOG Game",
+      "store": "GOG",
+      "provider_game_id": "gog-999",
+      "reason": "steam_appid_missing"
+    }
+  ]
+}
+```
+
+### Campos prohibidos en exports Playnite
+
+No exportar:
+
+- rutas locales (`install_dir`, `executable`, carpetas de usuario, working directories);
+- nombres de usuario del sistema, paths de saves/screenshots/config;
+- cookies, tokens, credenciales, headers, raw launcher metadata o logs;
+- IDs de cuenta de launchers externos salvo que el usuario los escriba explícitamente en otro contrato;
+- acciones de launch/play/install/uninstall.
+
+### Steam Family queda fuera de Playnite
+
+Playnite no debe usarse para afirmar Steam Family. La API pública de Steam/Playnite no da una señal fiable de “propio” vs “prestado por familia” para todos los casos.
+
+Contrato futuro separado para perfiles Family opcionales:
+
+```json
+{
+  "schema": "steamtools_family_profiles_v1",
+  "members": [
+    {
+      "label": "Familia 1",
+      "steam_profile": "https://steamcommunity.com/id/example-user"
+    },
+    {
+      "label": "Familia 2",
+      "steam_id": "76561198000000000"
+    }
+  ]
+}
+```
+
+Reglas para este contrato futuro:
+
+- `label` debe ser local y no tiene que ser nombre real.
+- Consultar bibliotecas públicas por SteamID/custom URL solo puede producir `family_review_needed`, no certeza de acceso.
+- Si la biblioteca no es pública, Steam rate-limitea o no hay coincidencia, no asumir “no lo tiene”.
+- No login, cookies, tokens, scraping autenticado, friends/family names, mutaciones Steam ni auto-remoción de wishlist.
+
+### Add-on Playnite futuro
+
+Si se implementa, debe ser un add-on local tipo exporter que lea la biblioteca de Playnite y emita estos JSONs con acción explícita del usuario. La ruta de salida debe elegirse con diálogo de guardado; no escribir en carpetas de instalación ni enviar datos al server local por defecto.
+
+Validación esperada antes de código:
+
+1. Fixtures locales para los tres schemas válidos, vacíos y malformados.
+2. Tests de parser que confirmen que `platforms[*].store` genera copy “lo tienes en X/Y” sin rutas.
+3. Tests de denylist para campos prohibidos (`install_dir`, `path`, `executable`, `token`, `cookie`, `raw`).
+4. Verificar que Steam desde Playnite no se convierte automáticamente en `family_shared`.
 
 ## Plan 6A: contrato futuro del helper/browser extension Steam
 

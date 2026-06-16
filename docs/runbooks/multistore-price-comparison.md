@@ -35,6 +35,7 @@ Regla: un precio externo nunca equivale a “ya lo tienes”. Para ownership ext
 - Usa `external_offers` para comparar precio/disponibilidad fuera de Steam. Puede venir de caché ITAD local o de refresh ITAD opt-in, y nunca cambia score/ranking ni prueba ownership.
 - Usa `external_matches` cuando el usuario aporta una biblioteca, orden, compra o bundle propio para que `wishlist_hygiene` sugiera revisión manual.
 - Usa `play_access` cuando el usuario aporta juegos instalados/jugables localmente para revisar acceso práctico sin compra nueva.
+- Usa exports futuros de Playnite solo como biblioteca/acceso local (`external_matches`/`play_access`); no son fuente de precios ni reemplazan ITAD/GG.deals para `external_offers`.
 - Trabajar los tres frentes es válido, pero deben avanzar como slices separados: primero UX/contrato claro, luego parsers locales con exports concretos, y solo después live smoke ITAD si hay key oficial y aprobación explícita.
 
 ## Readiness offline para elegir el próximo slice
