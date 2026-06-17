@@ -197,6 +197,20 @@ Definir el contrato mínimo antes de conectar Smart Alerts v2 a Telegram/Discord
 - Si no hay secciones o el payload está malformado, no enviar nada y mostrar estado vacío/preview local.
 - El texto del canal debe conservar el tono advisory: no compra, no abre carrito/checkout, no modifica wishlist y no cambia score/ranking/defaults.
 
+### Contrato integración real v0 (docs-only 2026-06-17)
+
+- **Alcance del envío**: un único digest agrupado por corrida y por canal seleccionado; nunca alertas por juego, loops de retry agresivos, scheduler, autostart ni auto-send al detectar credenciales.
+- **Gates obligatorios antes de un envío real futuro**:
+  1. `smart_alert_digest` válido con secciones, `grouped_digest=true`, `per_game_notifications=false` y sin claves sensibles.
+  2. Opt-in explícito por canal soportado y default-off en cualquier superficie que lo active.
+  3. Preview revisable con mensaje, canales solicitados, volumen, caps, visibles/ocultos y blockers antes de cualquier transporte.
+  4. Confirmación explícita de envío para ese run; alto volumen requiere confirmación adicional o queda bloqueado.
+  5. Tests fake/mock verdes para success, bloqueo, credenciales sensibles, volumen alto, errores de transporte y ausencia de secciones antes de cualquier smoke real.
+- **Estado y flags**: previews/fakes siguen con `send_ready=false`, `external_send_enabled=false`, `channels=[]` y `send_performed=false`; un slice futuro debe justificar con tests cuándo y dónde puede aparecer un intento real sin cambiar defaults globales.
+- **Credenciales y privacidad**: tokens/webhooks viven solo en config/env local, nunca en reportes, previews, logs, BITACORA, URLs de ejemplo ni payloads exportados; errores públicos deben redactar secretos y respuestas crudas del proveedor.
+- **Política anti-spam**: alto volumen debe mostrar `total_hidden_count`, limitar ítems visibles, referir al reporte local completo y evitar reintentos automáticos que dupliquen mensajes.
+- **Fases permitidas**: primero contrato/diseño; luego implementación con fakes/mocks; solo después, si se aprueba aparte, smoke real mínimo con credenciales locales no compartidas y documentación específica de Telegram/Discord consultada en ese momento.
+
 ### Validación mínima si se implementan canales
 
 - Tests puros del builder/policy que cubran:
