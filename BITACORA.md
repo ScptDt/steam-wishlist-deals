@@ -1,6 +1,6 @@
 # Bitácora Operativa
 
-Ultima actualizacion: 2026-06-16
+Ultima actualizacion: 2026-06-17
 
 ## Proposito
 
@@ -79,6 +79,8 @@ La nota de inicio puede omitirse en `BITACORA.md` para cambios triviales que no 
 | 2026-04-16 | macOS | validado en CI (parcial) | Workflow `Desktop Cross-Platform Validation` OK en `macos-latest` (run `24487556896`): install deps, build desktop, `py_compile`, check fallback local y artifact `dist-macos-latest` publicado. Falta validacion manual en host macOS para apertura de `.app`, quarantine/codesign/notarizacion segun distribucion. | Ejecutar checklist manual macOS (apertura local, quarantine, codesign) y registrar incidencias/workarounds. |
 
 ## Bitacora
+
+- 2026-06-17: Cierre fixture-only Smart Alerts v2 mock channel sender adapter. Autor/ejecutor: OpenCoder. Resultado: `app/steam_deals_alerts.py` agrega `send_smart_alert_mock_channel_payload(...)` y `build_smart_alert_mock_channel_sender(...)` para validar payloads fake de canal como adaptador inyectable sin transporte externo; acepta solo canales soportados con digest agrupado, `transport=fake`, `preview_only=true`, `dry_run=true`, `would_send_digest=true`, `send_performed=false` y sin claves sensibles, y bloquea payloads inseguros o fallos mock sin tocar Telegram/Discord. Evidencia: `PYTHONDONTWRITEBYTECODE=1 .venv/bin/python -m py_compile app/steam_deals_alerts.py steam_deals_alerts.py tests/test_generator_logic.py` OK, `.venv/bin/python -m unittest tests.test_generator_logic.SmartAlertsTests` (39 OK) y `git diff --check` OK. Incidencias: se detectaron ediciones iniciales sin aprobación formal; se detuvo, se pidió aprobación y luego se validó el slice. Guardrails: fixture-only/mock-only, sin Telegram/Discord real, tokens, webhooks, red real, scheduler/autostart, envíos por juego, score/ranking/defaults/cache/fetching, `BG00G`, `--no-cache`, builds ni reportes generados.
 
 - 2026-06-17: Cierre fixture-only Smart Alerts v2 mock channel integration. Autor/ejecutor: OpenCoder. Resultado: `app/steam_deals_alerts.py` agrega `execute_smart_alert_mock_channel_integration(...)`, helper puro que encadena digest, opt-in preview, fake delivery plan y fake sender inyectado para validar el flujo completo de canales sin transporte externo; conserva `transport=fake`, `preview_only=true`, `dry_run=true`, `send_ready=false`, `external_send_enabled=false`, `channels=[]` y `send_performed=false`, y bloquea digest inválido, falta de fake sender, alto volumen no aprobado o credenciales sensibles antes de llamar al fake sender. Evidencia: `PYTHONDONTWRITEBYTECODE=1 .venv/bin/python -m py_compile app/steam_deals_alerts.py steam_deals_alerts.py tests/test_generator_logic.py` OK, `.venv/bin/python -m unittest tests.test_generator_logic.SmartAlertsTests` (37 OK) y `git diff --check` OK. Incidencias: ninguna. Guardrails: fixture-only/mock-only, sin Telegram/Discord real, tokens, webhooks, red real, scheduler/autostart, envíos por juego, score/ranking/defaults/cache/fetching, `BG00G`, `--no-cache`, builds ni reportes generados.
 

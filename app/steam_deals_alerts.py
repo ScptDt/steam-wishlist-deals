@@ -694,6 +694,101 @@ def _blocked_smart_alert_fake_delivery_result(blockers: list[str]) -> dict:
     }
 
 
+def _blocked_smart_alert_mock_channel_send_result(channel: str, blockers: list[str]) -> dict:
+    return {
+        "schema": "smart_alert_mock_channel_send_result_v1",
+        "transport": "fake",
+        "preview_only": True,
+        "dry_run": True,
+        "channel": channel,
+        "ok": False,
+        "status": "blocked",
+        "blockers": list(dict.fromkeys(blockers)),
+        "send_performed": False,
+        "fake_send_performed": False,
+        "external_send_enabled": False,
+        "channels": [],
+    }
+
+
+def _safe_delivery(payload: dict) -> dict:
+    delivery = payload.get("delivery")
+    return delivery if isinstance(delivery, dict) else {}
+
+
+def send_smart_alert_mock_channel_payload(
+    payload: dict | None,
+    *,
+    supported_channels=None,
+    fail_channels=None,
+) -> dict:
+    """Validate a fake channel payload as if a channel adapter accepted it."""
+    if not isinstance(payload, dict):
+        return _blocked_smart_alert_mock_channel_send_result("", ["invalid_payload"])
+    channel = str(payload.get("channel") or "").strip().lower()
+    supported, _unsupported = _channel_request_names(
+        sorted(_SUPPORTED_SMART_ALERT_CHANNELS) if supported_channels is None else supported_channels
+    )
+    failures, _ignored = _channel_request_names(fail_channels or [])
+    delivery = _safe_delivery(payload)
+    blockers: list[str] = []
+
+    if not channel or channel not in supported:
+        blockers.append("unsupported_channel")
+    if payload.get("transport") != "fake":
+        blockers.append("fake_transport_required")
+    if payload.get("preview_only") is not True or payload.get("dry_run") is not True:
+        blockers.append("dry_run_preview_required")
+    if not str(payload.get("message") or "").strip():
+        blockers.append("message_required")
+    if delivery.get("delivery_mode") != "grouped_digest":
+        blockers.append("grouped_digest_required")
+    if delivery.get("per_game_notifications") is True:
+        blockers.append("per_game_notifications_forbidden")
+    if delivery.get("send_performed") is not False:
+        blockers.append("send_performed_must_remain_false")
+    if delivery.get("would_send_digest") is not True:
+        blockers.append("would_send_digest_required")
+    if _has_sensitive_channel_credential_key(payload):
+        blockers.append("sensitive_channel_credentials_forbidden")
+    if channel in failures:
+        blockers.append("mock_channel_failure_requested")
+    if blockers:
+        status = "mock_channel_send_failed" if blockers == ["mock_channel_failure_requested"] else "blocked"
+        result = _blocked_smart_alert_mock_channel_send_result(channel, blockers)
+        result["status"] = status
+        result["fake_send_performed"] = status == "mock_channel_send_failed"
+        return result
+    return {
+        "schema": "smart_alert_mock_channel_send_result_v1",
+        "transport": "fake",
+        "preview_only": True,
+        "dry_run": True,
+        "channel": channel,
+        "ok": True,
+        "status": "mock_channel_send_accepted",
+        "blockers": [],
+        "send_performed": False,
+        "fake_send_performed": True,
+        "external_send_enabled": False,
+        "channels": [],
+        "message_length": len(str(payload.get("message") or "")),
+    }
+
+
+def build_smart_alert_mock_channel_sender(*, supported_channels=None, fail_channels=None):
+    """Return an injected fake sender for channel integration tests."""
+
+    def _fake_sender(payload: dict) -> dict:
+        return send_smart_alert_mock_channel_payload(
+            payload,
+            supported_channels=supported_channels,
+            fail_channels=fail_channels,
+        )
+
+    return _fake_sender
+
+
 def execute_smart_alert_mock_channel_integration(
     digest: dict | None,
     *,

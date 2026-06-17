@@ -37,6 +37,7 @@ from share_payload import (
     normalize_share_payload,
 )
 from steam_deals_alerts import (
+    build_smart_alert_mock_channel_sender as module_build_smart_alert_mock_channel_sender,
     build_smart_alert_channel_opt_in_preview as module_build_smart_alert_channel_opt_in_preview,
     build_smart_alert_channel_preview as module_build_smart_alert_channel_preview,
     build_smart_alert_counts as module_build_smart_alert_counts,
@@ -45,6 +46,7 @@ from steam_deals_alerts import (
     decide_smart_alert_channel_readiness as module_decide_smart_alert_channel_readiness,
     execute_smart_alert_fake_delivery_plan as module_execute_smart_alert_fake_delivery_plan,
     execute_smart_alert_mock_channel_integration as module_execute_smart_alert_mock_channel_integration,
+    send_smart_alert_mock_channel_payload as module_send_smart_alert_mock_channel_payload,
 )
 from steam_deals_access import (
     build_play_access_contract,
@@ -11645,6 +11647,33 @@ class SmartAlertsTests(unittest.TestCase):
         self.assertTrue(captured_payloads[0]["preview_only"])
         self.assertIn("Alpha", captured_payloads[0]["message"])
 
+    def test_smart_alert_mock_channel_integration_uses_fake_channel_sender_adapter(self) -> None:
+        digest = module_build_smart_alert_digest(
+            deals=[{"appid": "10", "name": "Alpha", "price_raw": 1000}],
+            historical_lows={},
+            active_bundles={},
+            comparison={"price_changes": {"10": {"direction": "up", "change_pct": 15.0}}},
+            local_trends={},
+            alert_rise_pct=10.0,
+        )
+        fake_sender = module_build_smart_alert_mock_channel_sender()
+
+        result = module_execute_smart_alert_mock_channel_integration(
+            digest,
+            requested_channels=["discord"],
+            user_opt_in=True,
+            digest_reviewed=True,
+            fake_send_fn=fake_sender,
+        )
+
+        self.assertEqual(result["status"], "fake_delivery_completed")
+        self.assertEqual(result["fake_delivery_result"]["attempts"][0]["channel"], "discord")
+        self.assertTrue(result["fake_send_performed"])
+        self.assertFalse(result["send_performed"])
+        self.assertFalse(result["send_ready"])
+        self.assertFalse(result["external_send_enabled"])
+        self.assertEqual(result["channels"], [])
+
     def test_smart_alert_mock_channel_integration_blocks_without_fake_sender(self) -> None:
         digest = module_build_smart_alert_digest(
             deals=[{"appid": "10", "name": "Alpha", "price_raw": 1000}],
@@ -11668,6 +11697,38 @@ class SmartAlertsTests(unittest.TestCase):
         self.assertFalse(result["fake_send_performed"])
         self.assertFalse(result["send_performed"])
         self.assertFalse(result["send_ready"])
+        self.assertFalse(result["external_send_enabled"])
+        self.assertEqual(result["channels"], [])
+
+    def test_smart_alert_mock_channel_sender_blocks_unsafe_payloads(self) -> None:
+        result = module_send_smart_alert_mock_channel_payload(
+            {
+                "channel": "email",
+                "message": "should not send",
+                "delivery": {
+                    "delivery_mode": "per_game",
+                    "would_send_digest": False,
+                    "send_performed": True,
+                    "per_game_notifications": True,
+                    "webhook_url": "blocked-value",
+                },
+                "transport": "real",
+                "preview_only": False,
+                "dry_run": False,
+            }
+        )
+
+        self.assertFalse(result["ok"])
+        self.assertEqual(result["status"], "blocked")
+        self.assertIn("unsupported_channel", result["blockers"])
+        self.assertIn("fake_transport_required", result["blockers"])
+        self.assertIn("dry_run_preview_required", result["blockers"])
+        self.assertIn("grouped_digest_required", result["blockers"])
+        self.assertIn("per_game_notifications_forbidden", result["blockers"])
+        self.assertIn("send_performed_must_remain_false", result["blockers"])
+        self.assertIn("would_send_digest_required", result["blockers"])
+        self.assertIn("sensitive_channel_credentials_forbidden", result["blockers"])
+        self.assertFalse(result["send_performed"])
         self.assertFalse(result["external_send_enabled"])
         self.assertEqual(result["channels"], [])
 

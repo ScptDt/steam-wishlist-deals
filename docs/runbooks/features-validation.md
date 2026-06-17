@@ -267,6 +267,14 @@ Definir el contrato mínimo antes de conectar Smart Alerts v2 a Telegram/Discord
 - Este corte sigue siendo fixture-only/mock-only; no habilita Telegram/Discord real, tokens/webhooks, scheduler, envío por juego, default-on ni cambios de score/ranking/defaults/cache/fetching.
 - Validación mínima vigente: `py_compile`, `tests.test_generator_logic.SmartAlertsTests` y `git diff --check`; no red real, `BG00G`, `--no-cache`, builds ni reportes generados.
 
+### Corte mock channel sender adapter cerrado 2026-06-17
+
+- `send_smart_alert_mock_channel_payload(...)` y `build_smart_alert_mock_channel_sender(...)` agregan un adaptador fake inyectable para validar payloads de canal sin transporte externo.
+- El adaptador solo acepta canales soportados con `transport=fake`, `preview_only=true`, `dry_run=true`, digest agrupado, `would_send_digest=true`, `send_performed=false` y sin credenciales sensibles.
+- Payloads con canal no soportado, transporte real, per-game delivery, falta de mensaje, `send_performed=true`, falta de intención de digest o claves tipo token/webhook quedan bloqueados localmente.
+- El mock puede simular fallo de canal para probar el límite fake sin red y preserva `send_ready=false`, `external_send_enabled=false`, `channels=[]` y `send_performed=false`.
+- Validación mínima vigente: `py_compile`, `tests.test_generator_logic.SmartAlertsTests` (39 OK) y `git diff --check`; no Telegram/Discord real, tokens, webhooks, red real, `BG00G`, `--no-cache`, builds ni reportes generados.
+
 ## PAYDAY 2 data/cache y diagnóstico
 
 ### Objetivo
