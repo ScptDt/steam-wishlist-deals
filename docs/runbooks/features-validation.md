@@ -297,10 +297,18 @@ Definir el contrato mínimo antes de conectar Smart Alerts v2 a Telegram/Discord
 - El resultado sigue preservando `send_ready=false`, `external_send_enabled=false`, `channels=[]`, `send_performed=false` y `transport=fake`.
 - Validación mínima vigente: `py_compile`, `tests.test_generator_logic.SmartAlertsTests` (41 OK) y `git diff --check`; no Telegram/Discord real, tokens, webhooks, red real, `BG00G`, `--no-cache`, builds ni reportes generados.
 
+### Corte real-channel gating v0 local cerrado 2026-06-17
+
+- `decide_smart_alert_real_channel_attempt(...)` modela la elegibilidad local para un intento real futuro sin activar transporte: `transport=none`, `preview_only=true`, `dry_run=true`, `real_send_enabled=false`, `send_ready=false`, `external_send_enabled=false`, `channels=[]` y `send_performed=false`.
+- Requiere digest agrupado válido, canal soportado sin solicitudes no soportadas, opt-in, review del digest, confirmación explícita de envío, configuración de canal verificada fuera del payload y validación fake/mock previa.
+- Volumen alto sigue bloqueado hasta confirmación adicional; el resultado conserva `anti_spam`, caps/ocultos y el `channel_preview` revisable para explicar la decisión sin enviar nada.
+- Bloquea payloads malformados/vacíos, canales activos, `send_ready=true`, `external_send_enabled=true`, `send_performed=true`, per-game notifications, claves sensibles y señales de transporte real.
+- Validación mínima vigente: `py_compile`, `tests.test_generator_logic.SmartAlertsTests` (44 OK) y `git diff --check`; no Telegram/Discord real, tokens, webhooks, red real, `BG00G`, `--no-cache`, builds ni reportes generados.
+
 ### Estado fake/mock cerrado 2026-06-17
 
 - No queda un siguiente corte fixture-only obligatorio para Smart Alerts v2: readiness, preview, opt-in, fake delivery, fake sender, mock channel sender e intentos con diagnósticos acotados ya cubren la frontera local sin transporte externo.
-- El track sigue abierto solo por dos disparadores: una corrida natural futura con `price_changes` para revisar volumen/caps, o una decisión explícita para diseñar integración real de canales como digest agrupado opt-in.
+- El track sigue abierto solo por dos disparadores: una corrida natural futura con `price_changes` para revisar volumen/caps, o una decisión explícita para continuar la integración real de canales después del gating local.
 - Cualquier integración real debe empezar como contrato/diseño aprobado, conservar preview revisable, límites anti-spam y fakes/mocks, y no activar `send_ready`, `external_send_enabled` ni `channels` sin otro slice validado.
 - No usar este cierre para conectar Telegram/Discord real, tokens/webhooks, red real, scheduler/autostart, envíos por juego, default-on ni cambios de score/ranking/defaults/cache/fetching.
 

@@ -416,6 +416,94 @@ def _opt_in_review_state(
     }
 
 
+def _real_channel_attempt_base_result() -> dict:
+    return {
+        "schema": "smart_alert_real_channel_attempt_decision_v0",
+        "transport": "none",
+        "preview_only": True,
+        "dry_run": True,
+        "real_send_enabled": False,
+        "send_ready": False,
+        "external_send_enabled": False,
+        "channels": [],
+        "send_performed": False,
+        "eligible_for_real_attempt": False,
+        "status": "blocked",
+        "blockers": [],
+        "reason_codes": ["local_gate_no_transport"],
+        "requested_channels": [],
+        "unsupported_channels_count": 0,
+        "anti_spam": {},
+        "channel_preview": None,
+    }
+
+
+def decide_smart_alert_real_channel_attempt(
+    digest: dict | None,
+    *,
+    requested_channels=None,
+    user_opt_in: bool = False,
+    digest_reviewed: bool = False,
+    send_confirmed: bool = False,
+    channel_configured: bool = False,
+    fake_mock_validated: bool = False,
+    high_volume_confirmed: bool = False,
+) -> dict:
+    """Gate a future real-channel attempt without enabling transport."""
+    result = _real_channel_attempt_base_result()
+    preview = build_smart_alert_channel_preview(
+        digest,
+        requested_channels=requested_channels,
+        user_opt_in=user_opt_in,
+        digest_reviewed=digest_reviewed,
+        allow_high_volume=high_volume_confirmed,
+    )
+    readiness = preview.get("readiness") if isinstance(preview.get("readiness"), dict) else {}
+    anti_spam = preview.get("anti_spam") if isinstance(preview.get("anti_spam"), dict) else {}
+    unsupported_count = max(0, _safe_int(readiness.get("unsupported_channels_count"), 0))
+    blockers = [str(blocker) for blocker in readiness.get("blockers", []) if str(blocker or "").strip()]
+    if unsupported_count:
+        blockers.append("unsupported_channels_requested")
+    if _has_real_channel_transport_hint(digest):
+        blockers.append("real_transport_forbidden")
+    if _has_true_named_key(digest, {"send_performed"}):
+        blockers.append("send_performed_must_remain_false")
+    if _has_sensitive_channel_credential_key(digest):
+        blockers.append("sensitive_channel_credentials_forbidden")
+    if not channel_configured:
+        blockers.append("channel_configuration_required")
+    if not send_confirmed:
+        blockers.append("send_confirmation_required")
+    if not fake_mock_validated:
+        blockers.append("fake_mock_validation_required")
+    if str(anti_spam.get("volume_level") or "") == "high" and not high_volume_confirmed:
+        blockers.append("high_volume_confirmation_required")
+
+    unique_blockers = list(dict.fromkeys(blockers))
+    reasons = list(dict.fromkeys(result["reason_codes"] + readiness.get("reason_codes", [])))
+    if send_confirmed:
+        reasons.append("send_confirmation_recorded")
+    if channel_configured:
+        reasons.append("channel_configuration_present")
+    if fake_mock_validated:
+        reasons.append("fake_mock_validation_recorded")
+    if high_volume_confirmed:
+        reasons.append("high_volume_confirmation_recorded")
+    result.update(
+        {
+            "eligible_for_real_attempt": not unique_blockers,
+            "status": "eligible_for_future_real_channel_attempt" if not unique_blockers else "blocked",
+            "blockers": unique_blockers,
+            "reason_codes": list(dict.fromkeys(reasons)),
+            "requested_channels": preview.get("requested_channels", []),
+            "unsupported_channels_count": unsupported_count,
+            "anti_spam": anti_spam,
+            "channel_preview": preview,
+        }
+    )
+    return result
+
+
 def build_smart_alert_channel_opt_in_preview(
     digest: dict | None,
     *,
@@ -593,6 +681,33 @@ def _has_sensitive_channel_credential_key(value) -> bool:
                 return True
     if isinstance(value, (list, tuple)):
         return any(_has_sensitive_channel_credential_key(item) for item in value)
+    return False
+
+
+def _has_real_channel_transport_hint(value) -> bool:
+    if isinstance(value, dict):
+        for key, nested in value.items():
+            key_text = str(key or "").strip().lower().replace("-", "_")
+            if key_text in {"transport", "transport_mode", "delivery_transport"}:
+                if str(nested or "").strip().lower() == "real":
+                    return True
+            if _has_real_channel_transport_hint(nested):
+                return True
+    if isinstance(value, (list, tuple)):
+        return any(_has_real_channel_transport_hint(item) for item in value)
+    return False
+
+
+def _has_true_named_key(value, names: set[str]) -> bool:
+    if isinstance(value, dict):
+        for key, nested in value.items():
+            key_text = str(key or "").strip().lower().replace("-", "_")
+            if key_text in names and nested is True:
+                return True
+            if _has_true_named_key(nested, names):
+                return True
+    if isinstance(value, (list, tuple)):
+        return any(_has_true_named_key(item, names) for item in value)
     return False
 
 

@@ -44,6 +44,7 @@ from steam_deals_alerts import (
     build_smart_alert_digest as module_build_smart_alert_digest,
     build_smart_alert_fake_delivery_plan as module_build_smart_alert_fake_delivery_plan,
     decide_smart_alert_channel_readiness as module_decide_smart_alert_channel_readiness,
+    decide_smart_alert_real_channel_attempt as module_decide_smart_alert_real_channel_attempt,
     execute_smart_alert_fake_delivery_plan as module_execute_smart_alert_fake_delivery_plan,
     execute_smart_alert_mock_channel_integration as module_execute_smart_alert_mock_channel_integration,
     send_smart_alert_mock_channel_payload as module_send_smart_alert_mock_channel_payload,
@@ -11883,6 +11884,164 @@ class SmartAlertsTests(unittest.TestCase):
         self.assertFalse(result["send_performed"])
         self.assertFalse(result["external_send_enabled"])
         self.assertEqual(result["channels"], [])
+
+    def test_smart_alert_real_channel_attempt_allows_confirmed_low_volume_without_sending(self) -> None:
+        digest = module_build_smart_alert_digest(
+            deals=[{"appid": "10", "name": "Alpha", "price_raw": 1000}],
+            historical_lows={},
+            active_bundles={},
+            comparison={"price_changes": {"10": {"direction": "up", "change_pct": 15.0}}},
+            local_trends={},
+            alert_rise_pct=10.0,
+        )
+
+        result = module_decide_smart_alert_real_channel_attempt(
+            digest,
+            requested_channels=["telegram"],
+            user_opt_in=True,
+            digest_reviewed=True,
+            send_confirmed=True,
+            channel_configured=True,
+            fake_mock_validated=True,
+        )
+
+        self.assertEqual(result["schema"], "smart_alert_real_channel_attempt_decision_v0")
+        self.assertEqual(result["status"], "eligible_for_future_real_channel_attempt")
+        self.assertTrue(result["eligible_for_real_attempt"])
+        self.assertEqual(result["transport"], "none")
+        self.assertTrue(result["preview_only"])
+        self.assertTrue(result["dry_run"])
+        self.assertFalse(result["real_send_enabled"])
+        self.assertFalse(result["send_ready"])
+        self.assertFalse(result["external_send_enabled"])
+        self.assertEqual(result["channels"], [])
+        self.assertFalse(result["send_performed"])
+        self.assertEqual(result["requested_channels"], ["telegram"])
+        self.assertEqual(result["unsupported_channels_count"], 0)
+        self.assertEqual(result["blockers"], [])
+        self.assertIn("local_gate_no_transport", result["reason_codes"])
+        self.assertIn("send_confirmation_recorded", result["reason_codes"])
+        self.assertIn("channel_configuration_present", result["reason_codes"])
+        self.assertIn("fake_mock_validation_recorded", result["reason_codes"])
+        self.assertEqual(result["anti_spam"]["volume_level"], "low")
+        self.assertEqual(result["channel_preview"]["schema"], "smart_alert_channel_preview_v1")
+        self.assertFalse(result["channel_preview"]["send_ready"])
+        self.assertFalse(result["channel_preview"]["external_send_enabled"])
+        self.assertEqual(result["channel_preview"]["channels"], [])
+
+    def test_smart_alert_real_channel_attempt_blocks_missing_gates_and_unsafe_payload(self) -> None:
+        result = module_decide_smart_alert_real_channel_attempt(
+            {
+                "mode": "sent",
+                "dry_run": False,
+                "send_ready": True,
+                "send_performed": True,
+                "transport": "real",
+                "notification_policy": {
+                    "external_send_enabled": True,
+                    "channels": ["telegram"],
+                },
+                "anti_spam": {
+                    "volume_level": "low",
+                    "grouped_digest": False,
+                    "per_game_notifications": True,
+                },
+                "sections": [],
+                "total_count": 0,
+                "telegram_token": "blocked-value",
+            },
+            requested_channels=["email"],
+            user_opt_in=False,
+            digest_reviewed=False,
+            send_confirmed=False,
+            channel_configured=False,
+            fake_mock_validated=False,
+        )
+
+        self.assertFalse(result["eligible_for_real_attempt"])
+        self.assertEqual(result["status"], "blocked")
+        self.assertEqual(result["requested_channels"], [])
+        self.assertEqual(result["unsupported_channels_count"], 1)
+        for blocker in [
+            "preview_digest_required",
+            "send_ready_must_remain_false",
+            "external_send_must_remain_disabled",
+            "digest_channels_must_stay_empty",
+            "grouped_digest_required",
+            "per_game_notifications_forbidden",
+            "no_alerts_to_send",
+            "channel_opt_in_required",
+            "unsupported_channels_requested",
+            "user_channel_opt_in_required",
+            "digest_review_required",
+            "real_transport_forbidden",
+            "send_performed_must_remain_false",
+            "sensitive_channel_credentials_forbidden",
+            "channel_configuration_required",
+            "send_confirmation_required",
+            "fake_mock_validation_required",
+        ]:
+            self.assertIn(blocker, result["blockers"])
+        self.assertFalse(result["real_send_enabled"])
+        self.assertFalse(result["send_ready"])
+        self.assertFalse(result["external_send_enabled"])
+        self.assertEqual(result["channels"], [])
+        self.assertFalse(result["send_performed"])
+
+    def test_smart_alert_real_channel_attempt_requires_extra_high_volume_confirmation(self) -> None:
+        digest = module_build_smart_alert_digest(
+            deals=[
+                {"appid": str(index), "name": f"Game {index}", "price_raw": 1000}
+                for index in range(1, 13)
+            ],
+            historical_lows={},
+            active_bundles={},
+            comparison={
+                "price_changes": {
+                    str(index): {"direction": "up", "change_pct": 15.0}
+                    for index in range(1, 13)
+                }
+            },
+            local_trends={},
+            alert_rise_pct=10.0,
+            max_items_per_section=2,
+        )
+
+        blocked = module_decide_smart_alert_real_channel_attempt(
+            digest,
+            requested_channels=["discord"],
+            user_opt_in=True,
+            digest_reviewed=True,
+            send_confirmed=True,
+            channel_configured=True,
+            fake_mock_validated=True,
+        )
+        approved = module_decide_smart_alert_real_channel_attempt(
+            digest,
+            requested_channels=["discord"],
+            user_opt_in=True,
+            digest_reviewed=True,
+            send_confirmed=True,
+            channel_configured=True,
+            fake_mock_validated=True,
+            high_volume_confirmed=True,
+        )
+
+        self.assertFalse(blocked["eligible_for_real_attempt"])
+        self.assertIn("high_volume_requires_explicit_approval", blocked["blockers"])
+        self.assertIn("high_volume_confirmation_required", blocked["blockers"])
+        self.assertEqual(blocked["anti_spam"]["volume_level"], "high")
+        self.assertEqual(blocked["anti_spam"]["total_hidden_count"], 10)
+        self.assertFalse(blocked["send_performed"])
+        self.assertTrue(approved["eligible_for_real_attempt"])
+        self.assertEqual(approved["blockers"], [])
+        self.assertIn("high_volume_confirmation_recorded", approved["reason_codes"])
+        self.assertIn("high_volume_digest", approved["reason_codes"])
+        self.assertFalse(approved["real_send_enabled"])
+        self.assertFalse(approved["send_ready"])
+        self.assertFalse(approved["external_send_enabled"])
+        self.assertEqual(approved["channels"], [])
+        self.assertFalse(approved["send_performed"])
 
     def test_generator_smart_alerts_wrapper_accepts_empty_sources(self) -> None:
         result = generator_build_smart_alert_counts(
