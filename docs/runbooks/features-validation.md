@@ -275,6 +275,14 @@ Definir el contrato mínimo antes de conectar Smart Alerts v2 a Telegram/Discord
 - El mock puede simular fallo de canal para probar el límite fake sin red y preserva `send_ready=false`, `external_send_enabled=false`, `channels=[]` y `send_performed=false`.
 - Validación mínima vigente: `py_compile`, `tests.test_generator_logic.SmartAlertsTests` (39 OK) y `git diff --check`; no Telegram/Discord real, tokens, webhooks, red real, `BG00G`, `--no-cache`, builds ni reportes generados.
 
+### Corte mock channel diagnostics cerrado 2026-06-17
+
+- `execute_smart_alert_fake_delivery_plan(...)` conserva en cada intento una respuesta diagnóstica acotada cuando el sender inyectado devuelve `smart_alert_mock_channel_send_result_v1`.
+- Los diagnósticos incluyen solo schema/status, blockers allowlisted, flags preview/dry-run, flags de no-envío y `channels_empty`; no copian payloads completos, webhooks, tokens ni claves no reconocidas.
+- Fallos mock como `mock_channel_failure_requested` quedan visibles en `attempts[*].response` para explicar por qué falló una entrega fake sin tocar transporte externo.
+- El resultado sigue preservando `send_ready=false`, `external_send_enabled=false`, `channels=[]`, `send_performed=false` y `transport=fake`.
+- Validación mínima vigente: `py_compile`, `tests.test_generator_logic.SmartAlertsTests` (41 OK) y `git diff --check`; no Telegram/Discord real, tokens, webhooks, red real, `BG00G`, `--no-cache`, builds ni reportes generados.
+
 ## PAYDAY 2 data/cache y diagnóstico
 
 ### Objetivo

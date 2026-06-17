@@ -13,6 +13,19 @@ _SMART_ALERT_CREDENTIAL_KEY_PARTS = (
     "authorization",
     "bearer",
 )
+_SAFE_SMART_ALERT_MOCK_CHANNEL_BLOCKERS = {
+    "invalid_payload",
+    "unsupported_channel",
+    "fake_transport_required",
+    "dry_run_preview_required",
+    "message_required",
+    "grouped_digest_required",
+    "per_game_notifications_forbidden",
+    "send_performed_must_remain_false",
+    "would_send_digest_required",
+    "sensitive_channel_credentials_forbidden",
+    "mock_channel_failure_requested",
+}
 
 
 def _safe_float(value) -> float | None:
@@ -583,6 +596,30 @@ def _has_sensitive_channel_credential_key(value) -> bool:
     return False
 
 
+def _safe_mock_channel_response_diagnostics(response: dict) -> dict:
+    if response.get("schema") != "smart_alert_mock_channel_send_result_v1":
+        return {}
+    blockers = response.get("blockers") if isinstance(response.get("blockers"), list) else []
+    safe_blockers = [
+        blocker
+        for blocker in (str(blocker or "").strip() for blocker in blockers)
+        if blocker in _SAFE_SMART_ALERT_MOCK_CHANNEL_BLOCKERS
+    ]
+    diagnostics = {
+        "schema": "smart_alert_mock_channel_send_result_v1",
+        "status": str(response.get("status") or ""),
+        "blockers": list(dict.fromkeys(safe_blockers)),
+        "preview_only": response.get("preview_only") is True,
+        "dry_run": response.get("dry_run") is True,
+        "send_performed": response.get("send_performed") is True,
+        "external_send_enabled": response.get("external_send_enabled") is True,
+        "channels_empty": response.get("channels") in ([], None),
+    }
+    if "message_length" in response:
+        diagnostics["message_length"] = max(0, _safe_int(response.get("message_length"), 0))
+    return diagnostics
+
+
 def execute_smart_alert_fake_delivery_plan(plan: dict | None, *, fake_send_fn=None) -> dict:
     """Execute a fake Smart Alerts delivery plan through an injected fake sender only."""
     result = {
@@ -651,14 +688,17 @@ def execute_smart_alert_fake_delivery_plan(plan: dict | None, *, fake_send_fn=No
         try:
             response = fake_send_fn(payload)
             ok = bool(response.get("ok")) if isinstance(response, dict) and "ok" in response else bool(response)
-            attempts.append(
-                {
-                    "channel": channel,
-                    "ok": ok,
-                    "fake_send_performed": True,
-                    "send_performed": False,
-                }
-            )
+            attempt = {
+                "channel": channel,
+                "ok": ok,
+                "fake_send_performed": True,
+                "send_performed": False,
+            }
+            if isinstance(response, dict):
+                diagnostics = _safe_mock_channel_response_diagnostics(response)
+                if diagnostics:
+                    attempt["response"] = diagnostics
+            attempts.append(attempt)
         except Exception as exc:
             attempts.append(
                 {

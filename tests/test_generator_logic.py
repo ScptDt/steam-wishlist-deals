@@ -11674,6 +11674,83 @@ class SmartAlertsTests(unittest.TestCase):
         self.assertFalse(result["external_send_enabled"])
         self.assertEqual(result["channels"], [])
 
+    def test_smart_alert_mock_channel_integration_preserves_safe_failure_diagnostics(self) -> None:
+        digest = module_build_smart_alert_digest(
+            deals=[{"appid": "10", "name": "Alpha", "price_raw": 1000}],
+            historical_lows={},
+            active_bundles={},
+            comparison={"price_changes": {"10": {"direction": "up", "change_pct": 15.0}}},
+            local_trends={},
+            alert_rise_pct=10.0,
+        )
+        fake_sender = module_build_smart_alert_mock_channel_sender(fail_channels=["discord"])
+
+        result = module_execute_smart_alert_mock_channel_integration(
+            digest,
+            requested_channels=["discord"],
+            user_opt_in=True,
+            digest_reviewed=True,
+            fake_send_fn=fake_sender,
+        )
+        attempt = result["fake_delivery_result"]["attempts"][0]
+
+        self.assertEqual(result["status"], "fake_delivery_failed")
+        self.assertFalse(attempt["ok"])
+        self.assertEqual(attempt["response"]["schema"], "smart_alert_mock_channel_send_result_v1")
+        self.assertEqual(attempt["response"]["status"], "mock_channel_send_failed")
+        self.assertEqual(attempt["response"]["blockers"], ["mock_channel_failure_requested"])
+        self.assertTrue(attempt["response"]["preview_only"])
+        self.assertTrue(attempt["response"]["dry_run"])
+        self.assertFalse(attempt["response"]["send_performed"])
+        self.assertFalse(attempt["response"]["external_send_enabled"])
+        self.assertTrue(attempt["response"]["channels_empty"])
+        self.assertFalse(result["send_performed"])
+        self.assertFalse(result["send_ready"])
+        self.assertFalse(result["external_send_enabled"])
+        self.assertEqual(result["channels"], [])
+
+    def test_smart_alert_fake_delivery_attempt_omits_unsafe_response_diagnostics(self) -> None:
+        digest = module_build_smart_alert_digest(
+            deals=[{"appid": "10", "name": "Alpha", "price_raw": 1000}],
+            historical_lows={},
+            active_bundles={},
+            comparison={"price_changes": {"10": {"direction": "up", "change_pct": 15.0}}},
+            local_trends={},
+            alert_rise_pct=10.0,
+        )
+        preview = module_build_smart_alert_channel_preview(
+            digest,
+            requested_channels=["telegram"],
+            user_opt_in=True,
+            digest_reviewed=True,
+        )
+        plan = module_build_smart_alert_fake_delivery_plan(preview)
+
+        def fake_sender(_payload: dict) -> dict:
+            return {
+                "schema": "smart_alert_mock_channel_send_result_v1",
+                "ok": False,
+                "status": "blocked",
+                "blockers": ["mock_channel_failure_requested", "token-super-secret"],
+                "webhook_url": "super-secret-webhook",
+                "preview_only": True,
+                "dry_run": True,
+                "send_performed": False,
+                "external_send_enabled": False,
+                "channels": [],
+            }
+
+        result = module_execute_smart_alert_fake_delivery_plan(plan, fake_send_fn=fake_sender)
+        response = result["attempts"][0]["response"]
+
+        self.assertEqual(result["status"], "fake_delivery_failed")
+        self.assertEqual(response["blockers"], ["mock_channel_failure_requested"])
+        self.assertNotIn("webhook", str(response))
+        self.assertNotIn("super-secret", str(response))
+        self.assertFalse(result["send_performed"])
+        self.assertFalse(result["external_send_enabled"])
+        self.assertEqual(result["channels"], [])
+
     def test_smart_alert_mock_channel_integration_blocks_without_fake_sender(self) -> None:
         digest = module_build_smart_alert_digest(
             deals=[{"appid": "10", "name": "Alpha", "price_raw": 1000}],
