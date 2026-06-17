@@ -445,6 +445,13 @@ Credenciales ITAD seguras:
 - Aunque algunos endpoints aceptan `key=...`, este proyecto usa `ITAD-API-Key` header en los helpers nuevos para evitar filtrado por URL.
 - Sin key válida no hay live smoke ni refresh real; no probar keys random. Mantener fixtures/caché local como alternativa offline.
 
+Corte OAuth ITAD fixture-only 2026-06-17:
+
+- `app/steam_deals_itad_oauth.py` agrega helpers puros/std-lib para Authorization Code + PKCE: verifier/challenge S256, URL de autorización, request de token/refresh, parser de callback, header Bearer y redacción de tokens/verifier/client_secret.
+- El spike documenta la brecha de migración completa: docs oficiales listan OAuth para endpoints de usuario y `/deals/v2`, pero `/games/lookup/v1`, `/games/prices/v3` y `/games/search/v1` siguen documentados como API-key auth.
+- No cambia el flujo runtime de `external_offers`, no guarda tokens, no abre callback local, no usa credenciales reales ni hace red live; la API key existente se mantiene hasta probar compatibilidad OAuth real o rediseñar sobre endpoints OAuth-compatible.
+- Siguiente paso si se prioriza UX OAuth: validar localmente con credenciales propias no compartidas que `user_info`/`deals_v2` funcionan y confirmar si `prices/v3` acepta Bearer o requiere seguir con API key.
+
 Corte Web trigger refresh live cerrado 2026-05-22:
 
 - `Filtros avanzados` expone `Refrescar caché ITAD external_offers en vivo (opt-in)` como acción separada del uso normal de caché local.
