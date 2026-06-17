@@ -676,6 +676,101 @@ def execute_smart_alert_fake_delivery_plan(plan: dict | None, *, fake_send_fn=No
     return result
 
 
+def _blocked_smart_alert_fake_delivery_result(blockers: list[str]) -> dict:
+    return {
+        "schema": "smart_alert_fake_delivery_result_v1",
+        "transport": "fake",
+        "preview_only": True,
+        "dry_run": True,
+        "fake_delivery": True,
+        "send_ready": False,
+        "external_send_enabled": False,
+        "channels": [],
+        "send_performed": False,
+        "fake_send_performed": False,
+        "status": "blocked",
+        "blockers": list(dict.fromkeys(blockers)),
+        "attempts": [],
+    }
+
+
+def execute_smart_alert_mock_channel_integration(
+    digest: dict | None,
+    *,
+    requested_channels=None,
+    user_opt_in: bool = False,
+    digest_reviewed: bool = False,
+    allow_high_volume: bool = False,
+    fake_send_fn=None,
+) -> dict:
+    """Run the Smart Alerts channel path through fake-only integration boundaries."""
+    result = {
+        "schema": "smart_alert_mock_channel_integration_v1",
+        "transport": "fake",
+        "preview_only": True,
+        "dry_run": True,
+        "fake_delivery": True,
+        "send_ready": False,
+        "external_send_enabled": False,
+        "channels": [],
+        "send_performed": False,
+        "fake_send_performed": False,
+        "status": "blocked",
+        "blockers": [],
+        "requested_channels": [],
+        "opt_in_preview": None,
+        "fake_delivery_plan": None,
+        "fake_delivery_result": None,
+    }
+    if not isinstance(digest, dict):
+        blockers = ["invalid_digest"]
+        result["blockers"] = blockers
+        result["fake_delivery_result"] = _blocked_smart_alert_fake_delivery_result(blockers)
+        return result
+    if _has_sensitive_channel_credential_key(digest):
+        blockers = ["sensitive_channel_credentials_forbidden"]
+        result["blockers"] = blockers
+        result["fake_delivery_result"] = _blocked_smart_alert_fake_delivery_result(blockers)
+        return result
+
+    opt_in_preview = build_smart_alert_channel_opt_in_preview(
+        digest,
+        requested_channels=requested_channels,
+        user_opt_in=user_opt_in,
+        digest_reviewed=digest_reviewed,
+        allow_high_volume=allow_high_volume,
+    )
+    channel_preview = opt_in_preview.get("channel_preview") if isinstance(opt_in_preview.get("channel_preview"), dict) else None
+    fake_plan = build_smart_alert_fake_delivery_plan(channel_preview)
+    if fake_plan.get("status") == "ready_for_fake_delivery":
+        fake_result = execute_smart_alert_fake_delivery_plan(fake_plan, fake_send_fn=fake_send_fn)
+    else:
+        fake_result = _blocked_smart_alert_fake_delivery_result(fake_plan.get("blockers", []))
+
+    blockers = list(
+        dict.fromkeys(
+            [str(blocker) for blocker in opt_in_preview.get("blockers", []) if str(blocker or "").strip()]
+            + [str(blocker) for blocker in fake_plan.get("blockers", []) if str(blocker or "").strip()]
+            + [str(blocker) for blocker in fake_result.get("blockers", []) if str(blocker or "").strip()]
+        )
+    )
+    result.update(
+        {
+            "status": "blocked" if blockers else fake_result.get("status", "blocked"),
+            "blockers": blockers,
+            "requested_channels": opt_in_preview.get("requested_channels", []),
+            "unsupported_channel_requests": opt_in_preview.get("unsupported_channel_requests", []),
+            "unsupported_channels_count": opt_in_preview.get("unsupported_channels_count", 0),
+            "anti_spam": channel_preview.get("anti_spam", {}) if isinstance(channel_preview, dict) else {},
+            "opt_in_preview": opt_in_preview,
+            "fake_delivery_plan": fake_plan,
+            "fake_delivery_result": fake_result,
+            "fake_send_performed": fake_result.get("fake_send_performed") is True,
+        }
+    )
+    return result
+
+
 def _count_global_historical_lows(
     deals: list[dict],
     historical_lows: dict[str, dict],

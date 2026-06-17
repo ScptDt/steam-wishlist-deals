@@ -44,6 +44,7 @@ from steam_deals_alerts import (
     build_smart_alert_fake_delivery_plan as module_build_smart_alert_fake_delivery_plan,
     decide_smart_alert_channel_readiness as module_decide_smart_alert_channel_readiness,
     execute_smart_alert_fake_delivery_plan as module_execute_smart_alert_fake_delivery_plan,
+    execute_smart_alert_mock_channel_integration as module_execute_smart_alert_mock_channel_integration,
 )
 from steam_deals_access import (
     build_play_access_contract,
@@ -11598,6 +11599,152 @@ class SmartAlertsTests(unittest.TestCase):
         self.assertEqual(result["attempts"][0]["channel"], "telegram")
         self.assertFalse(result["attempts"][0]["ok"])
         self.assertIn("fake boom", result["attempts"][0]["error"])
+
+    def test_smart_alert_mock_channel_integration_runs_fake_path_only(self) -> None:
+        digest = module_build_smart_alert_digest(
+            deals=[{"appid": "10", "name": "Alpha", "price_raw": 1000}],
+            historical_lows={},
+            active_bundles={},
+            comparison={"price_changes": {"10": {"direction": "up", "change_pct": 15.0}}},
+            local_trends={},
+            alert_rise_pct=10.0,
+        )
+        captured_payloads: list[dict] = []
+
+        def fake_sender(payload: dict) -> dict:
+            captured_payloads.append(payload)
+            return {"ok": True}
+
+        result = module_execute_smart_alert_mock_channel_integration(
+            digest,
+            requested_channels=["telegram"],
+            user_opt_in=True,
+            digest_reviewed=True,
+            fake_send_fn=fake_sender,
+        )
+
+        self.assertEqual(result["schema"], "smart_alert_mock_channel_integration_v1")
+        self.assertEqual(result["status"], "fake_delivery_completed")
+        self.assertEqual(result["transport"], "fake")
+        self.assertTrue(result["preview_only"])
+        self.assertTrue(result["dry_run"])
+        self.assertTrue(result["fake_delivery"])
+        self.assertTrue(result["fake_send_performed"])
+        self.assertFalse(result["send_performed"])
+        self.assertFalse(result["send_ready"])
+        self.assertFalse(result["external_send_enabled"])
+        self.assertEqual(result["channels"], [])
+        self.assertEqual(result["blockers"], [])
+        self.assertEqual(result["requested_channels"], ["telegram"])
+        self.assertEqual(result["opt_in_preview"]["schema"], "smart_alert_channel_opt_in_preview_v1")
+        self.assertEqual(result["fake_delivery_plan"]["status"], "ready_for_fake_delivery")
+        self.assertEqual(result["fake_delivery_result"]["status"], "fake_delivery_completed")
+        self.assertEqual(len(captured_payloads), 1)
+        self.assertEqual(captured_payloads[0]["channel"], "telegram")
+        self.assertEqual(captured_payloads[0]["transport"], "fake")
+        self.assertTrue(captured_payloads[0]["preview_only"])
+        self.assertIn("Alpha", captured_payloads[0]["message"])
+
+    def test_smart_alert_mock_channel_integration_blocks_without_fake_sender(self) -> None:
+        digest = module_build_smart_alert_digest(
+            deals=[{"appid": "10", "name": "Alpha", "price_raw": 1000}],
+            historical_lows={},
+            active_bundles={},
+            comparison={"price_changes": {"10": {"direction": "up", "change_pct": 15.0}}},
+            local_trends={},
+            alert_rise_pct=10.0,
+        )
+
+        result = module_execute_smart_alert_mock_channel_integration(
+            digest,
+            requested_channels=["discord"],
+            user_opt_in=True,
+            digest_reviewed=True,
+        )
+
+        self.assertEqual(result["status"], "blocked")
+        self.assertIn("fake_sender_required", result["blockers"])
+        self.assertEqual(result["fake_delivery_result"]["attempts"], [])
+        self.assertFalse(result["fake_send_performed"])
+        self.assertFalse(result["send_performed"])
+        self.assertFalse(result["send_ready"])
+        self.assertFalse(result["external_send_enabled"])
+        self.assertEqual(result["channels"], [])
+
+    def test_smart_alert_mock_channel_integration_blocks_unapproved_high_volume(self) -> None:
+        digest = module_build_smart_alert_digest(
+            deals=[
+                {"appid": str(index), "name": f"Game {index}", "price_raw": 1000}
+                for index in range(1, 13)
+            ],
+            historical_lows={},
+            active_bundles={},
+            comparison={
+                "price_changes": {
+                    str(index): {"direction": "up", "change_pct": 15.0}
+                    for index in range(1, 13)
+                }
+            },
+            local_trends={},
+            alert_rise_pct=10.0,
+            max_items_per_section=2,
+        )
+        calls: list[dict] = []
+
+        def fake_sender(payload: dict) -> dict:
+            calls.append(payload)
+            return {"ok": True}
+
+        result = module_execute_smart_alert_mock_channel_integration(
+            digest,
+            requested_channels=["telegram"],
+            user_opt_in=True,
+            digest_reviewed=True,
+            fake_send_fn=fake_sender,
+        )
+
+        self.assertEqual(result["status"], "blocked")
+        self.assertIn("high_volume_requires_explicit_approval", result["blockers"])
+        self.assertEqual(result["anti_spam"]["volume_level"], "high")
+        self.assertEqual(result["fake_delivery_result"]["attempts"], [])
+        self.assertEqual(calls, [])
+        self.assertFalse(result["fake_send_performed"])
+        self.assertFalse(result["send_performed"])
+        self.assertEqual(result["channels"], [])
+
+    def test_smart_alert_mock_channel_integration_blocks_sensitive_digest(self) -> None:
+        digest = module_build_smart_alert_digest(
+            deals=[{"appid": "10", "name": "Alpha", "price_raw": 1000}],
+            historical_lows={},
+            active_bundles={},
+            comparison={"price_changes": {"10": {"direction": "up", "change_pct": 15.0}}},
+            local_trends={},
+            alert_rise_pct=10.0,
+        )
+        digest = {**digest, "telegram_token": "blocked-value"}
+        calls: list[dict] = []
+
+        def fake_sender(payload: dict) -> dict:
+            calls.append(payload)
+            return {"ok": True}
+
+        result = module_execute_smart_alert_mock_channel_integration(
+            digest,
+            requested_channels=["telegram"],
+            user_opt_in=True,
+            digest_reviewed=True,
+            fake_send_fn=fake_sender,
+        )
+
+        self.assertEqual(result["status"], "blocked")
+        self.assertIn("sensitive_channel_credentials_forbidden", result["blockers"])
+        self.assertIsNone(result["opt_in_preview"])
+        self.assertIsNone(result["fake_delivery_plan"])
+        self.assertEqual(result["fake_delivery_result"]["attempts"], [])
+        self.assertEqual(calls, [])
+        self.assertFalse(result["send_performed"])
+        self.assertFalse(result["external_send_enabled"])
+        self.assertEqual(result["channels"], [])
 
     def test_generator_smart_alerts_wrapper_accepts_empty_sources(self) -> None:
         result = generator_build_smart_alert_counts(
