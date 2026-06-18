@@ -3,6 +3,7 @@ import unittest
 
 from steam_deals_itad import (
     build_itad_external_offers_cache,
+    diagnose_itad_deals_v2_payload,
     diagnose_itad_external_offers_cache,
     itad_deals_v2_to_external_offers,
     itad_external_offers_from_cache,
@@ -151,6 +152,109 @@ class ItadExternalOffersCacheTests(unittest.TestCase):
                 self.assertEqual(external_offers["items"], [])
                 self.assertEqual(external_offers["summary"]["items_count"], 0)
                 self.assertEqual(external_offers["summary"]["ranking_impact"], "none")
+
+    def test_deals_v2_diagnostic_reports_coverage_stores_and_risks(self) -> None:
+        payload = {
+            "hasMore": False,
+            "nextOffset": 0,
+            "list": [
+                {
+                    "id": "itad-hades",
+                    "title": "Hades",
+                    "deal": {
+                        "shop": {"id": 35, "name": "Fanatical"},
+                        "price": {"amount": 8.99, "currency": "USD"},
+                        "regular": {"amount": 24.99, "currency": "USD"},
+                        "cut": 64,
+                        "drm": [{"name": "Steam"}],
+                        "url": "https://fanatical.example/hades",
+                    },
+                },
+                {
+                    "id": "itad-unmapped",
+                    "title": "Unmapped",
+                    "deal": {
+                        "shop": {"id": 35, "name": "Fanatical"},
+                        "price": {"amount": 6.99, "currency": "USD"},
+                        "regular": {"amount": 19.99, "currency": "USD"},
+                        "drm": [{"name": "Steam"}],
+                        "url": "https://fanatical.example/unmapped",
+                    },
+                },
+                {
+                    "id": "itad-hades",
+                    "title": "Hades",
+                    "deal": {
+                        "shop": {"id": 99, "name": "G2A"},
+                        "price": {"amount": 7.50, "currency": "USD"},
+                        "regular": {"amount": 24.99, "currency": "USD"},
+                        "drm": [{"name": "Steam"}],
+                        "url": "https://g2a.example/hades",
+                    },
+                },
+                {
+                    "id": "itad-hades",
+                    "title": "Hades",
+                    "deal": {
+                        "shop": {"id": 61, "name": "Steam"},
+                        "price": {"amount": 9.99, "currency": "USD"},
+                        "regular": {"amount": 24.99, "currency": "USD"},
+                        "drm": [{"name": "Steam"}],
+                        "url": "https://store.steampowered.com/app/1145360",
+                    },
+                },
+                "bad-item",
+            ],
+        }
+
+        diagnostic = diagnose_itad_deals_v2_payload(
+            payload,
+            itad_id_to_appid={"itad-hades": "1145360"},
+            country="MX",
+        )
+
+        self.assertEqual(diagnostic["status"], "warning")
+        self.assertEqual(diagnostic["issues"][0]["code"], "malformed_deals_v2_items")
+        summary = diagnostic["summary"]
+        self.assertEqual(summary["raw_items_count"], 5)
+        self.assertEqual(summary["payload_items_count"], 4)
+        self.assertEqual(summary["malformed_items_count"], 1)
+        self.assertEqual(summary["deal_items_count"], 4)
+        self.assertEqual(summary["steam_deals_count"], 1)
+        self.assertEqual(summary["external_offer_items_count"], 3)
+        self.assertEqual(summary["mapped_external_offer_count"], 2)
+        self.assertEqual(summary["missing_appid_count"], 1)
+        self.assertEqual(summary["highlight_count"], 1)
+        self.assertEqual(summary["hidden_count"], 2)
+        self.assertEqual(summary["marketplace_count"], 1)
+        self.assertEqual(summary["store_counts"], {"fanatical": 2, "g2a": 1})
+        self.assertEqual(summary["risk_counts"]["appid_missing"], 1)
+        self.assertEqual(summary["risk_counts"]["marketplace_keyshop"], 1)
+        self.assertEqual(summary["coverage"]["valid_items"], 0.8)
+        self.assertEqual(summary["coverage"]["external_offers"], 1.0)
+        self.assertEqual(summary["coverage"]["mapped_external_offers"], 0.6667)
+        self.assertTrue(summary["advisory_only"])
+        self.assertEqual(summary["ranking_impact"], "none")
+        self.assertNotIn("wishlist_hygiene", diagnostic)
+
+    def test_deals_v2_diagnostic_reports_empty_and_invalid_payloads(self) -> None:
+        empty = diagnose_itad_deals_v2_payload(None)
+
+        self.assertEqual(empty["status"], "warning")
+        self.assertEqual(empty["issues"][0]["code"], "payload_empty")
+        self.assertEqual(empty["summary"]["external_offer_items_count"], 0)
+        self.assertEqual(empty["summary"]["ranking_impact"], "none")
+
+        invalid = diagnose_itad_deals_v2_payload("bad-payload")
+
+        self.assertEqual(invalid["status"], "error")
+        self.assertEqual(invalid["issues"][0]["code"], "invalid_itad_deals_v2_payload")
+        self.assertEqual(invalid["items"], [])
+
+        invalid_items = diagnose_itad_deals_v2_payload({"list": "bad-list"})
+
+        self.assertEqual(invalid_items["status"], "error")
+        self.assertEqual(invalid_items["issues"][0]["code"], "invalid_deals_v2_items")
 
     def test_cache_payload_normalizes_fanatical_for_requested_appids_only(self) -> None:
         cache_payload = build_itad_external_offers_cache(

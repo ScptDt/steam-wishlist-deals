@@ -47,6 +47,54 @@ def itad_deals_v2_to_external_offers(
     )
 
 
+def diagnose_itad_deals_v2_payload(
+    payload,
+    *,
+    itad_id_to_appid: dict[str, str] | None = None,
+    country: str = "MX",
+    include_marketplaces: bool = False,
+) -> dict:
+    """Diagnose a local ITAD deals/v2 payload without I/O, OAuth, or ranking changes."""
+    raw_items, item_source = _itad_deals_v2_raw_items(payload)
+    issues = _itad_deals_v2_payload_issues(payload, raw_items, item_source)
+    mapping = _itad_deals_v2_mapping(itad_id_to_appid)
+    issues.extend(_itad_deals_v2_mapping_issues(itad_id_to_appid, mapping))
+    if any(issue.get("severity") == "error" for issue in issues):
+        summary = _itad_deals_v2_diagnostic_summary(
+            [],
+            raw_items_count=_itad_deals_v2_raw_items_count(raw_items),
+            payload_items_count=0,
+            deal_items_count=0,
+            steam_deals_count=0,
+            malformed_items_count=_itad_deals_v2_malformed_items_count(raw_items),
+        )
+        return {"status": "error", "items": [], "issues": issues, "summary": summary}
+
+    payload_items = [item for item in (raw_items or []) if isinstance(item, dict)]
+    deal_items = [item for item in payload_items if isinstance(item.get("deal"), dict)]
+    steam_deals_count = sum(1 for item in deal_items if _itad_is_steam_deal(item["deal"]))
+    records = _itad_deals_v2_records(payload, itad_id_to_appid=mapping, country=country)
+    offers = normalize_external_offers(
+        {"offers": records}, include_marketplaces=include_marketplaces
+    )
+    items = offers.get("items") if isinstance(offers, dict) else []
+    items = items if isinstance(items, list) else []
+    summary = _itad_deals_v2_diagnostic_summary(
+        items,
+        raw_items_count=_itad_deals_v2_raw_items_count(raw_items),
+        payload_items_count=len(payload_items),
+        deal_items_count=len(deal_items),
+        steam_deals_count=steam_deals_count,
+        malformed_items_count=_itad_deals_v2_malformed_items_count(raw_items),
+    )
+    return {
+        "status": _itad_deals_v2_diagnostic_status(issues, summary),
+        "items": items,
+        "issues": issues,
+        "summary": summary,
+    }
+
+
 def build_itad_external_offers_cache(
     price_payload,
     appid_to_itad_id: dict[str, str],
@@ -217,6 +265,162 @@ def _itad_deals_v2_records(payload, *, itad_id_to_appid: dict[str, str] | None, 
             )
         )
     return records
+
+
+def _itad_deals_v2_raw_items(payload) -> tuple[list | None, str]:
+    if isinstance(payload, list):
+        return payload, "root"
+    if not isinstance(payload, dict):
+        return None, ""
+    for key in ("list", "items", "data"):
+        if key in payload:
+            value = payload.get(key)
+            return value if isinstance(value, list) else None, key
+    return None, ""
+
+
+def _itad_deals_v2_payload_issues(payload, raw_items, item_source: str) -> list[dict]:
+    if payload is None or payload == {} or payload == []:
+        return [_itad_cache_issue("warning", "payload_empty", "payload ITAD deals/v2 vacío")]
+    if not isinstance(payload, (dict, list)):
+        return [
+            _itad_cache_issue(
+                "error",
+                "invalid_itad_deals_v2_payload",
+                "payload ITAD deals/v2 debe ser un objeto o una lista JSON",
+            )
+        ]
+    if not item_source:
+        return [
+            _itad_cache_issue(
+                "warning",
+                "missing_deals_v2_items",
+                "payload ITAD deals/v2 no incluye list/items/data",
+            )
+        ]
+    if raw_items is None:
+        return [
+            _itad_cache_issue(
+                "error",
+                "invalid_deals_v2_items",
+                f"{item_source} debe ser una lista",
+            )
+        ]
+    malformed_count = _itad_deals_v2_malformed_items_count(raw_items)
+    if malformed_count:
+        return [
+            _itad_cache_issue(
+                "warning",
+                "malformed_deals_v2_items",
+                f"{malformed_count} entradas ITAD deals/v2 no son objetos y se omitieron",
+            )
+        ]
+    return []
+
+
+def _itad_deals_v2_mapping(value) -> dict[str, str]:
+    if not isinstance(value, dict):
+        return {}
+    return {
+        str(itad_id).strip(): str(appid).strip()
+        for itad_id, appid in value.items()
+        if str(itad_id).strip() and str(appid).strip()
+    }
+
+
+def _itad_deals_v2_mapping_issues(value, mapping: dict[str, str]) -> list[dict]:
+    if value is None:
+        return []
+    if not isinstance(value, dict):
+        return [
+            _itad_cache_issue(
+                "warning",
+                "invalid_itad_id_mapping",
+                "itad_id_to_appid debe ser un objeto; se diagnosticará sin mapping",
+            )
+        ]
+    if not mapping and value:
+        return [
+            _itad_cache_issue(
+                "warning",
+                "itad_id_mapping_empty",
+                "itad_id_to_appid no contiene mappings válidos",
+            )
+        ]
+    return []
+
+
+def _itad_deals_v2_raw_items_count(raw_items) -> int:
+    return len(raw_items) if isinstance(raw_items, list) else 0
+
+
+def _itad_deals_v2_malformed_items_count(raw_items) -> int:
+    if not isinstance(raw_items, list):
+        return 0
+    return sum(1 for item in raw_items if not isinstance(item, dict))
+
+
+def _itad_deals_v2_diagnostic_summary(
+    items: list[dict],
+    *,
+    raw_items_count: int,
+    payload_items_count: int,
+    deal_items_count: int,
+    steam_deals_count: int,
+    malformed_items_count: int,
+) -> dict:
+    risk_counts = _itad_cache_risk_counts(items)
+    external_offer_count = len(items)
+    mapped_count = sum(1 for item in items if item.get("appid"))
+    return {
+        "raw_items_count": raw_items_count,
+        "payload_items_count": payload_items_count,
+        "malformed_items_count": malformed_items_count,
+        "deal_items_count": deal_items_count,
+        "steam_deals_count": steam_deals_count,
+        "external_offer_items_count": external_offer_count,
+        "mapped_external_offer_count": mapped_count,
+        "missing_appid_count": int(risk_counts.get("appid_missing") or 0),
+        "highlight_count": sum(1 for item in items if item.get("visibility") == "highlight"),
+        "review_count": sum(1 for item in items if item.get("visibility") == "review"),
+        "hidden_count": sum(1 for item in items if item.get("visibility") == "hidden"),
+        "best_external_price_count": sum(
+            1 for item in items if item.get("eligible_for_best_external_price")
+        ),
+        "marketplace_count": sum(1 for item in items if item.get("store_type") == "marketplace_keyshop"),
+        "store_counts": _itad_deals_v2_store_counts(items),
+        "risk_counts": risk_counts,
+        "coverage": {
+            "valid_items": _itad_cache_ratio(payload_items_count, raw_items_count),
+            "external_offers": _itad_cache_ratio(
+                external_offer_count,
+                max(0, deal_items_count - steam_deals_count),
+            ),
+            "mapped_external_offers": _itad_cache_ratio(mapped_count, external_offer_count),
+        },
+        "advisory_only": True,
+        "ranking_impact": "none",
+    }
+
+
+def _itad_deals_v2_store_counts(items: list[dict]) -> dict[str, int]:
+    counts: dict[str, int] = {}
+    for item in items:
+        store_id = str(item.get("store_id") or "unknown")
+        counts[store_id] = counts.get(store_id, 0) + 1
+    return counts
+
+
+def _itad_deals_v2_diagnostic_status(issues: list[dict], summary: dict) -> str:
+    if any(issue.get("severity") == "error" for issue in issues):
+        return "error"
+    if issues:
+        return "warning"
+    if not summary.get("external_offer_items_count"):
+        return "warning"
+    if summary.get("hidden_count") or summary.get("missing_appid_count"):
+        return "warning"
+    return "ok"
 
 
 def _itad_deals_v2_items(payload) -> list[dict]:
