@@ -709,6 +709,7 @@ Promise.all([
     openWizard();
   }
 }).catch(() => {
+  appendLine('No se pudo cargar el estado inicial completo; intentando cargar config básica.', 'warn');
   fetch('/api/config').then(r => r.json()).then(cfg => {
     fillForm(cfg);
     renderSteamOpenIdStatus({profile: cfg && cfg.steam_openid_profile});
@@ -719,7 +720,10 @@ Promise.all([
     setActivePreset('rapido');
     if (cfg && cfg.vanity) closeWizard();
     else openWizard();
-  }).catch(() => {});
+  }).catch(() => {
+    appendLine('No se pudo cargar la configuración inicial. Revisa que el server local siga activo.', 'err');
+    openWizard();
+  });
 });
 
 window.addEventListener('pageshow', () => {
@@ -2193,7 +2197,10 @@ async function runSteamDealsUI(options = {}) {
         return false;
       }
     } catch(e) {
-      appendLine('No se pudo ejecutar preflight: ' + e.message, 'warn');
+      appendLine('No se pudo ejecutar preflight. Se cancela la ejecución para no continuar sin validación previa.', 'err');
+      progressText.textContent = 'Preflight falló';
+      progressBar.style.width = '0%';
+      return false;
     }
 
     abortCtrl = new AbortController();
@@ -6741,6 +6748,8 @@ function appendQuickOpenButtons(files) {
 
 function renderWatchlist(items) {
   const el = document.getElementById('wl-list');
+  el.style.color = '';
+  el.style.fontSize = '';
   if (!items.length) { el.innerHTML = '<div style="color:var(--text2);font-size:.85rem">Watchlist vacia</div>'; return; }
   el.innerHTML = '<div style="font-size:.85rem;color:var(--text2);margin-bottom:.3rem">' + items.length + ' juegos en watchlist</div>' +
     items.map(w => '<div style="display:flex;align-items:center;gap:.5rem;padding:.3rem 0;border-bottom:1px solid var(--card-border)">' +
@@ -6750,7 +6759,12 @@ function renderWatchlist(items) {
     '</div>').join('');
 }
 async function loadWatchlist() {
-  try { const r = await fetch('/api/watchlist'); renderWatchlist(await r.json()); } catch(e) {}
+  try {
+    const r = await fetch('/api/watchlist');
+    renderWatchlist(await r.json());
+  } catch(e) {
+    renderWatchlistError('No se pudo cargar la watchlist.');
+  }
 }
 async function addWatchlist() {
   const appid = document.getElementById('wl-appid').value.trim();
@@ -6763,13 +6777,25 @@ async function addWatchlist() {
     document.getElementById('wl-appid').value = '';
     document.getElementById('wl-name').value = '';
     document.getElementById('wl-price').value = '';
-  } catch(e) {}
+  } catch(e) {
+    renderWatchlistError('No se pudo guardar la alerta de precio.');
+  }
 }
 async function removeWatchlist(appid) {
   try {
     const r = await localMutableFetch('/api/watchlist/delete', {method:'POST', headers:{'Content-Type':'application/json'}, body:JSON.stringify({appid})});
     const d = await r.json(); renderWatchlist(d.items);
-  } catch(e) {}
+  } catch(e) {
+    renderWatchlistError('No se pudo quitar la alerta de precio.');
+  }
+}
+
+function renderWatchlistError(message) {
+  const el = document.getElementById('wl-list');
+  if (!el) return;
+  el.textContent = message;
+  el.style.color = 'var(--red)';
+  el.style.fontSize = '.85rem';
 }
 
 let currentShareData = null;

@@ -727,6 +727,50 @@ class WebAssetsTests(unittest.TestCase):
         self.assertIn("Fallback web forzado", app_js)
         self.assertIn("desktop_fallback", app_js)
 
+    def test_steam_deals_preflight_exception_blocks_run(self) -> None:
+        app_js = (ROOT / "web" / "steam_deals" / "app.js").read_text(
+            encoding="utf-8"
+        )
+
+        message = (
+            "No se pudo ejecutar preflight. Se cancela la ejecución para no "
+            "continuar sin validación previa."
+        )
+        message_index = app_js.index(message)
+        run_start_index = app_js.index("abortCtrl = new AbortController();")
+
+        self.assertLess(message_index, run_start_index)
+        self.assertIn("progressText.textContent = 'Preflight falló';", app_js)
+        self.assertIn("progressBar.style.width = '0%';", app_js)
+        self.assertIn("return false;", app_js[message_index:run_start_index])
+
+    def test_steam_deals_web_silent_watchlist_fallbacks_are_visible(self) -> None:
+        app_js = (ROOT / "web" / "steam_deals" / "app.js").read_text(
+            encoding="utf-8"
+        )
+
+        self.assertIn(
+            "No se pudo cargar el estado inicial completo; intentando cargar config básica.",
+            app_js,
+        )
+        self.assertIn(
+            "No se pudo cargar la configuración inicial. Revisa que el server local siga activo.",
+            app_js,
+        )
+        self.assertIn("function renderWatchlistError(message)", app_js)
+        self.assertIn("renderWatchlistError('No se pudo cargar la watchlist.')", app_js)
+        self.assertIn("renderWatchlistError('No se pudo guardar la alerta de precio.')", app_js)
+        self.assertIn("renderWatchlistError('No se pudo quitar la alerta de precio.')", app_js)
+
+        load_start = app_js.index("async function loadWatchlist()")
+        add_start = app_js.index("async function addWatchlist()")
+        remove_start = app_js.index("async function removeWatchlist(appid)")
+        helper_start = app_js.index("function renderWatchlistError(message)")
+
+        self.assertNotIn("catch(e) {}", app_js[load_start:add_start])
+        self.assertNotIn("catch(e) {}", app_js[add_start:remove_start])
+        self.assertNotIn("catch(e) {}", app_js[remove_start:helper_start])
+
     def test_share_copy_uses_user_friendly_spanish_terms(self) -> None:
         index_html = (ROOT / "web" / "steam_deals" / "index.html").read_text(
             encoding="utf-8"
