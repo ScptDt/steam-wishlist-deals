@@ -9,6 +9,49 @@ from shared.io_utils import load_json_file as _default_load_json_file
 from shared.io_utils import write_json_file as _default_write_json_file
 
 
+RUN_HISTORY_DIAGNOSTIC_MESSAGES = {
+    "invalid_json": "JSON de historial local inválido; se omitió el archivo.",
+    "decode_error": "Historial local ilegible; se omitió el archivo.",
+    "read_error": "No se pudo leer historial local; se omitió el archivo.",
+    "unsupported_shape": "Historial local con formato no soportado; se omitió el archivo.",
+}
+
+PRICE_HISTORY_DIAGNOSTIC_MESSAGES = {
+    "invalid_json": "price_history.json inválido; se usó historial vacío.",
+    "decode_error": "price_history.json ilegible; se usó historial vacío.",
+    "read_error": "No se pudo leer price_history.json; se usó historial vacío.",
+    "unsupported_shape": "price_history.json tiene formato no soportado; se usó historial vacío.",
+    "steam_id_mismatch": "price_history.json pertenece a otro perfil; se usó historial vacío.",
+}
+
+
+def _diagnostic(source: str, file_path: Path, code: str) -> dict[str, str]:
+    messages = (
+        PRICE_HISTORY_DIAGNOSTIC_MESSAGES
+        if source == "price_history"
+        else RUN_HISTORY_DIAGNOSTIC_MESSAGES
+    )
+    return {
+        "source": source,
+        "file": Path(file_path).name,
+        "code": code,
+        "message": messages.get(code, "Historial local omitido por diagnóstico seguro."),
+    }
+
+
+def _emit_diagnostic(on_diagnostic, source: str, file_path: Path, code: str) -> None:
+    if on_diagnostic is not None:
+        on_diagnostic(_diagnostic(source, file_path, code))
+
+
+def _json_load_error_code(exc: BaseException) -> str:
+    if isinstance(exc, json.JSONDecodeError):
+        return "invalid_json"
+    if isinstance(exc, UnicodeDecodeError):
+        return "decode_error"
+    return "read_error"
+
+
 def load_previous_deal_appids(output_dir: Path, current_filename: str) -> set[str]:
     """Busca el MD anterior más reciente y extrae los appids de deals."""
     markdown_files = sorted(
@@ -101,26 +144,38 @@ def save_run_history(
     return path
 
 
-def _load_history_file(file_path: Path) -> dict | None:
+def _load_history_file(file_path: Path, *, on_diagnostic=None) -> dict | None:
     try:
-        return json.loads(file_path.read_text(encoding="utf-8"))
-    except (json.JSONDecodeError, OSError):
+        data = json.loads(file_path.read_text(encoding="utf-8"))
+    except (json.JSONDecodeError, OSError, UnicodeDecodeError) as exc:
+        _emit_diagnostic(
+            on_diagnostic,
+            "run_history",
+            file_path,
+            _json_load_error_code(exc),
+        )
         return None
+    if not isinstance(data, dict) or not isinstance(data.get("deals"), dict):
+        _emit_diagnostic(on_diagnostic, "run_history", file_path, "unsupported_shape")
+        return None
+    return data
 
 
-def load_previous_run(steam_id: str, *, history_dir: Path) -> dict | None:
+def load_previous_run(
+    steam_id: str, *, history_dir: Path, on_diagnostic=None
+) -> dict | None:
     """Carga el run anterior más reciente del historial."""
     if not history_dir.exists():
         return None
     for file_path in sorted(history_dir.glob("run_*.json"), reverse=True):
-        data = _load_history_file(file_path)
+        data = _load_history_file(file_path, on_diagnostic=on_diagnostic)
         if data and data.get("steam_id") == steam_id:
             return data
     return None
 
 
 def load_run_history(
-    steam_id: str, *, history_dir: Path, max_runs: int = 30
+    steam_id: str, *, history_dir: Path, max_runs: int = 30, on_diagnostic=None
 ) -> list[dict]:
     """Carga los últimos N runs para deal streak tracking."""
     if not history_dir.exists():
@@ -129,7 +184,7 @@ def load_run_history(
     for file_path in sorted(history_dir.glob("run_*.json"), reverse=True):
         if len(runs) >= max_runs:
             break
-        data = _load_history_file(file_path)
+        data = _load_history_file(file_path, on_diagnostic=on_diagnostic)
         if data and data.get("steam_id") == steam_id:
             runs.append(data)
     return runs
@@ -223,11 +278,47 @@ def load_price_history(
     *,
     price_history_file: Path,
     load_json_file=_default_load_json_file,
+    on_diagnostic=None,
 ) -> dict:
-    data = load_json_file(price_history_file, None)
+    load_diagnostics: list[dict] = []
+    try:
+        data = load_json_file(
+            price_history_file,
+            None,
+            on_error=load_diagnostics.append,
+        )
+    except TypeError:
+        data = load_json_file(price_history_file, None)
+    if load_diagnostics:
+        code = str(load_diagnostics[0].get("error") or "read_error")
+        if code not in PRICE_HISTORY_DIAGNOSTIC_MESSAGES:
+            code = "read_error"
+        _emit_diagnostic(on_diagnostic, "price_history", price_history_file, code)
+        return _empty_price_history(steam_id)
     if not isinstance(data, dict):
+        if data is not None or price_history_file.exists():
+            _emit_diagnostic(
+                on_diagnostic,
+                "price_history",
+                price_history_file,
+                "unsupported_shape",
+            )
         return _empty_price_history(steam_id)
     if data.get("steam_id") != steam_id:
+        _emit_diagnostic(
+            on_diagnostic,
+            "price_history",
+            price_history_file,
+            "steam_id_mismatch",
+        )
+        return _empty_price_history(steam_id)
+    if not isinstance(data.get("games"), dict):
+        _emit_diagnostic(
+            on_diagnostic,
+            "price_history",
+            price_history_file,
+            "unsupported_shape",
+        )
         return _empty_price_history(steam_id)
     return data
 

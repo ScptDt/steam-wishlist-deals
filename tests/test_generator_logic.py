@@ -3908,6 +3908,33 @@ class ConfigTests(unittest.TestCase):
             6,
         )
 
+    def test_local_history_diagnostics_are_sanitized_and_gate_price_history_save(self) -> None:
+        diagnostic = {
+            "source": "price_history",
+            "file": "/home/example-user/.cache/steam_deals/price_history.json",
+            "code": "invalid_json",
+            "message": "raw SECRET traceback /home/example-user/private",
+        }
+
+        formatted = generator_module.format_local_history_diagnostic(diagnostic)
+
+        self.assertIn("Historial local de precios", formatted)
+        self.assertIn("price_history.json", formatted)
+        self.assertNotIn("/home/example-user", formatted)
+        self.assertNotIn("SECRET", formatted)
+        self.assertTrue(generator_module.has_blocking_price_history_diagnostic([diagnostic]))
+        self.assertFalse(
+            generator_module.has_blocking_price_history_diagnostic(
+                [
+                    {
+                        "source": "run_history",
+                        "file": "run_2026-04-22_bad.json",
+                        "code": "invalid_json",
+                    }
+                ]
+            )
+        )
+
     def test_get_config_enables_full_warm_cache_with_max_passes(self) -> None:
         class FakeStdin:
             def isatty(self):

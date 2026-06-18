@@ -1908,18 +1908,29 @@ def save_run_history(
     )
 
 
-def load_previous_run(steam_id: str) -> dict | None:
+def load_previous_run(steam_id: str, *, on_diagnostic=None) -> dict | None:
     """Carga el run anterior más reciente del historial."""
     if _load_previous_run_impl is None:
         raise RuntimeError("History module is not available")
-    return _load_previous_run_impl(steam_id, history_dir=HISTORY_DIR)
+    return _load_previous_run_impl(
+        steam_id,
+        history_dir=HISTORY_DIR,
+        on_diagnostic=on_diagnostic,
+    )
 
 
-def load_run_history(steam_id: str, max_runs: int = 30) -> list[dict]:
+def load_run_history(
+    steam_id: str, max_runs: int = 30, *, on_diagnostic=None
+) -> list[dict]:
     """Carga los últimos N runs para deal streak tracking."""
     if _load_run_history_impl is None:
         raise RuntimeError("History module is not available")
-    return _load_run_history_impl(steam_id, history_dir=HISTORY_DIR, max_runs=max_runs)
+    return _load_run_history_impl(
+        steam_id,
+        history_dir=HISTORY_DIR,
+        max_runs=max_runs,
+        on_diagnostic=on_diagnostic,
+    )
 
 
 def compute_deal_comparison(
@@ -1938,13 +1949,14 @@ def compute_deal_comparison(
 # ─────────────────────────────────────────────
 
 
-def load_price_history(steam_id: str) -> dict:
+def load_price_history(steam_id: str, *, on_diagnostic=None) -> dict:
     if _load_price_history_impl is None:
         raise RuntimeError("History module is not available")
     return _load_price_history_impl(
         steam_id,
         price_history_file=PRICE_HISTORY_FILE,
         load_json_file=load_json_file,
+        on_diagnostic=on_diagnostic,
     )
 
 
@@ -1978,6 +1990,69 @@ def format_trend(trend: dict) -> str:
     return _format_trend_impl(trend)
 
 
+LOCAL_HISTORY_DIAGNOSTIC_SOURCE_LABELS = {
+    "run_history": "Historial de runs",
+    "price_history": "Historial local de precios",
+}
+
+LOCAL_HISTORY_DIAGNOSTIC_MESSAGES = {
+    "invalid_json": "JSON inválido; se omitió el archivo",
+    "decode_error": "archivo ilegible; se omitió el archivo",
+    "read_error": "no se pudo leer; se omitió el archivo",
+    "unsupported_shape": "formato no soportado; se omitió el archivo",
+    "steam_id_mismatch": "pertenece a otro perfil; se omitió el archivo",
+}
+
+PRICE_HISTORY_SAVE_BLOCKING_CODES = frozenset(LOCAL_HISTORY_DIAGNOSTIC_MESSAGES)
+
+
+def _safe_diagnostic_file_name(value) -> str:
+    name = str(value or "historial local").replace("\\", "/").rsplit("/", 1)[-1]
+    return name or "historial local"
+
+
+def dedupe_local_history_diagnostics(diagnostics) -> list[dict]:
+    unique: list[dict] = []
+    seen: set[tuple[str, str, str]] = set()
+    for diagnostic in diagnostics or []:
+        if not isinstance(diagnostic, dict):
+            continue
+        source = str(diagnostic.get("source") or "local_history")
+        code = str(diagnostic.get("code") or "read_error")
+        file_name = _safe_diagnostic_file_name(diagnostic.get("file"))
+        key = (source, file_name, code)
+        if key in seen:
+            continue
+        seen.add(key)
+        unique.append({"source": source, "file": file_name, "code": code})
+    return unique
+
+
+def format_local_history_diagnostic(diagnostic: dict) -> str:
+    source = str(diagnostic.get("source") or "local_history")
+    label = LOCAL_HISTORY_DIAGNOSTIC_SOURCE_LABELS.get(source, "Historial local")
+    code = str(diagnostic.get("code") or "read_error")
+    message = LOCAL_HISTORY_DIAGNOSTIC_MESSAGES.get(
+        code,
+        "diagnóstico seguro; se omitió el archivo",
+    )
+    file_name = _safe_diagnostic_file_name(diagnostic.get("file"))
+    return f"{label}: {message} ({file_name}; código={code})"
+
+
+def emit_local_history_diagnostics(diagnostics, *, emit_fn=print) -> None:
+    for diagnostic in dedupe_local_history_diagnostics(diagnostics):
+        emit_fn(f"  {_warn(format_local_history_diagnostic(diagnostic))}")
+
+
+def has_blocking_price_history_diagnostic(diagnostics) -> bool:
+    return any(
+        diagnostic.get("source") == "price_history"
+        and diagnostic.get("code") in PRICE_HISTORY_SAVE_BLOCKING_CODES
+        for diagnostic in dedupe_local_history_diagnostics(diagnostics)
+    )
+
+
 def build_output_md_path(
     output_dir: str | Path, sale_name: str, *, today_obj: date | None = None
 ) -> Path:
@@ -1993,14 +2068,25 @@ def resolve_previous_context(
 ) -> dict:
     if _run_output_module is None:
         raise RuntimeError("Run-output module is not available")
-    return _run_output_module.resolve_previous_context(
+    history_diagnostics: list[dict] = []
+    previous_context = _run_output_module.resolve_previous_context(
         output_dir,
         current_filename,
         steam_id,
-        load_previous_run_fn=load_previous_run,
-        load_run_history_fn=load_run_history,
+        load_previous_run_fn=lambda current_steam_id: load_previous_run(
+            current_steam_id,
+            on_diagnostic=history_diagnostics.append,
+        ),
+        load_run_history_fn=lambda current_steam_id: load_run_history(
+            current_steam_id,
+            on_diagnostic=history_diagnostics.append,
+        ),
         load_previous_deal_appids_fn=load_previous_deal_appids,
     )
+    previous_context["history_diagnostics"] = dedupe_local_history_diagnostics(
+        history_diagnostics
+    )
+    return previous_context
 
 
 def build_share_output_path(
@@ -5599,6 +5685,7 @@ def main():
 
     # Cargar historial de runs
     previous_context = resolve_previous_context(Path(OUTPUT_DIR), filename, steam_id)
+    emit_local_history_diagnostics(previous_context.get("history_diagnostics"))
     previous_run = previous_context["previous_run"]
     run_history = previous_context["run_history"]
     if previous_run:
@@ -5655,10 +5742,20 @@ def main():
     )
 
     # Historial local de precios (tendencias)
-    price_history = load_price_history(steam_id)
+    price_history_diagnostics: list[dict] = []
+    price_history = load_price_history(
+        steam_id,
+        on_diagnostic=price_history_diagnostics.append,
+    )
+    emit_local_history_diagnostics(price_history_diagnostics)
     log_price_snapshot(price_history, deals)
     local_trends = analyze_trends(price_history, deals)
-    save_price_history(price_history)
+    if has_blocking_price_history_diagnostic(price_history_diagnostics):
+        print(
+            f"  {_warn('No se guardó price_history.json para evitar sobrescribir historial local con diagnóstico.')}"
+        )
+    else:
+        save_price_history(price_history)
     trend_count = sum(1 for t in local_trends.values() if not t.get("is_first_time"))
     best_count = sum(1 for t in local_trends.values() if t.get("is_best_local"))
     if trend_count:

@@ -5,6 +5,7 @@ import unittest
 from pathlib import Path
 from tempfile import TemporaryDirectory
 
+from app.steam_deals_history import load_previous_run, load_price_history, load_run_history
 from app.steam_deals_history_dashboard import compare_history_runs, list_history_runs
 
 
@@ -18,6 +19,127 @@ class _FakeHistoryHandler:
 
 
 class TrackHistoryFlowTests(unittest.TestCase):
+    def test_run_history_missing_dir_stays_quiet_for_first_run(self) -> None:
+        with TemporaryDirectory() as temp_dir:
+            missing_dir = Path(temp_dir) / "missing-history"
+            diagnostics = []
+
+            previous = load_previous_run(
+                "steam-id",
+                history_dir=missing_dir,
+                on_diagnostic=diagnostics.append,
+            )
+            runs = load_run_history(
+                "steam-id",
+                history_dir=missing_dir,
+                on_diagnostic=diagnostics.append,
+            )
+
+        self.assertIsNone(previous)
+        self.assertEqual(runs, [])
+        self.assertEqual(diagnostics, [])
+
+    def test_run_history_reports_bad_existing_files_without_local_paths(self) -> None:
+        with TemporaryDirectory() as temp_dir:
+            history_dir = Path(temp_dir)
+            (history_dir / "run_2026-04-22_bad.json").write_text(
+                "{not-valid-json}", encoding="utf-8"
+            )
+            (history_dir / "run_2026-04-21_shape.json").write_text(
+                json.dumps([{"steam_id": "steam-id"}]), encoding="utf-8"
+            )
+            (history_dir / "run_2026-04-20_valid.json").write_text(
+                json.dumps(
+                    {
+                        "steam_id": "steam-id",
+                        "date": "2026-04-20",
+                        "deals": {"10": {"name": "Alpha"}},
+                    }
+                ),
+                encoding="utf-8",
+            )
+            diagnostics = []
+
+            previous = load_previous_run(
+                "steam-id",
+                history_dir=history_dir,
+                on_diagnostic=diagnostics.append,
+            )
+
+            dumped = json.dumps(diagnostics, ensure_ascii=False)
+
+        self.assertIsNotNone(previous)
+        assert previous is not None
+        self.assertEqual(previous["date"], "2026-04-20")
+        self.assertEqual(
+            [diagnostic["code"] for diagnostic in diagnostics],
+            ["invalid_json", "unsupported_shape"],
+        )
+        self.assertIn("run_2026-04-22_bad.json", dumped)
+        self.assertIn("run_2026-04-21_shape.json", dumped)
+        self.assertNotIn(temp_dir, dumped)
+
+    def test_price_history_missing_file_stays_quiet_for_first_run(self) -> None:
+        with TemporaryDirectory() as temp_dir:
+            price_history_file = Path(temp_dir) / "price_history.json"
+            diagnostics = []
+
+            history = load_price_history(
+                "steam-id",
+                price_history_file=price_history_file,
+                on_diagnostic=diagnostics.append,
+            )
+
+        self.assertEqual(history, {"version": 1, "steam_id": "steam-id", "games": {}})
+        self.assertEqual(diagnostics, [])
+
+    def test_price_history_reports_bad_existing_file_without_local_paths(self) -> None:
+        with TemporaryDirectory() as temp_dir:
+            price_history_file = Path(temp_dir) / "price_history.json"
+            price_history_file.write_text("{not-valid-json}", encoding="utf-8")
+            diagnostics = []
+
+            history = load_price_history(
+                "steam-id",
+                price_history_file=price_history_file,
+                on_diagnostic=diagnostics.append,
+            )
+            dumped = json.dumps(diagnostics, ensure_ascii=False)
+
+        self.assertEqual(history, {"version": 1, "steam_id": "steam-id", "games": {}})
+        self.assertEqual(diagnostics[0]["source"], "price_history")
+        self.assertEqual(diagnostics[0]["code"], "invalid_json")
+        self.assertIn("price_history.json", dumped)
+        self.assertNotIn(temp_dir, dumped)
+
+    def test_price_history_reports_wrong_shape_and_profile_mismatch(self) -> None:
+        with TemporaryDirectory() as temp_dir:
+            price_history_file = Path(temp_dir) / "price_history.json"
+            diagnostics = []
+
+            price_history_file.write_text(json.dumps([]), encoding="utf-8")
+            wrong_shape = load_price_history(
+                "steam-id",
+                price_history_file=price_history_file,
+                on_diagnostic=diagnostics.append,
+            )
+            price_history_file.write_text(
+                json.dumps({"version": 1, "steam_id": "other", "games": {}}),
+                encoding="utf-8",
+            )
+            mismatch = load_price_history(
+                "steam-id",
+                price_history_file=price_history_file,
+                on_diagnostic=diagnostics.append,
+            )
+
+        self.assertEqual(wrong_shape["games"], {})
+        self.assertEqual(mismatch["games"], {})
+        self.assertEqual(
+            [diagnostic["code"] for diagnostic in diagnostics],
+            ["unsupported_shape", "steam_id_mismatch"],
+        )
+
     def test_list_history_runs_returns_empty_when_history_dir_is_missing(self) -> None:
         with TemporaryDirectory() as temp_dir:
             missing_dir = Path(temp_dir) / "missing-history"
