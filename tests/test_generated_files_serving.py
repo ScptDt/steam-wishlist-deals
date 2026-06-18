@@ -1618,6 +1618,7 @@ class GeneratedFilesServingTests(unittest.TestCase):
     def test_run_sse_runtime_lines_sanitize_public_text(self) -> None:
         original_start_text_subprocess = web.start_text_subprocess
         original_load_config = web.load_config
+        original_load_config_with_diagnostics = web.load_config_with_diagnostics
         original_save_config = web.save_config
         original_running_proc = web._running_proc
         secret_path = "/usr/bin/python3"
@@ -1635,6 +1636,7 @@ class GeneratedFilesServingTests(unittest.TestCase):
 
         web.start_text_subprocess = fake_start_text_subprocess
         web.load_config = lambda: {"key": "SAVED-SECRET"}
+        web.load_config_with_diagnostics = lambda: ({"key": "SAVED-SECRET"}, [])
         web.save_config = lambda _cfg: None
         web._running_proc = None
         handler = _FakeRunHandler({"config": {"vanity": "gaben"}, "filters": {}})
@@ -1643,6 +1645,7 @@ class GeneratedFilesServingTests(unittest.TestCase):
         finally:
             web.start_text_subprocess = original_start_text_subprocess
             web.load_config = original_load_config
+            web.load_config_with_diagnostics = original_load_config_with_diagnostics
             web.save_config = original_save_config
             web._running_proc = original_running_proc
 

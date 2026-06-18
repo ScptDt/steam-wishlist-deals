@@ -2422,6 +2422,7 @@ class Handler(BaseHTTPRequestHandler):
         cmd, proc_env = build_runtime_command_and_env(runtime_config, filters, pd2=pd2)
         public_redaction_values = [
             *cmd,
+            *_config_redaction_values(saved_config),
             *_config_redaction_values(runtime_config, proc_env),
         ]
 
