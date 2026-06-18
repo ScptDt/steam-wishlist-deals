@@ -2235,6 +2235,43 @@ def _html_wishlist_hygiene_reasons(item: dict) -> str:
     return _html_esc(" · ".join(compact[:2]) or "revisar manualmente antes de limpiar")
 
 
+def _html_wishlist_hygiene_context(item: dict) -> str:
+    context = item.get("review_context") if isinstance(item, dict) else None
+    if not isinstance(context, dict):
+        return ""
+    parts: list[str] = []
+    source_names = [
+        str(source or "").strip()
+        for source in context.get("source_names", [])
+        if str(source or "").strip()
+    ]
+    if source_names:
+        parts.append(f"Fuentes: {', '.join(source_names[:4])}")
+    if context.get("multiple_sources") is True:
+        parts.append("varios launchers")
+    if context.get("family_hint") is True:
+        parts.append("Family hint")
+    if context.get("installed_or_playable") is True:
+        parts.append("instalado/jugable")
+    match_methods = [
+        str(method or "").strip()
+        for method in context.get("match_methods", [])
+        if str(method or "").strip()
+    ]
+    confidences = [
+        str(confidence or "").strip()
+        for confidence in context.get("confidences", [])
+        if str(confidence or "").strip()
+    ]
+    if match_methods:
+        parts.append(f"match: {'/'.join(match_methods[:2])}")
+    if confidences:
+        parts.append(f"confianza: {'/'.join(confidences[:2])}")
+    if not parts:
+        return ""
+    return f'<div class="wishlist-hygiene-context">{_html_esc(" · ".join(parts[:6]))}</div>'
+
+
 def _html_wishlist_hygiene_steam_link(item: dict) -> str:
     appid = str(item.get("appid") or item.get("steam_appid") or "").strip()
     if not appid.isdigit():
@@ -2286,6 +2323,7 @@ def _html_wishlist_hygiene_item(item: dict) -> str:
   <div class="wishlist-hygiene-main">
         <strong>{_html_wishlist_hygiene_name(item)}</strong>
         <div class="wishlist-hygiene-signals">{_html_wishlist_hygiene_signals(item)}</div>
+        {_html_wishlist_hygiene_context(item)}
         <div class="wishlist-hygiene-reasons">{_html_wishlist_hygiene_reasons(item)}</div>
         {_html_wishlist_hygiene_access_decision_html(item)}
         {_html_wishlist_hygiene_steam_link(item)}
@@ -3041,6 +3079,7 @@ a.pick-card:hover { border-color: var(--accent-blue); transform: translateY(-2px
 .wishlist-hygiene-main strong { display: block; font-size: .86rem; line-height: 1.3; margin-bottom: .35rem; }
 .wishlist-hygiene-signals { display: flex; flex-wrap: wrap; gap: .25rem; margin-bottom: .35rem; }
 .wishlist-hygiene-signal { border-radius: 999px; color: #000; background: var(--accent-yellow); padding: .1rem .45rem; font-size: .7rem; font-weight: 700; }
+.wishlist-hygiene-context { margin-bottom: .3rem; color: var(--accent-yellow); font-size: .74rem; line-height: 1.4; }
 .wishlist-hygiene-reasons, .wishlist-hygiene-more, .wishlist-hygiene-access-decision span { color: var(--text-secondary); font-size: .75rem; line-height: 1.4; }
 .wishlist-hygiene-access-decision { margin: .35rem 0; padding: .42rem .5rem; border-radius: 8px; border: 1px solid rgba(102,192,244,.22); background: rgba(102,192,244,.08); }
 .wishlist-hygiene-access-decision strong { color: var(--accent-blue); margin-bottom: .12rem; }

@@ -3432,7 +3432,7 @@ class WishlistHygieneTests(unittest.TestCase):
         self.assertEqual(by_appid["456"]["external_matches"][0]["match_method"], "normalized_title")
         self.assertEqual(by_appid["456"]["external_matches"][0]["confidence"], "medium")
 
-    def test_normalize_playnite_library_export_does_not_infer_steam_family(self) -> None:
+    def test_normalize_playnite_library_export_marks_steam_family_as_review_hint(self) -> None:
         external_matches = normalize_playnite_library_export(
             {
                 "schema": "steamtools_playnite_library_v1",
@@ -3461,9 +3461,117 @@ class WishlistHygieneTests(unittest.TestCase):
             [{"appid": "42", "name": "Steam Family Candidate"}],
             external_matches=external_matches,
         )
+        item = hygiene["items"][0]
 
-        self.assertEqual(external_matches, [])
-        self.assertEqual(hygiene["items"], [])
+        self.assertEqual(len(external_matches), 1)
+        self.assertEqual(external_matches[0]["store_name"], "Steam Family Sharing")
+        self.assertTrue(external_matches[0]["family_hint"])
+        self.assertEqual(external_matches[0]["confidence"], "medium")
+        self.assertEqual(item["signals"], ["external_review_needed"])
+        self.assertNotIn("family", item["signals"])
+        self.assertNotIn("owned", item["signals"])
+        self.assertTrue(item["external_matches"][0]["family_hint"])
+        self.assertTrue(item["review_context"]["family_hint"])
+        self.assertIn("family_hint", item["review_context"]["review_reasons"])
+        self.assertEqual(item["action"], "review")
+        self.assertTrue(item["advisory_only"])
+
+    def test_build_wishlist_hygiene_signals_preserves_playnite_duplicate_launchers(self) -> None:
+        external_matches = normalize_playnite_library_export(
+            {
+                "schema": "steamtools_playnite_library_v1",
+                "items": [
+                    {
+                        "playnite_id": "epic-duplicate",
+                        "name": "Duplicate Launcher Game",
+                        "steam_appid": "100",
+                        "platforms": [
+                            {
+                                "store": "Epic Games Store",
+                                "source_type": "official_launcher",
+                                "provider_game_id": "epic-100",
+                            }
+                        ],
+                    },
+                    {
+                        "playnite_id": "gog-duplicate",
+                        "name": "Duplicate Launcher Game",
+                        "steam_appid": "100",
+                        "platforms": [
+                            {
+                                "store": "GOG",
+                                "source_type": "official_launcher",
+                                "provider_game_id": "gog-100",
+                            }
+                        ],
+                    },
+                ],
+            }
+        )
+
+        hygiene = build_wishlist_hygiene_signals(
+            [{"appid": "100", "name": "Duplicate Launcher Game"}],
+            external_matches=external_matches,
+        )
+        item = hygiene["items"][0]
+
+        self.assertEqual(
+            [match["store_name"] for match in item["external_matches"]],
+            ["Epic Games Store", "GOG"],
+        )
+        self.assertEqual(
+            [match["playnite_id"] for match in item["external_matches"]],
+            ["epic-duplicate", "gog-duplicate"],
+        )
+        self.assertEqual(item["review_context"]["source_names"], ["Epic Games Store", "GOG"])
+        self.assertTrue(item["review_context"]["multiple_sources"])
+        self.assertIn("multiple_launchers", item["review_context"]["review_reasons"])
+
+    def test_playnite_access_family_hint_stays_probable_with_installed_context(self) -> None:
+        local_import = normalize_playnite_access_export(
+            {
+                "schema": "steamtools_playnite_access_v1",
+                "items": [
+                    {
+                        "name": "Installed Family Hint",
+                        "steam_appid": "77",
+                        "platforms": [
+                            {
+                                "store": "Steam Family Sharing",
+                                "installed": True,
+                                "playable_hint": True,
+                                "family_hint": True,
+                                "install_dir": "C:/Users/Jane/Games/Hidden",
+                            }
+                        ],
+                    }
+                ],
+            }
+        )
+        play_access = build_play_access_contract(
+            [{"appid": "77", "name": "Installed Family Hint"}],
+            installed_or_playable_appids=local_import,
+        )
+
+        hygiene = build_wishlist_hygiene_signals(
+            [{"appid": "77", "name": "Installed Family Hint"}],
+            play_access=play_access,
+        )
+        item = hygiene["items"][0]
+        serialized = json.dumps(item, sort_keys=True)
+
+        self.assertEqual(local_import[0]["play_state"], "installed")
+        self.assertTrue(local_import[0]["family_hint"])
+        self.assertEqual(item["signals"], ["probable_family_shared"])
+        self.assertNotIn("family", item["signals"])
+        self.assertEqual(item["access_decision"]["code"], "probable_family_shared")
+        self.assertEqual(item["play_access"]["play_state"], "installed")
+        self.assertTrue(item["play_access"]["family_hint"])
+        self.assertTrue(item["review_context"]["installed_or_playable"])
+        self.assertTrue(item["review_context"]["family_hint"])
+        self.assertIn("installed_or_playable", item["review_context"]["review_reasons"])
+        self.assertNotIn("install_dir", serialized)
+        self.assertNotIn("C:/Users", serialized)
 
     def test_load_wishlist_external_matches_rejects_malformed_playnite_library_export(self) -> None:
         cases = [

@@ -379,6 +379,36 @@ def _playnite_access_play_state(platforms: list[dict]) -> str:
     return ""
 
 
+def _playnite_family_hint(platform: dict) -> bool:
+    store = _clean_text(platform.get("store"))
+    return platform.get("family_hint") is True or "steam family" in store.lower()
+
+
+def _playnite_access_source_detail(platform: dict) -> dict | None:
+    store = _clean_text(platform.get("store"))
+    if not store:
+        return None
+    installed = platform.get("installed") is True
+    playable_hint = platform.get("playable_hint") is True or platform.get("playable") is True
+    if not installed and not playable_hint:
+        return None
+    detail = {
+        "store_name": store,
+        "source": _PLAYNITE_ACCESS_SOURCE,
+    }
+    if installed:
+        detail["installed"] = True
+    if playable_hint:
+        detail["playable_hint"] = True
+    if _playnite_family_hint(platform):
+        detail["family_hint"] = True
+    if evidence := _clean_text(platform.get("evidence")):
+        detail["evidence"] = evidence
+    if observed_at := _clean_text(platform.get("observed_at")):
+        detail["observed_at"] = observed_at
+    return detail
+
+
 def _playnite_access_record(item: dict, index: int, defaults: dict) -> dict | None:
     platforms = _playnite_access_platforms(item, index)
     appid = _numeric_appid(_record_appid(item))
@@ -392,6 +422,15 @@ def _playnite_access_record(item: dict, index: int, defaults: dict) -> dict | No
         "source": _PLAYNITE_ACCESS_SOURCE,
         "play_state": play_state,
     }
+    source_details = [
+        detail
+        for detail in (_playnite_access_source_detail(platform) for platform in platforms)
+        if detail
+    ]
+    if source_details:
+        normalized["source_details"] = source_details
+    if any(detail.get("family_hint") is True for detail in source_details):
+        normalized["family_hint"] = True
     if name := _record_name(item):
         normalized["name"] = name
     if observed_at := _clean_text(item.get("observed_at") or defaults.get("exported_at")):
@@ -448,6 +487,21 @@ def _local_play_access_record(record: dict, defaults: dict) -> dict | None:
     }
     if name := _record_name(record):
         normalized["name"] = name
+    if record.get("family_hint") is True:
+        normalized["family_hint"] = True
+    store_name = _metadata_text(record.get("store_name") or record.get("store"))
+    if store_name:
+        detail = {
+            "store_name": store_name,
+            "source": normalized["source"],
+        }
+        if play_state in {"installed", "installed_or_playable"}:
+            detail["installed"] = True
+        if play_state in {"playable", "installed_or_playable"}:
+            detail["playable_hint"] = True
+        if normalized.get("family_hint") is True:
+            detail["family_hint"] = True
+        normalized["source_details"] = [detail]
     if observed_at := _clean_text(record.get("observed_at") or record.get("imported_at") or defaults.get("observed_at")):
         normalized["observed_at"] = observed_at
     return normalized
@@ -511,10 +565,76 @@ def _name_by_appid(*sources) -> dict[str, str]:
     return names
 
 
-def _access_item(appid: str, name: str, access_type: str, *, source: str, confidence: float, reasons: list[str]) -> dict:
+def _safe_source_detail(detail: dict) -> dict | None:
+    safe: dict = {}
+    for key in ("store_name", "source", "evidence", "observed_at"):
+        if value := _metadata_text(detail.get(key)):
+            safe[key] = value
+    for key in ("installed", "playable_hint", "family_hint"):
+        if detail.get(key) is True:
+            safe[key] = True
+    return safe or None
+
+
+def _merge_access_metadata(records) -> dict[str, dict]:
+    metadata_by_appid: dict[str, dict] = {}
+    for record in _records(records):
+        appid = _record_appid(record)
+        if not appid:
+            continue
+        metadata = metadata_by_appid.setdefault(appid, {"source_details": []})
+        if not metadata.get("play_state") and (play_state := _metadata_text(record.get("play_state"))):
+            metadata["play_state"] = play_state
+        if record.get("family_hint") is True:
+            metadata["family_hint"] = True
+        details = record.get("source_details") if isinstance(record, dict) else None
+        if isinstance(details, dict):
+            details = [details]
+        if not isinstance(details, list):
+            continue
+        seen = {
+            (
+                detail.get("store_name"),
+                detail.get("source"),
+                detail.get("installed") is True,
+                detail.get("playable_hint") is True,
+                detail.get("family_hint") is True,
+            )
+            for detail in metadata["source_details"]
+        }
+        for detail in details:
+            if not isinstance(detail, dict):
+                continue
+            safe_detail = _safe_source_detail(detail)
+            if not safe_detail:
+                continue
+            fingerprint = (
+                safe_detail.get("store_name"),
+                safe_detail.get("source"),
+                safe_detail.get("installed") is True,
+                safe_detail.get("playable_hint") is True,
+                safe_detail.get("family_hint") is True,
+            )
+            if fingerprint in seen:
+                continue
+            seen.add(fingerprint)
+            metadata["source_details"].append(safe_detail)
+    return metadata_by_appid
+
+
+def _access_item(
+    appid: str,
+    name: str,
+    access_type: str,
+    *,
+    source: str,
+    confidence: float,
+    reasons: list[str],
+    metadata: dict | None = None,
+) -> dict:
     owned = access_type == "owned"
     family_shared = access_type in {"family_shared", "probable_family_shared"}
-    return {
+    item = {
         "appid": appid,
         "name": name or f"AppID {appid}",
         "access_type": access_type,
@@ -526,6 +646,15 @@ def _access_item(appid: str, name: str, access_type: str, *, source: str, confid
         "reasons": reasons,
         "advisory_only": True,
     }
+    if isinstance(metadata, dict):
+        if play_state := _metadata_text(metadata.get("play_state")):
+            item["play_state"] = play_state
+        if metadata.get("family_hint") is True:
+            item["family_hint"] = True
+        source_details = metadata.get("source_details")
+        if isinstance(source_details, list) and source_details:
+            item["source_details"] = source_details
+    return item
 
 
 def _owned_access(appid: str, name: str) -> dict:
@@ -550,14 +679,18 @@ def _family_access(appid: str, name: str) -> dict:
     )
 
 
-def _probable_family_access(appid: str, name: str) -> dict:
+def _probable_family_access(appid: str, name: str, metadata: dict | None = None) -> dict:
+    reasons = ["instalado o jugable localmente, pero no aparece como owned"]
+    if isinstance(metadata, dict) and metadata.get("family_hint") is True:
+        reasons.append("Playnite lo marca como Steam Family Sharing; revisar manualmente")
     return _access_item(
         appid,
         name,
         "probable_family_shared",
         source="installed_or_playable_not_owned",
         confidence=0.75,
-        reasons=["instalado o jugable localmente, pero no aparece como owned"],
+        reasons=reasons,
+        metadata=metadata,
     )
 
 
@@ -584,7 +717,8 @@ def build_play_access_contract(
     wishlist_records = _records(wishlist)
     owned_set = _appid_set(owned)
     family_set = _appid_set(family_appids)
-    installed_set = _appid_set(installed_or_playable_appids)
+    installed_metadata = _merge_access_metadata(installed_or_playable_appids)
+    installed_set = set(installed_metadata)
     names = _name_by_appid(wishlist_records, owned, family_appids, installed_or_playable_appids)
     items: list[dict] = []
     for record in wishlist_records:
@@ -597,7 +731,7 @@ def build_play_access_contract(
         elif appid in family_set:
             items.append(_family_access(appid, name))
         elif appid in installed_set:
-            items.append(_probable_family_access(appid, name))
+            items.append(_probable_family_access(appid, name, installed_metadata.get(appid)))
     return {
         "schema": "play_access_v1",
         "source_signals": ["owned", "family", "installed_or_playable"],

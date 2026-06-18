@@ -3167,6 +3167,11 @@ details .details-body .field:last-child {
   font-size: 0.68rem;
   font-style: normal;
 }
+.latest-wishlist-item-context {
+  color: var(--yellow);
+  font-size: 0.7rem;
+  line-height: 1.35;
+}
 .latest-wishlist-item-reason-label {
   color: var(--accent);
   font-size: 0.66rem;

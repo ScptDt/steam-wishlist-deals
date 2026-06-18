@@ -98,6 +98,7 @@ namespace SteamTools.PlayniteExporter
 
             return new
             {
+                playnite_id = game.Id.ToString(),
                 name = CleanText(game.Name),
                 steam_appid = TrustedSteamAppId(game),
                 observed_at = exportedAt,
@@ -116,6 +117,7 @@ namespace SteamTools.PlayniteExporter
 
             return new
             {
+                playnite_id = game.Id.ToString(),
                 name = CleanText(game.Name),
                 steam_appid = TrustedSteamAppId(game),
                 observed_at = exportedAt,
@@ -136,6 +138,7 @@ namespace SteamTools.PlayniteExporter
                 store,
                 source_type = SourceType(game),
                 provider_game_id = SafeProviderGameId(game.GameId),
+                family_hint = IsSteamFamilySource(store),
                 evidence = "playnite_library",
                 observed_at = exportedAt
             };
@@ -154,6 +157,7 @@ namespace SteamTools.PlayniteExporter
                 store,
                 installed,
                 playable_hint = installed,
+                family_hint = IsSteamFamilySource(store),
                 evidence = "playnite_access",
                 observed_at = exportedAt
             };
@@ -181,12 +185,22 @@ namespace SteamTools.PlayniteExporter
         private string SourceType(Game game)
         {
             var store = StoreName(game)?.ToLowerInvariant() ?? string.Empty;
+            if (IsSteamFamilySource(store))
+            {
+                return "playnite_addon";
+            }
+
             if (store.Contains("steam") || store.Contains("gog") || store.Contains("epic") || store.Contains("ubisoft") || store.Contains("xbox"))
             {
                 return "official_launcher";
             }
 
             return string.IsNullOrWhiteSpace(store) ? "unknown" : "playnite_addon";
+        }
+
+        private static bool IsSteamFamilySource(string? store)
+        {
+            return CleanText(store)?.ToLowerInvariant().Contains("steam family") == true;
         }
 
         private string? TrustedSteamAppId(Game game)

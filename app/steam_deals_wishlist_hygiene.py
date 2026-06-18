@@ -107,6 +107,14 @@ def _slug(value) -> str:
     return normalized or "unknown"
 
 
+def _truthy(value) -> bool:
+    if value is True:
+        return True
+    if isinstance(value, str):
+        return value.strip().lower() in {"1", "true", "yes", "y", "si", "sí"}
+    return False
+
+
 def _store_id(value) -> str:
     slug = _slug(value)
     return _STORE_ID_ALIASES.get(slug, slug)
@@ -324,6 +332,11 @@ def _playnite_confidence(platform: dict, store_id: str, source_type: str, eviden
     return "medium"
 
 
+def _playnite_family_hint(platform: dict, store_raw) -> bool:
+    store_name = _clean_text(store_raw)
+    return _truthy(platform.get("family_hint")) or "steam family" in store_name.lower()
+
+
 def _playnite_platform_match(item: dict, platform: dict, defaults: dict) -> dict | None:
     appid = _external_target_appid(item)
     external_name = _external_name(item)
@@ -333,24 +346,37 @@ def _playnite_platform_match(item: dict, platform: dict, defaults: dict) -> dict
         return None
     store_raw = platform.get("store") or platform.get("source") or platform.get("name")
     store_id = _store_id(store_raw)
-    if store_id.startswith("steam") or not _clean_text(store_raw):
+    if not _clean_text(store_raw):
+        return None
+    family_hint = _playnite_family_hint(platform, store_raw)
+    if store_id.startswith("steam") and not family_hint:
         return None
     source_type = _enum(platform.get("source_type"), _PLAYNITE_SOURCE_TYPES, "unknown")
-    evidence = _clean_text(platform.get("evidence")) or "playnite_library"
+    evidence = _clean_text(platform.get("evidence")) or ("family_hint" if family_hint else "playnite_library")
     store_name = _store_name(store_id, store_raw)
     match = {
         "store_id": store_id,
         "store_name": store_name,
-        "store_type": "library",
+        "store_type": "manual" if family_hint else "library",
         "source": "playnite_library",
         "external_name": external_name,
         "match_method": "steam_appid" if appid else "normalized_title",
-        "confidence": _playnite_confidence(platform, store_id, source_type, evidence)
-        if appid
-        else "medium",
+        "confidence": "medium" if family_hint else (
+            _playnite_confidence(platform, store_id, source_type, evidence)
+            if appid
+            else "medium"
+        ),
         "evidence": _slug(evidence),
-        "reason": f"aparece en Playnite: {store_name}",
+        "reason": (
+            f"aparece en Playnite como {store_name}; revisar acceso/Family manualmente"
+            if family_hint
+            else f"aparece en Playnite: {store_name}"
+        ),
     }
+    if family_hint:
+        match["family_hint"] = True
+    if playnite_id := _safe_playnite_provider_id(item.get("playnite_id")):
+        match["playnite_id"] = playnite_id
     if appid:
         match["wishlist_appid"] = appid
     if external_id := _safe_playnite_provider_id(platform.get("provider_game_id")):
@@ -380,6 +406,7 @@ def normalize_playnite_library_export(payload) -> list[dict]:
                 _clean_text(match.get("wishlist_appid")),
                 _name_key(match["external_name"]),
                 match["match_method"],
+                "family_hint" if match.get("family_hint") is True else "",
             )
             if fingerprint in seen:
                 continue
@@ -553,6 +580,13 @@ def _normalized_external_match(record: dict) -> dict | None:
         normalized["external_id"] = external_id
     if observed_at := _clean_text(record.get("observed_at") or record.get("imported_at")):
         normalized["observed_at"] = observed_at
+    if _truthy(record.get("family_hint")):
+        normalized["family_hint"] = True
+    if playnite_id := _clean_text(record.get("playnite_id")):
+        normalized["playnite_id"] = playnite_id
+    for key in ("installed", "playable_hint"):
+        if _truthy(record.get(key)):
+            normalized[key] = True
     return normalized
 
 
@@ -561,6 +595,8 @@ def _external_signal(match: dict) -> str:
         return ""
     if match["evidence"] in _CONTEXT_ONLY_EVIDENCE or match["store_type"] in {"price_index", "catalog"}:
         return ""
+    if match.get("family_hint") is True:
+        return "external_review_needed"
     if match["confidence"] == "high":
         if match["store_type"] == "bundle_export" or match["evidence"] in _BUNDLE_EVIDENCE:
             return "external_bundle_owned"
@@ -704,6 +740,8 @@ def _external_fingerprint(match: dict) -> tuple[str, ...]:
         _name_key(match["external_name"]),
         match["evidence"],
         match["confidence"],
+        _clean_text(match.get("playnite_id")),
+        "family_hint" if match.get("family_hint") is True else "",
     )
 
 
@@ -803,10 +841,121 @@ def _play_access_public(access: dict) -> dict:
         "playable_without_buying",
         "confidence",
         "source",
+        "play_state",
+        "family_hint",
+        "source_details",
         "reasons",
         "advisory_only",
     }
     return {key: value for key, value in access.items() if key in allowed}
+
+
+def _unique_clean_text(values) -> list[str]:
+    unique: list[str] = []
+    seen: set[str] = set()
+    for value in values:
+        text = _clean_text(value)
+        if not text or text in seen:
+            continue
+        seen.add(text)
+        unique.append(text)
+    return unique
+
+
+def _review_source_from_external(match: dict) -> dict:
+    source = {
+        "kind": "external_match",
+        "store_id": match.get("store_id"),
+        "store_name": match.get("store_name"),
+        "source": match.get("source"),
+        "match_method": match.get("match_method"),
+        "confidence": match.get("confidence"),
+        "evidence": match.get("evidence"),
+    }
+    for key in ("external_id", "playnite_id", "reason", "observed_at"):
+        if value := _clean_text(match.get(key)):
+            source[key] = value
+    if match.get("family_hint") is True:
+        source["family_hint"] = True
+    return {key: value for key, value in source.items() if value not in (None, "")}
+
+
+def _review_sources_from_play_access(access: dict | None) -> list[dict]:
+    if not isinstance(access, dict):
+        return []
+    details = access.get("source_details")
+    if isinstance(details, dict):
+        details = [details]
+    sources: list[dict] = []
+    if isinstance(details, list):
+        for detail in details:
+            if not isinstance(detail, dict):
+                continue
+            source = {
+                "kind": "play_access",
+                "store_name": detail.get("store_name") or access.get("source"),
+                "source": detail.get("source") or access.get("source"),
+            }
+            for key in ("evidence", "observed_at"):
+                if value := _clean_text(detail.get(key)):
+                    source[key] = value
+            for key in ("installed", "playable_hint", "family_hint"):
+                if detail.get(key) is True:
+                    source[key] = True
+            sources.append({key: value for key, value in source.items() if value not in (None, "")})
+    if not sources:
+        source_name = _clean_text(access.get("source")) or "play_access"
+        source = {"kind": "play_access", "store_name": source_name, "source": source_name}
+        if access.get("family_hint") is True:
+            source["family_hint"] = True
+        sources.append(source)
+    return sources
+
+
+def _wishlist_review_context(
+    external_matches: list[dict],
+    play_access_match: dict | None,
+) -> dict | None:
+    sources = [_review_source_from_external(match) for match in external_matches]
+    sources.extend(_review_sources_from_play_access(play_access_match))
+    if not sources:
+        return None
+    source_names = _unique_clean_text(source.get("store_name") for source in sources)
+    match_methods = _unique_clean_text(source.get("match_method") for source in sources)
+    confidences = _unique_clean_text(source.get("confidence") for source in sources)
+    has_family_hint = any(source.get("family_hint") is True for source in sources)
+    installed_or_playable = bool(
+        isinstance(play_access_match, dict)
+        and (
+            play_access_match.get("playable_without_buying") is True
+            or _clean_text(play_access_match.get("play_state")) in {"installed", "playable", "installed_or_playable"}
+        )
+    )
+    review_reasons: list[str] = []
+    if len(source_names) > 1:
+        review_reasons.append("multiple_launchers")
+    if has_family_hint:
+        review_reasons.append("family_hint")
+    if installed_or_playable:
+        review_reasons.append("installed_or_playable")
+    if "normalized_title" in match_methods:
+        review_reasons.append("normalized_title_match")
+    if any(confidence != "high" for confidence in confidences):
+        review_reasons.append("manual_confidence_review")
+    context = {
+        "sources": sources,
+        "source_names": source_names,
+        "source_count": len(sources),
+        "multiple_sources": len(source_names) > 1,
+        "family_hint": has_family_hint,
+        "installed_or_playable": installed_or_playable,
+        "match_methods": match_methods,
+        "confidences": confidences,
+        "review_reasons": review_reasons,
+        "advisory_only": True,
+        "ranking_impact": "none",
+    }
+    return {key: value for key, value in context.items() if value not in (None, [], "")}
 
 
 def _append_signal(signals: list[str], reasons: list[str], signal: str, reason: str) -> None:
@@ -954,6 +1103,8 @@ def build_wishlist_hygiene_signals(
             item["external_matches"] = accepted_external_matches
         if play_access_match:
             item["play_access"] = _play_access_public(play_access_match)
+        if review_context := _wishlist_review_context(accepted_external_matches, play_access_match):
+            item["review_context"] = review_context
         items.append(item)
     source_signals = ["owned", "family", "library", "hltb", "catalog"]
     if has_play_access_records:

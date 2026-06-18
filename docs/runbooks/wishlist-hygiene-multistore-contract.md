@@ -224,9 +224,15 @@ Reglas de interpretación:
 - AppIDs inválidos se ignoran; duplicados se deduplican preservando orden.
 - `owned_appids` y `family_shared_appids` alimentan `play_access`/`wishlist_hygiene` como señales advisory-only; no cambian score, ranking, filtros, defaults, wishlist deletion ni auto-exclusión.
 
-## Contrato futuro: export Playnite privacy-minimized
+## Contrato Playnite privacy-minimized
 
-Este contrato queda como **docs-only/readiness** antes de implementar parser o add-on. Playnite puede funcionar como collector local de biblioteca multi-launcher, pero Steam Tools solo debe importar señales mínimas para revisar wishlist sin invadir privacidad.
+Playnite puede funcionar como collector local de biblioteca multi-launcher, pero Steam Tools solo debe importar señales mínimas para revisar wishlist sin invadir privacidad.
+
+Estado actual 2026-06-18:
+
+- Los parsers `steamtools_playnite_library_v1` y `steamtools_playnite_access_v1` ya existen y entran por los imports locales existentes (`--wishlist-external-matches-json` y `--play-access-json`).
+- El add-on/exporter Playnite, si se versiona o prueba, debe tratarse como scaffold local/dev source-only hasta validarlo en host Windows + Playnite; sin esa validación no se afirma funcionamiento real del add-on.
+- Cualquier export Playnite sigue siendo advisory-only: ayuda a revisar la wishlist, no prueba Steam Family, no cambia score/ranking/defaults y no borra ni auto-excluye juegos.
 
 Objetivo:
 
@@ -275,6 +281,8 @@ Reglas:
 - `source_type` puede ser `official_launcher`, `playnite_addon`, `manual` o `unknown`.
 - `provider_game_id` es opcional y debe quedarse en un identificador de proveedor, no rutas ni IDs de cuenta personales.
 - Si `store="Steam"`, no asumir `owned` vs `family_shared`; la señal Steam desde Playnite debe quedar como `ownership_status="unknown"` o revisión manual salvo evidencia más fuerte de `steam_access`.
+- Si `store="Steam Family Sharing"`, conservarlo como `family_hint`/revisión manual; no convertirlo en ownership ni Family definitivo.
+- Títulos repetidos entre launchers son información útil para revisión manual y no deben colapsarse perdiendo la fuente.
 
 ### Export 2: acceso local sin rutas
 
@@ -339,6 +347,7 @@ No exportar:
 - rutas locales (`install_dir`, `executable`, carpetas de usuario, working directories);
 - nombres de usuario del sistema, paths de saves/screenshots/config;
 - cookies, tokens, credenciales, headers, raw launcher metadata o logs;
+- objetos crudos de Playnite (`Game`, `GameAction`, plugin settings completos) o serializaciones completas de metadata;
 - IDs de cuenta de launchers externos salvo que el usuario los escriba explícitamente en otro contrato;
 - acciones de launch/play/install/uninstall.
 
@@ -371,11 +380,18 @@ Reglas para este contrato futuro:
 - Si la biblioteca no es pública, Steam rate-limitea o no hay coincidencia, no asumir “no lo tiene”.
 - No login, cookies, tokens, scraping autenticado, friends/family names, mutaciones Steam ni auto-remoción de wishlist.
 
-### Add-on Playnite futuro
+### Add-on/exporter Playnite local
 
-Si se implementa, debe ser un add-on local tipo exporter que lea la biblioteca de Playnite y emita estos JSONs con acción explícita del usuario. La ruta de salida debe elegirse con diálogo de guardado; no escribir en carpetas de instalación ni enviar datos al server local por defecto.
+Si se implementa o versiona, debe ser un add-on local tipo exporter que lea la biblioteca de Playnite y emita estos JSONs con acción explícita del usuario. La ruta de salida debe elegirse con diálogo de guardado; no escribir en carpetas de instalación ni enviar datos al server local por defecto.
 
-Validación esperada antes de código:
+Reglas para cualquier scaffold source-only:
+
+- no incluir binarios, paquetes generados, `bin/`, `obj/`, zips, logs ni builds en el repo;
+- no reclamar compatibilidad funcional sin smoke en Windows + Playnite;
+- no serializar rutas, acciones, extensiones completas ni metadata cruda; construir DTOs mínimos allowlist;
+- si un juego aparece como Steam dentro de Playnite, omitirlo o marcarlo como revisión manual; no convertirlo en `owned`, `family_shared` ni `probable_family_shared` por sí solo.
+
+Validación esperada antes de cambiar parser o add-on:
 
 1. Fixtures locales para los tres schemas válidos, vacíos y malformados.
 2. Tests de parser que confirmen que `platforms[*].store` genera copy “lo tienes en X/Y” sin rutas.

@@ -567,6 +567,41 @@ def _wishlist_hygiene_reason_text(item: dict) -> str:
     return _md_esc(" · ".join(compact[:2]) or "revisar manualmente antes de limpiar")
 
 
+def _wishlist_hygiene_context_text(item: dict) -> str:
+    context = item.get("review_context") if isinstance(item, dict) else None
+    if not isinstance(context, dict):
+        return "—"
+    parts: list[str] = []
+    source_names = [
+        str(source or "").strip()
+        for source in context.get("source_names", [])
+        if str(source or "").strip()
+    ]
+    if source_names:
+        parts.append(f"Fuentes: {', '.join(source_names[:4])}")
+    if context.get("multiple_sources") is True:
+        parts.append("varios launchers")
+    if context.get("family_hint") is True:
+        parts.append("Family hint")
+    if context.get("installed_or_playable") is True:
+        parts.append("instalado/jugable")
+    match_methods = [
+        str(method or "").strip()
+        for method in context.get("match_methods", [])
+        if str(method or "").strip()
+    ]
+    confidences = [
+        str(confidence or "").strip()
+        for confidence in context.get("confidences", [])
+        if str(confidence or "").strip()
+    ]
+    if match_methods:
+        parts.append(f"match: {'/'.join(match_methods[:2])}")
+    if confidences:
+        parts.append(f"confianza: {'/'.join(confidences[:2])}")
+    return _md_esc(" · ".join(parts[:6]) or "—")
+
+
 def _wishlist_hygiene_action_text(item: dict) -> str:
     appid = str(item.get("appid") or item.get("steam_appid") or "").strip()
     action = "Solo revisión" if item.get("action") == "review" else "Revisar"
@@ -607,12 +642,12 @@ def _build_wishlist_hygiene_lines(payload: dict | None) -> list[str]:
         "",
         f"> **{total_items:,} sugerencias{total_hint}**. Sugerencias locales **advisory-only**: no borra, no auto-excluye juegos y no cambia el score. Las señales de acceso pueden indicar **Ya lo tienes**, **Disponible por Steam Family** o **Probable acceso local**.",
         "",
-        "| Juego | Señales | Motivos | Acción |",
-        "|-------|---------|---------|--------|",
+        "| Juego | Señales | Contexto | Motivos | Acción |",
+        "|-------|---------|----------|---------|--------|",
     ]
     for item in items:
         lines.append(
-            f"| {_wishlist_hygiene_game_label(item)} | {_wishlist_hygiene_signal_text(item)} | {_wishlist_hygiene_reason_text(item)} | {_wishlist_hygiene_action_text(item)} |"
+            f"| {_wishlist_hygiene_game_label(item)} | {_wishlist_hygiene_signal_text(item)} | {_wishlist_hygiene_context_text(item)} | {_wishlist_hygiene_reason_text(item)} | {_wishlist_hygiene_action_text(item)} |"
         )
     if hidden_count:
         lines += ["", f"> {hidden_count:,} más en el payload completo."]

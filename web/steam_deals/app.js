@@ -5180,6 +5180,31 @@ function latestWishlistHygieneCountLabel(payload, items) {
   return `${baseCopy} en la wishlist`;
 }
 
+function latestWishlistReviewContextText(item) {
+  const source = item && typeof item === 'object' ? item : {};
+  const context = source.review_context && typeof source.review_context === 'object'
+    ? source.review_context
+    : null;
+  if (!context) return '';
+  const parts = [];
+  const sourceNames = Array.isArray(context.source_names)
+    ? context.source_names.map(name => String(name || '').trim()).filter(Boolean)
+    : [];
+  if (sourceNames.length) parts.push(`Fuentes: ${sourceNames.slice(0, 4).join(', ')}`);
+  if (context.multiple_sources === true) parts.push('varios launchers');
+  if (context.family_hint === true) parts.push('Family hint');
+  if (context.installed_or_playable === true) parts.push('instalado/jugable');
+  const matchMethods = Array.isArray(context.match_methods)
+    ? context.match_methods.map(method => String(method || '').trim()).filter(Boolean)
+    : [];
+  const confidences = Array.isArray(context.confidences)
+    ? context.confidences.map(confidence => String(confidence || '').trim()).filter(Boolean)
+    : [];
+  if (matchMethods.length) parts.push(`match: ${matchMethods.slice(0, 2).join('/')}`);
+  if (confidences.length) parts.push(`confianza: ${confidences.slice(0, 2).join('/')}`);
+  return parts.slice(0, 6).join(' · ');
+}
+
 function renderLatestWishlistHygieneItem(item) {
   const source = item && typeof item === 'object' ? item : {};
   const appid = String(source.appid || source.steam_appid || '').trim();
@@ -5198,6 +5223,7 @@ function renderLatestWishlistHygieneItem(item) {
   const signals = Array.isArray(source.signals)
     ? source.signals.map(latestWishlistHygieneSignalLabel).filter(Boolean).slice(0, 3)
     : [];
+  const reviewContext = latestWishlistReviewContextText(source);
   const accessDecision = latestWishlistAccessDecision(source);
   const nameHtml = safeAppid
     ? `<a href="https://store.steampowered.com/app/${escapeHtml(safeAppid)}/" target="_blank" rel="noopener noreferrer">${escapeHtml(name)}</a>`
@@ -5217,6 +5243,7 @@ function renderLatestWishlistHygieneItem(item) {
         </div>
         <span class="latest-wishlist-item-meta">${escapeHtml(appidMeta)}</span>
         ${signals.length ? `<span class="latest-wishlist-item-signals">${signals.map(signal => `<em>${escapeHtml(signal)}</em>`).join('')}</span>` : ''}
+        ${reviewContext ? `<span class="latest-wishlist-item-context">${escapeHtml(reviewContext)}</span>` : ''}
         ${accessDecision ? `<span class="latest-wishlist-access-decision"><strong>${escapeHtml(accessDecision.label)}:</strong> ${escapeHtml(accessDecision.detail)}</span>` : ''}
         <span class="latest-wishlist-item-reason-label">Razón para revisar</span>
         <span class="latest-wishlist-item-reasons">${escapeHtml((visibleReasons.length ? visibleReasons : ['revisar manualmente antes de limpiar']).join(' · '))}</span>

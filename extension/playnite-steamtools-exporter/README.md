@@ -53,14 +53,28 @@ The exporter treats Playnite `Source` / library plugin as the launcher/store sig
 For each game:
 
 - `name`: Playnite game name.
+- `playnite_id`: local Playnite GUID for grouping/debugging only; it is not an account ID and does not prove ownership.
 - `steam_appid`: emitted only when a trusted numeric Steam AppID is available. Initial scaffold trusts numeric `Game.GameId` only for Steam-source games.
 - `platforms[*].store`: safe launcher/source display name.
 - `platforms[*].source_type`: `official_launcher` for known library sources, otherwise `playnite_addon`/`unknown`.
 - `platforms[*].provider_game_id`: sanitized provider id, never a path.
 - `platforms[*].installed`: high-level Playnite install flag.
 - `platforms[*].playable_hint`: high-level boolean derived from install status only; no launch actions are inspected or exported.
+- `platforms[*].family_hint`: `true` only when Playnite source text is `Steam Family Sharing` or equivalent. This is a review hint, not ownership or confirmed Family access.
 
 Games without a trusted Steam AppID still appear in the safe inventory. Steam Tools can use exact title matches as `normalized_title` review signals, not as automatic ownership proof.
+
+Duplicate titles across launchers are preserved. If the same title appears in Epic, GOG, Amazon, Xbox, Steam, or Steam Family Sharing, each source remains visible so Steam Tools can help with manual review instead of hiding potentially useful context.
+
+## Development mode packaging
+
+Until the exporter stabilizes, use Playnite development loading instead of publishing a `.pext`:
+
+1. Build this project on Windows.
+2. Add the build output folder in Playnite under `Settings → For developers → External extensions`.
+3. Restart Playnite after every plugin build or source change.
+
+Plugins do not hot-reload at runtime. A `.pext` package can be produced later with Playnite `Toolbox.exe pack` once the field mapping is stable.
 
 ## Validation from this repo
 
