@@ -112,6 +112,18 @@ def build_public_config_response(config: dict) -> dict:
     return public_config(config)
 
 
+def load_public_config_response() -> dict:
+    diagnostics: list[dict] = []
+    try:
+        config = pd2.load_user_config(on_error=diagnostics.append)
+    except TypeError:
+        config = pd2.load_user_config()
+    response = build_public_config_response(config)
+    if diagnostics:
+        response["config_diagnostics"] = diagnostics
+    return response
+
+
 def _config_redaction_values(config: dict, env: dict[str, str] | None = None) -> list[str]:
     values: list[str] = []
     for config_key, env_name in CONFIG_SECRET_ENV_VARS.items():
@@ -681,7 +693,7 @@ class Handler(BaseHTTPRequestHandler):
         elif path == "/api/data":
             self._json(get_data_json())
         elif path == "/api/config":
-            self._json(build_public_config_response(pd2.load_user_config()))
+            self._json(load_public_config_response())
         else:
             self.send_error(404)
 
@@ -731,10 +743,22 @@ class Handler(BaseHTTPRequestHandler):
             if body is None:
                 return
             cfg = merge_config_preserving_secrets(pd2.load_user_config(), body)
-            pd2.CONFIG_FILE.parent.mkdir(parents=True, exist_ok=True)
-            pd2.CONFIG_FILE.write_text(
-                json.dumps(cfg, ensure_ascii=False, indent=2), encoding="utf-8"
-            )
+            try:
+                pd2.CONFIG_FILE.parent.mkdir(parents=True, exist_ok=True)
+                pd2.CONFIG_FILE.write_text(
+                    json.dumps(cfg, ensure_ascii=False, indent=2), encoding="utf-8"
+                )
+            except Exception as exc:
+                self._json(
+                    safe_public_error_payload(
+                        "config_save_failed",
+                        "No se pudo guardar la configuración local.",
+                        exc=exc,
+                        extra_values=[pd2.CONFIG_FILE],
+                    ),
+                    500,
+                )
+                return
             self._json({"status": "saved"})
         else:
             self.send_error(404)

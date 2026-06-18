@@ -13,10 +13,19 @@ def load_timestamped_cache(
     identity_key: str | None = None,
     identity_value: str | None = None,
     default: dict | None = None,
+    on_error=None,
 ) -> tuple[dict, float]:
     empty = dict(default or {})
-    data = load_json_file(path, None)
+    data = load_json_file(path, None, on_error=on_error)
     if not isinstance(data, dict):
+        if data is not None and on_error is not None:
+            on_error(
+                {
+                    "error": "invalid_cache_shape",
+                    "message": "Cache local inválida; se usó cache vacío.",
+                    "file": path.name,
+                }
+            )
         return empty, float("inf")
 
     if identity_key is not None and data.get(identity_key) != identity_value:
@@ -24,6 +33,14 @@ def load_timestamped_cache(
 
     saved_at = data.get("saved_at")
     if not isinstance(saved_at, str):
+        if on_error is not None:
+            on_error(
+                {
+                    "error": "invalid_cache_metadata",
+                    "message": "Cache local sin metadata válida; se usó cache vacío.",
+                    "file": path.name,
+                }
+            )
         return empty, float("inf")
 
     try:

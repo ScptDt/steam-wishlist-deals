@@ -54,6 +54,7 @@ from app.steam_deals_openid import (
 from app.steam_deals_access import validate_steam_access_direct_import
 from app.steam_deals_recommendations import build_selection_review
 from shared.tool_modules import PAYDAY2_TOOL_ID, get_tool_entrypoint
+from shared.io_utils import load_json_file
 
 from shared_web_infra import (
     build_steam_access_import_session_record,
@@ -674,13 +675,26 @@ def send_generated_file_error(handler, status_code: int, title: str, message: st
 # ─── Config I/O ──────────────────────────────────
 
 
+def _config_shape_diagnostic() -> dict[str, str]:
+    return {
+        "error": "invalid_config_shape",
+        "message": "Config local inválida; se usaron valores por defecto.",
+        "file": CONFIG_FILE.name,
+    }
+
+
+def load_config_with_diagnostics() -> tuple[dict, list[dict]]:
+    diagnostics: list[dict] = []
+    config = load_json_file(CONFIG_FILE, {}, on_error=diagnostics.append)
+    if not isinstance(config, dict):
+        diagnostics.append(_config_shape_diagnostic())
+        return {}, diagnostics
+    return config, diagnostics
+
+
 def load_config() -> dict:
-    if not CONFIG_FILE.exists():
-        return {}
-    try:
-        return json.loads(CONFIG_FILE.read_text(encoding="utf-8"))
-    except (json.JSONDecodeError, OSError):
-        return {}
+    config, _diagnostics = load_config_with_diagnostics()
+    return config
 
 
 def save_config(cfg: dict) -> None:
@@ -707,17 +721,20 @@ def write_steam_access_direct_import(contract: dict) -> Path:
     return import_path
 
 
-def build_public_config_response(config: dict) -> dict:
+def build_public_config_response(config: dict, *, config_diagnostics: list[dict] | None = None) -> dict:
     default_output_dir = resolve_output_dir(None)
     default_output_label = redact_sensitive_text(
         output_folder_display_name(default_output_dir),
         extra_values=[default_output_dir],
     )
-    return {
+    response = {
         **public_config(config),
         "default_output_dir": default_output_label,
         "default_output_label": default_output_label,
     }
+    if config_diagnostics:
+        response["config_diagnostics"] = config_diagnostics
+    return response
 
 
 def default_itad_external_offers_cache_path() -> str:
@@ -1491,7 +1508,10 @@ class Handler(BaseHTTPRequestHandler):
         elif path == "/app.js":
             serve_text_asset(self, STEAM_DEALS_JS_FILE, JS_CONTENT_TYPE)
         elif path == "/api/config":
-            self._send_json(build_public_config_response(load_config()))
+            config, diagnostics = load_config_with_diagnostics()
+            self._send_json(
+                build_public_config_response(config, config_diagnostics=diagnostics)
+            )
         elif path == "/api/steam-openid/status":
             self._send_json(steam_openid_status_payload(load_config()))
         elif path == STEAM_ACCESS_LOCAL_PAIR_STATUS_ROUTE:
@@ -1578,7 +1598,19 @@ class Handler(BaseHTTPRequestHandler):
         if body is None:
             return
         cfg = merge_config_preserving_secrets(load_config(), body)
-        save_config(cfg)
+        try:
+            save_config(cfg)
+        except Exception as e:
+            self._send_json(
+                safe_public_error_payload(
+                    "config_save_failed",
+                    "No se pudo guardar la configuración local.",
+                    exc=e,
+                    extra_values=[CONFIG_FILE],
+                ),
+                status=500,
+            )
+            return
         self._send_json({"status": "saved"})
 
     def _serve_steam_openid_start(self):
@@ -2330,7 +2362,17 @@ class Handler(BaseHTTPRequestHandler):
                 status=400,
             )
             return
-        saved_config = load_config()
+        saved_config, config_diagnostics = load_config_with_diagnostics()
+        if config_diagnostics:
+            self._send_json(
+                {
+                    "error": "config_load_failed",
+                    "message": "No se pudo leer la configuración local; corrígela o vuelve a guardar antes de ejecutar.",
+                    "config_diagnostics": config_diagnostics,
+                },
+                status=500,
+            )
+            return
         runtime_config = hydrate_config_secrets(config, saved_config)
 
         # Save config for future sessions
@@ -2362,8 +2404,17 @@ class Handler(BaseHTTPRequestHandler):
                 save_cfg["genres"] = g
         try:
             save_config({**saved_config, **save_cfg})
-        except Exception:
-            pass
+        except Exception as e:
+            self._send_json(
+                safe_public_error_payload(
+                    "config_save_failed",
+                    "No se pudo guardar la configuración local; no se inicia la ejecución para evitar un fallback silencioso.",
+                    exc=e,
+                    extra_values=[CONFIG_FILE],
+                ),
+                status=500,
+            )
+            return
 
         # Update output_dir for file serving
         Handler.output_dir = str(resolve_output_dir(runtime_config.get("output")))

@@ -92,7 +92,14 @@ async function loadData() {
     if (cfg.vanity) $('cfg-vanity').value = cfg.vanity;
     if (cfg.key) $('cfg-key').value = cfg.key;
     if (cfg.itad_key) $('cfg-itad').value = cfg.itad_key;
-  } catch (e) {}
+    if (Array.isArray(cfg.config_diagnostics)) {
+      cfg.config_diagnostics.forEach((diagnostic) => {
+        showActionStatus((diagnostic && diagnostic.message) || 'Config local degradó a valores por defecto.', 'warn');
+      });
+    }
+  } catch (e) {
+    showActionStatus('No se pudo cargar la configuración local.', 'error');
+  }
 }
 
 function renderAll() {

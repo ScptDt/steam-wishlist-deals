@@ -5303,6 +5303,7 @@ def send_notifications(filters: dict, summary: dict) -> None:
         send_discord_fn=send_discord,
         emit=print,
         ok=_ok,
+        warn=_warn,
     )
 
 

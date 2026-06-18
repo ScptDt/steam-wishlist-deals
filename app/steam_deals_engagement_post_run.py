@@ -23,7 +23,7 @@ class EngagementRuntime:
     compute_budget_picks: Callable[..., dict]
     build_gift_ideas: Callable[..., list[dict]]
     build_notification_summary: Callable[..., dict | None]
-    send_notifications: Callable[[dict, dict], None]
+    send_notifications: Callable[[dict, dict], dict]
 
 
 @dataclass(frozen=True)

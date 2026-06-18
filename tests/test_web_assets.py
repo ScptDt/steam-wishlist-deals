@@ -757,6 +757,9 @@ class WebAssetsTests(unittest.TestCase):
             "No se pudo cargar la configuración inicial. Revisa que el server local siga activo.",
             app_js,
         )
+        self.assertIn("function reportConfigDiagnostics(cfg)", app_js)
+        self.assertIn("cfg.config_diagnostics", app_js)
+        self.assertIn("body.message || body.error", app_js)
         self.assertIn("function renderWatchlistError(message)", app_js)
         self.assertIn("renderWatchlistError('No se pudo cargar la watchlist.')", app_js)
         self.assertIn("renderWatchlistError('No se pudo guardar la alerta de precio.')", app_js)
@@ -770,6 +773,17 @@ class WebAssetsTests(unittest.TestCase):
         self.assertNotIn("catch(e) {}", app_js[load_start:add_start])
         self.assertNotIn("catch(e) {}", app_js[add_start:remove_start])
         self.assertNotIn("catch(e) {}", app_js[remove_start:helper_start])
+
+    def test_payday2_config_load_fallback_is_visible(self) -> None:
+        app_js = (ROOT / "web" / "payday2" / "app.js").read_text(
+            encoding="utf-8"
+        )
+
+        self.assertIn("cfg.config_diagnostics", app_js)
+        self.assertIn("No se pudo cargar la configuración local.", app_js)
+        config_start = app_js.index("const r = await fetch('/api/config')")
+        render_start = app_js.index("function renderAll()")
+        self.assertNotIn("catch (e) {}", app_js[config_start:render_start])
 
     def test_share_copy_uses_user_friendly_spanish_terms(self) -> None:
         index_html = (ROOT / "web" / "steam_deals" / "index.html").read_text(

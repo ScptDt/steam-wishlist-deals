@@ -1,7 +1,9 @@
 from __future__ import annotations
 
 import io
+import tempfile
 import unittest
+from pathlib import Path
 from unittest.mock import patch
 
 import payday2_dlc_tracker
@@ -310,6 +312,64 @@ class ConfigSecretRedactionTests(unittest.TestCase):
         self.assertEqual(handler.json["vanity"], "gaben")
         self.assertTrue(handler.json["has_key"])
         self.assertNotIn("STEAM-SECRET", str(handler.json))
+
+    def test_steam_deals_get_config_surfaces_invalid_json_diagnostic(self) -> None:
+        original_config_file = steam_deals_web.CONFIG_FILE
+        with tempfile.TemporaryDirectory() as tmpdir:
+            config_file = Path(tmpdir) / "steam-deals-secret-path.json"
+            config_file.write_text("{bad", encoding="utf-8")
+            steam_deals_web.CONFIG_FILE = config_file
+            handler = _make_steam_route_handler("/api/config")
+            try:
+                steam_deals_web.Handler.do_GET(handler)
+            finally:
+                steam_deals_web.CONFIG_FILE = original_config_file
+
+        self.assertEqual(handler.status, 200)
+        self.assertIn("config_diagnostics", handler.json)
+        diagnostic = handler.json["config_diagnostics"][0]
+        self.assertEqual(diagnostic["error"], "invalid_json")
+        self.assertEqual(diagnostic["file"], "steam-deals-secret-path.json")
+        self.assertNotIn(tmpdir, str(handler.json))
+
+    def test_steam_deals_config_save_failure_returns_safe_error(self) -> None:
+        original_load_config = steam_deals_web.load_config
+        original_save_config = steam_deals_web.save_config
+        steam_deals_web.load_config = lambda: {}
+        steam_deals_web.save_config = lambda _cfg: (_ for _ in ()).throw(
+            OSError("permission denied: /home/example/STEAM-SECRET/config.json")
+        )
+        handler = _FakeSteamConfigHandler({"vanity": "gaben"})
+        try:
+            steam_deals_web.Handler._serve_config_save(handler)
+        finally:
+            steam_deals_web.load_config = original_load_config
+            steam_deals_web.save_config = original_save_config
+
+        self.assertEqual(handler.status, 500)
+        self.assertEqual(handler.json["error"], "config_save_failed")
+        self.assertIn("No se pudo guardar", handler.json["message"])
+        self.assertNotIn("/home/example", str(handler.json))
+        self.assertNotIn("STEAM-SECRET", str(handler.json))
+
+    def test_steam_deals_run_blocks_silent_config_save_failure(self) -> None:
+        original_load_config_with_diagnostics = steam_deals_web.load_config_with_diagnostics
+        original_save_config = steam_deals_web.save_config
+        steam_deals_web.load_config_with_diagnostics = lambda: ({}, [])
+        steam_deals_web.save_config = lambda _cfg: (_ for _ in ()).throw(
+            OSError("cannot write /home/example/steam_deals.json")
+        )
+        handler = _FakeSteamConfigHandler({"config": {"vanity": "gaben"}, "filters": {}})
+        try:
+            steam_deals_web.Handler._serve_run_sse(handler)
+        finally:
+            steam_deals_web.load_config_with_diagnostics = original_load_config_with_diagnostics
+            steam_deals_web.save_config = original_save_config
+
+        self.assertEqual(handler.status, 500)
+        self.assertEqual(handler.json["error"], "config_save_failed")
+        self.assertIn("no se inicia", handler.json["message"])
+        self.assertNotIn("/home/example", str(handler.json))
 
     def test_payday2_public_config_response_redacts_secrets(self) -> None:
         result = payday2_web.build_public_config_response(

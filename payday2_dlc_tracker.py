@@ -106,8 +106,9 @@ MESES = {
 CONFIG_FILE = Path.home() / ".config" / "steam_deals.json"
 
 
-def load_user_config() -> dict:
-    return load_json_file(CONFIG_FILE, {})
+def load_user_config(*, on_error=None) -> dict:
+    config = load_json_file(CONFIG_FILE, {}, on_error=on_error)
+    return config if isinstance(config, dict) else {}
 
 
 def get_config(*, argv=None, environ=None, load_user_config_fn=load_user_config):

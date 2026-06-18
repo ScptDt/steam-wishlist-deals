@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import json
+import re
 import urllib.request
 
 
@@ -57,6 +58,18 @@ def _post_json_request(url: str, body: dict, timeout: int = 15) -> dict:
     return json.loads(raw)
 
 
+def _notification_error_reason(exc: Exception) -> str:
+    reason = re.sub(r"[^a-z0-9_]+", "_", type(exc).__name__.lower()).strip("_")
+    return reason or "error"
+
+
+def _channel_result(channel: str, status: str, *, reason: str = "") -> dict:
+    result = {"channel": channel, "status": status}
+    if reason:
+        result["reason"] = reason
+    return result
+
+
 def _telegram_lines(summary: dict) -> list[str]:
     lines = ["🎮 *Steam Deals Update*", f"📊 {summary['total_deals']} deals encontrados"]
     if summary["new_count"]:
@@ -91,7 +104,7 @@ def send_telegram(token: str, chat_id: str, summary: dict, *, post_json_request=
         return response.get("ok", False)
     except Exception as exc:
         if on_error is not None:
-            on_error(f"Telegram error: {exc}")
+            on_error(f"Telegram error: {_notification_error_reason(exc)}")
         return False
 
 
@@ -135,7 +148,7 @@ def send_discord(webhook_url: str, summary: dict, *, post_json_request=_post_jso
         return True
     except Exception as exc:
         if on_error is not None:
-            on_error(f"Discord error: {exc}")
+            on_error(f"Discord error: {_notification_error_reason(exc)}")
         return False
 
 
@@ -147,14 +160,35 @@ def send_notifications(
     send_discord_fn=send_discord,
     emit=print,
     ok=None,
-) -> None:
+    warn=None,
+) -> dict:
     """Send notifications via configured channels."""
     ok = ok or (lambda text: text)
-    if filters.get("telegram_token") and filters.get("telegram_chat"):
+    warn = warn or (lambda text: text)
+    results: list[dict] = []
+    if filters.get("telegram_token") and not filters.get("telegram_chat"):
+        results.append(_channel_result("telegram", "skipped", reason="telegram_chat_missing"))
+        emit(f"  {warn('Notificación Telegram omitida: falta telegram_chat local')}")
+    elif filters.get("telegram_token") and filters.get("telegram_chat"):
         telegram_ok = send_telegram_fn(filters["telegram_token"], filters["telegram_chat"], summary)
         if telegram_ok:
+            results.append(_channel_result("telegram", "sent"))
             emit(f"  {ok('Notificación Telegram enviada')}")
+        else:
+            results.append(_channel_result("telegram", "failed", reason="send_returned_false"))
+            emit(f"  {warn('Notificación Telegram no enviada; revisa token/chat local')}")
     if filters.get("discord_webhook"):
         discord_ok = send_discord_fn(filters["discord_webhook"], summary)
         if discord_ok:
+            results.append(_channel_result("discord", "sent"))
             emit(f"  {ok('Notificación Discord enviada')}")
+        else:
+            results.append(_channel_result("discord", "failed", reason="send_returned_false"))
+            emit(f"  {warn('Notificación Discord no enviada; revisa webhook local')}")
+    return {
+        "schema": "steam_deals_notification_send_results_v1",
+        "channels": results,
+        "sent_count": sum(1 for result in results if result["status"] == "sent"),
+        "failed_count": sum(1 for result in results if result["status"] == "failed"),
+        "skipped_count": sum(1 for result in results if result["status"] == "skipped"),
+    }

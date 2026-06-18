@@ -23,6 +23,19 @@ class JsonFileHelperTests(unittest.TestCase):
 
             self.assertEqual(load_json_file(path, {}), payload)
 
+    def test_load_json_file_reports_invalid_json_without_leaking_path(self) -> None:
+        with tempfile.TemporaryDirectory() as tmpdir:
+            path = Path(tmpdir) / "bad-config.json"
+            path.write_text("{bad", encoding="utf-8")
+            diagnostics: list[dict] = []
+
+            result = load_json_file(path, {"fallback": True}, on_error=diagnostics.append)
+
+            self.assertEqual(result, {"fallback": True})
+            self.assertEqual(diagnostics[0]["error"], "invalid_json")
+            self.assertEqual(diagnostics[0]["file"], "bad-config.json")
+            self.assertNotIn(tmpdir, str(diagnostics[0]))
+
 
 class TimestampedCacheTests(unittest.TestCase):
     def test_save_and_load_timestamped_cache_roundtrip(self) -> None:
@@ -68,6 +81,24 @@ class TimestampedCacheTests(unittest.TestCase):
 
             self.assertEqual(loaded, {})
             self.assertEqual(age_hours, float("inf"))
+
+    def test_load_timestamped_cache_reports_invalid_cache_shape(self) -> None:
+        with tempfile.TemporaryDirectory() as tmpdir:
+            path = Path(tmpdir) / "cache.json"
+            path.write_text("[]", encoding="utf-8")
+            diagnostics: list[dict] = []
+
+            loaded, age_hours = load_timestamped_cache(
+                path,
+                "reviews",
+                on_error=diagnostics.append,
+            )
+
+            self.assertEqual(loaded, {})
+            self.assertEqual(age_hours, float("inf"))
+            self.assertEqual(diagnostics[0]["error"], "invalid_cache_shape")
+            self.assertEqual(diagnostics[0]["file"], "cache.json")
+            self.assertNotIn(tmpdir, str(diagnostics[0]))
 
 
 if __name__ == "__main__":

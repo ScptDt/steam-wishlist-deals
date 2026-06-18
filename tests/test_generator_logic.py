@@ -13431,6 +13431,7 @@ class NotificationsTests(unittest.TestCase):
         self.assertEqual(summary["watchlist_hits"][0]["target"], 9.0)
 
     def test_send_telegram_returns_false_on_request_error(self) -> None:
+        errors: list[str] = []
         ok = module_send_telegram(
             "token",
             "chat",
@@ -13442,11 +13443,13 @@ class NotificationsTests(unittest.TestCase):
                 "watchlist_hits": [],
             },
             post_json_request=lambda _url, _body, timeout=15: (_ for _ in ()).throw(
-                RuntimeError("boom")
+                RuntimeError("boom /home/example/secret-token")
             ),
+            on_error=errors.append,
         )
 
         self.assertEqual(ok, False)
+        self.assertEqual(errors, ["Telegram error: runtimeerror"])
 
     def test_send_discord_returns_true_when_request_succeeds(self) -> None:
         ok = module_send_discord(
@@ -13468,11 +13471,11 @@ class NotificationsTests(unittest.TestCase):
     ) -> None:
         emitted = []
 
-        module_send_notifications(
+        result = module_send_notifications(
             {
                 "telegram_token": "token",
                 "telegram_chat": "chat",
-                "discord_webhook": "hook",
+                "discord_webhook": "DISCORD-SECRET-VALUE",
             },
             {
                 "total_deals": 1,
@@ -13487,6 +13490,59 @@ class NotificationsTests(unittest.TestCase):
         )
 
         self.assertEqual(len(emitted), 2)
+        self.assertEqual(result["sent_count"], 2)
+        self.assertEqual(result["failed_count"], 0)
+        self.assertEqual(result["skipped_count"], 0)
+
+    def test_send_notifications_reports_failed_and_skipped_channels(self) -> None:
+        emitted: list[str] = []
+
+        result = module_send_notifications(
+            {
+                "telegram_token": "token-without-chat",
+                "discord_webhook": "hook",
+            },
+            {
+                "total_deals": 1,
+                "new_count": 0,
+                "top_3": [],
+                "price_drops": [],
+                "watchlist_hits": [],
+            },
+            send_telegram_fn=lambda _token, _chat, _summary: True,
+            send_discord_fn=lambda _webhook, _summary: False,
+            emit=emitted.append,
+            warn=lambda text: f"WARN:{text}",
+        )
+
+        self.assertEqual(result["schema"], "steam_deals_notification_send_results_v1")
+        self.assertEqual(
+            result["channels"],
+            [
+                {
+                    "channel": "telegram",
+                    "status": "skipped",
+                    "reason": "telegram_chat_missing",
+                },
+                {
+                    "channel": "discord",
+                    "status": "failed",
+                    "reason": "send_returned_false",
+                },
+            ],
+        )
+        self.assertEqual(result["sent_count"], 0)
+        self.assertEqual(result["failed_count"], 1)
+        self.assertEqual(result["skipped_count"], 1)
+        self.assertEqual(
+            emitted,
+            [
+                "  WARN:Notificación Telegram omitida: falta telegram_chat local",
+                "  WARN:Notificación Discord no enviada; revisa webhook local",
+            ],
+        )
+        self.assertNotIn("token-without-chat", str(emitted))
+        self.assertNotIn("DISCORD-SECRET-VALUE", str(emitted))
 
 
 class SchedulerTests(unittest.TestCase):

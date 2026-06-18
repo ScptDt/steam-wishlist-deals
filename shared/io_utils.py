@@ -6,12 +6,27 @@ from pathlib import Path
 from typing import Any, Mapping
 
 
-def load_json_file(path: Path, default: Any) -> Any:
+def json_file_fallback_diagnostic(path: Path, exc: BaseException) -> dict[str, str]:
+    if isinstance(exc, json.JSONDecodeError):
+        error = "invalid_json"
+        message = "JSON local inválido; se usaron valores por defecto."
+    elif isinstance(exc, UnicodeDecodeError):
+        error = "decode_error"
+        message = "JSON local ilegible; se usaron valores por defecto."
+    else:
+        error = "read_error"
+        message = "No se pudo leer JSON local; se usaron valores por defecto."
+    return {"error": error, "message": message, "file": Path(path).name}
+
+
+def load_json_file(path: Path, default: Any, *, on_error=None) -> Any:
     if not path.exists():
         return default
     try:
         return json.loads(path.read_text(encoding="utf-8"))
-    except (json.JSONDecodeError, OSError, UnicodeDecodeError):
+    except (json.JSONDecodeError, OSError, UnicodeDecodeError) as exc:
+        if on_error is not None:
+            on_error(json_file_fallback_diagnostic(path, exc))
         return default
 
 

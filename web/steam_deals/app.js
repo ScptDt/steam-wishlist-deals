@@ -690,10 +690,19 @@ function closeWizard() {
   document.getElementById('wizard-overlay').style.display = 'none';
 }
 
+function reportConfigDiagnostics(cfg) {
+  const diagnostics = Array.isArray(cfg && cfg.config_diagnostics) ? cfg.config_diagnostics : [];
+  diagnostics.forEach((diagnostic) => {
+    const message = diagnostic && diagnostic.message ? diagnostic.message : 'Config local degradó a valores por defecto.';
+    appendLine(message, 'warn');
+  });
+}
+
 Promise.all([
   fetch('/api/config').then(r => r.json()),
   fetch('/api/ui-state').then(r => r.json()),
 ]).then(([cfg, state]) => {
+  reportConfigDiagnostics(cfg);
   fillForm(cfg);
   renderSteamOpenIdStatus({profile: cfg && cfg.steam_openid_profile});
   enforceTransientFilterDefaults();
@@ -711,6 +720,7 @@ Promise.all([
 }).catch(() => {
   appendLine('No se pudo cargar el estado inicial completo; intentando cargar config básica.', 'warn');
   fetch('/api/config').then(r => r.json()).then(cfg => {
+    reportConfigDiagnostics(cfg);
     fillForm(cfg);
     renderSteamOpenIdStatus({profile: cfg && cfg.steam_openid_profile});
     enforceTransientFilterDefaults();
@@ -2215,7 +2225,7 @@ async function runSteamDealsUI(options = {}) {
       let msg = 'HTTP ' + resp.status;
       try {
         const body = await resp.json();
-        if (body && body.error) msg = body.error;
+        if (body && (body.message || body.error)) msg = body.message || body.error;
       } catch(e) {}
       appendLine('Error del servidor: ' + msg, 'err');
       return false;
