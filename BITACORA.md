@@ -1,6 +1,6 @@
 # Bitácora Operativa
 
-Ultima actualizacion: 2026-06-17
+Ultima actualizacion: 2026-06-18
 
 ## Proposito
 
@@ -79,6 +79,8 @@ La nota de inicio puede omitirse en `BITACORA.md` para cambios triviales que no 
 | 2026-04-16 | macOS | validado en CI (parcial) | Workflow `Desktop Cross-Platform Validation` OK en `macos-latest` (run `24487556896`): install deps, build desktop, `py_compile`, check fallback local y artifact `dist-macos-latest` publicado. Falta validacion manual en host macOS para apertura de `.app`, quarantine/codesign/notarizacion segun distribucion. | Ejecutar checklist manual macOS (apertura local, quarantine, codesign) y registrar incidencias/workarounds. |
 
 ## Bitacora
+
+- 2026-06-18: Cierre docs-first OAuth-first ITAD. Autor/ejecutor: AudPen. Resultado: `docs/runbooks/multistore-price-comparison.md` define que sin muestra `/deals/v2` redactada no se implementa más código ni se afirma cobertura; propone UX/caché OAuth-first como contexto parcial/paginado, mantiene API key separada como fallback avanzado para lookup/prices exactos y deja una plantilla de redacción para muestras futuras sin tokens, client_secret, API key, cookies, callbacks con `code`, datos de cuenta ni rutas locales. `PENDIENTES.md` queda alineado con el criterio de avance: fixture/test con muestra redactada o live smoke explícitamente aprobado. Evidencia: revisión documental + `git diff --check` OK. Incidencias: ninguna. Guardrails: docs-only, sin red live, OAuth real, tokens/client_secret/API key, callback runtime, cache/CLI/Web nuevos, score/ranking/defaults, ownership/wishlist_hygiene, checkout/carrito/pagos, `BG00G`, `--no-cache`, builds ni reportes generados.
 
 - 2026-06-18: Cierre slice no-silent-fallback notificaciones v0. Autor/ejecutor: AudPen. Resultado: `app/steam_deals_notifications.py` devuelve resultados explícitos `steam_deals_notification_send_results_v1` por canal, cuenta enviados/fallidos/omitidos y emite warnings visibles cuando Telegram está configurado sin chat o cuando Telegram/Discord devuelven fallo; los errores de transporte se sanitizan por tipo de excepción, sin mensajes crudos, tokens ni webhooks. `steam_deals_generator.py` pasa formateador de warnings y `app/steam_deals_engagement_post_run.py` actualiza el contrato a resultado dict. `tests/test_generator_logic.py` cubre error sanitizado, success counts y fallos/omisiones visibles sin filtrar valores secretos. Evidencia: validación inicial falló por assertion demasiado estricta (`hook` coincidía con la palabra genérica `webhook local`); con aprobación se ajustó el fixture a `DISCORD-SECRET-VALUE`. Validación final: `PYTHONDONTWRITEBYTECODE=1 .venv/bin/python -m py_compile app/steam_deals_notifications.py app/steam_deals_engagement_post_run.py steam_deals_generator.py tests/test_generator_logic.py` OK, `PYTHONDONTWRITEBYTECODE=1 .venv/bin/python -m unittest tests.test_generator_logic.NotificationsTests tests.test_generator_logic.WatchlistTests` (11 OK) y `git diff --check` OK. Guardrails: sin Telegram/Discord live, tokens/webhooks reales, Smart Alerts real-channel, red real, `BG00G`, `--no-cache`, builds, reportes generados, score/ranking/defaults/cache/fetching.
 
