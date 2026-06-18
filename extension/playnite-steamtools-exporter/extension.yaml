@@ -1,0 +1,9 @@
+Id: SteamTools_Playnite_Exporter
+Name: SteamTools Playnite Exporter
+Author: SteamTools
+Version: 0.1.0
+Module: SteamTools.PlayniteExporter.dll
+Type: GenericPlugin
+Links:
+  - Name: Steam Tools
+    Url: https://github.com/ScptDt/steam-wishlist-deals

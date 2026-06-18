@@ -385,8 +385,10 @@ Validación esperada antes de código:
 ### Corte parser library cerrado 2026-06-16
 
 - `steamtools_playnite_library_v1` ya puede entrar por el import existente `--wishlist-external-matches-json` sin flags/UI nuevos.
-- El parser normaliza plataformas no-Steam a `external_matches` con `source=playnite_library`, `store_type=library`, `match_method=steam_appid` y evidencia local de Playnite.
-- Entradas `store=Steam` se omiten para no inferir ownership ni Steam Family desde Playnite; Family sigue reservado para `steam_access` o el contrato futuro de perfiles con revisión manual.
+- El parser normaliza plataformas no-Steam a `external_matches` con `source=playnite_library`, `store_type=library` y evidencia local de Playnite.
+- Si el export trae `steam_appid` confiable, el match usa `match_method=steam_appid` y puede quedar como señal de confianza alta.
+- Si falta `steam_appid`, el match usa `match_method=normalized_title`, `confidence=medium` y solo genera revisión manual (`external_review_needed`) al coincidir con el nombre local de wishlist.
+- Entradas `store=Steam` o `store=Steam Family Sharing` se omiten para no inferir ownership ni Steam Family desde Playnite; Family sigue reservado para `steam_access` o el contrato futuro de perfiles con revisión manual.
 - Campos sensibles o privados del export (`install_dir`, paths, ejecutables, tokens, cookies o raw metadata) no se copian al contrato normalizado.
 - La salida sigue siendo advisory-only dentro de `wishlist_hygiene`: solo “revisar wishlist”, sin auto-quitar, auto-hide, score/ranking/defaults ni precios `external_offers`.
 

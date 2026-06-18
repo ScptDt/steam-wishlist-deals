@@ -326,11 +326,14 @@ def _playnite_confidence(platform: dict, store_id: str, source_type: str, eviden
 
 def _playnite_platform_match(item: dict, platform: dict, defaults: dict) -> dict | None:
     appid = _external_target_appid(item)
-    if not appid.isdigit():
+    external_name = _external_name(item)
+    if appid and not appid.isdigit():
+        appid = ""
+    if not appid and not external_name:
         return None
     store_raw = platform.get("store") or platform.get("source") or platform.get("name")
     store_id = _store_id(store_raw)
-    if store_id == "steam" or not _clean_text(store_raw):
+    if store_id.startswith("steam") or not _clean_text(store_raw):
         return None
     source_type = _enum(platform.get("source_type"), _PLAYNITE_SOURCE_TYPES, "unknown")
     evidence = _clean_text(platform.get("evidence")) or "playnite_library"
@@ -340,13 +343,16 @@ def _playnite_platform_match(item: dict, platform: dict, defaults: dict) -> dict
         "store_name": store_name,
         "store_type": "library",
         "source": "playnite_library",
-        "external_name": _external_name(item),
-        "wishlist_appid": appid,
-        "match_method": "steam_appid",
-        "confidence": _playnite_confidence(platform, store_id, source_type, evidence),
+        "external_name": external_name,
+        "match_method": "steam_appid" if appid else "normalized_title",
+        "confidence": _playnite_confidence(platform, store_id, source_type, evidence)
+        if appid
+        else "medium",
         "evidence": _slug(evidence),
         "reason": f"aparece en Playnite: {store_name}",
     }
+    if appid:
+        match["wishlist_appid"] = appid
     if external_id := _safe_playnite_provider_id(platform.get("provider_game_id")):
         match["external_id"] = external_id
     if observed_at := _clean_text(platform.get("observed_at") or item.get("observed_at") or defaults.get("exported_at")):
@@ -373,6 +379,7 @@ def normalize_playnite_library_export(payload) -> list[dict]:
                 _clean_text(match.get("external_id")),
                 _clean_text(match.get("wishlist_appid")),
                 _name_key(match["external_name"]),
+                match["match_method"],
             )
             if fingerprint in seen:
                 continue

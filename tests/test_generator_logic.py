@@ -3411,12 +3411,13 @@ class WishlistHygieneTests(unittest.TestCase):
             [
                 {"appid": "870780", "name": "Control Ultimate Edition"},
                 {"appid": "123", "name": "Ubisoft Game"},
+                {"appid": "456", "name": "Missing AppID"},
             ],
             external_matches=external_matches,
         )
         by_appid = {item["appid"]: item for item in hygiene["items"]}
 
-        self.assertEqual([match["store_id"] for match in external_matches], ["epic", "gog", "ubisoft"])
+        self.assertEqual([match["store_id"] for match in external_matches], ["epic", "gog", "ubisoft", "gog"])
         self.assertTrue(all(match["source"] == "playnite_library" for match in external_matches))
         self.assertTrue(all("install_dir" not in match for match in external_matches))
         self.assertTrue(all("token" not in match for match in external_matches))
@@ -3427,6 +3428,9 @@ class WishlistHygieneTests(unittest.TestCase):
             ["Epic Games Store", "GOG"],
         )
         self.assertEqual(by_appid["123"]["external_matches"][0]["store_name"], "Ubisoft Connect")
+        self.assertEqual(by_appid["456"]["signals"], ["external_review_needed"])
+        self.assertEqual(by_appid["456"]["external_matches"][0]["match_method"], "normalized_title")
+        self.assertEqual(by_appid["456"]["external_matches"][0]["confidence"], "medium")
 
     def test_normalize_playnite_library_export_does_not_infer_steam_family(self) -> None:
         external_matches = normalize_playnite_library_export(
@@ -3441,7 +3445,12 @@ class WishlistHygieneTests(unittest.TestCase):
                                 "store": "Steam",
                                 "source_type": "official_launcher",
                                 "provider_game_id": "42",
-                            }
+                            },
+                            {
+                                "store": "Steam Family Sharing",
+                                "source_type": "official_launcher",
+                                "provider_game_id": "42",
+                            },
                         ],
                     }
                 ],
