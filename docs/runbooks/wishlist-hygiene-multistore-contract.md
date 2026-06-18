@@ -232,6 +232,7 @@ Estado actual 2026-06-18:
 
 - Los parsers `steamtools_playnite_library_v1` y `steamtools_playnite_access_v1` ya existen y entran por los imports locales existentes (`--wishlist-external-matches-json` y `--play-access-json`).
 - El add-on/exporter Playnite, si se versiona o prueba, debe tratarse como scaffold local/dev source-only hasta validarlo en host Windows + Playnite; sin esa validación no se afirma funcionamiento real del add-on.
+- El scaffold source-only actual proyecta cada `Game` de Playnite a DTOs mínimos allowlist; no serializa el objeto crudo ni inspecciona `GameAction`/comandos de lanzamiento.
 - Cualquier export Playnite sigue siendo advisory-only: ayuda a revisar la wishlist, no prueba Steam Family, no cambia score/ranking/defaults y no borra ni auto-excluye juegos.
 
 Objetivo:
@@ -254,19 +255,28 @@ Uso esperado: normalizar a `external_matches` cuando el juego aparece en una bib
   "exported_at": "2026-06-16T12:00:00Z",
   "items": [
     {
+      "playnite_id": "11111111-1111-1111-1111-111111111111",
       "name": "Control Ultimate Edition",
-      "steam_appid": "870780",
       "platforms": [
         {
           "store": "Epic Games Store",
           "source_type": "official_launcher",
           "provider_game_id": "epic-control",
+          "family_hint": false,
           "evidence": "playnite_library"
-        },
+        }
+      ]
+    },
+    {
+      "playnite_id": "22222222-2222-2222-2222-222222222222",
+      "name": "Control Ultimate Edition",
+      "steam_appid": "870780",
+      "platforms": [
         {
-          "store": "GOG",
+          "store": "Steam Family Sharing",
           "source_type": "official_launcher",
-          "provider_game_id": "gog-control",
+          "provider_game_id": "870780",
+          "family_hint": true,
           "evidence": "playnite_library"
         }
       ]
@@ -279,10 +289,11 @@ Reglas:
 
 - `platforms[*].store` es el launcher/plataforma visible, no una ubicación del disco.
 - `source_type` puede ser `official_launcher`, `playnite_addon`, `manual` o `unknown`.
+- `playnite_id` es opcional, local y solo sirve para agrupar/debuggear exports; no es ID de cuenta ni prueba ownership.
 - `provider_game_id` es opcional y debe quedarse en un identificador de proveedor, no rutas ni IDs de cuenta personales.
+- El exporter source-only actual conserva un registro por juego/fuente de Playnite; los títulos repetidos entre launchers son información útil para revisión manual y no deben colapsarse perdiendo la fuente.
 - Si `store="Steam"`, no asumir `owned` vs `family_shared`; la señal Steam desde Playnite debe quedar como `ownership_status="unknown"` o revisión manual salvo evidencia más fuerte de `steam_access`.
 - Si `store="Steam Family Sharing"`, conservarlo como `family_hint`/revisión manual; no convertirlo en ownership ni Family definitivo.
-- Títulos repetidos entre launchers son información útil para revisión manual y no deben colapsarse perdiendo la fuente.
 
 ### Export 2: acceso local sin rutas
 
@@ -297,6 +308,7 @@ Uso esperado: normalizar a `play_access` para señalar que Playnite considera el
   "exported_at": "2026-06-16T12:00:00Z",
   "items": [
     {
+      "playnite_id": "33333333-3333-3333-3333-333333333333",
       "name": "Hades",
       "steam_appid": "1145360",
       "platforms": [
@@ -304,6 +316,7 @@ Uso esperado: normalizar a `play_access` para señalar que Playnite considera el
           "store": "GOG",
           "installed": true,
           "playable_hint": true,
+          "family_hint": false,
           "evidence": "playnite_access"
         }
       ]
@@ -315,6 +328,7 @@ Uso esperado: normalizar a `play_access` para señalar que Playnite considera el
 Reglas:
 
 - `installed`/`playable_hint` son booleanos de alto nivel; no incluir `install_dir`, ejecutables, argumentos, saves, screenshots ni paths.
+- `family_hint` es solo una pista de revisión cuando la fuente textual de Playnite lo indica; no prueba Steam Family ni ownership.
 - `playtime_minutes` o `last_played` quedan como campos futuros opt-in; no son necesarios para el primer parser.
 - Si solo hay acceso local pero no ownership externo claro, mostrar copy tipo “revisa antes de comprar”, no “ya es tuyo”.
 

@@ -15,6 +15,8 @@ Existing Playnite exporters are useful as manual staging tools, but most can exp
 
 Both schemas are local-only and advisory-only. They never prove ownership, Steam Family, or whether a purchase should be removed.
 
+See `docs/runbooks/wishlist-hygiene-multistore-contract.md` for the canonical import contract. This exporter only produces privacy-minimized source data; Steam Tools decides later whether a record becomes `external_matches`, `play_access`, or manual-review context.
+
 ## Guardrails
 
 - User-initiated menu actions only; no background export.
@@ -65,6 +67,13 @@ For each game:
 Games without a trusted Steam AppID still appear in the safe inventory. Steam Tools can use exact title matches as `normalized_title` review signals, not as automatic ownership proof.
 
 Duplicate titles across launchers are preserved. If the same title appears in Epic, GOG, Amazon, Xbox, Steam, or Steam Family Sharing, each source remains visible so Steam Tools can help with manual review instead of hiding potentially useful context.
+
+## Steam Tools import mapping
+
+- Library JSON (`steamtools_playnite_library_v1`) is meant for `--wishlist-external-matches-json` and can become `external_matches` only as review/advisory context.
+- Access JSON (`steamtools_playnite_access_v1`) is meant for `--play-access-json` and can become `play_access` only when Playnite reports a high-level installed/playable signal.
+- Steam and Steam Family entries from Playnite remain review hints. Confirmed ownership/family access belongs to separate `steam_access` imports, not this exporter.
+- Playnite output is not a price source and must not feed `external_offers`, score, ranking, filters, defaults, cart, checkout, or wishlist mutation.
 
 ## Development mode packaging
 
