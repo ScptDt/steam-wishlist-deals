@@ -3649,6 +3649,7 @@ def _fetch_parallel(
     label: str,
     rate_limit: float = RATE_LIMIT_INTERVAL,
     max_workers: int = MAX_WORKERS,
+    on_error=None,
 ) -> dict:
     """Execute fetch_fn(appid) in parallel with global rate limiting."""
     if _enrichment_module is None:
@@ -3663,7 +3664,12 @@ def _fetch_parallel(
         sleep_fn=time.sleep,
         emit_progress=print,
         build_bar=_enrichment_bar,
+        on_error=on_error,
     )
+
+
+def _emit_enrichment_error(message: str) -> None:
+    print(f"\n  {_warn(message)}", flush=True)
 
 
 def _fetch_single_review(appid: str) -> dict | None:
@@ -3707,6 +3713,7 @@ def fetch_reviews(
         rate_limit=rate_limit,
         fetch_parallel_fn=_fetch_parallel,
         get_json=_get_json,
+        on_error=_emit_enrichment_error,
     )
 
 
@@ -3745,6 +3752,7 @@ def fetch_deck_compat(
         rate_limit=rate_limit,
         fetch_parallel_fn=_fetch_parallel,
         get_json=_get_json,
+        on_error=_emit_enrichment_error,
     )
 
 
@@ -3789,6 +3797,7 @@ def fetch_protondb(
         rate_limit=rate_limit,
         fetch_parallel_fn=_fetch_parallel,
         get_json=_get_json,
+        on_error=_emit_enrichment_error,
     )
 
 
@@ -3935,6 +3944,7 @@ def fetch_achievements(
         rate_limit=rate_limit,
         fetch_parallel_fn=_fetch_parallel,
         get_json=_get_json,
+        on_error=_emit_enrichment_error,
     )
 
 

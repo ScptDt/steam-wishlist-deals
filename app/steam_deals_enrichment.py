@@ -1,5 +1,7 @@
 from __future__ import annotations
 
+import inspect
+import re
 import threading
 import time
 from concurrent.futures import ThreadPoolExecutor, as_completed
@@ -10,6 +12,7 @@ from shared.cache_utils import save_timestamped_cache as _default_save_timestamp
 
 MAX_WORKERS = 16
 RATE_LIMIT_INTERVAL = 0.15
+ENRICHMENT_ERROR_SAMPLE_LIMIT = 5
 
 
 def _default_bar(completed: int, total: int, width: int = 25) -> str:
@@ -17,6 +20,67 @@ def _default_bar(completed: int, total: int, width: int = 25) -> str:
         return ""
     filled = int((completed / total) * width)
     return f"{'#' * filled}{'-' * (width - filled)}"
+
+
+def _enrichment_error_reason(exc: Exception) -> str:
+    reason = re.sub(r"[^a-z0-9_]+", "_", type(exc).__name__.lower()).strip("_")
+    return reason or "error"
+
+
+def _new_enrichment_error_stats() -> dict:
+    return {"count": 0, "reasons": {}, "sample_appids": []}
+
+
+def _record_enrichment_error(stats: dict | None, appid: str, exc: Exception) -> None:
+    if stats is None:
+        return
+    reason = _enrichment_error_reason(exc)
+    stats["count"] = int(stats.get("count", 0) or 0) + 1
+    reasons = stats.setdefault("reasons", {})
+    reasons[reason] = int(reasons.get(reason, 0) or 0) + 1
+    sample_appids = stats.setdefault("sample_appids", [])
+    appid_text = str(appid or "").strip()
+    if appid_text and appid_text not in sample_appids and len(sample_appids) < ENRICHMENT_ERROR_SAMPLE_LIMIT:
+        sample_appids.append(appid_text)
+
+
+def _emit_enrichment_error_summary(label: str, stats: dict, on_error) -> None:
+    count = int(stats.get("count", 0) or 0)
+    if not count or on_error is None:
+        return
+    reasons = stats.get("reasons") if isinstance(stats.get("reasons"), dict) else {}
+    reason_text = ", ".join(
+        f"{reason}={amount}" for reason, amount in sorted(reasons.items())
+    ) or "error"
+    sample_appids = [str(appid) for appid in stats.get("sample_appids", []) if str(appid)]
+    sample_text = f"; muestra appids: {', '.join(sample_appids)}" if sample_appids else ""
+    on_error(
+        f"{label}: {count} errores de fetch; señales omitidas "
+        f"({reason_text}{sample_text})"
+    )
+
+
+def _supports_keyword(fn, keyword: str) -> bool:
+    try:
+        signature = inspect.signature(fn)
+    except (TypeError, ValueError):
+        return False
+    return keyword in signature.parameters
+
+
+def _run_fetch_parallel(
+    fetch_parallel_fn,
+    items: list[str],
+    fetch_fn,
+    label: str,
+    *,
+    rate_limit: float,
+    on_error,
+) -> dict:
+    kwargs = {"rate_limit": rate_limit}
+    if _supports_keyword(fetch_parallel_fn, "on_error"):
+        kwargs["on_error"] = on_error
+    return fetch_parallel_fn(items, fetch_fn, label, **kwargs)
 
 
 def fetch_parallel(
@@ -30,6 +94,7 @@ def fetch_parallel(
     sleep_fn=time.sleep,
     emit_progress=print,
     build_bar=_default_bar,
+    on_error=None,
 ) -> dict:
     """Execute fetch_fn(appid) in parallel with global rate limiting."""
     total = len(items)
@@ -71,14 +136,22 @@ def fetch_parallel(
                 if result is not None:
                     with result_lock:
                         results[appid] = result
-            except Exception:
-                pass
+            except Exception as exc:
+                appid = futures.get(future, "")
+                if on_error is not None:
+                    on_error(appid, exc)
+                else:
+                    reason = _enrichment_error_reason(exc)
+                    emit_progress(
+                        f"\n  {label}: error fetch {appid}; señal omitida ({reason})",
+                        flush=True,
+                    )
 
     emit_progress(f"\r  {'':70}\r", end="", flush=True)
     return results
 
 
-def fetch_single_review(appid: str, *, get_json) -> dict | None:
+def fetch_single_review(appid: str, *, get_json, on_error=None) -> dict | None:
     url = f"https://store.steampowered.com/appreviews/{appid}?json=1&num_per_page=0&language=all"
     try:
         data = get_json(url, headers={"User-Agent": "Mozilla/5.0"})
@@ -91,22 +164,24 @@ def fetch_single_review(appid: str, *, get_json) -> dict | None:
                 "pct": round(positive / total_reviews * 100),
                 "total": total_reviews,
             }
-    except Exception:
-        pass
+    except Exception as exc:
+        if on_error is not None:
+            on_error(appid, exc)
     return None
 
 
-def fetch_single_deck(appid: str, *, get_json) -> int | None:
+def fetch_single_deck(appid: str, *, get_json, on_error=None) -> int | None:
     url = f"https://store.steampowered.com/saleaction/ajaxgetdeckappcompatibilityreport?nAppID={appid}"
     try:
         data = get_json(url, headers={"User-Agent": "Mozilla/5.0"})
         return data.get("results", {}).get("resolved_category", 0)
-    except Exception:
-        pass
+    except Exception as exc:
+        if on_error is not None:
+            on_error(appid, exc)
     return None
 
 
-def fetch_single_protondb(appid: str, *, get_json) -> dict | None:
+def fetch_single_protondb(appid: str, *, get_json, on_error=None) -> dict | None:
     url = f"https://www.protondb.com/api/v1/reports/summaries/{appid}.json"
     try:
         data = get_json(url, headers={"User-Agent": "Mozilla/5.0"})
@@ -117,12 +192,13 @@ def fetch_single_protondb(appid: str, *, get_json) -> dict | None:
                 "score": data.get("score", 0),
                 "total": data.get("total", 0),
             }
-    except Exception:
-        pass
+    except Exception as exc:
+        if on_error is not None:
+            on_error(appid, exc)
     return None
 
 
-def fetch_single_achievement(appid: str, *, get_json) -> dict | None:
+def fetch_single_achievement(appid: str, *, get_json, on_error=None) -> dict | None:
     url = f"https://api.steampowered.com/ISteamUserStats/GetGlobalAchievementPercentagesForApp/v2/?gameid={appid}"
     try:
         data = get_json(url, headers={"User-Agent": "Mozilla/5.0"})
@@ -134,7 +210,9 @@ def fetch_single_achievement(appid: str, *, get_json) -> dict | None:
             sum(achievement.get("percent", 0) for achievement in achievements) / count
         )
         return {"count": count, "avg_completion": round(avg_completion, 1)}
-    except Exception:
+    except Exception as exc:
+        if on_error is not None:
+            on_error(appid, exc)
         return None
 
 
@@ -171,19 +249,32 @@ def fetch_reviews(
     *,
     fetch_parallel_fn=fetch_parallel,
     get_json,
+    on_error=None,
 ) -> dict[str, dict]:
     to_fetch = [appid for appid in appids if appid not in cached]
     if not to_fetch:
         return cached
     result = dict(cached)
+    error_stats = _new_enrichment_error_stats()
+
+    def record_error(appid: str, exc: Exception) -> None:
+        _record_enrichment_error(error_stats, appid, exc)
+
     result.update(
-        fetch_parallel_fn(
+        _run_fetch_parallel(
+            fetch_parallel_fn,
             to_fetch,
-            lambda appid: fetch_single_review(appid, get_json=get_json),
+            lambda appid: fetch_single_review(
+                appid,
+                get_json=get_json,
+                on_error=record_error,
+            ),
             "reviews",
             rate_limit=rate_limit,
+            on_error=record_error,
         )
     )
+    _emit_enrichment_error_summary("reviews", error_stats, on_error)
     return result
 
 
@@ -220,19 +311,32 @@ def fetch_deck_compat(
     *,
     fetch_parallel_fn=fetch_parallel,
     get_json,
+    on_error=None,
 ) -> dict[str, int]:
     to_fetch = [appid for appid in appids if appid not in cached]
     if not to_fetch:
         return cached
     result = dict(cached)
+    error_stats = _new_enrichment_error_stats()
+
+    def record_error(appid: str, exc: Exception) -> None:
+        _record_enrichment_error(error_stats, appid, exc)
+
     result.update(
-        fetch_parallel_fn(
+        _run_fetch_parallel(
+            fetch_parallel_fn,
             to_fetch,
-            lambda appid: fetch_single_deck(appid, get_json=get_json),
+            lambda appid: fetch_single_deck(
+                appid,
+                get_json=get_json,
+                on_error=record_error,
+            ),
             "Deck compat",
             rate_limit=rate_limit,
+            on_error=record_error,
         )
     )
+    _emit_enrichment_error_summary("Deck compat", error_stats, on_error)
     return result
 
 
@@ -260,19 +364,32 @@ def fetch_protondb(
     *,
     fetch_parallel_fn=fetch_parallel,
     get_json,
+    on_error=None,
 ) -> dict[str, dict]:
     to_fetch = [appid for appid in appids if appid not in cached]
     if not to_fetch:
         return cached
     result = dict(cached)
+    error_stats = _new_enrichment_error_stats()
+
+    def record_error(appid: str, exc: Exception) -> None:
+        _record_enrichment_error(error_stats, appid, exc)
+
     result.update(
-        fetch_parallel_fn(
+        _run_fetch_parallel(
+            fetch_parallel_fn,
             to_fetch,
-            lambda appid: fetch_single_protondb(appid, get_json=get_json),
+            lambda appid: fetch_single_protondb(
+                appid,
+                get_json=get_json,
+                on_error=record_error,
+            ),
             "ProtonDB",
             rate_limit=rate_limit,
+            on_error=record_error,
         )
     )
+    _emit_enrichment_error_summary("ProtonDB", error_stats, on_error)
     return result
 
 
@@ -405,17 +522,30 @@ def fetch_achievements(
     *,
     fetch_parallel_fn=fetch_parallel,
     get_json,
+    on_error=None,
 ) -> dict[str, dict]:
     to_fetch = [appid for appid in appids if appid not in cached]
     if not to_fetch:
         return cached
     result = dict(cached)
+    error_stats = _new_enrichment_error_stats()
+
+    def record_error(appid: str, exc: Exception) -> None:
+        _record_enrichment_error(error_stats, appid, exc)
+
     result.update(
-        fetch_parallel_fn(
+        _run_fetch_parallel(
+            fetch_parallel_fn,
             to_fetch,
-            lambda appid: fetch_single_achievement(appid, get_json=get_json),
+            lambda appid: fetch_single_achievement(
+                appid,
+                get_json=get_json,
+                on_error=record_error,
+            ),
             "achievements",
             rate_limit=rate_limit,
+            on_error=record_error,
         )
     )
+    _emit_enrichment_error_summary("achievements", error_stats, on_error)
     return result

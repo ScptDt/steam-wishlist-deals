@@ -105,6 +105,8 @@ from steam_deals_cache_policy import (
 from steam_deals_enrichment import (
     fetch_achievements as module_fetch_achievements,
     fetch_anticheat_db as module_fetch_anticheat_db,
+    fetch_deck_compat as module_fetch_deck_compat,
+    fetch_protondb as module_fetch_protondb,
     fetch_reviews as module_fetch_reviews,
     load_tags_cache as module_load_tags_cache,
 )
@@ -5253,6 +5255,86 @@ class EnrichmentTests(unittest.TestCase):
 
         self.assertEqual(result["10"]["pct"], 90)
         self.assertEqual(result["20"]["pct"], 80)
+
+    def test_fetch_reviews_reports_errors_without_fake_entries(self) -> None:
+        def fake_fetch_parallel(items, fetch_fn, _label, rate_limit=0.15):
+            fetched = {}
+            for appid in items:
+                result = fetch_fn(appid)
+                if result is not None:
+                    fetched[appid] = result
+            return fetched
+
+        errors: list[str] = []
+        result = module_fetch_reviews(
+            ["10", "20"],
+            {"10": {"desc": "Very Positive", "pct": 90, "total": 100}},
+            fetch_parallel_fn=fake_fetch_parallel,
+            get_json=lambda _url, headers=None: (_ for _ in ()).throw(RuntimeError("raw secret")),
+            on_error=errors.append,
+        )
+
+        self.assertEqual(result, {"10": {"desc": "Very Positive", "pct": 90, "total": 100}})
+        self.assertEqual(len(errors), 1)
+        self.assertIn("reviews: 1 errores de fetch", errors[0])
+        self.assertIn("runtimeerror=1", errors[0])
+        self.assertIn("20", errors[0])
+        self.assertNotIn("raw secret", errors[0])
+
+    def test_enrichment_fetch_errors_are_visible_by_source(self) -> None:
+        def fake_fetch_parallel(items, fetch_fn, _label, rate_limit=0.15):
+            fetched = {}
+            for appid in items:
+                result = fetch_fn(appid)
+                if result is not None:
+                    fetched[appid] = result
+            return fetched
+
+        sources = [
+            ("Deck compat", module_fetch_deck_compat),
+            ("ProtonDB", module_fetch_protondb),
+            ("achievements", module_fetch_achievements),
+        ]
+        for label, fetch_fn in sources:
+            with self.subTest(label=label):
+                errors: list[str] = []
+                result = fetch_fn(
+                    ["20"],
+                    {},
+                    fetch_parallel_fn=fake_fetch_parallel,
+                    get_json=lambda _url, headers=None: (_ for _ in ()).throw(OSError("/tmp/local")),
+                    on_error=errors.append,
+                )
+
+                self.assertEqual(result, {})
+                self.assertEqual(len(errors), 1)
+                self.assertIn(f"{label}: 1 errores de fetch", errors[0])
+                self.assertIn("oserror=1", errors[0])
+                self.assertIn("20", errors[0])
+                self.assertNotIn("/tmp/local", errors[0])
+
+    def test_enrichment_empty_data_does_not_report_fetch_error(self) -> None:
+        def fake_fetch_parallel(items, fetch_fn, _label, rate_limit=0.15):
+            fetched = {}
+            for appid in items:
+                result = fetch_fn(appid)
+                if result is not None:
+                    fetched[appid] = result
+            return fetched
+
+        errors: list[str] = []
+        result = module_fetch_achievements(
+            ["20"],
+            {},
+            fetch_parallel_fn=fake_fetch_parallel,
+            get_json=lambda _url, headers=None: {
+                "achievementpercentages": {"achievements": []}
+            },
+            on_error=errors.append,
+        )
+
+        self.assertEqual(result, {})
+        self.assertEqual(errors, [])
 
     def test_fetch_anticheat_db_parses_awacy_rows(self) -> None:
         data = [
