@@ -2,7 +2,7 @@
 
 Track priorizado para ampliar la comparativa multi-tienda hacia Fanatical y más stores sin mezclarla con `wishlist_hygiene` ni con flujos de compra.
 
-Estado actual: Fase 0/docs, Fase 1 normalizador fixture-only, Fase 1B JSON interno opcional, Fase 1C diagnóstico JSON-consumer, primer render visible mínimo risk-gated, Share HTML, adaptador ITAD fixture-only, lectura de caché ITAD local por flag, configuración Web de esa caché, refresh live opt-in/acotado, trigger Web explícito, pulido UX no-checkout, diagnóstico offline de caché ITAD, helper GG.deals fixture-only, lectura de caché GG.deals local por flag y configuración Web de esa caché cerrados entre 2026-05-21 y 2026-06-09. Readiness offline de selección cerrado 2026-06-15: sin key/export concreto ni aprobación de red, el siguiente paso no es live; primero elegir entre diagnóstico de caché/import local existente, parser para export redactado, diseño docs-first de refresh live o live smoke ITAD acotado con key oficial. El siguiente paso requiere elegir explícitamente si hacer un live smoke acotado/aprobado con key oficial, diseñar live GG.deals/API/refresh en plan separado o ampliar otra superficie local bajo los mismos gates.
+Estado actual: Fase 0/docs, Fase 1 normalizador fixture-only, Fase 1B JSON interno opcional, Fase 1C diagnóstico JSON-consumer, primer render visible mínimo risk-gated, Share HTML, adaptador ITAD fixture-only, lectura de caché ITAD local por flag, configuración Web de esa caché, refresh live opt-in/acotado, trigger Web explícito, pulido UX no-checkout, diagnóstico offline de caché ITAD, helper GG.deals fixture-only, lectura de caché GG.deals local por flag, configuración Web de esa caché, spike/smoke OAuth ITAD y adapter fixture-only `/deals/v2` cerrados entre 2026-05-21 y 2026-06-18. Readiness offline de selección cerrado 2026-06-15: sin key/export concreto ni aprobación de red, el siguiente paso no es live; primero elegir entre diagnóstico de caché/import local existente, parser para export redactado, diseño docs-first de refresh live o live smoke ITAD acotado con key oficial. El siguiente paso requiere elegir explícitamente si medir cobertura con muestras `/deals/v2` redactadas/aprobadas, diseñar UX/caché OAuth-first, mantener API key como fallback avanzado para lookup/prices o ampliar otra superficie local bajo los mismos gates.
 
 Enfoque de ejecución: **feature-sliced + risk-gated**. La feature avanza por cortes pequeños, pero cada corte debe pasar gates de riesgo antes de exponerse al usuario, tocar ranking o usar fuentes live.
 
@@ -457,7 +457,16 @@ Corte smoke OAuth ITAD real acotado 2026-06-17:
 - Con credenciales locales no compartidas, `localhost` como redirect registrado y token auth `Basic`, ITAD completó Authorization Code + PKCE: token y refresh token OK, `/user/info/v2` devolvió `200` y `/deals/v2` devolvió `200` con scopes `user_info wait_read coll_read`.
 - Probes con Bearer sobre `/games/lookup/v1` y `/games/prices/v3` devolvieron `403 Missing api key`, confirmando que OAuth no reemplaza directamente el flujo actual de `external_offers` por AppID/UUID.
 - Para resolver la brecha sin confundir usuarios no técnicos, las opciones son: (1) adaptar `/deals/v2` como fuente OAuth-first de deals paginados/user-scoped, (2) mantener API key como modo avanzado/fallback para precios por wishlist exacta, (3) pedir a ITAD soporte/approval para Bearer en lookup/prices, o (4) evaluar un backend/proxy propio solo como diseño futuro porque rompe la premisa local-first y añade custodia de secretos.
-- Próximo slice recomendado: fixture-only adapter de `/deals/v2` a `external_offers` para medir cobertura/campos antes de cambiar UX o retirar la API key.
+- El slice fixture-only recomendado se cerró sin cambiar UX ni retirar API key; la brecha exacta AppID/UUID sigue abierta para decisión de producto.
+
+Corte adapter ITAD `/deals/v2` fixture-only cerrado 2026-06-18:
+
+- `itad_deals_v2_to_external_offers(payload, itad_id_to_appid=None, country="MX", include_marketplaces=False)` transforma payloads paginados OAuth-compatible (`list`/`items`/`data`) en el contrato seguro `external_offers` reutilizando `normalize_external_offers`.
+- El helper acepta mapping opcional ITAD ID→Steam AppID para que ofertas conocidas puedan destacarse; sin mapping/AppID, la oferta permanece `hidden` con `appid_missing` y no compite por mejor precio externo.
+- Steam se omite como tienda externa; tiendas autorizadas como Fanatical pueden quedar `highlight` si pasan precio/moneda/DRM/región/link, mientras keyshops/marketplaces y URLs checkout-like se conservan hidden/no elegibles por los risk gates existentes.
+- Guardrails: fixture-only, sin red live, sin tokens/client_secret/API key, sin callback runtime, sin cache/CLI/Web nuevos, sin ownership/wishlist_hygiene, sin score/ranking/defaults y sin checkout/carrito/pagos.
+- Evidencia: `py_compile` dirigido OK, `tests.test_itad_external_offers_flow` (18 OK) y `git diff --check` OK.
+- Siguientes decisiones posibles: medir cobertura/campos con muestras `/deals/v2` redactadas o live aprobado, diseñar caché/UX OAuth-first, mantener API key como fallback avanzado para lookup/prices, o consultar soporte ITAD sobre Bearer en lookup/prices.
 
 Corte Web trigger refresh live cerrado 2026-05-22:
 

@@ -97,6 +97,52 @@ class ItadExternalOffersCacheTests(unittest.TestCase):
         self.assertIn("ownership_not_proven", item["risk_flags"])
         self.assertEqual(external_offers["summary"]["best_external_price_count"], 0)
 
+    def test_deals_v2_payload_keeps_marketplaces_and_checkout_urls_hidden(self) -> None:
+        payload = {
+            "list": [
+                {
+                    "id": "itad-hades",
+                    "title": "Hades",
+                    "deal": {
+                        "shop": {"id": 99, "name": "G2A"},
+                        "price": {"amount": 7.50, "currency": "USD"},
+                        "regular": {"amount": 24.99, "currency": "USD"},
+                        "cut": 70,
+                        "drm": [{"name": "Steam"}],
+                        "url": "https://g2a.example/hades",
+                    },
+                },
+                {
+                    "id": "itad-hades",
+                    "title": "Hades",
+                    "deal": {
+                        "shop": {"id": 35, "name": "Fanatical"},
+                        "price": {"amount": 8.50, "currency": "USD"},
+                        "regular": {"amount": 24.99, "currency": "USD"},
+                        "cut": 66,
+                        "drm": [{"name": "Steam"}],
+                        "url": "https://fanatical.example/checkout/hades",
+                    },
+                },
+            ]
+        }
+
+        external_offers = itad_deals_v2_to_external_offers(
+            payload,
+            itad_id_to_appid={"itad-hades": "1145360"},
+        )
+
+        items_by_store = {item["store_id"]: item for item in external_offers["items"]}
+        self.assertEqual(external_offers["summary"]["hidden_count"], 2)
+        self.assertEqual(external_offers["summary"]["best_external_price_count"], 0)
+        self.assertIn("marketplace_keyshop", items_by_store["g2a"]["risk_flags"])
+        self.assertFalse(items_by_store["g2a"]["eligible_for_best_external_price"])
+        self.assertIn("checkout_like_url", items_by_store["fanatical"]["risk_flags"])
+        self.assertEqual(items_by_store["fanatical"]["url"], "")
+        self.assertFalse(items_by_store["fanatical"]["link_allowed"])
+        self.assertNotIn("wishlist_hygiene", external_offers)
+        self.assertNotIn("top_picks", external_offers["summary"])
+
     def test_deals_v2_payload_degrades_empty_or_malformed_to_empty_contract(self) -> None:
         for payload in (None, {}, {"list": [None, "bad", {"deal": None}]}, {"list": []}):
             with self.subTest(payload=payload):
