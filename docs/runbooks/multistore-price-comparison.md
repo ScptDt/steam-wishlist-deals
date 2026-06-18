@@ -452,6 +452,13 @@ Corte OAuth ITAD fixture-only 2026-06-17:
 - No cambia el flujo runtime de `external_offers`, no guarda tokens, no abre callback local, no usa credenciales reales ni hace red live; la API key existente se mantiene hasta probar compatibilidad OAuth real o rediseñar sobre endpoints OAuth-compatible.
 - Siguiente paso si se prioriza UX OAuth: validar localmente con credenciales propias no compartidas que `user_info`/`deals_v2` funcionan y confirmar si `prices/v3` acepta Bearer o requiere seguir con API key.
 
+Corte smoke OAuth ITAD real acotado 2026-06-17:
+
+- Con credenciales locales no compartidas, `localhost` como redirect registrado y token auth `Basic`, ITAD completó Authorization Code + PKCE: token y refresh token OK, `/user/info/v2` devolvió `200` y `/deals/v2` devolvió `200` con scopes `user_info wait_read coll_read`.
+- Probes con Bearer sobre `/games/lookup/v1` y `/games/prices/v3` devolvieron `403 Missing api key`, confirmando que OAuth no reemplaza directamente el flujo actual de `external_offers` por AppID/UUID.
+- Para resolver la brecha sin confundir usuarios no técnicos, las opciones son: (1) adaptar `/deals/v2` como fuente OAuth-first de deals paginados/user-scoped, (2) mantener API key como modo avanzado/fallback para precios por wishlist exacta, (3) pedir a ITAD soporte/approval para Bearer en lookup/prices, o (4) evaluar un backend/proxy propio solo como diseño futuro porque rompe la premisa local-first y añade custodia de secretos.
+- Próximo slice recomendado: fixture-only adapter de `/deals/v2` a `external_offers` para medir cobertura/campos antes de cambiar UX o retirar la API key.
+
 Corte Web trigger refresh live cerrado 2026-05-22:
 
 - `Filtros avanzados` expone `Refrescar caché ITAD external_offers en vivo (opt-in)` como acción separada del uso normal de caché local.

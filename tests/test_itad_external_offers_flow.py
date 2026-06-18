@@ -4,6 +4,7 @@ import unittest
 from steam_deals_itad import (
     build_itad_external_offers_cache,
     diagnose_itad_external_offers_cache,
+    itad_deals_v2_to_external_offers,
     itad_external_offers_from_cache,
     itad_get_prices_payload,
     itad_lookup_games,
@@ -12,6 +13,99 @@ from steam_deals_itad import (
 
 
 class ItadExternalOffersCacheTests(unittest.TestCase):
+    def test_deals_v2_payload_normalizes_oauth_deals_with_known_mapping(self) -> None:
+        payload = {
+            "hasMore": False,
+            "nextOffset": 0,
+            "list": [
+                {
+                    "id": "itad-hades",
+                    "title": "Hades",
+                    "deal": {
+                        "shop": {"id": 35, "name": "Fanatical"},
+                        "price": {"amount": 8.99, "currency": "USD"},
+                        "regular": {"amount": 24.99, "currency": "USD"},
+                        "cut": 64,
+                        "drm": [{"id": 1, "name": "Steam"}],
+                        "url": "https://next.isthereanydeal.com/link/hades",
+                        "timestamp": "2026-06-17T12:00:00Z",
+                        "expiry": "2026-06-20T12:00:00Z",
+                    },
+                },
+                {
+                    "id": "itad-steam-only",
+                    "title": "Steam Only",
+                    "deal": {
+                        "shop": {"id": 61, "name": "Steam"},
+                        "price": {"amount": 9.99, "currency": "USD"},
+                        "regular": {"amount": 19.99, "currency": "USD"},
+                        "cut": 50,
+                        "drm": [{"name": "Steam"}],
+                        "url": "https://store.steampowered.com/app/20",
+                    },
+                },
+            ],
+        }
+
+        external_offers = itad_deals_v2_to_external_offers(
+            payload,
+            itad_id_to_appid={"itad-hades": "1145360", "itad-steam-only": "20"},
+            country="MX",
+        )
+
+        self.assertEqual(len(external_offers["items"]), 1)
+        item = external_offers["items"][0]
+        self.assertEqual(item["appid"], "1145360")
+        self.assertEqual(item["name"], "Hades")
+        self.assertEqual(item["store_id"], "fanatical")
+        self.assertEqual(item["store_type"], "authorized_key_reseller")
+        self.assertEqual(item["visibility"], "highlight")
+        self.assertEqual(item["price"], 8.99)
+        self.assertEqual(item["currency"], "USD")
+        self.assertEqual(item["drm"], "steam")
+        self.assertEqual(item["region"], "mx")
+        self.assertEqual(item["source"], "itad")
+        self.assertEqual(external_offers["summary"]["ranking_impact"], "none")
+        self.assertTrue(external_offers["summary"]["advisory_only"])
+
+    def test_deals_v2_payload_without_appid_mapping_stays_hidden_and_advisory(self) -> None:
+        payload = {
+            "list": [
+                {
+                    "id": "itad-hades",
+                    "title": "Hades",
+                    "deal": {
+                        "shop": {"id": 35, "name": "Fanatical"},
+                        "price": {"amountInt": 899, "currency": "USD"},
+                        "regular": {"amount": 24.99, "currency": "USD"},
+                        "cut": 64,
+                        "drm": [{"name": "Steam"}],
+                        "url": "https://next.isthereanydeal.com/link/hades",
+                    },
+                }
+            ]
+        }
+
+        external_offers = itad_deals_v2_to_external_offers(payload)
+
+        self.assertEqual(len(external_offers["items"]), 1)
+        item = external_offers["items"][0]
+        self.assertEqual(item["appid"], "")
+        self.assertEqual(item["visibility"], "hidden")
+        self.assertFalse(item["eligible_for_best_external_price"])
+        self.assertIn("appid_missing", item["risk_flags"])
+        self.assertIn("ownership_not_proven", item["risk_flags"])
+        self.assertEqual(external_offers["summary"]["best_external_price_count"], 0)
+
+    def test_deals_v2_payload_degrades_empty_or_malformed_to_empty_contract(self) -> None:
+        for payload in (None, {}, {"list": [None, "bad", {"deal": None}]}, {"list": []}):
+            with self.subTest(payload=payload):
+                external_offers = itad_deals_v2_to_external_offers(payload)
+
+                self.assertEqual(external_offers["items"], [])
+                self.assertEqual(external_offers["summary"]["items_count"], 0)
+                self.assertEqual(external_offers["summary"]["ranking_impact"], "none")
+
     def test_cache_payload_normalizes_fanatical_for_requested_appids_only(self) -> None:
         cache_payload = build_itad_external_offers_cache(
             [

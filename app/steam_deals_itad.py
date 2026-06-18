@@ -29,6 +29,24 @@ def itad_prices_to_external_offers(
     )
 
 
+def itad_deals_v2_to_external_offers(
+    payload,
+    *,
+    itad_id_to_appid: dict[str, str] | None = None,
+    country: str = "MX",
+    include_marketplaces: bool = False,
+) -> dict:
+    """Normalize ITAD deals/v2-shaped data into the safe external_offers contract."""
+    records = _itad_deals_v2_records(
+        payload,
+        itad_id_to_appid=itad_id_to_appid,
+        country=country,
+    )
+    return normalize_external_offers(
+        {"offers": records}, include_marketplaces=include_marketplaces
+    )
+
+
 def build_itad_external_offers_cache(
     price_payload,
     appid_to_itad_id: dict[str, str],
@@ -177,6 +195,47 @@ def _itad_price_records(price_payload, appid_to_itad_id: dict[str, str], *, coun
             if isinstance(deal, dict) and not _itad_is_steam_deal(deal):
                 records.append(_itad_deal_record(item, deal, appid, country=country))
     return records
+
+
+def _itad_deals_v2_records(payload, *, itad_id_to_appid: dict[str, str] | None, country: str) -> list[dict]:
+    id_to_appid = {
+        str(itad_id): str(appid)
+        for itad_id, appid in (itad_id_to_appid or {}).items()
+        if itad_id and appid
+    }
+    records: list[dict] = []
+    for item in _itad_deals_v2_items(payload):
+        deal = item.get("deal") if isinstance(item.get("deal"), dict) else None
+        if not deal or _itad_is_steam_deal(deal):
+            continue
+        records.append(
+            _itad_deal_record(
+                item,
+                deal,
+                _itad_deals_v2_appid(item, id_to_appid),
+                country=country,
+            )
+        )
+    return records
+
+
+def _itad_deals_v2_items(payload) -> list[dict]:
+    if isinstance(payload, list):
+        return [item for item in payload if isinstance(item, dict)]
+    if not isinstance(payload, dict):
+        return []
+    for key in ("list", "items", "data"):
+        value = payload.get(key)
+        if isinstance(value, list):
+            return [item for item in value if isinstance(item, dict)]
+    return []
+
+
+def _itad_deals_v2_appid(item: dict, id_to_appid: dict[str, str]) -> str:
+    direct = str(item.get("appid") or item.get("steam_appid") or "").strip()
+    if direct:
+        return direct
+    return id_to_appid.get(str(item.get("id") or "").strip(), "")
 
 
 def _itad_price_items(price_payload) -> list[dict]:
