@@ -2952,6 +2952,252 @@ function formatLatestCoverageCount(value) {
   return latestCoverageCount(value).toLocaleString();
 }
 
+const ITAD_DEALS_V2_MAX_FILE_BYTES = 512 * 1024;
+
+function itadDealsV2ResultEl() {
+  return $('itad-deals-v2-diagnostic-result');
+}
+
+function setItadDealsV2FileStatus(message) {
+  const el = $('itad-deals-v2-file-status');
+  if (!el) return;
+  el.textContent = message || '';
+}
+
+function itadDealsV2StatusClass(status) {
+  if (status === 'ok') return 'itad-deals-v2-result-ok';
+  if (status === 'error') return 'itad-deals-v2-result-error';
+  return 'itad-deals-v2-result-warning';
+}
+
+function setItadDealsV2Message(message, status = 'warning') {
+  const el = itadDealsV2ResultEl();
+  if (!el) return;
+  el.className = `itad-deals-v2-result ${itadDealsV2StatusClass(status)}`;
+  el.innerHTML = `
+    <div class="itad-deals-v2-result-head">
+      <div>
+        <span class="itad-deals-v2-result-title">Diagnóstico ITAD /deals/v2</span>
+        <span class="itad-deals-v2-result-subtitle">${escapeHtml(message)}</span>
+      </div>
+      <span class="itad-deals-v2-badge">${escapeHtml(status)}</span>
+    </div>
+  `;
+  el.classList.remove('hidden');
+}
+
+function parseItadDealsV2JsonText(text, label) {
+  const trimmed = String(text || '').trim();
+  if (!trimmed) throw new Error(label + ' está vacío.');
+  try {
+    return JSON.parse(trimmed);
+  } catch (e) {
+    throw new Error(label + ' no es JSON válido.');
+  }
+}
+
+function parseItadDealsV2OptionalMapping(text) {
+  const trimmed = String(text || '').trim();
+  if (!trimmed) return null;
+  const parsed = parseItadDealsV2JsonText(trimmed, 'El mapping ITAD ID a AppID');
+  if (!parsed || typeof parsed !== 'object' || Array.isArray(parsed)) {
+    throw new Error('El mapping ITAD ID a AppID debe ser un objeto JSON.');
+  }
+  return parsed;
+}
+
+function formatItadDealsV2Ratio(value) {
+  const number = Number(value);
+  if (!Number.isFinite(number)) return '0%';
+  const percent = Math.max(0, number * 100);
+  return percent.toFixed(percent >= 10 ? 1 : 2).replace(/\.0+$/, '') + '%';
+}
+
+function renderItadDealsV2Metric(label, value) {
+  return `
+    <div class="itad-deals-v2-metric">
+      <span>${escapeHtml(label)}</span>
+      <strong>${escapeHtml(value)}</strong>
+    </div>
+  `;
+}
+
+function renderItadDealsV2CountMap(title, values, emptyLabel) {
+  if (!values || typeof values !== 'object' || Array.isArray(values)) return '';
+  const entries = Object.entries(values)
+    .filter((entry) => entry[0] && Number(entry[1]) > 0)
+    .sort((left, right) => String(left[0]).localeCompare(String(right[0])));
+  if (!entries.length) {
+    return `
+      <div class="itad-deals-v2-section">
+        <strong>${escapeHtml(title)}</strong>
+        <div class="itad-deals-v2-list"><span>${escapeHtml(emptyLabel)}</span></div>
+      </div>
+    `;
+  }
+  return `
+    <div class="itad-deals-v2-section">
+      <strong>${escapeHtml(title)}</strong>
+      <div class="itad-deals-v2-list">
+        ${entries.map(([key, count]) => `<span>${escapeHtml(key)}: ${escapeHtml(formatLatestCoverageCount(count))}</span>`).join('')}
+      </div>
+    </div>
+  `;
+}
+
+function renderItadDealsV2Issues(issues) {
+  const list = Array.isArray(issues) ? issues.slice(0, 6) : [];
+  if (!list.length) return '';
+  return `
+    <div class="itad-deals-v2-section">
+      <strong>Issues</strong>
+      <div class="itad-deals-v2-list">
+        ${list.map((issue) => {
+          const severity = issue && issue.severity ? String(issue.severity) : 'warning';
+          const code = issue && issue.code ? String(issue.code) : 'issue';
+          return `<span>${escapeHtml(severity)}: ${escapeHtml(code)}</span>`;
+        }).join('')}
+      </div>
+    </div>
+  `;
+}
+
+function renderItadDealsV2DiagnosticResponse(envelope) {
+  const diagnostic = envelope && typeof envelope === 'object' ? envelope.diagnostic : null;
+  const summary = diagnostic && typeof diagnostic === 'object' && diagnostic.summary && typeof diagnostic.summary === 'object'
+    ? diagnostic.summary
+    : {};
+  const status = diagnostic && diagnostic.status ? String(diagnostic.status) : 'warning';
+  const coverage = summary.coverage && typeof summary.coverage === 'object' ? summary.coverage : {};
+  const el = itadDealsV2ResultEl();
+  if (!el) return;
+  const metrics = [
+    ['Entradas crudas', formatLatestCoverageCount(summary.raw_items_count)],
+    ['Entradas válidas', formatLatestCoverageCount(summary.payload_items_count)],
+    ['Malformadas omitidas', formatLatestCoverageCount(summary.malformed_items_count)],
+    ['Deals procesables', formatLatestCoverageCount(summary.deal_items_count)],
+    ['Steam omitidos', formatLatestCoverageCount(summary.steam_deals_count)],
+    ['Ofertas externas', formatLatestCoverageCount(summary.external_offer_items_count)],
+    ['Mapeadas a AppID', formatLatestCoverageCount(summary.mapped_external_offer_count)],
+    ['Missing AppID', formatLatestCoverageCount(summary.missing_appid_count)],
+    ['Highlight', formatLatestCoverageCount(summary.highlight_count)],
+    ['Review', formatLatestCoverageCount(summary.review_count)],
+    ['Hidden', formatLatestCoverageCount(summary.hidden_count)],
+    ['Mejor precio elegible', formatLatestCoverageCount(summary.best_external_price_count)],
+    ['Cobertura válidos', formatItadDealsV2Ratio(coverage.valid_items)],
+    ['Cobertura external_offers', formatItadDealsV2Ratio(coverage.external_offers)],
+    ['Cobertura mapping', formatItadDealsV2Ratio(coverage.mapped_external_offers)],
+  ];
+  el.className = `itad-deals-v2-result ${itadDealsV2StatusClass(status)}`;
+  el.innerHTML = `
+    <div class="itad-deals-v2-result-head">
+      <div>
+        <span class="itad-deals-v2-result-title">Diagnóstico ITAD /deals/v2: ${escapeHtml(status)}</span>
+        <span class="itad-deals-v2-result-subtitle">Offline/advisory-only: no se renderiza payload crudo, items normalizados ni URLs. No cambia score, ranking, Top Picks, cache ni wishlist hygiene.</span>
+      </div>
+      <span class="itad-deals-v2-badge">${escapeHtml(envelope && envelope.persistence ? envelope.persistence : 'not_saved')}</span>
+    </div>
+    <div class="itad-deals-v2-grid">
+      ${metrics.map(([label, value]) => renderItadDealsV2Metric(label, value)).join('')}
+    </div>
+    ${renderItadDealsV2CountMap('Tiendas', summary.store_counts, 'Sin tiendas externas normalizadas')}
+    ${renderItadDealsV2CountMap('Riesgos', summary.risk_counts, 'Sin riesgos detectados')}
+    ${renderItadDealsV2Issues(diagnostic && diagnostic.issues)}
+  `;
+  el.classList.remove('hidden');
+}
+
+async function diagnoseItadDealsV2Sample() {
+  const payloadEl = $('itad_deals_v2_payload');
+  const mappingEl = $('itad_deals_v2_mapping_json');
+  const countryEl = $('itad_deals_v2_country');
+  const btn = $('btn-itad-deals-v2-diagnose');
+  let payload;
+  let mapping;
+  try {
+    payload = parseItadDealsV2JsonText(payloadEl ? payloadEl.value : '', 'La muestra ITAD /deals/v2');
+    mapping = parseItadDealsV2OptionalMapping(mappingEl ? mappingEl.value : '');
+  } catch (e) {
+    setItadDealsV2Message(e && e.message ? e.message : 'No se pudo leer el JSON local.', 'error');
+    return;
+  }
+  const request = {
+    payload,
+    country: countryEl && countryEl.value ? countryEl.value : 'MX',
+  };
+  if (mapping) request.itad_id_to_appid = mapping;
+  if (btn) {
+    btn.disabled = true;
+    btn.setAttribute('aria-busy', 'true');
+  }
+  setItadDealsV2Message('Diagnosticando localmente la muestra redactada...', 'warning');
+  try {
+    const response = await localMutableFetch('/api/itad/deals-v2/diagnose', {
+      headers: {'Content-Type': 'application/json'},
+      body: JSON.stringify(request),
+    });
+    let data = {};
+    try { data = await response.json(); } catch (e) { data = {}; }
+    if (!response.ok) {
+      const message = data && data.message ? data.message : 'No se pudo diagnosticar la muestra local.';
+      throw new Error(message);
+    }
+    renderItadDealsV2DiagnosticResponse(data);
+  } catch (e) {
+    setItadDealsV2Message(e && e.message ? e.message : 'No se pudo diagnosticar la muestra local.', 'error');
+  } finally {
+    if (btn) {
+      btn.disabled = false;
+      btn.removeAttribute('aria-busy');
+    }
+  }
+}
+
+async function loadItadDealsV2File(event) {
+  const input = event && event.target ? event.target : $('itad_deals_v2_file');
+  const file = input && input.files && input.files[0] ? input.files[0] : null;
+  if (!file) return;
+  if (file.size > ITAD_DEALS_V2_MAX_FILE_BYTES) {
+    setItadDealsV2Message('El archivo excede 512 KB. Pega una muestra redactada más pequeña.', 'error');
+    input.value = '';
+    return;
+  }
+  try {
+    const text = await file.text();
+    const payloadEl = $('itad_deals_v2_payload');
+    if (payloadEl) payloadEl.value = text;
+    setItadDealsV2FileStatus('Archivo cargado en el textarea local. Revisa que esté redactado antes de diagnosticar.');
+  } catch (e) {
+    setItadDealsV2Message('No se pudo leer el archivo JSON local.', 'error');
+  } finally {
+    input.value = '';
+  }
+}
+
+function clearItadDealsV2Diagnostic() {
+  ['itad_deals_v2_payload', 'itad_deals_v2_mapping_json'].forEach((id) => {
+    const el = $(id);
+    if (el) el.value = '';
+  });
+  const countryEl = $('itad_deals_v2_country');
+  if (countryEl) countryEl.value = 'MX';
+  const result = itadDealsV2ResultEl();
+  if (result) {
+    result.classList.add('hidden');
+    result.innerHTML = '';
+  }
+  setItadDealsV2FileStatus('Muestra local limpiada; nada queda guardado en config/cache/report.');
+}
+
+function bindItadDealsV2DiagnosticUi() {
+  const diagnoseBtn = $('btn-itad-deals-v2-diagnose');
+  if (diagnoseBtn) diagnoseBtn.addEventListener('click', diagnoseItadDealsV2Sample);
+  const clearBtn = $('btn-itad-deals-v2-clear');
+  if (clearBtn) clearBtn.addEventListener('click', clearItadDealsV2Diagnostic);
+  const fileInput = $('itad_deals_v2_file');
+  if (fileInput) fileInput.addEventListener('change', loadItadDealsV2File);
+}
+
 function parseShareMoney(value) {
   if (value == null || value === '') return null;
   if (typeof value === 'number') {
@@ -6977,6 +7223,7 @@ function bindShareModalInteractions() {
 }
 
 bindShareModalInteractions();
+bindItadDealsV2DiagnosticUi();
 loadWatchlist();
 syncLatestReportEmptyState();
 syncLatestReportCard();

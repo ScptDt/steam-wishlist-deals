@@ -52,6 +52,7 @@ from app.steam_deals_openid import (
     verify_steam_openid_check_authentication,
 )
 from app.steam_deals_access import validate_steam_access_direct_import
+from app.steam_deals_itad import diagnose_itad_deals_v2_payload
 from app.steam_deals_recommendations import build_selection_review
 from shared.tool_modules import PAYDAY2_TOOL_ID, get_tool_entrypoint
 from shared.io_utils import load_json_file
@@ -155,6 +156,8 @@ STEAM_ACCESS_LOCAL_ENDPOINT_ROUTES = frozenset(
 STEAM_ACCESS_LOCAL_ENDPOINT_SECURITY_INVARIANTS = STEAM_ACCESS_LOCAL_IMPORT_SECURITY_INVARIANTS
 STEAM_ACCESS_PAIRING_START_PATH = "/api/steam-access/pairing/start"
 STEAM_ACCESS_PAIRING_REVOKE_PATH = "/api/steam-access/pairing/revoke"
+ITAD_DEALS_V2_DIAGNOSTIC_PATH = "/api/itad/deals-v2/diagnose"
+ITAD_DEALS_V2_DIAGNOSTIC_MAX_BODY_BYTES = 512 * 1024
 STEAM_ACCESS_PAIRING_TTL_SECONDS = STEAM_ACCESS_LOCAL_PAIRING_TTL_SECONDS
 STEAM_ACCESS_DIRECT_IMPORT_MAX_BODY_BYTES = STEAM_ACCESS_LOCAL_IMPORT_MAX_BODY_BYTES
 STEAM_ACCESS_DIRECT_IMPORT_RATE_LIMIT = STEAM_ACCESS_LOCAL_IMPORT_RATE_LIMIT
@@ -177,6 +180,7 @@ PROTECTED_POST_PATHS = frozenset(
         "/api/watchlist/delete",
         "/api/selection-review",
         "/api/log/export",
+        ITAD_DEALS_V2_DIAGNOSTIC_PATH,
     }
 )
 
@@ -436,6 +440,42 @@ def selection_review_records_from_body(body: dict, *, limit: int = 50) -> list[d
         if key in body:
             return _selection_review_records(body.get(key), limit=limit)
     return []
+
+
+def _safe_itad_deals_v2_country(value) -> str:
+    country = str(value or "MX").strip().upper()
+    return (country or "MX")[:8]
+
+
+def public_itad_deals_v2_diagnostic(diagnostic: dict) -> dict:
+    summary = diagnostic.get("summary") if isinstance(diagnostic, dict) else {}
+    issues = diagnostic.get("issues") if isinstance(diagnostic, dict) else []
+    items = diagnostic.get("items") if isinstance(diagnostic, dict) else []
+    return {
+        "status": str(diagnostic.get("status") or "error") if isinstance(diagnostic, dict) else "error",
+        "summary": summary if isinstance(summary, dict) else {},
+        "issues": issues if isinstance(issues, list) else [],
+        "normalized_items_count": len(items) if isinstance(items, list) else 0,
+        "items_omitted": True,
+    }
+
+
+def build_itad_deals_v2_diagnostic_response(body: dict) -> dict:
+    diagnostic = diagnose_itad_deals_v2_payload(
+        body.get("payload"),
+        itad_id_to_appid=body.get("itad_id_to_appid"),
+        country=_safe_itad_deals_v2_country(body.get("country")),
+    )
+    return {
+        "status": "diagnosed",
+        "source": "itad_deals_v2_redacted_sample",
+        "offline": True,
+        "advisory_only": True,
+        "ranking_impact": "none",
+        "persistence": "not_saved",
+        "payload_echoed": False,
+        "diagnostic": public_itad_deals_v2_diagnostic(diagnostic),
+    }
 
 
 def _first_non_empty_report_value(report: dict, keys: tuple[str, ...], allowed_types: tuple[type, ...], default=None):
@@ -1588,6 +1628,8 @@ class Handler(BaseHTTPRequestHandler):
             self._serve_selection_review()
         elif path == "/api/log/export":
             self._serve_log_export()
+        elif path == ITAD_DEALS_V2_DIAGNOSTIC_PATH:
+            self._serve_itad_deals_v2_diagnostic()
         else:
             self.send_error(404)
 
@@ -1612,6 +1654,26 @@ class Handler(BaseHTTPRequestHandler):
             )
             return
         self._send_json({"status": "saved"})
+
+    def _serve_itad_deals_v2_diagnostic(self):
+        body = read_json_body(
+            self,
+            max_json_body_bytes=ITAD_DEALS_V2_DIAGNOSTIC_MAX_BODY_BYTES,
+        )
+        if body is None:
+            return
+        try:
+            response = build_itad_deals_v2_diagnostic_response(body)
+        except Exception:
+            self._send_json(
+                {
+                    "error": "itad_deals_v2_diagnostic_failed",
+                    "message": "No se pudo diagnosticar la muestra ITAD /deals/v2 de forma local.",
+                },
+                status=400,
+            )
+            return
+        self._send_json(response)
 
     def _serve_steam_openid_start(self):
         state = create_local_session_token(24)

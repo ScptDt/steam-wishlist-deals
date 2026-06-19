@@ -339,6 +339,39 @@
           <input type="text" id="gg_deals_external_offers_cache" placeholder="~/gg-deals-external-offers.json">
           <div class="hint">Import local de precios externos ya descargados/exportados desde GG.deals para mostrar comparativa. Es lectura local solamente: no usa API key, no hace red live ni refresh, no prueba ownership, no habilita keyshops/marketplaces por defecto y no cambia score ni ranking.</div>
         </div>
+        <details class="pre-run-panel itad-deals-v2-diagnostic-panel">
+          <summary class="pre-run-panel-summary">
+            <span>Diagnóstico ITAD /deals/v2 redactado</span>
+            <span class="pre-run-panel-summary-hint">Offline, sin OAuth/key y sin guardar payload</span>
+          </summary>
+          <div class="details-body">
+            <div class="advanced-filters-intro">Pega una muestra JSON ya redactada de ITAD <code>/deals/v2</code> para medir cobertura, tiendas y risk gates antes de decidir una caché OAuth-first. Este diagnóstico no hace red, no abre OAuth, no usa API key, no escribe config/cache/log/report y no cambia score, ranking, Top Picks ni wishlist hygiene.</div>
+            <div class="row">
+              <div class="field">
+                <label for="itad_deals_v2_country">Country</label>
+                <input type="text" id="itad_deals_v2_country" maxlength="8" value="MX" placeholder="MX">
+                <div class="hint hint-compact">Solo etiqueta regional para normalizar el diagnóstico local.</div>
+              </div>
+              <div class="field">
+                <label for="itad_deals_v2_mapping_json">Mapping ITAD ID &rarr; Steam AppID <span class="optional">(opcional)</span></label>
+                <textarea id="itad_deals_v2_mapping_json" rows="3" placeholder='{"itad-hades":"1145360"}'></textarea>
+                <div class="hint hint-compact">Objeto JSON local para medir cuántas ofertas externas pueden mapearse a AppID sin llamar lookup/prices.</div>
+              </div>
+            </div>
+            <div class="field">
+              <label for="itad_deals_v2_payload">JSON redactado de /deals/v2</label>
+              <textarea id="itad_deals_v2_payload" rows="8" placeholder='{"hasMore":false,"list":[...]}'></textarea>
+              <div class="hint">Comparte solo bodies redactados: sin access_token, refresh_token, client_secret, API key, cookies, Authorization, callbacks con code, usuario/email ni rutas locales. La UI renderiza resumen y conteos, no el payload crudo.</div>
+            </div>
+            <div class="itad-deals-v2-actions">
+              <input type="file" id="itad_deals_v2_file" accept="application/json,.json">
+              <button type="button" class="btn btn-secondary btn-compact" id="btn-itad-deals-v2-diagnose">Diagnosticar muestra ITAD</button>
+              <button type="button" class="btn btn-ghost btn-compact" id="btn-itad-deals-v2-clear">Limpiar muestra</button>
+            </div>
+            <div class="hint hint-compact" id="itad-deals-v2-file-status" aria-live="polite"></div>
+            <div id="itad-deals-v2-diagnostic-result" class="itad-deals-v2-result hidden" aria-live="polite"></div>
+          </div>
+        </details>
         <div class="field">
           <label>Dónde guardar los reportes</label>
           <input type="text" id="output" placeholder="output/">

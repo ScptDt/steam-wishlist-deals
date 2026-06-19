@@ -240,9 +240,39 @@ class ConfigSecretRedactionTests(unittest.TestCase):
             "/api/watchlist",
             "/api/watchlist/delete",
             "/api/log/export",
+            steam_deals_web.ITAD_DEALS_V2_DIAGNOSTIC_PATH,
         }
 
         self.assertLessEqual(expected, steam_deals_web.PROTECTED_POST_PATHS)
+
+    def test_itad_deals_v2_diagnostic_route_requires_local_token(self) -> None:
+        original_token = steam_deals_web.LOCAL_SESSION_TOKEN
+        steam_deals_web.LOCAL_SESSION_TOKEN = "EXPECTED-TOKEN"
+        handler = _make_steam_route_handler(steam_deals_web.ITAD_DEALS_V2_DIAGNOSTIC_PATH)
+        handler._serve_itad_deals_v2_diagnostic = lambda: handler.calls.append("itad")
+        try:
+            steam_deals_web.Handler.do_POST(handler)
+        finally:
+            steam_deals_web.LOCAL_SESSION_TOKEN = original_token
+
+        self.assertEqual(handler.status, 403)
+        self.assertEqual(handler.json["error"], "forbidden")
+        self.assertEqual(handler.calls, [])
+
+    def test_itad_deals_v2_diagnostic_route_dispatches_with_local_token(self) -> None:
+        original_token = steam_deals_web.LOCAL_SESSION_TOKEN
+        steam_deals_web.LOCAL_SESSION_TOKEN = "EXPECTED-TOKEN"
+        handler = _make_steam_route_handler(
+            steam_deals_web.ITAD_DEALS_V2_DIAGNOSTIC_PATH,
+            {LOCAL_CSRF_HEADER: "EXPECTED-TOKEN"},
+        )
+        handler._serve_itad_deals_v2_diagnostic = lambda: handler.calls.append("itad")
+        try:
+            steam_deals_web.Handler.do_POST(handler)
+        finally:
+            steam_deals_web.LOCAL_SESSION_TOKEN = original_token
+
+        self.assertEqual(handler.calls, ["itad"])
 
     def test_steam_deals_do_post_rejects_external_origin_with_valid_token(self) -> None:
         original_token = steam_deals_web.LOCAL_SESSION_TOKEN

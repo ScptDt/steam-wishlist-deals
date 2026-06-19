@@ -671,6 +671,56 @@ class GeneratedFilesServingTests(unittest.TestCase):
         self.assertNotIn("steam_openid_profile", saved_configs[0])
         self.assertEqual(saved_configs[0]["key"], "SAVED-SECRET")
 
+    def test_itad_deals_v2_diagnostic_response_is_offline_and_omits_raw_items(self) -> None:
+        response = web.build_itad_deals_v2_diagnostic_response(
+            {
+                "country": "MX",
+                "itad_id_to_appid": {"itad-hades": "1145360"},
+                "payload": {
+                    "list": [
+                        {
+                            "id": "itad-hades",
+                            "title": "SECRET GAME NAME",
+                            "deal": {
+                                "shop": {"id": 35, "name": "Fanatical"},
+                                "price": {"amount": 8.99, "currency": "USD"},
+                                "regular": {"amount": 24.99, "currency": "USD"},
+                                "drm": [{"name": "Steam"}],
+                                "url": "https://secret.example/callback?code=SECRET-CODE",
+                            },
+                        }
+                    ]
+                },
+            }
+        )
+
+        self.assertEqual(response["status"], "diagnosed")
+        self.assertTrue(response["offline"])
+        self.assertTrue(response["advisory_only"])
+        self.assertEqual(response["ranking_impact"], "none")
+        self.assertEqual(response["persistence"], "not_saved")
+        self.assertFalse(response["payload_echoed"])
+        diagnostic = response["diagnostic"]
+        self.assertTrue(diagnostic["items_omitted"])
+        self.assertEqual(diagnostic["normalized_items_count"], 1)
+        self.assertEqual(diagnostic["summary"]["external_offer_items_count"], 1)
+        serialized = json.dumps(response, ensure_ascii=False)
+        self.assertNotIn("SECRET-CODE", serialized)
+        self.assertNotIn("SECRET GAME NAME", serialized)
+        self.assertNotIn("https://secret.example", serialized)
+
+    def test_itad_deals_v2_diagnostic_response_reports_invalid_payload_safely(self) -> None:
+        response = web.build_itad_deals_v2_diagnostic_response(
+            {"payload": "not-a-deals-v2-payload", "itad_id_to_appid": "bad-mapping"}
+        )
+
+        diagnostic = response["diagnostic"]
+        self.assertEqual(diagnostic["status"], "error")
+        self.assertEqual(diagnostic["summary"]["external_offer_items_count"], 0)
+        self.assertTrue(diagnostic["summary"]["advisory_only"])
+        self.assertEqual(diagnostic["summary"]["ranking_impact"], "none")
+        self.assertEqual(diagnostic["issues"][0]["code"], "invalid_itad_deals_v2_payload")
+
     def test_steam_openid_callback_saves_profile_without_exposing_raw_response(self) -> None:
         original_consume = web.consume_steam_openid_callback
         original_load_config = web.load_config

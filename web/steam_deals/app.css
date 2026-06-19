@@ -254,6 +254,123 @@ a:hover { text-decoration: underline; }
   line-height: 1.4;
 }
 
+.itad-deals-v2-actions {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 0.5rem;
+  margin-top: 0.45rem;
+}
+
+.itad-deals-v2-actions input[type="file"] {
+  flex: 1 1 220px;
+  min-width: 0;
+  color: var(--text2);
+  font-size: 0.78rem;
+}
+
+.itad-deals-v2-result {
+  margin-top: 0.75rem;
+  padding: 0.75rem;
+  border: 1px solid var(--card-border);
+  border-radius: 9px;
+  background: rgba(255,255,255,0.03);
+}
+
+.itad-deals-v2-result-ok { border-color: rgba(95, 197, 133, 0.35); }
+.itad-deals-v2-result-warning { border-color: rgba(255, 184, 77, 0.38); }
+.itad-deals-v2-result-error { border-color: rgba(255, 107, 107, 0.42); }
+
+.itad-deals-v2-result-head {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: flex-start;
+  justify-content: space-between;
+  gap: 0.5rem;
+  margin-bottom: 0.65rem;
+}
+
+.itad-deals-v2-result-title,
+.itad-deals-v2-result-subtitle {
+  display: block;
+}
+
+.itad-deals-v2-result-title {
+  color: var(--text);
+  font-size: 0.86rem;
+  font-weight: 700;
+}
+
+.itad-deals-v2-result-subtitle,
+.itad-deals-v2-list {
+  color: var(--text2);
+  font-size: 0.75rem;
+  line-height: 1.45;
+}
+
+.itad-deals-v2-badge {
+  padding: 0.2rem 0.45rem;
+  border-radius: 999px;
+  border: 1px solid var(--card-border);
+  color: var(--accent);
+  font-size: 0.72rem;
+  font-weight: 700;
+  text-transform: uppercase;
+}
+
+.itad-deals-v2-grid {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(135px, 1fr));
+  gap: 0.5rem;
+}
+
+.itad-deals-v2-metric {
+  padding: 0.55rem 0.6rem;
+  border: 1px solid rgba(255,255,255,0.06);
+  border-radius: 8px;
+  background: rgba(12, 20, 30, 0.16);
+}
+
+.itad-deals-v2-metric span,
+.itad-deals-v2-metric strong {
+  display: block;
+}
+
+.itad-deals-v2-metric span {
+  color: var(--text2);
+  font-size: 0.72rem;
+}
+
+.itad-deals-v2-metric strong {
+  margin-top: 0.16rem;
+  color: var(--text);
+  font-size: 0.94rem;
+}
+
+.itad-deals-v2-section {
+  margin-top: 0.65rem;
+}
+
+.itad-deals-v2-section strong {
+  display: block;
+  margin-bottom: 0.25rem;
+  color: var(--text);
+  font-size: 0.78rem;
+}
+
+.itad-deals-v2-list {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 0.35rem;
+}
+
+.itad-deals-v2-list span {
+  padding: 0.2rem 0.42rem;
+  border-radius: 999px;
+  background: rgba(255,255,255,0.04);
+  border: 1px solid rgba(255,255,255,0.06);
+}
+
 .history-quick-field {
   display: flex;
   align-items: stretch;

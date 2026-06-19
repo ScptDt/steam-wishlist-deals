@@ -633,6 +633,39 @@ class WebAssetsTests(unittest.TestCase):
             app_js,
         )
 
+    def test_itad_deals_v2_offline_diagnostic_ui_is_local_and_sanitized(self) -> None:
+        index_html = (ROOT / "web" / "steam_deals" / "index.html").read_text(
+            encoding="utf-8"
+        )
+        app_js = (ROOT / "web" / "steam_deals" / "app.js").read_text(
+            encoding="utf-8"
+        )
+        app_css = (ROOT / "web" / "steam_deals" / "app.css").read_text(
+            encoding="utf-8"
+        )
+
+        self.assertIn("Diagnóstico ITAD /deals/v2 redactado", index_html)
+        self.assertIn('id="itad_deals_v2_payload"', index_html)
+        self.assertIn('id="itad_deals_v2_mapping_json"', index_html)
+        self.assertIn('id="itad_deals_v2_file"', index_html)
+        self.assertIn('id="btn-itad-deals-v2-diagnose"', index_html)
+        self.assertIn("Offline, sin OAuth/key y sin guardar payload", index_html)
+        self.assertIn("no hace red", index_html)
+        self.assertIn("no escribe config/cache/log/report", index_html)
+        self.assertIn("no cambia score, ranking, Top Picks ni wishlist hygiene", index_html)
+        self.assertIn("La UI renderiza resumen y conteos, no el payload crudo", index_html)
+        self.assertIn("localMutableFetch('/api/itad/deals-v2/diagnose'", app_js)
+        self.assertIn("bindItadDealsV2DiagnosticUi();", app_js)
+        self.assertIn("file.text()", app_js)
+        render_block = app_js[
+            app_js.index("function renderItadDealsV2DiagnosticResponse"):
+            app_js.index("async function diagnoseItadDealsV2Sample")
+        ]
+        self.assertIn("no se renderiza payload crudo", render_block)
+        self.assertNotIn("diagnostic.items", render_block)
+        self.assertIn(".itad-deals-v2-result", app_css)
+        self.assertIn(".itad-deals-v2-grid", app_css)
+
     def test_hltb_path_copy_handles_windows_paths_without_quotes(self) -> None:
         index_html = (ROOT / "web" / "steam_deals" / "index.html").read_text(
             encoding="utf-8"
@@ -714,6 +747,7 @@ class WebAssetsTests(unittest.TestCase):
             "/api/watchlist",
             "/api/watchlist/delete",
             "/api/selection-review",
+            "/api/itad/deals-v2/diagnose",
         ):
             self.assertIn(f"localMutableFetch('{endpoint}'", app_js)
         self.assertNotIn("steam-tools-local-token", index_html)
