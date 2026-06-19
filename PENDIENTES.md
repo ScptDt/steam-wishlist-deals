@@ -1,6 +1,6 @@
 # Pendientes (Fuente Unica)
 
-Ultima actualizacion: 2026-06-18
+Ultima actualizacion: 2026-06-19
 
 ## Regla de Oro
 
@@ -635,6 +635,8 @@ La bitácora cronológica detallada, evidencia operativa y entradas antiguas viv
 - Nota 2026-06-16: parser fixture-only Playnite library cerrado. `steamtools_playnite_library_v1` entra por `--wishlist-external-matches-json` y normaliza plataformas no-Steam a `external_matches`/`wishlist_hygiene`, preservando copy de launcher y omitiendo `store=Steam` para no inferir Family. No copia rutas locales ni campos sensibles; siguiente slice posible: parser `steamtools_playnite_access_v1` fixture-only o diseño/add-on Playnite solo después.
 
 - Nota 2026-06-16: parser fixture-only Playnite access cerrado. `steamtools_playnite_access_v1` entra por `--play-access-json`, toma solo plataformas con `installed=true` o `playable_hint=true` y las convierte en señales locales `play_access` sin rutas ni metadata sensible; incluso Steam desde Playnite queda como acceso probable/revisión, no Family/ownership definitivo. Siguiente slice posible: `steamtools_playnite_unmatched_v1` diagnóstico o add-on Playnite solo tras parser/fixtures.
+
+- Nota 2026-06-19: diagnóstico fixture-only Playnite unmatched cerrado. `steamtools_playnite_unmatched_v1` se diagnostica como revisión manual `playnite_unmatched_review_needed` con `advisory_only=true`/`ranking_impact=none`, preserva duplicados por título/fuente y rechaza campos sensibles (`install_dir`, paths, ejecutables, `Game`, `GameAction`, tokens, cookies, raw metadata) sin copiar valores privados. No alimenta ownership, Steam Family, precios, score/ranking/defaults, imports reales ni mutaciones. Siguiente slice Playnite posible: solo con host Windows + Playnite para validar add-on source/dev o fricción nueva; sin `.pext` hasta estabilizar y probar.
 
 - [x] [Track] Steam Access / Family Import para decidir si conviene comprar. [Cerrado base 2026-06-10: investigación/plan docs-only, contrato/helper `steam_access_import_v1`, import local, señales visibles, OpenID seguro, import owned públicos, threat model Plan 6A, helper Plan 6B, threat model endpoint Plan 7A, endpoint directo Plan 7B, helper collector Plan 8B y notas advisory-only Plan 8 quedan cerrados. Resultado funcional: el reporte puede detectar/mostrar si un juego parece jugable por el usuario (`owned`, `family_shared` o `probable_family_shared`) para evitar compras innecesarias o marcar “comprar solo si quieres copia propia”, sin copiar iconos de SteamDB ni prometer completitud de Steam Family. Decisión vigente: descartar login directo con usuario/password, lectura de cookies, captura de tokens, scraping autenticado desde Python, SteamKit2 y mutaciones de wishlist/ignore/follow/carrito; usar solo OpenID oficial para SteamID/perfil, Web API pública para owned visibles cuando aplique e import/helper local AppID-only advisory-only para Family. Reabrir solo con fricción/evidencia nueva. Cualquier filtro, score/ranking/default/cache/fetching, auto-hide, auto-exclusión o mutación Steam requiere slice y aprobación separados.]
   - Plan 0 — Cerrado 2026-06-03: investigación pública + backlog formal. Se documenta OpenID vs extensión SteamDB, riesgos, guardrails y orden por slices. Evidencia en BITACORA; sin código runtime ni red real.

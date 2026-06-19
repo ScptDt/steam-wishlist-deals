@@ -146,6 +146,11 @@ namespace SteamTools.PlayniteExporter
 
         private object? BuildAccessPlatform(Game game, bool installed, string exportedAt)
         {
+            if (!installed)
+            {
+                return null;
+            }
+
             var store = StoreName(game);
             if (string.IsNullOrWhiteSpace(store))
             {

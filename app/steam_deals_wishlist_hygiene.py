@@ -47,7 +47,45 @@ _STORE_TYPES = {"library", "order_export", "bundle_export", "price_index", "cata
 _MATCH_METHODS = {"steam_appid", "external_id", "normalized_title", "manual"}
 _CONFIDENCES = {"high", "medium", "low"}
 _PLAYNITE_LIBRARY_SCHEMA = "steamtools_playnite_library_v1"
+_PLAYNITE_UNMATCHED_SCHEMA = "steamtools_playnite_unmatched_v1"
+_PLAYNITE_UNMATCHED_SOURCE = "playnite_unmatched"
+_PLAYNITE_UNMATCHED_SIGNAL = "playnite_unmatched_review_needed"
 _PLAYNITE_SOURCE_TYPES = {"official_launcher", "playnite_addon", "manual", "unknown"}
+_PLAYNITE_FORBIDDEN_FIELD_IDS = {
+    "accountid",
+    "args",
+    "arguments",
+    "cookie",
+    "cookies",
+    "credential",
+    "credentials",
+    "executable",
+    "game",
+    "gameaction",
+    "headers",
+    "installdir",
+    "installdirectory",
+    "installpath",
+    "launchargs",
+    "launchcommand",
+    "log",
+    "logs",
+    "path",
+    "paths",
+    "raw",
+    "rawmetadata",
+    "savepath",
+    "saves",
+    "screenshotpath",
+    "screenshots",
+    "script",
+    "scripts",
+    "token",
+    "tokens",
+    "username",
+    "workingdir",
+    "workingdirectory",
+}
 _OWNERSHIP_EVIDENCE = {"owned_in_user_export", "owned_in_library_export", "in_user_library", "owned"}
 _BUNDLE_EVIDENCE = {"owned_in_bundle_export", "owned_in_order_export", "bundle_owned", "in_user_order"}
 _CONTEXT_ONLY_EVIDENCE = {"price_only", "catalog_match", "public_bundle", "public_catalog", "discount_only", "promo_only"}
@@ -320,6 +358,136 @@ def _safe_playnite_provider_id(value) -> str:
     if "://" in text or "/" in text or "\\" in text or re.match(r"^[a-zA-Z]:", text):
         return ""
     return text
+
+
+def _looks_like_path_or_url(value) -> bool:
+    text = _clean_text(value)
+    if not text:
+        return False
+    return bool("://" in text or "\\" in text or re.search(r"(^|\s)(/|[a-zA-Z]:[\\/])", text))
+
+
+def _playnite_field_id(value) -> str:
+    return re.sub(r"[^a-z0-9]+", "", _clean_text(value).lower())
+
+
+def _is_forbidden_playnite_field(key) -> bool:
+    key_id = _playnite_field_id(key)
+    if key_id in _PLAYNITE_FORBIDDEN_FIELD_IDS:
+        return True
+    return key_id.startswith("raw") or key_id.endswith("path")
+
+
+def _first_forbidden_playnite_field(value) -> str:
+    if isinstance(value, dict):
+        for key, child in value.items():
+            if _is_forbidden_playnite_field(key):
+                return _clean_text(key)
+            nested = _first_forbidden_playnite_field(child)
+            if nested:
+                return nested
+    if isinstance(value, list):
+        for child in value:
+            nested = _first_forbidden_playnite_field(child)
+            if nested:
+                return nested
+    return ""
+
+
+def _playnite_safe_identifier(value, *, field: str, index: int) -> str:
+    text = _clean_text(value)
+    safe = _safe_playnite_provider_id(text)
+    if text and not safe:
+        raise ValueError(f"items[{index}].{field} contiene ruta o URL no permitida")
+    return safe
+
+
+def _playnite_unmatched_items(payload: dict) -> list:
+    items = payload.get("items")
+    if items is None:
+        return []
+    if not isinstance(items, list):
+        raise ValueError("items debe ser una lista")
+    return list(items)
+
+
+def _playnite_unmatched_record(item: dict, index: int, defaults: dict) -> dict:
+    if forbidden_field := _first_forbidden_playnite_field(item):
+        raise ValueError(f"items[{index}] contiene campo no permitido: {forbidden_field}")
+    name = _external_name(item)
+    if not name:
+        raise ValueError(f"items[{index}] debe incluir name")
+    if _looks_like_path_or_url(name):
+        raise ValueError(f"items[{index}].name contiene ruta o URL no permitida")
+    store_raw = item.get("store") or item.get("store_name") or item.get("source")
+    if not _clean_text(store_raw):
+        raise ValueError(f"items[{index}] debe incluir store")
+    if _looks_like_path_or_url(store_raw):
+        raise ValueError(f"items[{index}].store contiene ruta o URL no permitida")
+    store_id = _store_id(store_raw)
+    reason = _clean_text(item.get("reason")) or "steam_appid_missing"
+    if _looks_like_path_or_url(reason):
+        reason = "manual_review"
+    record = {
+        "source": _PLAYNITE_UNMATCHED_SOURCE,
+        "name": name,
+        "store_id": store_id,
+        "store_name": _store_name(store_id, store_raw),
+        "reason": reason,
+        "signal": _PLAYNITE_UNMATCHED_SIGNAL,
+        "confidence": "low",
+        "match_method": "unmatched_title",
+        "advisory_only": True,
+        "ranking_impact": "none",
+    }
+    if source_type := _enum(item.get("source_type"), _PLAYNITE_SOURCE_TYPES, "unknown"):
+        record["source_type"] = source_type
+    if provider_game_id := _playnite_safe_identifier(
+        item.get("provider_game_id") or item.get("external_id"),
+        field="provider_game_id",
+        index=index,
+    ):
+        record["provider_game_id"] = provider_game_id
+    if playnite_id := _playnite_safe_identifier(item.get("playnite_id"), field="playnite_id", index=index):
+        record["playnite_id"] = playnite_id
+    if observed_at := _clean_text(item.get("observed_at") or defaults.get("exported_at")):
+        record["observed_at"] = observed_at
+    return record
+
+
+def _add_unmatched_duplicate_flags(records: list[dict]) -> list[dict]:
+    title_counts: dict[str, int] = {}
+    source_counts: dict[tuple[str, str], int] = {}
+    for record in records:
+        title_key = _name_key(record["name"])
+        title_counts[title_key] = title_counts.get(title_key, 0) + 1
+        source_key = (title_key, record["store_id"])
+        source_counts[source_key] = source_counts.get(source_key, 0) + 1
+    flagged: list[dict] = []
+    for record in records:
+        title_key = _name_key(record["name"])
+        flags: list[str] = []
+        if title_counts.get(title_key, 0) > 1:
+            flags.append("duplicate_title")
+        if source_counts.get((title_key, record["store_id"]), 0) > 1:
+            flags.append("duplicate_source")
+        flagged.append({**record, **({"review_flags": flags} if flags else {})})
+    return flagged
+
+
+def normalize_playnite_unmatched_export(payload) -> list[dict]:
+    """Normalize a Playnite unmatched export into safe manual-review diagnostics."""
+    if not isinstance(payload, dict):
+        raise ValueError("export Playnite unmatched debe ser un objeto JSON")
+    if payload.get("schema") != _PLAYNITE_UNMATCHED_SCHEMA:
+        raise ValueError(f"schema Playnite unmatched no soportado: {payload.get('schema') or 'missing'}")
+    records: list[dict] = []
+    defaults = {"exported_at": payload.get("exported_at")}
+    for index, item in enumerate(_playnite_unmatched_items(payload)):
+        if not isinstance(item, dict):
+            raise ValueError(f"items[{index}] debe ser un objeto JSON")
+        records.append(_playnite_unmatched_record(dict(item), index, defaults))
+    return _add_unmatched_duplicate_flags(records)
 
 
 def _playnite_confidence(platform: dict, store_id: str, source_type: str, evidence: str) -> str:
@@ -681,6 +849,148 @@ def _external_diagnostic_summary(items: list[dict]) -> dict:
     }
 
 
+def _playnite_unmatched_error_code(error_message: str) -> str:
+    if "campo no permitido" in error_message:
+        return "forbidden_field"
+    if "ruta o URL" in error_message:
+        return "unsafe_identifier"
+    if "debe incluir name" in error_message:
+        return "missing_name"
+    if "debe incluir store" in error_message:
+        return "missing_store"
+    return "invalid_unmatched_record"
+
+
+def _playnite_unmatched_diagnostic_item(
+    index: int,
+    status: str,
+    code: str,
+    message: str,
+    record: dict | None = None,
+) -> dict:
+    item = {"index": index, "status": status, "code": code, "message": message}
+    if not record:
+        return item
+    allowed = {
+        "source",
+        "name",
+        "store_id",
+        "store_name",
+        "reason",
+        "signal",
+        "confidence",
+        "match_method",
+        "source_type",
+        "provider_game_id",
+        "playnite_id",
+        "observed_at",
+        "review_flags",
+        "advisory_only",
+        "ranking_impact",
+    }
+    return {**item, **{key: value for key, value in record.items() if key in allowed}}
+
+
+def _playnite_unmatched_diagnostic_summary(items: list[dict]) -> dict:
+    signal_counts: dict[str, int] = {}
+    for item in items:
+        if item.get("status") != "accepted":
+            continue
+        signal = item.get("signal") or item.get("code")
+        signal_counts[signal] = signal_counts.get(signal, 0) + 1
+    duplicate_title_count = sum(
+        1
+        for item in items
+        if item.get("status") == "accepted" and "duplicate_title" in item.get("review_flags", [])
+    )
+    return {
+        "records_count": len(items),
+        "accepted_count": sum(1 for item in items if item.get("status") == "accepted"),
+        "review_count": sum(1 for item in items if item.get("status") == "accepted"),
+        "rejected_count": sum(1 for item in items if item.get("status") == "rejected"),
+        "malformed_count": sum(1 for item in items if item.get("status") == "malformed"),
+        "duplicate_title_count": duplicate_title_count,
+        "signal_counts": signal_counts,
+        "advisory_only": True,
+        "ranking_impact": "none",
+    }
+
+
+def diagnose_playnite_unmatched_export(payload) -> dict:
+    """Diagnose Playnite unmatched records without feeding ownership or ranking."""
+    try:
+        if payload is None or payload == [] or payload == {}:
+            raw_items: list = []
+            defaults: dict = {}
+        elif not isinstance(payload, dict):
+            raise ValueError("export Playnite unmatched debe ser un objeto JSON")
+        else:
+            if payload.get("schema") != _PLAYNITE_UNMATCHED_SCHEMA:
+                raise ValueError(
+                    f"schema Playnite unmatched no soportado: {payload.get('schema') or 'missing'}"
+                )
+            raw_items = _playnite_unmatched_items(payload)
+            defaults = {"exported_at": payload.get("exported_at")}
+    except ValueError as exc:
+        summary = _playnite_unmatched_diagnostic_summary([])
+        return {
+            "schema": "steamtools_playnite_unmatched_diagnostic_v1",
+            "status": "error",
+            "items": [],
+            "issues": [{"code": "invalid_playnite_unmatched_payload", "message": str(exc)}],
+            "summary": summary,
+        }
+
+    records_by_index: dict[int, dict] = {}
+    items: list[dict] = []
+    for index, item in enumerate(raw_items):
+        if not isinstance(item, dict):
+            items.append(
+                _playnite_unmatched_diagnostic_item(
+                    index,
+                    "malformed",
+                    "record_not_object",
+                    "registro no es un objeto JSON",
+                )
+            )
+            continue
+        try:
+            records_by_index[index] = _playnite_unmatched_record(dict(item), index, defaults)
+        except ValueError as exc:
+            message = str(exc)
+            items.append(
+                _playnite_unmatched_diagnostic_item(
+                    index,
+                    "rejected",
+                    _playnite_unmatched_error_code(message),
+                    message,
+                )
+            )
+
+    flagged_records = _add_unmatched_duplicate_flags(list(records_by_index.values()))
+    flagged_by_index = dict(zip(records_by_index, flagged_records))
+    for index, record in flagged_by_index.items():
+        items.append(
+            _playnite_unmatched_diagnostic_item(
+                index,
+                "accepted",
+                _PLAYNITE_UNMATCHED_SIGNAL,
+                "sin AppID Steam confiable; revisión manual",
+                record,
+            )
+        )
+    items.sort(key=lambda entry: entry["index"])
+    summary = _playnite_unmatched_diagnostic_summary(items)
+    status = "warning" if summary["review_count"] or summary["rejected_count"] or summary["malformed_count"] else "ok"
+    return {
+        "schema": "steamtools_playnite_unmatched_diagnostic_v1",
+        "status": status,
+        "items": items,
+        "issues": [],
+        "summary": summary,
+    }
+
+
 def diagnose_wishlist_external_matches(payload) -> dict:
     """Diagnose local external_matches payloads without reading files or mutating ranking."""
     try:
@@ -698,6 +1008,8 @@ def diagnose_wishlist_external_matches(payload) -> dict:
                     raise ValueError(f"{key} debe ser una lista")
                 else:
                     items = _diagnose_external_records(records)
+            elif payload.get("schema") == _PLAYNITE_UNMATCHED_SCHEMA:
+                return diagnose_playnite_unmatched_export(payload)
             elif any(key in payload for key in _MANUAL_EXPORT_COLLECTION_KEYS):
                 records, defaults = _manual_export_records(payload)
                 items = _diagnose_external_records(records, defaults=defaults)

@@ -218,8 +218,10 @@ from steam_deals_watchlist import (
     save_watchlist as module_save_watchlist,
 )
 from steam_deals_wishlist_hygiene import diagnose_wishlist_external_matches
+from steam_deals_wishlist_hygiene import diagnose_playnite_unmatched_export
 from steam_deals_wishlist_hygiene import normalize_manual_external_library_export
 from steam_deals_wishlist_hygiene import normalize_playnite_library_export
+from steam_deals_wishlist_hygiene import normalize_playnite_unmatched_export
 from steam_deals_generator import (
     _format_cli_user_error,
     _handle_cli_value_error,
@@ -3572,6 +3574,149 @@ class WishlistHygieneTests(unittest.TestCase):
         self.assertIn("installed_or_playable", item["review_context"]["review_reasons"])
         self.assertNotIn("install_dir", serialized)
         self.assertNotIn("C:/Users", serialized)
+
+    def test_normalize_playnite_unmatched_export_creates_manual_review_records(self) -> None:
+        records = normalize_playnite_unmatched_export(
+            {
+                "schema": "steamtools_playnite_unmatched_v1",
+                "exported_at": "2026-06-19T12:00:00Z",
+                "items": [
+                    {
+                        "playnite_id": "playnite-gog-1",
+                        "name": "Some GOG Game",
+                        "store": "GOG",
+                        "provider_game_id": "gog-999",
+                        "reason": "steam_appid_missing",
+                    },
+                    {
+                        "name": "Ambiguous Title",
+                        "store": "Epic Games Store",
+                        "provider_game_id": "epic-ambiguous",
+                    },
+                    {
+                        "name": "Ambiguous Title",
+                        "store": "GOG",
+                        "provider_game_id": "gog-ambiguous",
+                    },
+                ],
+            }
+        )
+        serialized = json.dumps(records, sort_keys=True)
+
+        self.assertEqual([record["store_id"] for record in records], ["gog", "epic", "gog"])
+        self.assertTrue(all(record["source"] == "playnite_unmatched" for record in records))
+        self.assertTrue(all(record["signal"] == "playnite_unmatched_review_needed" for record in records))
+        self.assertTrue(all(record["advisory_only"] for record in records))
+        self.assertTrue(all(record["ranking_impact"] == "none" for record in records))
+        self.assertEqual(records[0]["provider_game_id"], "gog-999")
+        self.assertEqual(records[0]["playnite_id"], "playnite-gog-1")
+        self.assertIn("duplicate_title", records[1]["review_flags"])
+        self.assertIn("duplicate_title", records[2]["review_flags"])
+        self.assertNotIn("install_dir", serialized)
+        self.assertNotIn("GameAction", serialized)
+        self.assertNotIn("family_shared", serialized)
+
+    def test_diagnose_playnite_unmatched_export_keeps_empty_payloads_quiet(self) -> None:
+        for payload in (None, {}, [], {"schema": "steamtools_playnite_unmatched_v1"}):
+            diagnostic = diagnose_playnite_unmatched_export(payload)
+
+            self.assertEqual(diagnostic["status"], "ok")
+            self.assertEqual(diagnostic["items"], [])
+            self.assertEqual(diagnostic["summary"]["review_count"], 0)
+            self.assertTrue(diagnostic["summary"]["advisory_only"])
+            self.assertEqual(diagnostic["summary"]["ranking_impact"], "none")
+
+    def test_diagnose_playnite_unmatched_export_reports_malformed_records(self) -> None:
+        diagnostic = diagnose_playnite_unmatched_export(
+            {
+                "schema": "steamtools_playnite_unmatched_v1",
+                "items": ["not-an-object", {"name": "Missing Store"}, {"store": "GOG"}],
+            }
+        )
+
+        self.assertEqual(diagnostic["status"], "warning")
+        self.assertEqual(diagnostic["summary"]["malformed_count"], 1)
+        self.assertEqual(diagnostic["summary"]["rejected_count"], 2)
+        self.assertEqual(diagnostic["items"][0]["code"], "record_not_object")
+        self.assertEqual(diagnostic["items"][1]["code"], "missing_store")
+        self.assertEqual(diagnostic["items"][2]["code"], "missing_name")
+
+        invalid_shape = diagnose_playnite_unmatched_export(
+            {"schema": "steamtools_playnite_unmatched_v1", "items": {}}
+        )
+        self.assertEqual(invalid_shape["status"], "error")
+        self.assertIn("items debe ser una lista", invalid_shape["issues"][0]["message"])
+        with self.assertRaisesRegex(ValueError, r"items\[0\] debe ser un objeto JSON"):
+            normalize_playnite_unmatched_export(
+                {"schema": "steamtools_playnite_unmatched_v1", "items": ["not-an-object"]}
+            )
+
+    def test_diagnose_playnite_unmatched_export_rejects_sensitive_fields_safely(self) -> None:
+        diagnostic = diagnose_playnite_unmatched_export(
+            {
+                "schema": "steamtools_playnite_unmatched_v1",
+                "items": [
+                    {
+                        "name": "Installed Leak",
+                        "store": "GOG",
+                        "install_dir": "C:/Users/Jane/Games/Leak",
+                    },
+                    {
+                        "name": "Provider Path",
+                        "store": "Epic Games Store",
+                        "provider_game_id": "C:/Users/Jane/Games/Provider",
+                    },
+                    {
+                        "name": "Raw Metadata",
+                        "store": "Ubisoft Connect",
+                        "raw": {"token": "SECRET-TOKEN"},
+                    },
+                    {
+                        "name": "Action Leak",
+                        "store": "GOG",
+                        "GameAction": {"path": "/home/jane/game.sh"},
+                    },
+                    {
+                        "name": "Reason Path",
+                        "store": "GOG",
+                        "reason": "found at C:/Users/Jane/Games/ReasonPath",
+                    },
+                ],
+            }
+        )
+        serialized = json.dumps(diagnostic, sort_keys=True)
+
+        self.assertEqual(diagnostic["status"], "warning")
+        self.assertEqual(diagnostic["summary"]["rejected_count"], 4)
+        self.assertEqual(diagnostic["summary"]["accepted_count"], 1)
+        self.assertEqual(
+            [item["code"] for item in diagnostic["items"][:4]],
+            ["forbidden_field", "unsafe_identifier", "forbidden_field", "forbidden_field"],
+        )
+        self.assertEqual(diagnostic["items"][4]["reason"], "manual_review")
+        self.assertNotIn("C:/Users", serialized)
+        self.assertNotIn("SECRET-TOKEN", serialized)
+        self.assertNotIn("/home/jane", serialized)
+
+    def test_diagnose_wishlist_external_matches_recognizes_playnite_unmatched_schema(self) -> None:
+        diagnostic = diagnose_wishlist_external_matches(
+            {
+                "schema": "steamtools_playnite_unmatched_v1",
+                "items": [
+                    {
+                        "name": "Some GOG Game",
+                        "store": "GOG",
+                        "provider_game_id": "gog-999",
+                    }
+                ],
+            }
+        )
+
+        self.assertEqual(diagnostic["schema"], "steamtools_playnite_unmatched_diagnostic_v1")
+        self.assertEqual(diagnostic["status"], "warning")
+        self.assertEqual(diagnostic["summary"]["signal_counts"], {"playnite_unmatched_review_needed": 1})
+        self.assertEqual(diagnostic["items"][0]["signal"], "playnite_unmatched_review_needed")
+        self.assertEqual(diagnostic["items"][0]["store_name"], "GOG")
 
     def test_load_wishlist_external_matches_rejects_malformed_playnite_library_export(self) -> None:
         cases = [

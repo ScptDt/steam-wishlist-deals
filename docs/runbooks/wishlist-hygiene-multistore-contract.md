@@ -430,6 +430,14 @@ Validación esperada antes de cambiar parser o add-on:
 - Campos privados del export (`install_dir`, paths, ejecutables, tokens, cookies o raw metadata) no se copian al contrato normalizado.
 - La salida sigue siendo advisory-only: ayuda a revisar antes de comprar, sin auto-quitar wishlist, score/ranking/defaults, precios `external_offers` ni Playnite add-on real.
 
+### Corte diagnóstico unmatched cerrado 2026-06-19
+
+- `steamtools_playnite_unmatched_v1` queda soportado como helper fixture-only de diagnóstico puro (`diagnose_playnite_unmatched_export(...)`) para revisar juegos Playnite sin AppID Steam confiable.
+- La normalización produce registros `playnite_unmatched` con `signal=playnite_unmatched_review_needed`, `match_method=unmatched_title`, `confidence=low`, `advisory_only=true` y `ranking_impact=none`; no alimenta ownership, Steam Family, precios, score/ranking ni mutaciones de wishlist.
+- Duplicados por título/fuente se preservan como contexto manual con `review_flags` (`duplicate_title`/`duplicate_source`) en vez de colapsarse perdiendo launchers.
+- Payloads vacíos quedan quietos; shapes malformadas o items inválidos reportan errores accionables.
+- Campos privados o peligrosos (`install_dir`, paths, ejecutables, args, scripts, `Game`, `GameAction`, tokens, cookies, raw metadata, logs o IDs de cuenta) se rechazan/sanean sin copiar valores sensibles al diagnóstico.
+
 ## Plan 6A: contrato futuro del helper/browser extension Steam
 
 Este corte es **docs-only** para dejar listo el threat model antes de implementar un helper real. El objetivo del helper futuro es producir un archivo manual compatible con `steam_access_import_v1`; la app Python/Web nunca debe manejar sesión Steam, cookies, tokens ni respuestas crudas.

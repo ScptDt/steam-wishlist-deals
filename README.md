@@ -82,6 +82,12 @@ python3 steam_deals_generator.py --vanity gaben --free-weekend-lootscraper-live
 
 `--free-weekend-records-json` tiene prioridad sobre fuentes live. LootScraper es una señal candidata de terceros: revisa confianza/vigencia antes de asumir disponibilidad. Detalles de fuentes, precedencia y validación: `docs/runbooks/free-weekend-source-strategy.md`.
 
+## Playnite local exports experimental
+
+Hay un add-on Playnite en modo desarrollo/source-only para exportar JSON locales privacy-minimized (`library` y `access`) que Steam Tools puede importar como señales de revisión manual. Todavía no hay `.pext` estable ni claim de compatibilidad final sin probarlo en Windows + Playnite.
+
+Guía para probarlo en casa: `docs/runbooks/playnite-exporter-at-home.md`.
+
 ## Desktop y builds
 
 ```bash
@@ -101,6 +107,7 @@ Web: `python3 payday2_web.py` (`http://127.0.0.1:8081`). CLI: `python3 payday2_d
 La documentación canónica vive en el repo para versionarse junto con el código. La Wiki de GitHub puede usarse como versión navegable/pulida para tutoriales largos, FAQ o capturas, enlazando de vuelta a estos archivos.
 
 - Índice de runbooks: `docs/runbooks/README.md`
+- Probar Playnite exporter en casa: `docs/runbooks/playnite-exporter-at-home.md`
 - Catálogo completo de features: `docs/features.md`
 - Guías principales: `steam_deals_guia.md`, `payday2_guia.md`
 - Performance/warm-cache: `docs/runbooks/performance-warm-cache.md`
