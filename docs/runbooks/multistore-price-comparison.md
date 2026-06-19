@@ -2,7 +2,7 @@
 
 Track priorizado para ampliar la comparativa multi-tienda hacia Fanatical y más stores sin mezclarla con `wishlist_hygiene` ni con flujos de compra.
 
-Estado actual: Fase 0/docs, Fase 1 normalizador fixture-only, Fase 1B JSON interno opcional, Fase 1C diagnóstico JSON-consumer, primer render visible mínimo risk-gated, Share HTML, adaptador ITAD fixture-only, lectura de caché ITAD local por flag, configuración Web de esa caché, refresh live opt-in/acotado, trigger Web explícito, pulido UX no-checkout, diagnóstico offline de caché ITAD, helper GG.deals fixture-only, lectura de caché GG.deals local por flag, configuración Web de esa caché, spike/smoke OAuth ITAD, adapter fixture-only `/deals/v2`, diseño docs-first OAuth-first y diagnóstico offline `/deals/v2` cerrados entre 2026-05-21 y 2026-06-18. Readiness offline de selección cerrado 2026-06-15: sin key/export concreto ni aprobación de red, el siguiente paso no es live; primero elegir entre diagnóstico de caché/import local existente, parser para export redactado, diseño docs-first de refresh live o live smoke ITAD acotado con key oficial. El siguiente paso requiere elegir explícitamente si medir cobertura con muestras `/deals/v2` redactadas/aprobadas usando el diagnóstico offline, implementar caché/UX OAuth-first fixture-first, mantener API key como fallback avanzado para lookup/prices o ampliar otra superficie local bajo los mismos gates.
+Estado actual: Fase 0/docs, Fase 1 normalizador fixture-only, Fase 1B JSON interno opcional, Fase 1C diagnóstico JSON-consumer, primer render visible mínimo risk-gated, Share HTML, adaptador ITAD fixture-only, lectura de caché ITAD local por flag, configuración Web de esa caché, refresh live opt-in/acotado, trigger Web explícito, pulido UX no-checkout, diagnóstico offline de caché ITAD, helper GG.deals fixture-only, lectura de caché GG.deals local por flag, configuración Web de esa caché, spike/smoke OAuth ITAD, adapter fixture-only `/deals/v2`, diseño docs-first OAuth-first, diagnóstico offline `/deals/v2` y UI Web/Desktop offline para diagnosticar `/deals/v2` cerrados entre 2026-05-21 y 2026-06-19. Readiness offline de selección cerrado 2026-06-15: sin key/export concreto ni aprobación de red, el siguiente paso no es live; primero elegir entre diagnóstico de caché/import local existente, parser para export redactado, diseño docs-first de refresh live o live smoke ITAD acotado con key oficial. El siguiente paso requiere elegir explícitamente si medir cobertura con muestras `/deals/v2` redactadas/aprobadas usando el diagnóstico offline/Web, implementar caché/UX OAuth-first fixture-first, mantener API key como fallback avanzado para lookup/prices o ampliar otra superficie local bajo los mismos gates.
 
 Enfoque de ejecución: **feature-sliced + risk-gated**. La feature avanza por cortes pequeños, pero cada corte debe pasar gates de riesgo antes de exponerse al usuario, tocar ranking o usar fuentes live.
 
@@ -483,6 +483,24 @@ Corte diagnóstico offline ITAD `/deals/v2` cerrado 2026-06-18:
 - Reporta conteos de entradas crudas/válidas/malformadas, deals procesables, deals Steam omitidos, ofertas externas normalizadas, mappings ITAD→Steam, tiendas, risk flags, cobertura de mapping, `highlight/review/hidden` y `best_external_price`.
 - El resultado conserva `advisory_only=true` y `ranking_impact=none`; missing AppID, keyshops/marketplaces y checkout-like URLs quedan medidos como riesgo, no promovidos.
 - Uso esperado: cuando exista una muestra `/deals/v2` redactada, correrla primero por el diagnóstico para decidir si conviene una caché OAuth-first o si la cobertura es insuficiente. No sustituye lookup/prices API-key-only ni prueba ownership.
+
+Corte Web/Desktop diagnóstico offline ITAD `/deals/v2` cerrado 2026-06-19:
+
+- Dónde está: Steam Deals Web/Desktop → `Archivos opcionales` → `Diagnóstico ITAD /deals/v2 redactado`.
+- Qué acepta: body JSON local/redactado de `/deals/v2` pegado en textarea o cargado desde un `.json`, `country` opcional y mapping opcional ITAD ID→Steam AppID como objeto JSON, por ejemplo `{"itad-hades":"1145360"}`.
+- Qué hace: llama localmente a `/api/itad/deals-v2/diagnose`, protegido por el token anti-CSRF local, y muestra solo summary/coverage/tiendas/riesgos/issues. No renderiza payload crudo, items normalizados ni URLs.
+- Cómo leerlo: `Entradas crudas/válidas/malformadas` mide shape del sample; `Ofertas externas` y `Steam omitidos` miden deals procesables fuera de Steam; `Mapeadas a AppID`, `Missing AppID` y `Cobertura mapping` indican si una futura caché OAuth-first podría enlazar ofertas con wishlist; `Highlight/Review/Hidden` y `Riesgos` muestran los risk gates de `external_offers`.
+- Guardrails: offline/local-only, sin OAuth UI, red live, API key, tokens, client secret, persistencia en config/cache/log/report, score/ranking/Top Picks/defaults/fetching, ownership/`wishlist_hygiene` ni checkout/carrito/pagos.
+- Resultado esperado: usar el panel con una muestra real redactada antes de diseñar caché OAuth-first o afirmar cobertura. Si la cobertura/mapping es baja, mantener API key como fallback avanzado para lookup/prices exactos o pedir muestra adicional.
+
+Checklist para usar una muestra redactada en Web/Desktop:
+
+1. Obtener únicamente el body JSON de `/deals/v2`; no copiar headers, tokens, callback URLs ni secretos.
+2. Redactar/eliminar `access_token`, `refresh_token`, `client_secret`, `ITAD-API-Key`, cookies, `Authorization`, callback `code`, username/email y rutas locales.
+3. Abrir `Archivos opcionales`, pegar el body en `JSON redactado de /deals/v2` o cargar un `.json` local pequeño.
+4. Si existe mapping conocido, pegarlo como objeto ITAD ID→Steam AppID; si no, dejarlo vacío para medir `appid_missing`.
+5. Ejecutar `Diagnosticar muestra ITAD` y revisar coverage/tiendas/riesgos antes de decidir un siguiente slice.
+6. No guardar ni versionar la muestra real salvo que esté convertida en fixture mínimo/redactado bajo `tests/fixtures/` con aprobación explícita.
 
 Corte Web trigger refresh live cerrado 2026-05-22:
 
