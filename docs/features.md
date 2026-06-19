@@ -36,6 +36,15 @@ Catálogo compacto de capacidades implementadas. El README se mantiene breve; lo
 - `player_behavior_fit` / `decision_support`: ajuste conductual y soporte de decisión JSON-only.
 - `decision_advisor`: payload advisory para compra/revisión/espera/ignorar usando señales existentes.
 
+## Playnite experimental/source-only
+
+- Add-on local C# `GenericPlugin` en `extension/playnite-steamtools-exporter/`, aún sin `.pext` estable ni compatibilidad final afirmada hasta smoke Windows + Playnite.
+- Exporta `steamtools_playnite_library_v1` para `--wishlist-external-matches-json` y `steamtools_playnite_access_v1` para `--play-access-json` mediante acciones manuales de menú.
+- El diagnóstico `steamtools_playnite_unmatched_v1` existe como helper/fixture local para revisión de juegos sin AppID o match confiable; todavía no es botón del add-on ni campo Web dedicado.
+- Playnite aporta contexto local privacy-minimized: launcher/source, provider ID sanitizado, AppID Steam confiable si existe e instalado/jugable de alto nivel.
+- No exporta rutas, ejecutables, argumentos, scripts, `GameAction`, metadata cruda, tokens, cookies, precios, ownership definitivo ni Steam Family confirmado.
+- Guía de prueba source/dev: `docs/runbooks/playnite-exporter-at-home.md`.
+
 ## Caché, performance y automatización
 
 - `--warm-cache`: precalienta precios sin generar reportes.

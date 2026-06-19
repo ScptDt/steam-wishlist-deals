@@ -52,7 +52,7 @@ Inventario de features del proyecto y del enfoque Playnite. Este archivo enumera
 - Parser de `steamtools_playnite_library_v1` vía `--wishlist-external-matches-json`.
 - Contrato `steamtools_playnite_access_v1` para exportar instalado/jugable sin rutas locales.
 - Parser de `steamtools_playnite_access_v1` vía `--play-access-json`.
-- Contrato futuro `steamtools_playnite_unmatched_v1` para diagnóstico de juegos sin AppID o match confiable.
+- Contrato `steamtools_playnite_unmatched_v1` como helper/fixture local de diagnóstico para juegos sin AppID o match confiable; todavía no es botón del add-on ni campo Web dedicado.
 - Separación explícita entre Playnite y Steam Family: Playnite no prueba ownership ni Family.
 
 ## Playnite add-on MVP
@@ -62,7 +62,7 @@ Inventario de features del proyecto y del enfoque Playnite. Este archivo enumera
 - Exportar inventario seguro de juegos con nombre, launcher/source, provider ID sanitizado, AppID Steam si existe y estado instalado/jugable.
 - Exportar `steamtools_playnite_library_v1` para wishlist hygiene.
 - Exportar `steamtools_playnite_access_v1` para acceso local/jugable.
-- Exportar diagnóstico de juegos sin AppID o match confiable para revisión manual.
+- Base para diagnóstico de juegos sin AppID o match confiable; el export desde el add-on queda pendiente de un slice posterior.
 - Guardar JSON mediante diálogo elegido por el usuario.
 - Mostrar JSON en diálogo seleccionable/copiable como alternativa.
 - No usar red, endpoint local, background sync ni auto-export.

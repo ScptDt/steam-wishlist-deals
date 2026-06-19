@@ -70,7 +70,7 @@ PowerShell script extensions are avoided because Playnite 11 is expected to remo
 
 ## Export workflow
 
-Menu entries planned in this scaffold:
+Current menu entries in this scaffold:
 
 - `Extensions → SteamTools → Save SteamTools library JSON...`
 - `Extensions → SteamTools → Show/copy SteamTools library JSON`
